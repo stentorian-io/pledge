@@ -3,6 +3,7 @@ use std::fs::read_to_string;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
+use url::Url;
 
 #[derive(Error, Debug)]
 pub enum PkgError {
@@ -10,6 +11,8 @@ pub enum PkgError {
     Json(#[from] json::JsonError),
     #[error("IO error: {0}")]
     IO(#[from] io::Error),
+    #[error("URL error: {0}")]
+    Url(#[from] url::ParseError),
     #[error("Validation error: {0}")]
     Validation(String),
 }
@@ -18,7 +21,7 @@ pub enum PkgError {
 pub struct Pkg {
     name: String,
     version: String,
-    registry_url: String,
+    registry_url: Url,
 }
 
 impl Pkg {
@@ -47,7 +50,7 @@ impl Pkg {
         &self.version
     }
 
-    pub fn registry_url(&self) -> &str {
+    pub fn registry_url(&self) -> &Url {
         &self.registry_url
     }
 
@@ -92,7 +95,7 @@ impl Pkg {
         Ok(pkg)
     }
 
-    fn get_registry_url(dir_path: &PathBuf) -> Result<String, PkgError> {
+    fn get_registry_url(dir_path: &PathBuf) -> Result<Url, PkgError> {
         let npmrc_path = dir_path.join(".npmrc");
 
         if npmrc_path.is_file() {
@@ -100,11 +103,11 @@ impl Pkg {
 
             for line in npmrc.split('\n') {
                 if line.trim_start().starts_with("registry=") {
-                    return Ok(line.split('=').last().unwrap().to_string());
+                    return Ok(Url::parse(line.split('=').last().unwrap())?);
                 }
             }
         }
 
-        Ok("https://registry.npmjs.org/".to_string())
+        Ok(Url::parse("https://registry.npmjs.org/")?)
     }
 }
