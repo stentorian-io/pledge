@@ -16,7 +16,7 @@ pub enum NpmError {
 }
 
 impl Npm {
-    pub fn fetch_last_version_of(pkg: &Pkg) -> Result<Option<String>, NpmError> {
+    pub fn fetch_last_version_of(pkg: &Pkg) -> Result<String, NpmError> {
         let request_url = pkg.registry_url().join(pkg.name())?;
         let response = reqwest::blocking::get(request_url.to_string())?;
 
@@ -30,17 +30,22 @@ impl Npm {
         let response_body = response.text()?;
         let response_body = json::parse(&response_body)?;
 
-        let versions = &response_body["versions"];
+        let dist_tags = &response_body["dist-tags"];
 
-        if !versions.is_object() {
+        if !dist_tags.is_object() {
             return Err(NpmError::Validation(
-                "Registry package missing version information.".to_string(),
+                "Registry package missing dist-tags information.".to_string(),
             ));
         }
 
-        Ok(versions
-            .entries()
-            .last()
-            .map(|(version, _)| version.to_string()))
+        let latest_version = &dist_tags["latest"];
+
+        if !latest_version.is_string() {
+            return Err(NpmError::Validation(
+                "Unexpected latest dist-tag value for package".to_string(),
+            ));
+        }
+
+        Ok(latest_version.to_string())
     }
 }

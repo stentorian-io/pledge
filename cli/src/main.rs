@@ -18,14 +18,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let last_version = Npm::fetch_last_version_of(&pkg)?;
 
-    if last_version.is_none() {
-        println!("Package has not been previously published.");
-
-        return Ok(());
-    }
-
-    let last_version = last_version.unwrap();
-
     println!("Last version: {}", last_version);
 
     Ok(())
