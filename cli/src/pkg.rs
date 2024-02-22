@@ -1,5 +1,6 @@
 use std::fs::read_to_string;
 use std::io;
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,9 +20,43 @@ pub struct Pkg {
 }
 
 impl Pkg {
-    pub fn new(file_path: &str) -> Result<Self, PkgError> {
-        let pkg = read_to_string(file_path)?;
-        let pkg = json::parse(&pkg)?;
+    pub fn new(dir_path: &str) -> Result<Self, PkgError> {
+        let pkg = Self::read_config_as_string(dir_path)?;
+        let pkg = Self::parse_config_as_json(&pkg)?;
+
+        Ok(pkg)
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn read_config_as_string(dir_path: &str) -> Result<String, PkgError> {
+        let path = PathBuf::from(dir_path);
+
+        if !path.is_dir() {
+            return Err(PkgError::Validation(
+                "Expected package path to be a directory.".into(),
+            ));
+        }
+
+        let path = path.join("package.json");
+
+        if !path.is_file() {
+            return Err(PkgError::Validation(
+                "Expected package path to contain a package.json file.".into(),
+            ));
+        }
+
+        Ok(read_to_string(path)?)
+    }
+
+    fn parse_config_as_json(content: &str) -> Result<Self, PkgError> {
+        let pkg = json::parse(&content)?;
 
         let name = &pkg["name"];
         let version = &pkg["version"];
