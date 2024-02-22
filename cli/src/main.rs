@@ -11,11 +11,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("Expected only one argument: the package path.".into());
     }
 
-    let pkg = args.get(1).unwrap();
-    let pkg = Pkg::new(pkg.to_str().unwrap())?;
+    let pkg_path = args.last().unwrap().as_str();
+    let pkg = Pkg::new(pkg_path)?;
 
 
     println!("Loaded package {}:{}.", pkg.name(), pkg.version());
+    println!("Registry URL is {}.", pkg.registry_url());
 
     Ok(())
 }
