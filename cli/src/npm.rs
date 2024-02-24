@@ -1,8 +1,6 @@
 use crate::pkg::Pkg;
 use crate::tar::{Tarball, TarballError};
 use hmac_sha512::Hash;
-use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use std::{fs, io};
 use thiserror::Error;
@@ -85,7 +83,9 @@ impl Npm {
         })
     }
 
-    pub fn download_pkg_if_needed(pkg: &Pkg) -> Result<(), NpmError> {
+    pub fn download_pkg_if_needed(pkg: &Pkg, output_dir: &PathBuf) -> Result<(), NpmError> {
+        let output_dir = output_dir.join(".tmp");
+
         let tarball = match &pkg.tarball {
             Some(tarball) => tarball,
             None => {
@@ -95,11 +95,10 @@ impl Npm {
             }
         };
 
-        let tarball_file_name = format!("{}-{}.tar.gz", pkg.name, pkg.version);
-        let tarball_file_name = PathBuf::from(tarball_file_name);
+        let tarball_path = output_dir.join(format!("{}-{}.tar.gz", pkg.name, pkg.version));
 
-        if tarball_file_name.is_file() {
-            let tarball_data = fs::read(&tarball_file_name)?;
+        if tarball_path.is_file() {
+            let tarball_data = fs::read(&tarball_path)?;
 
             if Self::is_tarball_integrity_ok(&tarball_data, &tarball.checksum) {
                 println!("Valid tarball exists on file system. Will use existing...");
@@ -108,7 +107,7 @@ impl Npm {
             }
 
             println!("Found existing tarball but integrity check failed. Will remove existing...");
-            fs::remove_file(&tarball_file_name)?;
+            fs::remove_file(&tarball_path)?;
         }
 
         println!("Downloading tarball from registry...");
@@ -128,7 +127,12 @@ impl Npm {
         }
 
         println!("Integrity OK, storing on the file system...");
-        File::create(tarball_file_name)?.write_all(&tarball_data)?;
+
+        if !output_dir.is_dir() {
+            fs::create_dir(output_dir)?;
+        }
+
+        fs::write(tarball_path, tarball_data)?;
 
         Ok(())
     }

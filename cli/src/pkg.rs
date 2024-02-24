@@ -27,9 +27,7 @@ pub struct Pkg {
 }
 
 impl Pkg {
-    pub fn new(dir_path: &str) -> Result<Self, PkgError> {
-        let dir_path = PathBuf::from(dir_path);
-
+    pub fn new(dir_path: &PathBuf) -> Result<Self, PkgError> {
         let pkg = Self::read_config_as_string(&dir_path)?;
         let pkg = Self::parse_config_as_json(&pkg)?;
 
