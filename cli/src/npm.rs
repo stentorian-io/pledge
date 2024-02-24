@@ -1,9 +1,10 @@
 use crate::pkg::Pkg;
 use crate::tar::{Tarball, TarballError};
+use hmac_sha512::Hash;
 use std::fs::File;
-use std::io;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{fs, io};
 use thiserror::Error;
 
 pub struct Npm;
@@ -57,7 +58,7 @@ impl Npm {
 
         let dist = &response_body["versions"][latest_version.to_string()]["dist"];
         let tarball_url = &dist["tarball"];
-        let tarball_checksum = &dist["shasum"];
+        let tarball_checksum = &dist["integrity"];
 
         if !tarball_url.is_string() {
             return Err(NpmError::Validation(
@@ -98,12 +99,19 @@ impl Npm {
         let tarball_file_name = PathBuf::from(tarball_file_name);
 
         if tarball_file_name.is_file() {
-            println!("Tarball exists on file system, using existing...");
+            let tarball_data = fs::read(&tarball_file_name)?;
 
-            return Ok(());
+            if Self::is_tarball_integrity_ok(&tarball_data, &tarball.checksum) {
+                println!("Valid tarball exists on file system. Will use existing...");
+
+                return Ok(());
+            }
+
+            println!("Found existing tarball but integrity check failed. Will remove existing...");
+            fs::remove_file(&tarball_file_name)?;
         }
 
-        println!("Tarball not found on file system, downloading from registry...");
+        println!("Downloading tarball from registry...");
 
         let response = reqwest::blocking::get(tarball.url.as_str())?.error_for_status();
 
@@ -111,8 +119,24 @@ impl Npm {
             return Err(NpmError::Request(error));
         }
 
-        File::create(tarball_file_name)?.write_all(&response.unwrap().bytes()?)?;
+        let tarball_data = response.unwrap().bytes()?;
+
+        if !Self::is_tarball_integrity_ok(&tarball_data.to_vec(), &tarball.checksum) {
+            return Err(NpmError::Validation(
+                "Could not verify integrity of downloaded tarball.".into(),
+            ));
+        }
+
+        println!("Integrity OK, storing on the file system...");
+        File::create(tarball_file_name)?.write_all(&tarball_data)?;
 
         Ok(())
+    }
+
+    fn is_tarball_integrity_ok(buffer: &Vec<u8>, checksum: &Vec<u8>) -> bool {
+        let mut hash = Hash::new();
+
+        hash.update(&buffer);
+        hash.finalize().eq(checksum.as_slice())
     }
 }
