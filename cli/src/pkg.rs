@@ -37,6 +37,8 @@ impl Pkg {
         let version = pkg["version"].to_string();
         let registry_url = Self::get_registry_url(&dir_path)?;
 
+        println!("Will use {registry_url} as registry.");
+
         // Since we're initializing on an already unpacked npm package,
         // there's no need to store any tarball information for it.
         let tarball = None;

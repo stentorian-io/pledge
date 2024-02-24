@@ -1,5 +1,9 @@
 use crate::pkg::Pkg;
 use crate::tar::{Tarball, TarballError};
+use std::fs::File;
+use std::io;
+use std::io::Write;
+use std::path::PathBuf;
 use thiserror::Error;
 
 pub struct Npm;
@@ -8,18 +12,20 @@ pub struct Npm;
 pub enum NpmError {
     #[error("JSON error: {0}")]
     Json(#[from] json::JsonError),
+    #[error("IO error: {0}")]
+    IO(#[from] io::Error),
     #[error("URL error: {0}")]
     Url(#[from] url::ParseError),
     #[error("Request error: {0}")]
     Request(#[from] reqwest::Error),
-    #[error("Validation error: {0}")]
-    Tarball(#[from] TarballError),
     #[error("Tarball error: {0}")]
+    Tarball(#[from] TarballError),
+    #[error("Validation error: {0}")]
     Validation(String),
 }
 
 impl Npm {
-    pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
+    pub fn fetch_latest_pkg_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
         let request_url = &pkg.registry_url.join(&pkg.name)?;
         let response = reqwest::blocking::get(request_url.to_string())?;
 
@@ -76,5 +82,37 @@ impl Npm {
             tarball,
             ..pkg.clone()
         })
+    }
+
+    pub fn download_pkg_if_needed(pkg: &Pkg) -> Result<(), NpmError> {
+        let tarball = match &pkg.tarball {
+            Some(tarball) => tarball,
+            None => {
+                return Err(NpmError::Validation(
+                    "Cannot download a Pkg without tarball information.".to_string(),
+                ))
+            }
+        };
+
+        let tarball_file_name = format!("{}-{}.tar.gz", pkg.name, pkg.version);
+        let tarball_file_name = PathBuf::from(tarball_file_name);
+
+        if tarball_file_name.is_file() {
+            println!("Tarball exists on file system, using existing...");
+
+            return Ok(());
+        }
+
+        println!("Tarball not found on file system, downloading from registry...");
+
+        let response = reqwest::blocking::get(tarball.url.as_str())?.error_for_status();
+
+        if let Err(error) = response {
+            return Err(NpmError::Request(error));
+        }
+
+        File::create(tarball_file_name)?.write_all(&response.unwrap().bytes()?)?;
+
+        Ok(())
     }
 }

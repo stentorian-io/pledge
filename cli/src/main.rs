@@ -19,12 +19,9 @@ fn get_pkg_path_from_args() -> Result<String, Box<dyn Error>> {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let pkg_current = Pkg::new(&get_pkg_path_from_args()?)?;
-    let pkg_latest = Npm::fetch_latest_of(&pkg_current)?;
+    let pkg_previous = Npm::fetch_latest_pkg_of(&pkg_current)?;
 
-    let tarball = pkg_latest.tarball.unwrap();
-
-    println!("{}", tarball.url);
-    println!("{}", tarball.checksum);
+    Npm::download_pkg_if_needed(&pkg_previous)?;
 
     Ok(())
 }
