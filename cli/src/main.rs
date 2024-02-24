@@ -5,20 +5,26 @@ use std::error::Error;
 
 mod npm;
 mod pkg;
+mod tar;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn get_pkg_path_from_args() -> Result<String, Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
     if args.len().ne(&2) {
         return Err("Expected only one argument: the package path.".into());
     }
 
-    let pkg_path = args.last().unwrap().as_str();
-    let pkg = Pkg::new(pkg_path)?;
+    Ok(args.last().unwrap().to_string())
+}
 
-    let last_version = Npm::fetch_last_version_of(&pkg)?;
+fn main() -> Result<(), Box<dyn Error>> {
+    let pkg_current = Pkg::new(&get_pkg_path_from_args()?)?;
+    let pkg_latest = Npm::fetch_latest_of(&pkg_current)?;
 
-    println!("Last version: {}", last_version);
+    let tarball = pkg_latest.tarball.unwrap();
+
+    println!("{}", tarball.url);
+    println!("{}", tarball.checksum);
 
     Ok(())
 }

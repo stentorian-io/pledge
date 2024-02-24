@@ -1,4 +1,5 @@
 use crate::pkg::Pkg;
+use crate::tar::{Tarball, TarballError};
 use thiserror::Error;
 
 pub struct Npm;
@@ -12,12 +13,14 @@ pub enum NpmError {
     #[error("Request error: {0}")]
     Request(#[from] reqwest::Error),
     #[error("Validation error: {0}")]
+    Tarball(#[from] TarballError),
+    #[error("Tarball error: {0}")]
     Validation(String),
 }
 
 impl Npm {
-    pub fn fetch_last_version_of(pkg: &Pkg) -> Result<String, NpmError> {
-        let request_url = pkg.registry_url().join(pkg.name())?;
+    pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
+        let request_url = &pkg.registry_url.join(&pkg.name)?;
         let response = reqwest::blocking::get(request_url.to_string())?;
 
         if !response.status().is_success() {
@@ -42,10 +45,36 @@ impl Npm {
 
         if !latest_version.is_string() {
             return Err(NpmError::Validation(
-                "Unexpected latest dist-tag value for package".to_string(),
+                "Unexpected latest dist-tag value for latest package".to_string(),
             ));
         }
 
-        Ok(latest_version.to_string())
+        let dist = &response_body["versions"][latest_version.to_string()]["dist"];
+        let tarball_url = &dist["tarball"];
+        let tarball_checksum = &dist["shasum"];
+
+        if !tarball_url.is_string() {
+            return Err(NpmError::Validation(
+                "Couldn't find tarball URL for latest package".to_string(),
+            ));
+        }
+
+        if !tarball_checksum.is_string() {
+            return Err(NpmError::Validation(
+                "Couldn't find tarball checksum for latest package".to_string(),
+            ));
+        }
+
+        let version = latest_version.to_string();
+        let tarball = Some(Tarball::new(
+            &tarball_url.to_string(),
+            &tarball_checksum.to_string(),
+        )?);
+
+        Ok(Pkg {
+            version,
+            tarball,
+            ..pkg.clone()
+        })
     }
 }

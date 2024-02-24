@@ -1,3 +1,4 @@
+use crate::tar::Tarball;
 use json::JsonValue;
 use std::fs::read_to_string;
 use std::io;
@@ -17,11 +18,12 @@ pub enum PkgError {
     Validation(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Pkg {
-    name: String,
-    version: String,
-    registry_url: Url,
+    pub name: String,
+    pub version: String,
+    pub registry_url: Url,
+    pub tarball: Option<Tarball>,
 }
 
 impl Pkg {
@@ -35,23 +37,16 @@ impl Pkg {
         let version = pkg["version"].to_string();
         let registry_url = Self::get_registry_url(&dir_path)?;
 
+        // Since we're initializing on an already unpacked npm package,
+        // there's no need to store any tarball information for it.
+        let tarball = None;
+
         Ok(Pkg {
             name,
             version,
             registry_url,
+            tarball,
         })
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub fn version(&self) -> &str {
-        &self.version
-    }
-
-    pub fn registry_url(&self) -> &Url {
-        &self.registry_url
     }
 
     fn read_config_as_string(path: &PathBuf) -> Result<String, PkgError> {
