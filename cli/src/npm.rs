@@ -1,9 +1,10 @@
 use crate::pkg::Pkg;
-use crate::tar::{Tarball, TarballError};
+use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _};
 use hmac_sha512::Hash;
 use std::path::PathBuf;
 use std::{fs, io};
 use thiserror::Error;
+use url::Url;
 
 #[derive(Error, Debug)]
 pub enum NpmError {
@@ -13,15 +14,36 @@ pub enum NpmError {
     IO(#[from] io::Error),
     #[error("URL error: {0}")]
     Url(#[from] url::ParseError),
+    #[error("Base64 Decode error: {0}")]
+    Base64Decode(#[from] base64::DecodeError),
     #[error("Request error: {0}")]
     Request(#[from] reqwest::Error),
-    #[error("Tarball error: {0}")]
-    Tarball(#[from] TarballError),
     #[error("Validation error: {0}")]
     Validation(String),
 }
 
-pub fn fetch_latest_pkg_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
+pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
+    let (version, dir_path, tarball_checksum, tarball_url) = fetch_info_from_registry(&pkg)?;
+
+    let tarball_url = Url::parse(tarball_url.as_str())?;
+    let tarball_checksum = BASE_64_STANDARD.decode(tarball_checksum)?;
+    let tarball_out_name = format!("{}-{}.tar.gz", pkg.name, version);
+
+    download_tarball_if_needed(
+        &dir_path,
+        &tarball_out_name,
+        &tarball_url,
+        &tarball_checksum,
+    )?;
+
+    Ok(Pkg {
+        version,
+        dir_path,
+        ..pkg.clone()
+    })
+}
+
+fn fetch_info_from_registry(pkg: &Pkg) -> Result<(String, PathBuf, String, String), NpmError> {
     let request_url = &pkg.registry_url.join(&pkg.name)?;
     let response = reqwest::blocking::get(request_url.to_string())?;
 
@@ -57,59 +79,69 @@ pub fn fetch_latest_pkg_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
 
     if !tarball_url.is_string() {
         return Err(NpmError::Validation(
-            "Couldn't find tarball URL for latest package".to_string(),
+            "Couldn't find tarball URL for latest package.".to_string(),
         ));
     }
 
     if !tarball_checksum.is_string() {
         return Err(NpmError::Validation(
-            "Couldn't find tarball checksum for latest package".to_string(),
+            "Couldn't find tarball checksum for latest package.".to_string(),
         ));
     }
 
-    let version = latest_version.to_string();
-    let tarball = Some(Tarball::new(
-        &tarball_url.to_string(),
-        &tarball_checksum.to_string(),
-    )?);
+    let tarball_checksum = tarball_checksum.to_string();
+    let tarball_integrity_parts: Vec<&str> = tarball_checksum.split('-').collect();
 
-    Ok(Pkg {
-        version,
-        tarball,
-        ..pkg.clone()
-    })
+    if tarball_integrity_parts.len().ne(&2) {
+        return Err(NpmError::Validation(
+            "Unexpected integrity string format for latest package.".into(),
+        ));
+    }
+
+    let tarball_hash_algorithm = tarball_integrity_parts.first().unwrap();
+    let tarball_hash_integrity = tarball_integrity_parts.last().unwrap();
+
+    if tarball_hash_algorithm.ne(&"sha512") {
+        return Err(NpmError::Validation(
+            "Package integrity can only be verified with SHA-512.".into(),
+        ));
+    }
+
+    let pkg_dir_path = pkg.dir_path.join(".tmp");
+    let pkg_version = latest_version.to_string();
+
+    Ok((
+        pkg_version,
+        pkg_dir_path,
+        tarball_hash_integrity.to_string(),
+        tarball_url.to_string(),
+    ))
 }
 
-pub fn download_pkg_if_needed(pkg: &Pkg, output_dir: &PathBuf) -> Result<(), NpmError> {
-    let output_dir = output_dir.join(".tmp");
+fn download_tarball_if_needed(
+    output_dir: &PathBuf,
+    file_name: &String,
+    url: &Url,
+    checksum: &Vec<u8>,
+) -> Result<(), NpmError> {
+    let output_path = output_dir.join(file_name);
 
-    let tarball = match &pkg.tarball {
-        Some(tarball) => tarball,
-        None => {
-            return Err(NpmError::Validation(
-                "Cannot download a Pkg without tarball information.".to_string(),
-            ))
-        }
-    };
+    if output_path.is_file() {
+        let tarball_data = fs::read(&output_path)?;
 
-    let tarball_path = output_dir.join(format!("{}-{}.tar.gz", pkg.name, pkg.version));
-
-    if tarball_path.is_file() {
-        let tarball_data = fs::read(&tarball_path)?;
-
-        if is_tarball_integrity_ok(&tarball_data, &tarball.checksum) {
+        if is_tarball_integrity_ok(&tarball_data, &checksum) {
             println!("Valid tarball exists on file system. Will use existing...");
 
             return Ok(());
         }
 
         println!("Found existing tarball but integrity check failed. Will remove existing...");
-        fs::remove_file(&tarball_path)?;
+        fs::remove_file(&output_path)?;
     }
 
     println!("Downloading tarball from registry...");
 
-    let response = reqwest::blocking::get(tarball.url.as_str())?.error_for_status();
+    let response = reqwest::blocking::get(url.as_str())?.error_for_status();
 
     if let Err(error) = response {
         return Err(NpmError::Request(error));
@@ -117,7 +149,7 @@ pub fn download_pkg_if_needed(pkg: &Pkg, output_dir: &PathBuf) -> Result<(), Npm
 
     let tarball_data = response.unwrap().bytes()?;
 
-    if !is_tarball_integrity_ok(&tarball_data.to_vec(), &tarball.checksum) {
+    if !is_tarball_integrity_ok(&tarball_data.to_vec(), &checksum) {
         return Err(NpmError::Validation(
             "Could not verify integrity of downloaded tarball.".into(),
         ));
@@ -126,10 +158,10 @@ pub fn download_pkg_if_needed(pkg: &Pkg, output_dir: &PathBuf) -> Result<(), Npm
     println!("Integrity OK, storing on the file system...");
 
     if !output_dir.is_dir() {
-        fs::create_dir(output_dir)?;
+        fs::create_dir(&output_dir)?;
     }
 
-    fs::write(tarball_path, tarball_data)?;
+    fs::write(output_path, tarball_data)?;
 
     Ok(())
 }
