@@ -1,4 +1,3 @@
-use crate::npm::Npm;
 use crate::pkg::Pkg;
 use std::env;
 use std::error::Error;
@@ -18,9 +17,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pkg_path = PathBuf::from(args.last().unwrap());
 
     let pkg_current = Pkg::new(&pkg_path)?;
-    let pkg_previous = Npm::fetch_latest_pkg_of(&pkg_current)?;
+    let pkg_previous = npm::fetch_latest_pkg_of(&pkg_current)?;
 
-    Npm::download_pkg_if_needed(&pkg_previous, &pkg_path)?;
+    npm::download_pkg_if_needed(&pkg_previous, &pkg_path)?;
 
     Ok(())
 }
