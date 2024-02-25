@@ -1,3 +1,4 @@
+use crate::npm;
 use json::JsonValue;
 use std::fs::read_to_string;
 use std::io;
@@ -13,16 +14,18 @@ pub enum PkgError {
     IO(#[from] io::Error),
     #[error("URL error: {0}")]
     Url(#[from] url::ParseError),
+    #[error("NPM error: {0}")]
+    Npm(#[from] npm::NpmError),
     #[error("Validation error: {0}")]
     Validation(String),
 }
 
-#[derive(Debug, Clone)]
 pub struct Pkg {
     pub name: String,
     pub version: String,
     pub dir_path: PathBuf,
     pub registry_url: Url,
+    pub files: Vec<PathBuf>,
 }
 
 impl Pkg {
@@ -36,12 +39,29 @@ impl Pkg {
 
         println!("Will use {registry_url} as registry.");
 
-        Ok(Pkg {
+        let files: Vec<PathBuf> = vec![];
+        let file_include_patterns = pkg["files"]
+            .members()
+            .map(|v| v.as_str().unwrap())
+            // We filter out paths that go outside the package root — npm considers them invalid.
+            .filter(|v| !v.starts_with("../"))
+            .collect();
+
+        let mut pkg = Pkg {
             name,
             version,
             dir_path,
             registry_url,
-        })
+            files,
+        };
+
+        npm::resolve_pkg_contents_into(&mut pkg, file_include_patterns)?;
+
+        Ok(pkg)
+    }
+
+    pub fn get_tarball_name(&self) -> String {
+        format!("{}-{}.tar.gz", self.name, self.version)
     }
 
     fn read_config_as_string(path: &PathBuf) -> Result<String, PkgError> {
