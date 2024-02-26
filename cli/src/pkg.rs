@@ -1,5 +1,6 @@
 use crate::npm;
 use json::JsonValue;
+use std::collections::HashSet;
 use std::fs::read_to_string;
 use std::io;
 use std::path::PathBuf;
@@ -25,7 +26,7 @@ pub struct Pkg {
     pub version: String,
     pub dir_path: PathBuf,
     pub registry_url: Url,
-    pub files: Vec<PathBuf>,
+    pub files: HashSet<PathBuf>,
 }
 
 impl Pkg {
@@ -39,7 +40,7 @@ impl Pkg {
 
         println!("Will use {registry_url} as registry.");
 
-        let files: Vec<PathBuf> = vec![];
+        let files: HashSet<PathBuf> = HashSet::new();
         let file_include_patterns = pkg["files"]
             .members()
             .map(|v| v.as_str().unwrap())

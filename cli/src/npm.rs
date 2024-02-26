@@ -3,6 +3,7 @@ use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _}
 use flate2::bufread::GzDecoder;
 use glob::Pattern;
 use hmac_sha512::Hash;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::{fs, io};
 use tar::Archive;
@@ -34,7 +35,7 @@ pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
     let registry_url = pkg.registry_url.clone();
     let tarball_url = Url::parse(tarball_url.as_str())?;
     let tarball_checksum = BASE_64_STANDARD.decode(tarball_checksum)?;
-    let files: Vec<PathBuf> = Vec::new();
+    let files: HashSet<PathBuf> = HashSet::new();
 
     let mut latest_pkg = Pkg {
         name,
@@ -75,7 +76,7 @@ pub fn resolve_pkg_contents_into(
 
     resolve_pkg_dir_contents(
         pkg,
-        &pkg.dir_path.clone(),
+        &pkg.dir_path.to_owned(),
         &exclude_patterns,
         &include_patterns,
     )?;
@@ -103,7 +104,7 @@ fn resolve_pkg_dir_contents(
         }
 
         if path_matches_a_pattern_in(&entry_path, &include_patterns) {
-            pkg.files.push(entry_path.to_owned());
+            pkg.files.insert(entry_path.to_owned());
         }
     }
 
@@ -261,7 +262,7 @@ fn unpack_tarball_into(pkg: &mut Pkg) -> Result<(), NpmError> {
     let mut tarball = Archive::new(tarball_decoder);
 
     for entry in tarball.entries()? {
-        pkg.files.push(entry?.header().path()?.to_path_buf())
+        pkg.files.insert(entry?.header().path()?.to_path_buf());
     }
 
     Ok(())
