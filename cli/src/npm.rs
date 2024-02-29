@@ -1,9 +1,10 @@
+use crate::pkg::error::PkgError;
 use crate::pkg::Pkg;
 use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _};
 use flate2::bufread::GzDecoder;
-use glob::Pattern;
 use hmac_sha512::Hash;
 use std::collections::HashSet;
+use std::io::Read;
 use std::path::PathBuf;
 use std::{fs, io};
 use tar::Archive;
@@ -12,6 +13,8 @@ use url::Url;
 
 #[derive(Error, Debug)]
 pub enum NpmError {
+    #[error("Package error: {0}")]
+    Pkg(#[from] Box<PkgError>),
     #[error("JSON error: {0}")]
     Json(#[from] json::JsonError),
     #[error("IO error: {0}")]
@@ -28,107 +31,37 @@ pub enum NpmError {
     Validation(String),
 }
 
+impl From<PkgError> for NpmError {
+    fn from(error: PkgError) -> Self {
+        NpmError::Pkg(Box::new(error))
+    }
+}
+
 pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
-    let (version, dir_path, tarball_checksum, tarball_url) = fetch_info_from_registry(&pkg)?;
+    let pkg_dir = pkg.dir_path.join(".tmp");
+    let pkg_registry_url = pkg.registry_url.clone();
 
-    let name = pkg.name.clone();
-    let registry_url = pkg.registry_url.clone();
-    let tarball_url = Url::parse(tarball_url.as_str())?;
-    let tarball_checksum = BASE_64_STANDARD.decode(tarball_checksum)?;
-    let files: HashSet<PathBuf> = HashSet::new();
+    let (latest_version, tarball_url, tarball_checksum) =
+        fetch_latest_pkg_info_from_registry(&pkg)?;
 
-    let mut latest_pkg = Pkg {
-        name,
-        version,
-        dir_path,
-        registry_url,
-        files,
-    };
+    let tarball_name = format!("{}-{}.tar.gz", pkg.name, latest_version);
+    let tarball_info = (tarball_name, tarball_url, tarball_checksum);
+    let tarball_path = download_tarball_if_needed(&pkg_dir, tarball_info)?;
 
-    download_tarball_if_needed(&latest_pkg, &tarball_url, &tarball_checksum)?;
-    unpack_tarball_into(&mut latest_pkg)?;
+    let mut pkg_files = HashSet::new();
+    let mut pkg_config = String::new();
 
-    Ok(latest_pkg)
+    decode_and_unpack_tarball(&tarball_path, &mut pkg_config, &mut pkg_files)?;
+
+    let pkg_json = Pkg::parse_config_as_json(pkg_config)?;
+    let mut pkg_latest = Pkg::new(pkg_dir, pkg_json, pkg_registry_url)?;
+
+    pkg_latest.contents.resolved_files = pkg_files;
+
+    Ok(pkg_latest)
 }
 
-pub fn resolve_pkg_contents_into(
-    pkg: &mut Pkg,
-    include_patterns: Vec<&str>,
-) -> Result<(), NpmError> {
-    let include_patterns = if include_patterns.is_empty() {
-        to_pkg_path_patterns(&pkg, vec!["**/*"])?
-    } else {
-        to_pkg_path_patterns(&pkg, include_patterns)?
-    };
-
-    // See https://docs.npmjs.com/cli/v10/configuring-npm/package-json#files
-    let exclude_patterns: Vec<Pattern> = to_pkg_path_patterns(
-        &pkg,
-        vec![
-            ".git",
-            ".npmrc",
-            "node_modules",
-            "package-lock.json",
-            "pnpm-lock.yaml",
-            "yarn.lock",
-        ],
-    )?;
-
-    resolve_pkg_dir_contents(
-        pkg,
-        &pkg.dir_path.to_owned(),
-        &exclude_patterns,
-        &include_patterns,
-    )?;
-
-    Ok(())
-}
-
-fn resolve_pkg_dir_contents(
-    pkg: &mut Pkg,
-    dir: &PathBuf,
-    exclude_patterns: &Vec<Pattern>,
-    include_patterns: &Vec<Pattern>,
-) -> Result<(), NpmError> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry.unwrap();
-        let entry_path = entry.path();
-        let entry_type = entry.file_type()?;
-
-        if path_matches_a_pattern_in(&entry_path, &exclude_patterns) {
-            continue;
-        }
-
-        if entry_type.is_dir() {
-            return resolve_pkg_dir_contents(pkg, &entry_path, exclude_patterns, include_patterns);
-        }
-
-        if path_matches_a_pattern_in(&entry_path, &include_patterns) {
-            pkg.files.insert(entry_path.to_owned());
-        }
-    }
-
-    Ok(())
-}
-
-fn to_pkg_path_patterns(pkg: &Pkg, paths: Vec<&str>) -> Result<Vec<Pattern>, NpmError> {
-    let mut patterns: Vec<Pattern> = Vec::with_capacity(paths.len());
-
-    for path in paths {
-        let path = &pkg.dir_path.join(path);
-        let path = path.to_str().unwrap();
-
-        patterns.push(Pattern::new(path)?);
-    }
-
-    Ok(patterns)
-}
-
-fn path_matches_a_pattern_in(path: &PathBuf, patterns: &Vec<Pattern>) -> bool {
-    patterns.iter().any(|pattern| pattern.matches_path(&path))
-}
-
-fn fetch_info_from_registry(pkg: &Pkg) -> Result<(String, PathBuf, String, String), NpmError> {
+fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8>), NpmError> {
     let request_url = &pkg.registry_url.join(&pkg.name)?;
     let response = reqwest::blocking::get(request_url.to_string())?;
 
@@ -158,7 +91,8 @@ fn fetch_info_from_registry(pkg: &Pkg) -> Result<(String, PathBuf, String, Strin
         ));
     }
 
-    let dist = &response_body["versions"][latest_version.to_string()]["dist"];
+    let latest_version = latest_version.to_string();
+    let dist = &response_body["versions"][&latest_version]["dist"];
     let tarball_url = &dist["tarball"];
     let tarball_checksum = &dist["integrity"];
 
@@ -192,36 +126,35 @@ fn fetch_info_from_registry(pkg: &Pkg) -> Result<(String, PathBuf, String, Strin
         ));
     }
 
-    let pkg_dir_path = pkg.dir_path.join(".tmp");
-    let pkg_version = latest_version.to_string();
+    let tarball_url = Url::parse(tarball_url.as_str().unwrap())?;
+    let tarball_checksum = BASE_64_STANDARD.decode(tarball_hash_integrity)?;
 
-    Ok((
-        pkg_version,
-        pkg_dir_path,
-        tarball_hash_integrity.to_string(),
-        tarball_url.to_string(),
-    ))
+    Ok((latest_version, tarball_url, tarball_checksum))
 }
 
-fn download_tarball_if_needed(pkg: &Pkg, url: &Url, checksum: &Vec<u8>) -> Result<(), NpmError> {
-    let output_path = pkg.dir_path.join(pkg.get_tarball_name());
+fn download_tarball_if_needed(
+    output_dir: &PathBuf,
+    tarball_info: (String, Url, Vec<u8>),
+) -> Result<PathBuf, NpmError> {
+    let (tarball_name, tarball_url, tarball_checksum) = tarball_info;
+    let tarball_path = output_dir.join(tarball_name);
 
-    if output_path.is_file() {
-        let tarball_data = fs::read(&output_path)?;
+    if tarball_path.is_file() {
+        let tarball_data = fs::read(&tarball_path)?;
 
-        if is_tarball_integrity_ok(&tarball_data, &checksum) {
+        if is_tarball_integrity_ok(&tarball_data, &tarball_checksum) {
             println!("Valid tarball exists on file system. Will use existing...");
 
-            return Ok(());
+            return Ok(tarball_path);
         }
 
         println!("Found existing tarball but integrity check failed. Will remove existing...");
-        fs::remove_file(&output_path)?;
+        fs::remove_file(&tarball_path)?;
     }
 
     println!("Downloading tarball from registry...");
 
-    let response = reqwest::blocking::get(url.as_str())?.error_for_status();
+    let response = reqwest::blocking::get(tarball_url.as_str())?.error_for_status();
 
     if let Err(error) = response {
         return Err(NpmError::Request(error));
@@ -229,7 +162,7 @@ fn download_tarball_if_needed(pkg: &Pkg, url: &Url, checksum: &Vec<u8>) -> Resul
 
     let tarball_data = response.unwrap().bytes()?;
 
-    if !is_tarball_integrity_ok(&tarball_data.to_vec(), &checksum) {
+    if !is_tarball_integrity_ok(&tarball_data.to_vec(), &tarball_checksum) {
         return Err(NpmError::Validation(
             "Could not verify integrity of downloaded tarball.".into(),
         ));
@@ -237,13 +170,13 @@ fn download_tarball_if_needed(pkg: &Pkg, url: &Url, checksum: &Vec<u8>) -> Resul
 
     println!("Integrity OK, storing on the file system...");
 
-    if !pkg.dir_path.is_dir() {
-        fs::create_dir(&pkg.dir_path)?;
+    if !output_dir.is_dir() {
+        fs::create_dir(&output_dir)?;
     }
 
-    fs::write(output_path, tarball_data)?;
+    fs::write(&tarball_path, tarball_data)?;
 
-    Ok(())
+    Ok(tarball_path)
 }
 
 fn is_tarball_integrity_ok(buffer: &Vec<u8>, checksum: &Vec<u8>) -> bool {
@@ -253,16 +186,25 @@ fn is_tarball_integrity_ok(buffer: &Vec<u8>, checksum: &Vec<u8>) -> bool {
     hash.finalize().eq(checksum.as_slice())
 }
 
-fn unpack_tarball_into(pkg: &mut Pkg) -> Result<(), NpmError> {
-    let tarball_name = pkg.get_tarball_name();
-    let tarball_path = pkg.dir_path.join(tarball_name);
-
+fn decode_and_unpack_tarball(
+    tarball_path: &PathBuf,
+    pkg_config_buffer: &mut String,
+    pkg_files: &mut HashSet<PathBuf>,
+) -> Result<(), NpmError> {
     let tarball_buffer = fs::read(&tarball_path)?;
     let tarball_decoder = GzDecoder::new(tarball_buffer.as_slice());
-    let mut tarball = Archive::new(tarball_decoder);
+    let mut tarball_data = Archive::new(tarball_decoder);
 
-    for entry in tarball.entries()? {
-        pkg.files.insert(entry?.header().path()?.to_path_buf());
+    for entry in tarball_data.entries()? {
+        let mut entry = entry.unwrap();
+        let entry_path = entry.header().path()?.to_path_buf();
+        let entry_name = entry_path.file_name().unwrap();
+
+        if entry_name.eq("package.json") {
+            entry.read_to_string(pkg_config_buffer)?;
+        }
+
+        pkg_files.insert(entry_path);
     }
 
     Ok(())

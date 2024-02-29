@@ -4,6 +4,7 @@ use std::error::Error;
 use std::path::PathBuf;
 
 mod npm;
+mod path;
 mod pkg;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -14,11 +15,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let pkg_path = PathBuf::from(args.last().unwrap());
+    let pkg_json = Pkg::parse_config_in_dir(&pkg_path)?;
+    let registry_url = Pkg::get_registry_url(&pkg_path)?;
 
-    let pkg_current = Pkg::new(pkg_path)?;
+    println!("Will use {} as registry.", &registry_url);
+
+    let mut pkg_current = Pkg::new(pkg_path, pkg_json, registry_url)?;
     let pkg_previous = npm::fetch_latest_of(&pkg_current)?;
 
-    let files_missing_in_previous = pkg_previous.files.difference(&pkg_current.files);
+    pkg_current
+        .contents
+        .resolve_contents_in_dir(&pkg_current.dir_path)?;
+
+    let previous_files = pkg_previous.contents.resolved_files;
+    let current_files = pkg_current.contents.resolved_files;
+
+    let files_missing_in_previous = previous_files.difference(&current_files);
     let has_files_missing_in_previous = files_missing_in_previous.size_hint().1.unwrap() > 0;
 
     if has_files_missing_in_previous {
