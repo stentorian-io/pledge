@@ -2,12 +2,14 @@ use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntries;
 use anyhow::{bail, Result};
 use json::JsonValue;
+use std::collections::HashSet;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 use url::Url;
 
 pub mod contents;
 pub mod entries;
+pub mod tarball;
 
 pub struct Pkg {
     pub name: String,
@@ -19,13 +21,22 @@ pub struct Pkg {
 }
 
 impl Pkg {
-    pub fn new(dir_path: PathBuf, pkg_json: JsonValue, registry_url: Url) -> Result<Self> {
+    pub fn new(
+        dir_path: PathBuf,
+        pkg_json: JsonValue,
+        registry_url: Url,
+        files: HashSet<PathBuf>,
+    ) -> Result<Self> {
         let name = pkg_json["name"].to_string();
         let version = pkg_json["version"].to_string();
         let file_globs = pkg_json["files"].members();
 
-        let contents = PkgContents::new(&dir_path, file_globs)?;
+        let mut contents = PkgContents::new(&dir_path, file_globs)?;
         let entries = PkgEntries::new(&contents, &pkg_json)?;
+
+        if !files.is_empty() {
+            contents.resolved_files = files;
+        }
 
         Ok(Pkg {
             name,
@@ -83,5 +94,10 @@ impl Pkg {
         }
 
         Ok(Url::parse("https://registry.npmjs.org/")?)
+    }
+
+    pub fn resolve_dir_contents(mut self) -> Result<Self> {
+        self.contents.resolve_contents_in_dir(&self.dir_path)?;
+        Ok(self)
     }
 }

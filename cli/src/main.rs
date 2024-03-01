@@ -1,4 +1,3 @@
-use crate::pkg::Pkg;
 use anyhow::{bail, Result};
 use std::env;
 use std::path::PathBuf;
@@ -14,18 +13,11 @@ fn main() -> Result<()> {
         bail!("Expected only one argument: the package path.");
     }
 
-    let pkg_path = PathBuf::from(args.last().unwrap());
-    let pkg_json = Pkg::parse_config_in_dir(&pkg_path)?;
-    let registry_url = Pkg::get_registry_url(&pkg_path)?;
+    let working_dir = args.last().unwrap();
+    let working_dir = PathBuf::from(working_dir);
 
-    println!("Will use {} as registry.", &registry_url);
-
-    let mut pkg_current = Pkg::new(pkg_path, pkg_json, registry_url)?;
-    let pkg_previous = npm::fetch_latest_of(&pkg_current)?;
-
-    pkg_current
-        .contents
-        .resolve_contents_in_dir(&pkg_current.dir_path)?;
+    let pkg_current = npm::load_from_dir(working_dir)?;
+    let pkg_previous = npm::fetch_from_registry(&pkg_current)?;
 
     let previous_files = pkg_previous.contents.resolved_files;
     let current_files = pkg_current.contents.resolved_files;

@@ -1,39 +1,69 @@
+use crate::pkg::tarball::PkgTarball;
 use crate::pkg::Pkg;
 use anyhow::{bail, Result};
 use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _};
-use flate2::bufread::GzDecoder;
-use hmac_sha512::Hash;
+use json::JsonValue;
 use std::collections::HashSet;
-use std::fs;
-use std::io::Read;
 use std::path::PathBuf;
-use tar::Archive;
 use url::Url;
 
-pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg> {
-    let pkg_dir = pkg.dir_path.join(".tmp");
-    let pkg_registry_url = pkg.registry_url.clone();
+pub fn load_from_dir(dir: PathBuf) -> Result<Pkg> {
+    let config_json = Pkg::parse_config_in_dir(&dir)?;
+    let registry_url = Pkg::get_registry_url(&dir)?;
 
-    let (latest_version, tarball_url, tarball_checksum) = fetch_latest_pkg_info_from_registry(pkg)?;
+    println!("Will use {} as registry.", &registry_url);
 
-    let tarball_name = format!("{}-{}.tar.gz", pkg.name, latest_version);
-    let tarball_info = (tarball_name, tarball_url, tarball_checksum);
-    let tarball_path = download_tarball_if_needed(&pkg_dir, tarball_info)?;
+    let pkg = Pkg::new(dir, config_json, registry_url, HashSet::new())?;
+    let pkg = pkg.resolve_dir_contents()?;
 
+    Ok(pkg)
+}
+
+pub fn fetch_from_registry(local_pkg: &Pkg) -> Result<Pkg> {
+    let pkg_dir = local_pkg.dir_path.join(".tmp");
+    let pkg_registry_url = local_pkg.registry_url.clone();
+
+    let tarball = fetch_last_published_tarball_of(&pkg_dir, local_pkg)?;
+    let pkg = unpack_tarball_as_pkg(pkg_dir, pkg_registry_url, tarball)?;
+
+    Ok(pkg)
+}
+
+fn fetch_last_published_tarball_of(pkg_dir: &PathBuf, local_pkg: &Pkg) -> Result<PkgTarball> {
+    let pkg_data_latest = fetch_latest_pkg_info_for(local_pkg)?;
+    let pkg_version_latest = &pkg_data_latest["dist-tags"]["latest"];
+
+    if !pkg_version_latest.is_string() {
+        bail!("Unexpected latest dist-tag value for latest package.");
+    }
+
+    let pkg_version_latest = pkg_version_latest.to_string();
+    let pkg_tarball_name = format!("{}-{}.tar.gz", local_pkg.name, pkg_version_latest);
+
+    let pkg_dist = &pkg_data_latest["versions"][&pkg_version_latest]["dist"];
+    let pkg_tarball = get_pkg_tarball_from_dist(pkg_tarball_name, pkg_dir, pkg_dist)?;
+
+    Ok(pkg_tarball)
+}
+
+pub fn unpack_tarball_as_pkg(
+    pkg_dir: PathBuf,
+    pkg_registry_url: Url,
+    pkg_tarball: PkgTarball,
+) -> Result<Pkg> {
     let mut pkg_files = HashSet::new();
     let mut pkg_config = String::new();
 
-    decode_and_unpack_tarball(&tarball_path, &mut pkg_config, &mut pkg_files)?;
+    pkg_tarball.download_to_disk_if_needed()?;
+    pkg_tarball.unpack_into(&mut pkg_config, &mut pkg_files)?;
 
     let pkg_json = Pkg::parse_config_as_json(pkg_config)?;
-    let mut pkg_latest = Pkg::new(pkg_dir, pkg_json, pkg_registry_url)?;
-
-    pkg_latest.contents.resolved_files = pkg_files;
+    let pkg_latest = Pkg::new(pkg_dir, pkg_json, pkg_registry_url, pkg_files)?;
 
     Ok(pkg_latest)
 }
 
-fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8>)> {
+fn fetch_latest_pkg_info_for(pkg: &Pkg) -> Result<JsonValue> {
     let request_url = &pkg.registry_url.join(&pkg.name)?;
     let response = reqwest::blocking::get(request_url.to_string())?;
 
@@ -47,28 +77,16 @@ fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8
     let response_body = response.text()?;
     let response_body = json::parse(&response_body)?;
 
-    let dist_tags = &response_body["dist-tags"];
+    Ok(response_body)
+}
 
-    if !dist_tags.is_object() {
-        bail!("Registry package missing dist-tags information.");
-    }
-
-    let latest_version = &dist_tags["latest"];
-
-    if !latest_version.is_string() {
-        bail!("Unexpected latest dist-tag value for latest package");
-    }
-
-    let latest_version = latest_version.to_string();
-    let dist = &response_body["versions"][&latest_version]["dist"];
+fn get_pkg_tarball_from_dist(name: String, dir: &PathBuf, dist: &JsonValue) -> Result<PkgTarball> {
     let tarball_url = &dist["tarball"];
     let tarball_checksum = &dist["integrity"];
 
     if !tarball_url.is_string() {
         bail!("Couldn't find tarball URL for latest package.");
-    }
-
-    if !tarball_checksum.is_string() {
+    } else if !tarball_checksum.is_string() {
         bail!("Couldn't find tarball checksum for latest package.");
     }
 
@@ -89,81 +107,5 @@ fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8
     let tarball_url = Url::parse(tarball_url.as_str().unwrap())?;
     let tarball_checksum = BASE_64_STANDARD.decode(tarball_hash_integrity)?;
 
-    Ok((latest_version, tarball_url, tarball_checksum))
-}
-
-fn download_tarball_if_needed(
-    output_dir: &PathBuf,
-    tarball_info: (String, Url, Vec<u8>),
-) -> Result<PathBuf> {
-    let (tarball_name, tarball_url, tarball_checksum) = tarball_info;
-    let tarball_path = output_dir.join(tarball_name);
-
-    if tarball_path.is_file() {
-        let tarball_data = fs::read(&tarball_path)?;
-
-        if is_tarball_integrity_ok(&tarball_data, &tarball_checksum) {
-            println!("Valid tarball exists on file system. Will use existing...");
-
-            return Ok(tarball_path);
-        }
-
-        println!("Found existing tarball but integrity check failed. Will remove existing...");
-        fs::remove_file(&tarball_path)?;
-    }
-
-    println!("Downloading tarball from registry...");
-
-    let response = reqwest::blocking::get(tarball_url.as_str())?.error_for_status();
-
-    if let Err(error) = response {
-        bail!(error);
-    }
-
-    let tarball_data = response.unwrap().bytes()?;
-
-    if !is_tarball_integrity_ok(&tarball_data.to_vec(), &tarball_checksum) {
-        bail!("Could not verify integrity of downloaded tarball.");
-    }
-
-    println!("Integrity OK, storing on the file system...");
-
-    if !output_dir.is_dir() {
-        fs::create_dir(output_dir)?;
-    }
-
-    fs::write(&tarball_path, tarball_data)?;
-
-    Ok(tarball_path)
-}
-
-fn is_tarball_integrity_ok(buffer: &Vec<u8>, checksum: &Vec<u8>) -> bool {
-    let mut hash = Hash::new();
-
-    hash.update(buffer);
-    hash.finalize().eq(checksum.as_slice())
-}
-
-fn decode_and_unpack_tarball(
-    tarball_path: &PathBuf,
-    pkg_config_buffer: &mut String,
-    pkg_files: &mut HashSet<PathBuf>,
-) -> Result<()> {
-    let tarball_buffer = fs::read(tarball_path)?;
-    let tarball_decoder = GzDecoder::new(tarball_buffer.as_slice());
-    let mut tarball_data = Archive::new(tarball_decoder);
-
-    for entry in tarball_data.entries()? {
-        let mut entry = entry.unwrap();
-        let entry_path = entry.header().path()?.to_path_buf();
-        let entry_name = entry_path.file_name().unwrap();
-
-        if entry_name.eq("package.json") {
-            entry.read_to_string(pkg_config_buffer)?;
-        }
-
-        pkg_files.insert(entry_path);
-    }
-
-    Ok(())
+    PkgTarball::new(name, dir.to_owned(), tarball_url, tarball_checksum)
 }
