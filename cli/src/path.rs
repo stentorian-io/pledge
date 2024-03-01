@@ -1,5 +1,5 @@
 use glob::Pattern;
-use std::path::PathBuf;
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -8,6 +8,6 @@ pub enum PathError {
     Pattern(#[from] glob::PatternError),
 }
 
-pub fn path_matches_a_pattern_in(path: &PathBuf, patterns: &Vec<Pattern>) -> bool {
-    patterns.iter().any(|pattern| pattern.matches_path(&path))
+pub fn path_matches_a_pattern_in(path: &Path, patterns: &[Pattern]) -> bool {
+    patterns.iter().any(|pattern| pattern.matches_path(path))
 }

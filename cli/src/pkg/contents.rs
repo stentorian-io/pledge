@@ -4,21 +4,24 @@ use glob::Pattern;
 use json::iterators::Members;
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct PkgContents {
+    pub pkg_dir: PathBuf,
     pub resolved_files: HashSet<PathBuf>,
     pub include_patterns: Vec<Pattern>,
     pub exclude_patterns: Vec<Pattern>,
 }
 
 impl PkgContents {
-    pub fn new(pkg_dir: &PathBuf, pkg_file_globs: Members) -> Result<Self, PkgError> {
+    pub fn new(pkg_dir: &Path, pkg_file_globs: Members) -> Result<Self, PkgError> {
+        let pkg_dir = pkg_dir.to_owned();
         let resolved_files = HashSet::new();
         let include_patterns = Self::get_file_include_patterns(&pkg_dir, pkg_file_globs)?;
         let exclude_patterns = Self::get_file_exclude_patterns()?;
 
         Ok(PkgContents {
+            pkg_dir,
             resolved_files,
             include_patterns,
             exclude_patterns,
@@ -47,11 +50,11 @@ impl PkgContents {
     }
 
     fn get_file_include_patterns(
-        dir_path: &PathBuf,
+        pkg_dir: &Path,
         glob_paths: Members,
     ) -> Result<Vec<Pattern>, PkgError> {
         if glob_paths.len().eq(&0) {
-            let glob_path = dir_path.join("**/*");
+            let glob_path = pkg_dir.join("**/*");
             let glob_path = glob_path.to_str().unwrap();
             let glob_pattern = Pattern::new(glob_path)?;
 
@@ -68,7 +71,7 @@ impl PkgContents {
                 continue;
             }
 
-            let glob_path = dir_path.join(glob_path);
+            let glob_path = pkg_dir.join(glob_path);
             let glob_path = glob_path.to_str().unwrap();
             let glob_pattern = Pattern::new(glob_path)?;
 

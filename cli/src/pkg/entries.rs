@@ -1,6 +1,6 @@
 use crate::path::path_matches_a_pattern_in;
+use crate::pkg::contents::PkgContents;
 use crate::pkg::error::PkgError;
-use glob::Pattern;
 use json::JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,52 +13,11 @@ pub struct PkgEntries {
 }
 
 impl PkgEntries {
-    pub fn new(
-        file_include_patterns: &Vec<Pattern>,
-        pkg_dir: &PathBuf,
-        pkg_json: &JsonValue,
-        should_skip_validation: bool,
-    ) -> Result<Self, PkgError> {
-        let main = &pkg_json["main"];
-        let main = if main.is_null() {
-            Self::resolve_and_validate_file_path(
-                &pkg_dir,
-                &file_include_patterns,
-                should_skip_validation,
-                "index.js".to_string(),
-            )?
-        } else {
-            Self::resolve_and_validate_file_path(
-                &pkg_dir,
-                &file_include_patterns,
-                should_skip_validation,
-                main.to_string(),
-            )?
-        };
-
-        let browser = Self::resolve_string_or_object_entries(
-            "browser".into(),
-            &pkg_dir,
-            &pkg_json,
-            &file_include_patterns,
-            should_skip_validation,
-        )?;
-
-        let bin = Self::resolve_string_or_object_entries(
-            "bin".into(),
-            &pkg_dir,
-            &pkg_json,
-            &file_include_patterns,
-            should_skip_validation,
-        )?;
-
-        let exports = Self::resolve_string_or_object_entries(
-            "exports".into(),
-            &pkg_dir,
-            &pkg_json,
-            &file_include_patterns,
-            should_skip_validation,
-        )?;
+    pub fn new(pkg_contents: &PkgContents, pkg_json: &JsonValue) -> Result<Self, PkgError> {
+        let main = Self::resolve_main_entry(pkg_json, pkg_contents)?;
+        let browser = Self::resolve_browser_entries(pkg_json, pkg_contents)?;
+        let bin = Self::resolve_bin_entries(pkg_json, pkg_contents)?;
+        let exports = Self::resolve_exports_entries(pkg_json, pkg_contents)?;
 
         Ok(PkgEntries {
             main,
@@ -68,24 +27,52 @@ impl PkgEntries {
         })
     }
 
+    fn resolve_main_entry(
+        pkg_json: &JsonValue,
+        pkg_contents: &PkgContents,
+    ) -> Result<PathBuf, PkgError> {
+        let main_file_path = &pkg_json["main"];
+        let main_file_path = if main_file_path.is_string() {
+            main_file_path.to_string()
+        } else {
+            "index.js".to_string()
+        };
+
+        Self::resolve_file_path(pkg_contents, main_file_path)
+    }
+
+    fn resolve_browser_entries(
+        pkg_json: &JsonValue,
+        pkg_contents: &PkgContents,
+    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+        Self::resolve_string_or_object_entries("browser".into(), pkg_json, pkg_contents)
+    }
+
+    fn resolve_bin_entries(
+        pkg_json: &JsonValue,
+        pkg_contents: &PkgContents,
+    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+        Self::resolve_string_or_object_entries("bin".into(), pkg_json, pkg_contents)
+    }
+
+    fn resolve_exports_entries(
+        pkg_json: &JsonValue,
+        pkg_contents: &PkgContents,
+    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+        Self::resolve_string_or_object_entries("exports".into(), pkg_json, pkg_contents)
+    }
+
     fn resolve_string_or_object_entries(
         field_name: String,
-        pkg_dir: &PathBuf,
         pkg_json: &JsonValue,
-        file_include_patterns: &Vec<Pattern>,
-        should_skip_validation: bool,
+        pkg_contents: &PkgContents,
     ) -> Result<HashMap<String, PathBuf>, PkgError> {
         let property = &pkg_json[&field_name];
         let mut entries: HashMap<String, PathBuf> = HashMap::new();
 
         if property.is_string() {
             let entry_path = property.to_string();
-            let entry_path = Self::resolve_and_validate_file_path(
-                &pkg_dir,
-                &file_include_patterns,
-                should_skip_validation,
-                entry_path,
-            )?;
+            let entry_path = Self::resolve_file_path(pkg_contents, entry_path)?;
 
             entries.insert(field_name.to_owned(), entry_path);
 
@@ -102,12 +89,7 @@ impl PkgEntries {
 
             if entry_value.is_string() {
                 let entry_path = entry_value.to_string();
-                let entry_path = Self::resolve_and_validate_file_path(
-                    &pkg_dir,
-                    &file_include_patterns,
-                    should_skip_validation,
-                    entry_path,
-                )?;
+                let entry_path = Self::resolve_file_path(pkg_contents, entry_path)?;
 
                 entries.insert(entry_name.into(), entry_path);
 
@@ -128,12 +110,7 @@ impl PkgEntries {
                 }
 
                 let entry_path = sub_entry_value.to_string();
-                let entry_path = Self::resolve_and_validate_file_path(
-                    &pkg_dir,
-                    &file_include_patterns,
-                    should_skip_validation,
-                    entry_path,
-                )?;
+                let entry_path = Self::resolve_file_path(pkg_contents, entry_path)?;
 
                 entries.insert(sub_entry_name.into(), entry_path);
             }
@@ -142,13 +119,12 @@ impl PkgEntries {
         Ok(entries)
     }
 
-    fn resolve_and_validate_file_path(
-        pkg_dir: &PathBuf,
-        file_include_patterns: &Vec<Pattern>,
-        should_skip_validation: bool,
+    fn resolve_file_path(
+        pkg_contents: &PkgContents,
         file_path: String,
     ) -> Result<PathBuf, PkgError> {
-        let file_path = pkg_dir.join(file_path);
+        let file_path = pkg_contents.pkg_dir.join(file_path);
+        let should_skip_validation = pkg_contents.pkg_dir.ends_with(".tmp");
 
         if should_skip_validation {
             return Ok(file_path);
@@ -156,14 +132,14 @@ impl PkgEntries {
 
         if !file_path.try_exists()? {
             return Err(PkgError::Validation(format!(
-                "File '{}' does not exist.",
+                "File '{}' is missing.",
                 file_path.display()
             )));
         }
 
-        if !path_matches_a_pattern_in(&file_path, &file_include_patterns) {
+        if !path_matches_a_pattern_in(&file_path, &pkg_contents.include_patterns) {
             return Err(PkgError::Validation(format!(
-                "File '{}' exists but is not included in 'files'.",
+                "File '{}' exists but does not mach any globs in 'files'.",
                 file_path.display()
             )));
         }

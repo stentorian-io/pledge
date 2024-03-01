@@ -41,8 +41,7 @@ pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
     let pkg_dir = pkg.dir_path.join(".tmp");
     let pkg_registry_url = pkg.registry_url.clone();
 
-    let (latest_version, tarball_url, tarball_checksum) =
-        fetch_latest_pkg_info_from_registry(&pkg)?;
+    let (latest_version, tarball_url, tarball_checksum) = fetch_latest_pkg_info_from_registry(pkg)?;
 
     let tarball_name = format!("{}-{}.tar.gz", pkg.name, latest_version);
     let tarball_info = (tarball_name, tarball_url, tarball_checksum);
@@ -171,7 +170,7 @@ fn download_tarball_if_needed(
     println!("Integrity OK, storing on the file system...");
 
     if !output_dir.is_dir() {
-        fs::create_dir(&output_dir)?;
+        fs::create_dir(output_dir)?;
     }
 
     fs::write(&tarball_path, tarball_data)?;
@@ -182,7 +181,7 @@ fn download_tarball_if_needed(
 fn is_tarball_integrity_ok(buffer: &Vec<u8>, checksum: &Vec<u8>) -> bool {
     let mut hash = Hash::new();
 
-    hash.update(&buffer);
+    hash.update(buffer);
     hash.finalize().eq(checksum.as_slice())
 }
 
@@ -191,7 +190,7 @@ fn decode_and_unpack_tarball(
     pkg_config_buffer: &mut String,
     pkg_files: &mut HashSet<PathBuf>,
 ) -> Result<(), NpmError> {
-    let tarball_buffer = fs::read(&tarball_path)?;
+    let tarball_buffer = fs::read(tarball_path)?;
     let tarball_decoder = GzDecoder::new(tarball_buffer.as_slice());
     let mut tarball_data = Archive::new(tarball_decoder);
 

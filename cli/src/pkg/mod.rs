@@ -3,7 +3,7 @@ use crate::pkg::entries::PkgEntries;
 use crate::pkg::error::PkgError;
 use json::JsonValue;
 use std::fs::read_to_string;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use url::Url;
 
 pub mod contents;
@@ -28,15 +28,9 @@ impl Pkg {
         let name = pkg_json["name"].to_string();
         let version = pkg_json["version"].to_string();
         let file_globs = pkg_json["files"].members();
-        let should_skip_validation = dir_path.ends_with(".tmp");
 
         let contents = PkgContents::new(&dir_path, file_globs)?;
-        let entries = PkgEntries::new(
-            &contents.include_patterns,
-            &dir_path,
-            &pkg_json,
-            should_skip_validation,
-        )?;
+        let entries = PkgEntries::new(&contents, &pkg_json)?;
 
         Ok(Pkg {
             name,
@@ -48,7 +42,7 @@ impl Pkg {
         })
     }
 
-    pub fn parse_config_in_dir(path: &PathBuf) -> Result<JsonValue, PkgError> {
+    pub fn parse_config_in_dir(path: &Path) -> Result<JsonValue, PkgError> {
         if !path.is_dir() {
             return Err(PkgError::Validation(
                 "Expected package path to be a directory.".into(),
@@ -76,23 +70,21 @@ impl Pkg {
         let pkg_version = &pkg["version"];
 
         if !pkg_name.is_string() {
-            return Err(PkgError::Validation(format!(
-                "Package 'name' has unexpected value '{}'.",
-                pkg_name.to_string()
-            )));
+            return Err(PkgError::Validation(
+                "Expected package 'name' field to be a string.".into(),
+            ));
         }
 
         if !pkg_version.is_string() {
-            return Err(PkgError::Validation(format!(
-                "Package 'version' has unexpected value '{}'.",
-                pkg_version.to_string()
-            )));
+            return Err(PkgError::Validation(
+                "Expected package 'version' field to be a string.".into(),
+            ));
         }
 
         Ok(pkg)
     }
 
-    pub fn get_registry_url(dir_path: &PathBuf) -> Result<Url, PkgError> {
+    pub fn get_registry_url(dir_path: &Path) -> Result<Url, PkgError> {
         let npmrc_path = dir_path.join(".npmrc");
 
         if npmrc_path.is_file() {
