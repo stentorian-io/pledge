@@ -114,7 +114,7 @@ impl PkgEntries {
 
     fn resolve_file_path(pkg_contents: &PkgContents, file_path: String) -> Result<PathBuf> {
         let file_path = pkg_contents.pkg_dir.join(file_path);
-        let should_skip_validation = pkg_contents.pkg_dir.ends_with(".tmp");
+        let should_skip_validation = pkg_contents.is_from_tarball;
 
         if should_skip_validation {
             return Ok(file_path);

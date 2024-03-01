@@ -11,20 +11,22 @@ pub struct PkgContents {
     pub resolved_files: HashSet<PathBuf>,
     pub include_patterns: Vec<Pattern>,
     pub exclude_patterns: Vec<Pattern>,
+    pub is_from_tarball: bool,
 }
 
 impl PkgContents {
-    pub fn new(pkg_dir: &Path, pkg_file_globs: Members) -> Result<Self> {
+    pub fn new(pkg_dir: &Path, pkg_file_globs: Members, is_from_tarball: bool) -> Result<Self> {
         let pkg_dir = pkg_dir.to_owned();
         let resolved_files = HashSet::new();
         let include_patterns = Self::get_file_include_patterns(&pkg_dir, pkg_file_globs)?;
-        let exclude_patterns = Self::get_file_exclude_patterns()?;
+        let exclude_patterns = Self::get_file_exclude_patterns(&pkg_dir)?;
 
         Ok(PkgContents {
             pkg_dir,
             resolved_files,
             include_patterns,
             exclude_patterns,
+            is_from_tarball,
         })
     }
 
@@ -78,7 +80,7 @@ impl PkgContents {
         Ok(patterns)
     }
 
-    fn get_file_exclude_patterns() -> Result<Vec<Pattern>> {
+    fn get_file_exclude_patterns(pkg_dir: &Path) -> Result<Vec<Pattern>> {
         let mut patterns: Vec<Pattern> = Vec::new();
 
         // See https://docs.npmjs.com/cli/v10/configuring-npm/package-json#files
@@ -92,7 +94,7 @@ impl PkgContents {
         ];
 
         for glob in default_globs {
-            let glob_path = PathBuf::from(glob).join("**/*");
+            let glob_path = pkg_dir.join(glob);
             let glob_path = glob_path.to_str().unwrap();
 
             patterns.push(Pattern::new(glob_path)?);

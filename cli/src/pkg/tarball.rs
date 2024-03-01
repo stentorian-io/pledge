@@ -67,6 +67,7 @@ impl PkgTarball {
 
     pub fn unpack_into(
         &self,
+        pkg_dir: &PathBuf,
         pkg_config: &mut String,
         pkg_files: &mut HashSet<PathBuf>,
     ) -> Result<()> {
@@ -76,14 +77,17 @@ impl PkgTarball {
 
         for entry in tarball_data.entries()? {
             let mut entry = entry.unwrap();
-            let entry_path = entry.header().path()?.to_path_buf();
-            let entry_name = entry_path.file_name().unwrap();
+            let entry_path = entry
+                .header()
+                .path()?
+                .strip_prefix("package")?
+                .to_path_buf();
 
-            if entry_name.eq("package.json") {
+            if entry_path.file_name().unwrap().eq("package.json") {
                 entry.read_to_string(pkg_config)?;
             }
 
-            pkg_files.insert(entry_path);
+            pkg_files.insert(pkg_dir.join(entry_path));
         }
 
         Ok(())

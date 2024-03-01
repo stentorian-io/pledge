@@ -25,17 +25,18 @@ impl Pkg {
         dir_path: PathBuf,
         pkg_json: JsonValue,
         registry_url: Url,
-        files: HashSet<PathBuf>,
+        tarball_files: HashSet<PathBuf>,
     ) -> Result<Self> {
         let name = pkg_json["name"].to_string();
         let version = pkg_json["version"].to_string();
         let file_globs = pkg_json["files"].members();
+        let is_from_tarball = !tarball_files.is_empty();
 
-        let mut contents = PkgContents::new(&dir_path, file_globs)?;
+        let mut contents = PkgContents::new(&dir_path, file_globs, is_from_tarball)?;
         let entries = PkgEntries::new(&contents, &pkg_json)?;
 
-        if !files.is_empty() {
-            contents.resolved_files = files;
+        if is_from_tarball {
+            contents.resolved_files = tarball_files;
         }
 
         Ok(Pkg {

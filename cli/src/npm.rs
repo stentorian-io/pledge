@@ -20,11 +20,12 @@ pub fn load_from_dir(dir: PathBuf) -> Result<Pkg> {
 }
 
 pub fn fetch_from_registry(local_pkg: &Pkg) -> Result<Pkg> {
-    let pkg_dir = local_pkg.dir_path.join(".tmp");
+    let pkg_dir = &local_pkg.dir_path;
+    let pkg_dir_tmp = pkg_dir.join(".tmp");
     let pkg_registry_url = local_pkg.registry_url.clone();
 
-    let tarball = fetch_last_published_tarball_of(&pkg_dir, local_pkg)?;
-    let pkg = unpack_tarball_as_pkg(pkg_dir, pkg_registry_url, tarball)?;
+    let tarball = fetch_last_published_tarball_of(&pkg_dir_tmp, local_pkg)?;
+    let pkg = unpack_tarball_as_pkg(pkg_dir.to_owned(), pkg_registry_url, tarball)?;
 
     Ok(pkg)
 }
@@ -46,16 +47,16 @@ fn fetch_last_published_tarball_of(pkg_dir: &PathBuf, local_pkg: &Pkg) -> Result
     Ok(pkg_tarball)
 }
 
-pub fn unpack_tarball_as_pkg(
+fn unpack_tarball_as_pkg(
     pkg_dir: PathBuf,
     pkg_registry_url: Url,
     pkg_tarball: PkgTarball,
 ) -> Result<Pkg> {
-    let mut pkg_files = HashSet::new();
     let mut pkg_config = String::new();
+    let mut pkg_files = HashSet::new();
 
     pkg_tarball.download_to_disk_if_needed()?;
-    pkg_tarball.unpack_into(&mut pkg_config, &mut pkg_files)?;
+    pkg_tarball.unpack_into(&pkg_dir, &mut pkg_config, &mut pkg_files)?;
 
     let pkg_json = Pkg::parse_config_as_json(pkg_config)?;
     let pkg_latest = Pkg::new(pkg_dir, pkg_json, pkg_registry_url, pkg_files)?;
