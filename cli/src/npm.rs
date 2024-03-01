@@ -1,43 +1,16 @@
-use crate::pkg::error::PkgError;
 use crate::pkg::Pkg;
+use anyhow::{bail, Result};
 use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _};
 use flate2::bufread::GzDecoder;
 use hmac_sha512::Hash;
 use std::collections::HashSet;
+use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use std::{fs, io};
 use tar::Archive;
-use thiserror::Error;
 use url::Url;
 
-#[derive(Error, Debug)]
-pub enum NpmError {
-    #[error("Package error: {0}")]
-    Pkg(#[from] Box<PkgError>),
-    #[error("JSON error: {0}")]
-    Json(#[from] json::JsonError),
-    #[error("IO error: {0}")]
-    IO(#[from] io::Error),
-    #[error("URL error: {0}")]
-    Url(#[from] url::ParseError),
-    #[error("Base64 Decode error: {0}")]
-    Base64Decode(#[from] base64::DecodeError),
-    #[error("Pattern error: {0}")]
-    Pattern(#[from] glob::PatternError),
-    #[error("Request error: {0}")]
-    Request(#[from] reqwest::Error),
-    #[error("Validation error: {0}")]
-    Validation(String),
-}
-
-impl From<PkgError> for NpmError {
-    fn from(error: PkgError) -> Self {
-        NpmError::Pkg(Box::new(error))
-    }
-}
-
-pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
+pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg> {
     let pkg_dir = pkg.dir_path.join(".tmp");
     let pkg_registry_url = pkg.registry_url.clone();
 
@@ -60,15 +33,15 @@ pub fn fetch_latest_of(pkg: &Pkg) -> Result<Pkg, NpmError> {
     Ok(pkg_latest)
 }
 
-fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8>), NpmError> {
+fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8>)> {
     let request_url = &pkg.registry_url.join(&pkg.name)?;
     let response = reqwest::blocking::get(request_url.to_string())?;
 
     if !response.status().is_success() {
-        return Err(NpmError::Validation(format!(
+        bail!(
             "Failed to fetch package information from registry: {}.",
             response.status()
-        )));
+        );
     }
 
     let response_body = response.text()?;
@@ -77,17 +50,13 @@ fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8
     let dist_tags = &response_body["dist-tags"];
 
     if !dist_tags.is_object() {
-        return Err(NpmError::Validation(
-            "Registry package missing dist-tags information.".to_string(),
-        ));
+        bail!("Registry package missing dist-tags information.");
     }
 
     let latest_version = &dist_tags["latest"];
 
     if !latest_version.is_string() {
-        return Err(NpmError::Validation(
-            "Unexpected latest dist-tag value for latest package".to_string(),
-        ));
+        bail!("Unexpected latest dist-tag value for latest package");
     }
 
     let latest_version = latest_version.to_string();
@@ -96,33 +65,25 @@ fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8
     let tarball_checksum = &dist["integrity"];
 
     if !tarball_url.is_string() {
-        return Err(NpmError::Validation(
-            "Couldn't find tarball URL for latest package.".to_string(),
-        ));
+        bail!("Couldn't find tarball URL for latest package.");
     }
 
     if !tarball_checksum.is_string() {
-        return Err(NpmError::Validation(
-            "Couldn't find tarball checksum for latest package.".to_string(),
-        ));
+        bail!("Couldn't find tarball checksum for latest package.");
     }
 
     let tarball_checksum = tarball_checksum.to_string();
     let tarball_integrity_parts: Vec<&str> = tarball_checksum.split('-').collect();
 
     if tarball_integrity_parts.len().ne(&2) {
-        return Err(NpmError::Validation(
-            "Unexpected integrity string format for latest package.".into(),
-        ));
+        bail!("Unexpected integrity string format for latest package.");
     }
 
     let tarball_hash_algorithm = tarball_integrity_parts.first().unwrap();
     let tarball_hash_integrity = tarball_integrity_parts.last().unwrap();
 
     if tarball_hash_algorithm.ne(&"sha512") {
-        return Err(NpmError::Validation(
-            "Package integrity can only be verified with SHA-512.".into(),
-        ));
+        bail!("Package integrity can only be verified with SHA-512.");
     }
 
     let tarball_url = Url::parse(tarball_url.as_str().unwrap())?;
@@ -134,7 +95,7 @@ fn fetch_latest_pkg_info_from_registry(pkg: &Pkg) -> Result<(String, Url, Vec<u8
 fn download_tarball_if_needed(
     output_dir: &PathBuf,
     tarball_info: (String, Url, Vec<u8>),
-) -> Result<PathBuf, NpmError> {
+) -> Result<PathBuf> {
     let (tarball_name, tarball_url, tarball_checksum) = tarball_info;
     let tarball_path = output_dir.join(tarball_name);
 
@@ -156,15 +117,13 @@ fn download_tarball_if_needed(
     let response = reqwest::blocking::get(tarball_url.as_str())?.error_for_status();
 
     if let Err(error) = response {
-        return Err(NpmError::Request(error));
+        bail!(error);
     }
 
     let tarball_data = response.unwrap().bytes()?;
 
     if !is_tarball_integrity_ok(&tarball_data.to_vec(), &tarball_checksum) {
-        return Err(NpmError::Validation(
-            "Could not verify integrity of downloaded tarball.".into(),
-        ));
+        bail!("Could not verify integrity of downloaded tarball.");
     }
 
     println!("Integrity OK, storing on the file system...");
@@ -189,7 +148,7 @@ fn decode_and_unpack_tarball(
     tarball_path: &PathBuf,
     pkg_config_buffer: &mut String,
     pkg_files: &mut HashSet<PathBuf>,
-) -> Result<(), NpmError> {
+) -> Result<()> {
     let tarball_buffer = fs::read(tarball_path)?;
     let tarball_decoder = GzDecoder::new(tarball_buffer.as_slice());
     let mut tarball_data = Archive::new(tarball_decoder);

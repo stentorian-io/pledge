@@ -1,17 +1,17 @@
 use crate::pkg::Pkg;
+use anyhow::{bail, Result};
 use std::env;
-use std::error::Error;
 use std::path::PathBuf;
 
 mod npm;
 mod path;
 mod pkg;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
     if args.len().ne(&2) {
-        return Err("Expected only one argument: the package path.".into());
+        bail!("Expected only one argument: the package path.");
     }
 
     let pkg_path = PathBuf::from(args.last().unwrap());

@@ -1,6 +1,6 @@
 use crate::path::path_matches_a_pattern_in;
 use crate::pkg::contents::PkgContents;
-use crate::pkg::error::PkgError;
+use anyhow::{bail, Result};
 use json::JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ pub struct PkgEntries {
 }
 
 impl PkgEntries {
-    pub fn new(pkg_contents: &PkgContents, pkg_json: &JsonValue) -> Result<Self, PkgError> {
+    pub fn new(pkg_contents: &PkgContents, pkg_json: &JsonValue) -> Result<Self> {
         let main = Self::resolve_main_entry(pkg_json, pkg_contents)?;
         let browser = Self::resolve_browser_entries(pkg_json, pkg_contents)?;
         let bin = Self::resolve_bin_entries(pkg_json, pkg_contents)?;
@@ -27,10 +27,7 @@ impl PkgEntries {
         })
     }
 
-    fn resolve_main_entry(
-        pkg_json: &JsonValue,
-        pkg_contents: &PkgContents,
-    ) -> Result<PathBuf, PkgError> {
+    fn resolve_main_entry(pkg_json: &JsonValue, pkg_contents: &PkgContents) -> Result<PathBuf> {
         let main_file_path = &pkg_json["main"];
         let main_file_path = if main_file_path.is_string() {
             main_file_path.to_string()
@@ -44,21 +41,21 @@ impl PkgEntries {
     fn resolve_browser_entries(
         pkg_json: &JsonValue,
         pkg_contents: &PkgContents,
-    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+    ) -> Result<HashMap<String, PathBuf>> {
         Self::resolve_string_or_object_entries("browser".into(), pkg_json, pkg_contents)
     }
 
     fn resolve_bin_entries(
         pkg_json: &JsonValue,
         pkg_contents: &PkgContents,
-    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+    ) -> Result<HashMap<String, PathBuf>> {
         Self::resolve_string_or_object_entries("bin".into(), pkg_json, pkg_contents)
     }
 
     fn resolve_exports_entries(
         pkg_json: &JsonValue,
         pkg_contents: &PkgContents,
-    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+    ) -> Result<HashMap<String, PathBuf>> {
         Self::resolve_string_or_object_entries("exports".into(), pkg_json, pkg_contents)
     }
 
@@ -66,7 +63,7 @@ impl PkgEntries {
         field_name: String,
         pkg_json: &JsonValue,
         pkg_contents: &PkgContents,
-    ) -> Result<HashMap<String, PathBuf>, PkgError> {
+    ) -> Result<HashMap<String, PathBuf>> {
         let property = &pkg_json[&field_name];
         let mut entries: HashMap<String, PathBuf> = HashMap::new();
 
@@ -97,16 +94,12 @@ impl PkgEntries {
             }
 
             if !entry_value.is_object() {
-                return Err(PkgError::Validation(format!(
-                    "Expected '{field_name}' field to be an object."
-                )));
+                bail!("Expected '{field_name}' field to be an object.");
             }
 
             for (sub_entry_name, sub_entry_value) in entry_value.entries() {
                 if !sub_entry_value.is_string() {
-                    return Err(PkgError::Validation(format!(
-                        "Expected '{sub_entry_name}' in '{field_name}' field to be a string."
-                    )));
+                    bail!("Expected '{sub_entry_name}' in '{field_name}' field to be a string.");
                 }
 
                 let entry_path = sub_entry_value.to_string();
@@ -119,10 +112,7 @@ impl PkgEntries {
         Ok(entries)
     }
 
-    fn resolve_file_path(
-        pkg_contents: &PkgContents,
-        file_path: String,
-    ) -> Result<PathBuf, PkgError> {
+    fn resolve_file_path(pkg_contents: &PkgContents, file_path: String) -> Result<PathBuf> {
         let file_path = pkg_contents.pkg_dir.join(file_path);
         let should_skip_validation = pkg_contents.pkg_dir.ends_with(".tmp");
 
@@ -131,17 +121,14 @@ impl PkgEntries {
         }
 
         if !file_path.try_exists()? {
-            return Err(PkgError::Validation(format!(
-                "File '{}' is missing.",
-                file_path.display()
-            )));
+            bail!("File '{}' is missing.", file_path.display());
         }
 
         if !path_matches_a_pattern_in(&file_path, &pkg_contents.include_patterns) {
-            return Err(PkgError::Validation(format!(
+            bail!(
                 "File '{}' exists but does not mach any globs in 'files'.",
                 file_path.display()
-            )));
+            );
         }
 
         Ok(file_path)

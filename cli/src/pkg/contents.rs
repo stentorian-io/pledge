@@ -1,5 +1,5 @@
 use crate::path::path_matches_a_pattern_in;
-use crate::pkg::error::PkgError;
+use anyhow::Result;
 use glob::Pattern;
 use json::iterators::Members;
 use std::collections::HashSet;
@@ -14,7 +14,7 @@ pub struct PkgContents {
 }
 
 impl PkgContents {
-    pub fn new(pkg_dir: &Path, pkg_file_globs: Members) -> Result<Self, PkgError> {
+    pub fn new(pkg_dir: &Path, pkg_file_globs: Members) -> Result<Self> {
         let pkg_dir = pkg_dir.to_owned();
         let resolved_files = HashSet::new();
         let include_patterns = Self::get_file_include_patterns(&pkg_dir, pkg_file_globs)?;
@@ -28,7 +28,7 @@ impl PkgContents {
         })
     }
 
-    pub fn resolve_contents_in_dir(&mut self, dir: &PathBuf) -> Result<(), PkgError> {
+    pub fn resolve_contents_in_dir(&mut self, dir: &PathBuf) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry.unwrap();
             let entry_path = entry.path();
@@ -49,10 +49,7 @@ impl PkgContents {
         Ok(())
     }
 
-    fn get_file_include_patterns(
-        pkg_dir: &Path,
-        glob_paths: Members,
-    ) -> Result<Vec<Pattern>, PkgError> {
+    fn get_file_include_patterns(pkg_dir: &Path, glob_paths: Members) -> Result<Vec<Pattern>> {
         if glob_paths.len().eq(&0) {
             let glob_path = pkg_dir.join("**/*");
             let glob_path = glob_path.to_str().unwrap();
@@ -81,7 +78,7 @@ impl PkgContents {
         Ok(patterns)
     }
 
-    fn get_file_exclude_patterns() -> Result<Vec<Pattern>, PkgError> {
+    fn get_file_exclude_patterns() -> Result<Vec<Pattern>> {
         let mut patterns: Vec<Pattern> = Vec::new();
 
         // See https://docs.npmjs.com/cli/v10/configuring-npm/package-json#files

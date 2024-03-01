@@ -1,6 +1,6 @@
 use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntries;
-use crate::pkg::error::PkgError;
+use anyhow::{bail, Result};
 use json::JsonValue;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
@@ -8,7 +8,6 @@ use url::Url;
 
 pub mod contents;
 pub mod entries;
-pub mod error;
 
 pub struct Pkg {
     pub name: String,
@@ -20,11 +19,7 @@ pub struct Pkg {
 }
 
 impl Pkg {
-    pub fn new(
-        dir_path: PathBuf,
-        pkg_json: JsonValue,
-        registry_url: Url,
-    ) -> Result<Self, PkgError> {
+    pub fn new(dir_path: PathBuf, pkg_json: JsonValue, registry_url: Url) -> Result<Self> {
         let name = pkg_json["name"].to_string();
         let version = pkg_json["version"].to_string();
         let file_globs = pkg_json["files"].members();
@@ -42,19 +37,15 @@ impl Pkg {
         })
     }
 
-    pub fn parse_config_in_dir(path: &Path) -> Result<JsonValue, PkgError> {
+    pub fn parse_config_in_dir(path: &Path) -> Result<JsonValue> {
         if !path.is_dir() {
-            return Err(PkgError::Validation(
-                "Expected package path to be a directory.".into(),
-            ));
+            bail!("Expected package path to be a directory.");
         }
 
         let path = path.join("package.json");
 
         if !path.is_file() {
-            return Err(PkgError::Validation(
-                "Expected package path to contain a package.json file.".into(),
-            ));
+            bail!("Expected package path to contain a package.json file.");
         }
 
         let data = read_to_string(path)?;
@@ -63,28 +54,22 @@ impl Pkg {
         Ok(config)
     }
 
-    pub fn parse_config_as_json(data: String) -> Result<JsonValue, PkgError> {
+    pub fn parse_config_as_json(data: String) -> Result<JsonValue> {
         let pkg = json::parse(&data)?;
 
         let pkg_name = &pkg["name"];
         let pkg_version = &pkg["version"];
 
         if !pkg_name.is_string() {
-            return Err(PkgError::Validation(
-                "Expected package 'name' field to be a string.".into(),
-            ));
-        }
-
-        if !pkg_version.is_string() {
-            return Err(PkgError::Validation(
-                "Expected package 'version' field to be a string.".into(),
-            ));
+            bail!("Expected package 'name' field to be a string.");
+        } else if !pkg_version.is_string() {
+            bail!("Expected package 'version' field to be a string.");
         }
 
         Ok(pkg)
     }
 
-    pub fn get_registry_url(dir_path: &Path) -> Result<Url, PkgError> {
+    pub fn get_registry_url(dir_path: &Path) -> Result<Url> {
         let npmrc_path = dir_path.join(".npmrc");
 
         if npmrc_path.is_file() {
