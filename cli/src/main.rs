@@ -2,6 +2,7 @@ use anyhow::{bail, Result};
 use std::env;
 use std::path::PathBuf;
 
+mod ast;
 mod npm;
 mod path;
 mod pkg;
