@@ -1,4 +1,4 @@
-use crate::diff::diff;
+use crate::diff::diff_between;
 use anyhow::{bail, Result};
 use std::env;
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let pkg_current = npm::load_from_dir(working_dir)?;
     let pkg_previous = npm::fetch_from_registry(&pkg_current)?;
 
-    diff(pkg_previous, pkg_current)?;
+    diff_between(pkg_previous, pkg_current)?;
 
     Ok(())
 }
