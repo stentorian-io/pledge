@@ -1,9 +1,9 @@
+use crate::pkg::entries::PkgEntry;
 use anyhow::{bail, Result};
-use std::path::Path;
 use swc_common::errors::{ColorConfig, Handler};
 use swc_common::input::StringInput;
 use swc_common::sync::Lrc;
-use swc_common::SourceMap;
+use swc_common::{FileName, SourceMap};
 use swc_ecma_ast::{
     Decl, EsVersion, ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr, Module,
     NamedExport,
@@ -11,16 +11,26 @@ use swc_ecma_ast::{
 use swc_ecma_parser::lexer::Lexer;
 use swc_ecma_parser::{Parser, Syntax};
 
-pub fn parse_esm_module(file_path: &Path) -> Result<Module> {
-    let is_ts_file = match file_path.extension().unwrap().to_str().unwrap() {
-        "ts" | "tsx" => true,
-        _ => false,
+pub fn parse_esm_module(entry: &PkgEntry) -> Result<Module> {
+    println!(
+        "Loading '{}' module '{}'...",
+        entry.name,
+        entry.path.display()
+    );
+
+    let file_data = entry.load_file()?;
+    let file_data = match file_data {
+        Some(data) => String::from_utf8(data)?,
+        None => bail!(
+            "Failed to load module: file '{}' does not exist.",
+            entry.path.display()
+        ),
     };
 
     let source_map: Lrc<SourceMap> = Default::default();
-    let source_file = source_map.load_file(file_path)?;
+    let source_file = source_map.new_source_file(FileName::Anon, file_data);
 
-    let syntax = if is_ts_file {
+    let syntax = if entry.ext.is_ts() {
         Syntax::Typescript(Default::default())
     } else {
         Syntax::Es(Default::default())
@@ -40,7 +50,7 @@ pub fn parse_esm_module(file_path: &Path) -> Result<Module> {
         parse_error.into_diagnostic(&handler).emit();
     }
 
-    let module = if is_ts_file {
+    let module = if entry.ext.is_ts() {
         parser.parse_typescript_module()
     } else {
         parser.parse_module()
@@ -48,7 +58,7 @@ pub fn parse_esm_module(file_path: &Path) -> Result<Module> {
 
     if let Err(parse_error) = module {
         parse_error.into_diagnostic(&handler).emit();
-        bail!("Failed to parse module '{}'.", file_path.display());
+        bail!("Failed to parse module '{}'.", entry.name);
     }
 
     Ok(module.unwrap())

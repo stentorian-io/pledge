@@ -13,19 +13,23 @@ pub struct PkgTarball {
     dir: PathBuf,
     source_url: Url,
     checksum: Vec<u8>,
+    data: Option<Vec<u8>>,
 }
 
 impl PkgTarball {
     pub fn new(name: String, dir: PathBuf, source_url: Url, checksum: Vec<u8>) -> Result<Self> {
+        let data = None;
+
         Ok(PkgTarball {
             name,
             dir,
             source_url,
             checksum,
+            data,
         })
     }
 
-    pub fn download_to_disk_if_needed(&self) -> Result<PathBuf> {
+    pub fn download_if_needed(&mut self) -> Result<()> {
         let tarball_path = self.path();
 
         if tarball_path.is_file() {
@@ -34,7 +38,7 @@ impl PkgTarball {
             if self.is_integrity_ok(&tarball_data) {
                 println!("Valid tarball exists on file system. Will use existing...");
 
-                return Ok(tarball_path);
+                return self.decode_and_store_data(tarball_data);
             }
 
             println!("Found existing tarball but integrity check failed. Will remove existing...");
@@ -50,8 +54,9 @@ impl PkgTarball {
         }
 
         let tarball_data = response.unwrap().bytes()?;
+        let tarball_data_vec = tarball_data.to_vec();
 
-        if !self.is_integrity_ok(&tarball_data.to_vec()) {
+        if !self.is_integrity_ok(&tarball_data_vec) {
             bail!("Could not verify integrity of downloaded tarball.");
         }
 
@@ -61,36 +66,60 @@ impl PkgTarball {
             fs::create_dir(&self.dir)?;
         }
 
-        fs::write(&tarball_path, tarball_data)?;
-        Ok(tarball_path)
+        fs::write(&tarball_path, &tarball_data)?;
+        self.decode_and_store_data(tarball_data_vec)
     }
 
-    pub fn unpack_into(
-        &self,
-        pkg_dir: &PathBuf,
-        pkg_config: &mut String,
-        pkg_files: &mut HashSet<PathBuf>,
-    ) -> Result<()> {
-        let tarball_buffer = fs::read(self.path())?;
-        let tarball_decoder = GzDecoder::new(tarball_buffer.as_slice());
-        let mut tarball_data = Archive::new(tarball_decoder);
+    pub fn get_files(&self) -> Result<HashSet<PathBuf>> {
+        let mut files = HashSet::new();
 
-        for entry in tarball_data.entries()? {
-            let mut entry = entry.unwrap();
-            let entry_path = entry
-                .header()
-                .path()?
-                .strip_prefix("package")?
-                .to_path_buf();
+        if let Some(data) = &self.data {
+            let mut archive = Archive::new(&data[..]);
 
-            if entry_path.file_name().unwrap().eq("package.json") {
-                entry.read_to_string(pkg_config)?;
+            for entry in archive.entries()? {
+                let entry_path = entry
+                    .unwrap()
+                    .header()
+                    .path()?
+                    .strip_prefix("package")?
+                    .to_path_buf();
+
+                files.insert(entry_path);
             }
-
-            pkg_files.insert(pkg_dir.join(entry_path));
         }
 
-        Ok(())
+        Ok(files)
+    }
+
+    pub fn load_file_by_path(&self, file_path: &PathBuf) -> Result<Option<Vec<u8>>> {
+        if let Some(data) = &self.data {
+            let mut archive = Archive::new(&data[..]);
+
+            for entry in archive.entries()? {
+                let mut entry = entry.unwrap();
+                let entry_path = entry
+                    .header()
+                    .path()?
+                    .strip_prefix("package")?
+                    .to_path_buf();
+
+                if entry_path.eq(file_path) {
+                    let mut buffer = Vec::new();
+                    entry.read_to_end(&mut buffer)?;
+                    return Ok(Some(buffer));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn decode_and_store_data(&mut self, data: Vec<u8>) -> Result<()> {
+        let mut buffer = Vec::new();
+        let mut decoder = GzDecoder::new(&data[..]);
+
+        decoder.read_to_end(&mut buffer)?;
+        Ok(self.data = Some(buffer))
     }
 
     fn path(&self) -> PathBuf {

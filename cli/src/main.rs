@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 mod ast;
 mod diff;
+mod fs;
 mod npm;
-mod path;
 mod pkg;
 
 fn main() -> Result<()> {

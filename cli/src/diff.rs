@@ -1,11 +1,12 @@
 use crate::ast::{get_items_in_module, parse_esm_module};
+use crate::pkg::entries::PkgEntry;
 use crate::pkg::Pkg;
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::collections::HashMap;
 
 pub fn diff_between(previous: Pkg, current: Pkg) -> Result<()> {
     let diff_results = vec![
-        diff_pkg_contents(&previous, &current),
+        diff_pkg_assets(&previous, &current)?,
         diff_pkg_entries(&previous.entries.main, &current.entries.main)?,
     ];
 
@@ -22,25 +23,54 @@ pub fn diff_between(previous: Pkg, current: Pkg) -> Result<()> {
     Ok(())
 }
 
-fn diff_pkg_contents(previous: &Pkg, current: &Pkg) -> u32 {
+fn diff_pkg_assets(previous: &Pkg, current: &Pkg) -> Result<u32> {
     let mut red_flag_count: u32 = 0;
 
-    let previous_files = &previous.contents.resolved_files;
-    let current_files = &current.contents.resolved_files;
+    let previous_files = previous.contents.file_list()?;
+    let current_files = current.contents.file_list()?;
 
-    for missing_file_path in previous_files.difference(current_files) {
+    for missing_file in previous_files.difference(&current_files) {
         red_flag_count += 1;
 
         println!(
             "BREAKING CHANGE: File {} was removed.",
-            missing_file_path.to_str().unwrap()
+            missing_file.to_str().unwrap()
         );
     }
 
-    red_flag_count
+    Ok(red_flag_count)
 }
 
-fn diff_pkg_entries(previous: &PathBuf, current: &PathBuf) -> Result<u32> {
+fn diff_pkg_entries(
+    previous_entries: &HashMap<String, PkgEntry>,
+    current_entries: &HashMap<String, PkgEntry>,
+) -> Result<u32> {
+    let mut red_flag_count: u32 = 0;
+
+    for (previous_entry_name, previous_entry) in previous_entries.iter() {
+        let matching_current_entry = current_entries.get(previous_entry_name);
+
+        if matching_current_entry.is_none() {
+            red_flag_count += 1;
+
+            println!(
+                "BREAKING CHANGE: Entry {} was removed.",
+                previous_entry_name
+            );
+
+            continue;
+        }
+
+        let matching_current_entry = matching_current_entry.unwrap();
+        let module_diff_red_flag_count = diff_modules(previous_entry, matching_current_entry)?;
+
+        red_flag_count += module_diff_red_flag_count;
+    }
+
+    Ok(red_flag_count)
+}
+
+fn diff_modules(previous: &PkgEntry, current: &PkgEntry) -> Result<u32> {
     let previous_module = parse_esm_module(previous)?;
     let current_module = parse_esm_module(current)?;
 

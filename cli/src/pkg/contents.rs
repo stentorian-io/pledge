@@ -1,36 +1,71 @@
-use crate::path::path_matches_a_pattern_in;
+use crate::fs::path::path_matches_a_pattern_in;
+use crate::pkg::tarball::PkgTarball;
 use anyhow::Result;
 use glob::Pattern;
 use json::iterators::Members;
+use json::JsonValue;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct PkgContents {
     pub pkg_dir: PathBuf,
-    pub resolved_files: HashSet<PathBuf>,
     pub include_patterns: Vec<Pattern>,
     pub exclude_patterns: Vec<Pattern>,
-    pub is_from_tarball: bool,
+    pkg_tarball: Option<PkgTarball>,
 }
 
 impl PkgContents {
-    pub fn new(pkg_dir: &Path, pkg_file_globs: Members, is_from_tarball: bool) -> Result<Self> {
+    pub fn new(
+        pkg_dir: &Path,
+        pkg_json: &JsonValue,
+        pkg_tarball: Option<PkgTarball>,
+    ) -> Result<Self> {
         let pkg_dir = pkg_dir.to_owned();
-        let resolved_files = HashSet::new();
-        let include_patterns = Self::get_file_include_patterns(&pkg_dir, pkg_file_globs)?;
+        let file_globs = pkg_json["files"].members();
+
+        let include_patterns = Self::get_file_include_patterns(&pkg_dir, file_globs)?;
         let exclude_patterns = Self::get_file_exclude_patterns(&pkg_dir)?;
 
         Ok(PkgContents {
             pkg_dir,
-            resolved_files,
             include_patterns,
             exclude_patterns,
-            is_from_tarball,
+            pkg_tarball,
         })
     }
 
-    pub fn resolve_contents_in_dir(&mut self, dir: &PathBuf) -> Result<()> {
+    pub fn is_tarball(&self) -> bool {
+        self.pkg_tarball.is_some()
+    }
+
+    pub fn file_list(&self) -> Result<HashSet<PathBuf>> {
+        if self.is_tarball() {
+            let tarball = self.pkg_tarball.as_ref().unwrap();
+            let tarball_files = tarball.get_files()?;
+
+            return Ok(tarball_files);
+        }
+
+        let pkg_dir = &self.pkg_dir.to_path_buf();
+        let mut files = HashSet::new();
+
+        self.get_files_in_dir(pkg_dir, &mut files)?;
+        Ok(files)
+    }
+
+    pub fn load_file(&self, file_path: &PathBuf) -> Result<Option<Vec<u8>>> {
+        if self.is_tarball() {
+            let tarball = self.pkg_tarball.as_ref().unwrap();
+            let tarball_file = tarball.load_file_by_path(file_path)?;
+
+            return Ok(tarball_file);
+        }
+
+        Ok(Some(fs::read(self.pkg_dir.join(file_path))?))
+    }
+
+    fn get_files_in_dir(&self, dir: &PathBuf, files: &mut HashSet<PathBuf>) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry.unwrap();
             let entry_path = entry.path();
@@ -40,11 +75,11 @@ impl PkgContents {
             }
 
             if entry.file_type()?.is_dir() {
-                return self.resolve_contents_in_dir(&entry_path);
+                return self.get_files_in_dir(&entry_path, files);
             }
 
             if path_matches_a_pattern_in(&entry_path, &self.include_patterns) {
-                self.resolved_files.insert(entry_path.to_owned());
+                files.insert(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf());
             }
         }
 

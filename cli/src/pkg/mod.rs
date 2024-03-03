@@ -2,9 +2,9 @@ use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntries;
 use anyhow::{bail, Result};
 use json::JsonValue;
-use std::collections::HashSet;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use url::Url;
 
 pub mod contents;
@@ -14,39 +14,32 @@ pub mod tarball;
 pub struct Pkg {
     pub name: String,
     pub version: String,
-    pub dir_path: PathBuf,
+    pub dir: PathBuf,
     pub registry_url: Url,
     pub entries: PkgEntries,
-    pub contents: PkgContents,
+    pub contents: Rc<PkgContents>,
 }
 
 impl Pkg {
     pub fn new(
-        dir_path: PathBuf,
-        pkg_json: JsonValue,
+        dir: PathBuf,
+        config: JsonValue,
         registry_url: Url,
-        tarball_files: HashSet<PathBuf>,
-    ) -> Result<Self> {
-        let name = pkg_json["name"].to_string();
-        let version = pkg_json["version"].to_string();
-        let file_globs = pkg_json["files"].members();
-        let is_from_tarball = !tarball_files.is_empty();
+        contents: Rc<PkgContents>,
+        entries: PkgEntries,
+    ) -> Self {
+        let name = config["name"].to_string();
+        let version = config["version"].to_string();
+        let contents = Rc::clone(&contents);
 
-        let mut contents = PkgContents::new(&dir_path, file_globs, is_from_tarball)?;
-        let entries = PkgEntries::new(&contents, &pkg_json)?;
-
-        if is_from_tarball {
-            contents.resolved_files = tarball_files;
-        }
-
-        Ok(Pkg {
+        Self {
             name,
             version,
-            dir_path,
+            dir,
             registry_url,
             contents,
             entries,
-        })
+        }
     }
 
     pub fn parse_config_in_dir(path: &Path) -> Result<JsonValue> {
@@ -81,8 +74,8 @@ impl Pkg {
         Ok(pkg)
     }
 
-    pub fn get_registry_url(dir_path: &Path) -> Result<Url> {
-        let npmrc_path = dir_path.join(".npmrc");
+    pub fn get_registry_url(pkg_dir: &Path) -> Result<Url> {
+        let npmrc_path = pkg_dir.join(".npmrc");
 
         if npmrc_path.is_file() {
             let npmrc = read_to_string(npmrc_path)?;
@@ -95,10 +88,5 @@ impl Pkg {
         }
 
         Ok(Url::parse("https://registry.npmjs.org/")?)
-    }
-
-    pub fn resolve_dir_contents(mut self) -> Result<Self> {
-        self.contents.resolve_contents_in_dir(&self.dir_path)?;
-        Ok(self)
     }
 }
