@@ -1,3 +1,4 @@
+use crate::fs::file::FileExt;
 use crate::fs::path::get_matching_files_in_dir;
 use crate::pkg::tarball::PkgTarball;
 use anyhow::Result;
@@ -7,6 +8,8 @@ use json::JsonValue;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
+use tar::Entry;
 
 pub struct PkgContents {
     pub pkg_dir: PathBuf,
@@ -39,22 +42,37 @@ impl PkgContents {
         self.pkg_tarball.is_some()
     }
 
-    pub fn file_list(&self) -> Result<HashSet<PathBuf>> {
+    pub fn asset_list(&self) -> Result<HashSet<PathBuf>> {
         if self.is_tarball() {
             let tarball = self.pkg_tarball.as_ref().unwrap();
-            let tarball_files = tarball.get_files()?;
+            let tarball_files = tarball.get_files(Some(|entry: &Entry<&[u8]>| {
+                let entry_path = &entry.path().unwrap().to_path_buf();
+                let entry_ext = FileExt::from(entry_path)?;
+
+                Ok(entry_ext.is_other())
+            }))?;
 
             return Ok(tarball_files);
         }
 
         let pkg_dir = &self.pkg_dir.to_path_buf();
         let mut matched_files = HashSet::new();
+        let mut exclude_patterns = self.exclude_patterns.clone();
+
+        for ext in FileExt::iter() {
+            if !ext.is_other() {
+                let glob = format!("**/*.{}", ext.to_value());
+                let pattern = Pattern::new(glob.as_str())?;
+
+                exclude_patterns.push(pattern);
+            }
+        }
 
         get_matching_files_in_dir(
             pkg_dir,
             &mut matched_files,
             &self.include_patterns,
-            &self.exclude_patterns,
+            &exclude_patterns,
             |entry_path| Ok(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf()),
         )?;
 

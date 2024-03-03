@@ -26,15 +26,15 @@ pub fn diff_between(previous: Pkg, current: Pkg) -> Result<()> {
 fn diff_pkg_assets(previous: &Pkg, current: &Pkg) -> Result<u32> {
     let mut red_flag_count: u32 = 0;
 
-    let previous_files = previous.contents.file_list()?;
-    let current_files = current.contents.file_list()?;
+    let previous_assets = previous.contents.asset_list()?;
+    let current_assets = current.contents.asset_list()?;
 
-    for missing_file in previous_files.difference(&current_files) {
+    for missing_asset in previous_assets.difference(&current_assets) {
         red_flag_count += 1;
 
         println!(
-            "BREAKING CHANGE: File {} was removed.",
-            missing_file.to_str().unwrap()
+            "BREAKING CHANGE: Asset {} is missing.",
+            missing_asset.to_str().unwrap()
         );
     }
 

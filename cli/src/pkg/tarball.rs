@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
-use tar::Archive;
+use tar::{Archive, Entry};
 use url::Url;
 
 pub struct PkgTarball {
@@ -70,15 +70,28 @@ impl PkgTarball {
         self.decode_and_store_data(tarball_data_vec)
     }
 
-    pub fn get_files(&self) -> Result<HashSet<PathBuf>> {
+    pub fn get_files<ShouldInclude>(
+        &self,
+        should_include: Option<ShouldInclude>,
+    ) -> Result<HashSet<PathBuf>>
+    where
+        ShouldInclude: Fn(&Entry<&[u8]>) -> Result<bool>,
+    {
         let mut files = HashSet::new();
 
         if let Some(data) = &self.data {
             let mut archive = Archive::new(&data[..]);
 
             for entry in archive.entries()? {
+                let entry = entry.unwrap();
+
+                if let Some(should_include) = &should_include {
+                    if !should_include(&entry)? {
+                        continue;
+                    }
+                }
+
                 let entry_path = entry
-                    .unwrap()
                     .header()
                     .path()?
                     .strip_prefix("package")?
