@@ -1,4 +1,4 @@
-use crate::fs::path::path_matches_a_pattern_in;
+use crate::fs::path::get_matching_files_in_dir;
 use crate::pkg::tarball::PkgTarball;
 use anyhow::Result;
 use glob::Pattern;
@@ -48,10 +48,17 @@ impl PkgContents {
         }
 
         let pkg_dir = &self.pkg_dir.to_path_buf();
-        let mut files = HashSet::new();
+        let mut matched_files = HashSet::new();
 
-        self.get_files_in_dir(pkg_dir, &mut files)?;
-        Ok(files)
+        get_matching_files_in_dir(
+            pkg_dir,
+            &mut matched_files,
+            &self.include_patterns,
+            &self.exclude_patterns,
+            |entry_path| Ok(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf()),
+        )?;
+
+        Ok(matched_files)
     }
 
     pub fn load_file(&self, file_path: &PathBuf) -> Result<Option<Vec<u8>>> {
@@ -63,27 +70,6 @@ impl PkgContents {
         }
 
         Ok(Some(fs::read(self.pkg_dir.join(file_path))?))
-    }
-
-    fn get_files_in_dir(&self, dir: &PathBuf, files: &mut HashSet<PathBuf>) -> Result<()> {
-        for entry in fs::read_dir(dir)? {
-            let entry = entry.unwrap();
-            let entry_path = entry.path();
-
-            if path_matches_a_pattern_in(&entry_path, &self.exclude_patterns) {
-                continue;
-            }
-
-            if entry.file_type()?.is_dir() {
-                return self.get_files_in_dir(&entry_path, files);
-            }
-
-            if path_matches_a_pattern_in(&entry_path, &self.include_patterns) {
-                files.insert(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf());
-            }
-        }
-
-        Ok(())
     }
 
     fn get_file_include_patterns(pkg_dir: &Path, glob_paths: Members) -> Result<Vec<Pattern>> {
