@@ -1,15 +1,18 @@
 use crate::ecma::parser::parse_esm_entry_into_ast;
 use crate::ecma::walker::get_exports_in_module;
 use crate::pkg::entries::PkgEntry;
+use anyhow::Result;
 
-pub fn diff_modules(previous: &PkgEntry, current: &PkgEntry) -> anyhow::Result<u32> {
+pub fn diff_modules(previous: &PkgEntry, current: &PkgEntry) -> Result<u32> {
     let mut red_flag_count: u32 = 0;
 
     let previous_module = parse_esm_entry_into_ast(previous)?;
     let current_module = parse_esm_entry_into_ast(current)?;
 
-    let (previous_default_export, previous_named_exports) = get_exports_in_module(&previous_module);
-    let (current_default_export, current_named_exports) = get_exports_in_module(&current_module);
+    let (previous_default_export, previous_named_exports) =
+        get_exports_in_module(&previous_module)?;
+
+    let (current_default_export, current_named_exports) = get_exports_in_module(&current_module)?;
 
     if previous_default_export.is_some() && current_default_export.is_none() {
         red_flag_count += 1;
