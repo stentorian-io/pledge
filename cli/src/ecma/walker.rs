@@ -104,7 +104,7 @@ fn get_default_export_declaration<'decl>(
 ) -> Option<EntityDeclaration<'decl>> {
     if let Some(export) = default_export_declaration {
         return Some(EntityDeclaration::from(&export.decl));
-    } else if let None = default_export_expression {
+    } else if default_export_expression.is_none() {
         return None;
     }
 

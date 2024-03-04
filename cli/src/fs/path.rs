@@ -22,7 +22,7 @@ where
         let entry = entry.unwrap();
         let entry_path = entry.path();
 
-        if path_matches_a_pattern_in(&entry_path, &exclude_patterns) {
+        if path_matches_a_pattern_in(&entry_path, exclude_patterns) {
             continue;
         }
 
@@ -36,7 +36,7 @@ where
             );
         }
 
-        if path_matches_a_pattern_in(&entry_path, &include_patterns) {
+        if path_matches_a_pattern_in(&entry_path, include_patterns) {
             buffer.insert(on_match(entry_path)?);
         }
     }

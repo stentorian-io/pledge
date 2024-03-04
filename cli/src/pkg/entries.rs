@@ -28,7 +28,7 @@ impl PkgEntry {
         let ext = FileExt::from(&path)
             .with_context(|| format!("Failed to get file extension for entry '{name}'."))?;
 
-        if let FileExt::OTHER(other) = ext {
+        if let FileExt::Other(other) = ext {
             bail!("Invalid entry file extension '{other}'.");
         }
 

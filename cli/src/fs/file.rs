@@ -1,33 +1,33 @@
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::path::Path;
 use strum_macros::EnumIter;
 
 #[derive(EnumIter)]
 pub enum FileExt {
-    JS,
-    JSX,
-    CJS,
-    MJS,
-    TS,
-    TSX,
-    CTS,
-    MTS,
-    OTHER(String),
+    Js,
+    Jsx,
+    Cjs,
+    Mjs,
+    Ts,
+    Tsx,
+    Cts,
+    Mts,
+    Other(String),
 }
 
 impl FileExt {
-    pub fn from(path: &PathBuf) -> Result<Self> {
+    pub fn from(path: &Path) -> Result<Self> {
         if let Some(extension) = path.extension() {
             let extension = match extension.to_str().unwrap() {
-                "js" => Self::JS,
-                "jsx" => Self::JSX,
-                "cjs" => Self::CJS,
-                "mjs" => Self::MJS,
-                "ts" => Self::TS,
-                "tsx" => Self::TSX,
-                "cts" => Self::CTS,
-                "mts" => Self::MTS,
-                other => Self::OTHER(other.into()),
+                "js" => Self::Js,
+                "jsx" => Self::Jsx,
+                "cjs" => Self::Cjs,
+                "mjs" => Self::Mjs,
+                "ts" => Self::Ts,
+                "tsx" => Self::Tsx,
+                "cts" => Self::Cts,
+                "mts" => Self::Mts,
+                other => Self::Other(other.into()),
             };
 
             return Ok(extension);
@@ -37,30 +37,27 @@ impl FileExt {
     }
 
     pub fn is_ts(&self) -> bool {
-        match self {
-            FileExt::TS | FileExt::TSX | FileExt::CTS | FileExt::MTS => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            FileExt::Ts | FileExt::Tsx | FileExt::Cts | FileExt::Mts
+        )
     }
 
     pub fn is_other(&self) -> bool {
-        match self {
-            FileExt::OTHER(_) => true,
-            _ => false,
-        }
+        matches!(self, FileExt::Other(_))
     }
 
     pub fn to_value(&self) -> &str {
         match self {
-            Self::JS => "js",
-            Self::JSX => "jsx",
-            Self::CJS => "cjs",
-            Self::MJS => "mjs",
-            Self::TS => "ts",
-            Self::TSX => "tsx",
-            Self::CTS => "cts",
-            Self::MTS => "mts",
-            Self::OTHER(other) => other,
+            Self::Js => "js",
+            Self::Jsx => "jsx",
+            Self::Cjs => "cjs",
+            Self::Mjs => "mjs",
+            Self::Ts => "ts",
+            Self::Tsx => "tsx",
+            Self::Cts => "cts",
+            Self::Mts => "mts",
+            Self::Other(other) => other,
         }
     }
 }

@@ -7,5 +7,5 @@ pub fn count_breaking_changes_between(previous: Pkg, current: Pkg) -> anyhow::Re
         diff_pkg_entries(&previous.entries.main, &current.entries.main)?,
     ];
 
-    Ok(diff_results.into_iter().fold(0, |sum, count| sum + count))
+    Ok(diff_results.into_iter().sum::<u32>())
 }

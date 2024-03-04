@@ -132,7 +132,9 @@ impl PkgTarball {
         let mut decoder = GzDecoder::new(&data[..]);
 
         decoder.read_to_end(&mut buffer)?;
-        Ok(self.data = Some(buffer))
+
+        self.data = Some(buffer);
+        Ok(())
     }
 
     fn path(&self) -> PathBuf {
