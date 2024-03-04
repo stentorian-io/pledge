@@ -27,7 +27,7 @@ pub fn load_from_dir(pkg_dir: PathBuf) -> Result<Pkg> {
     ))
 }
 
-pub fn fetch_from_registry(local_pkg: &Pkg) -> Result<Pkg> {
+pub fn fetch_from_server(local_pkg: &Pkg) -> Result<Pkg> {
     let pkg_dir = &local_pkg.dir;
     let pkg_dir_tmp = pkg_dir.join(".tmp");
     let pkg_registry_url = local_pkg.registry_url.clone();

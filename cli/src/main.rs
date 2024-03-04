@@ -1,4 +1,5 @@
-use crate::diff::diff_between;
+use crate::diff::comparer;
+use crate::pkg::registry;
 use anyhow::{bail, Result};
 use std::env;
 use std::path::PathBuf;
@@ -6,7 +7,6 @@ use std::path::PathBuf;
 mod diff;
 mod ecma;
 mod fs;
-mod npm;
 mod pkg;
 
 fn main() -> Result<()> {
@@ -19,10 +19,10 @@ fn main() -> Result<()> {
     let working_dir = args.last().unwrap();
     let working_dir = PathBuf::from(working_dir);
 
-    let pkg_current = npm::load_from_dir(working_dir)?;
-    let pkg_previous = npm::fetch_from_registry(&pkg_current)?;
+    let pkg_current = registry::load_from_dir(working_dir)?;
+    let pkg_previous = registry::fetch_from_server(&pkg_current)?;
 
-    let red_flag_count = diff_between(pkg_previous, pkg_current)?;
+    let red_flag_count = comparer::count_breaking_changes_between(pkg_previous, pkg_current)?;
 
     if red_flag_count.eq(&1) {
         bail!("Found {red_flag_count} breaking change.");
