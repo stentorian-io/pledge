@@ -13,7 +13,7 @@ pub fn get_matching_files_in_dir<OnMatch>(
     buffer: &mut HashSet<PathBuf>,
     include_patterns: &Vec<Pattern>,
     exclude_patterns: &Vec<Pattern>,
-    on_match: OnMatch,
+    on_match: &OnMatch,
 ) -> Result<()>
 where
     OnMatch: Fn(PathBuf) -> Result<PathBuf>,
@@ -27,13 +27,15 @@ where
         }
 
         if entry.file_type()?.is_dir() {
-            return get_matching_files_in_dir(
+            get_matching_files_in_dir(
                 &entry_path,
                 buffer,
                 include_patterns,
                 exclude_patterns,
                 on_match,
-            );
+            )?;
+
+            continue;
         }
 
         if path_matches_a_pattern_in(&entry_path, include_patterns) {

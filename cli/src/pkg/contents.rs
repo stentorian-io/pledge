@@ -73,7 +73,7 @@ impl PkgContents {
             &mut matched_files,
             &self.include_patterns,
             &exclude_patterns,
-            |entry_path| Ok(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf()),
+            &|entry_path| Ok(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf()),
         )?;
 
         Ok(matched_files)
