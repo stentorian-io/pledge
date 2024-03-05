@@ -8,7 +8,7 @@ use swc_ecma_ast::{
     ExportSpecifier, Module, ModuleExportName, NamedExport,
 };
 
-pub type ExternalSpecifiers<'module> = HashMap<PathBuf, &'module ExportSpecifier>;
+pub type ExternalSpecifiers<'module> = HashMap<PathBuf, Vec<&'module ExportSpecifier>>;
 pub type Declarations = HashMap<String, EntityDeclaration>;
 pub type DeclarationsWithExport<'module> = Vec<&'module ExportDecl>;
 pub type ExportsFacadeAll<'module> = Vec<&'module ExportAll>;
@@ -41,7 +41,7 @@ pub fn get_exports_in_module(
         declarations,
     )?;
 
-    add_facade_export_all_exports(&base_import_path, exports_facade_all, &mut named_exports)?;
+    add_export_all_facade_exports(&base_import_path, exports_facade_all, &mut named_exports)?;
     add_named_facade_exports(&base_import_path, named_facade_exports, &mut named_exports)?;
 
     Ok((default_export, named_exports))
@@ -60,8 +60,8 @@ fn get_items_in_module(
     let mut declarations = Declarations::new();
     let mut declarations_with_export = DeclarationsWithExport::new();
 
-    let mut exports_facade_all = ExportsFacadeAll::new();
-    let mut exports_named = ExportsNamed::new();
+    let mut export_all_exports = ExportsFacadeAll::new();
+    let mut named_exports = ExportsNamed::new();
 
     let mut default_export_declaration = None;
     let mut default_export_expression = None;
@@ -102,9 +102,9 @@ fn get_items_in_module(
             } else if module_declaration.is_export_default_expr() {
                 default_export_expression = module_declaration.as_export_default_expr();
             } else if module_declaration.is_export_all() {
-                exports_facade_all.push(module_declaration.as_export_all().unwrap());
+                export_all_exports.push(module_declaration.as_export_all().unwrap());
             } else if module_declaration.is_export_named() {
-                exports_named.push(module_declaration.as_export_named().unwrap());
+                named_exports.push(module_declaration.as_export_named().unwrap());
             } else if module_declaration.is_ts_export_assignment() {
                 todo!("handle TS export assignments")
             } else if module_declaration.is_ts_namespace_export() {
@@ -116,8 +116,8 @@ fn get_items_in_module(
     Ok((
         declarations,
         declarations_with_export,
-        exports_facade_all,
-        exports_named,
+        export_all_exports,
+        named_exports,
         default_export_declaration,
         default_export_expression,
     ))
@@ -165,7 +165,17 @@ fn get_named_export_declarations<'module>(
 
         for specifier in export.specifiers.iter() {
             if let Some(import_path) = external_export_src {
-                external_exports.insert(PathBuf::from(import_path.value.to_string()), specifier);
+                let import_path = import_path.value.as_str();
+                let import_path = PathBuf::from(import_path);
+
+                let specifiers_for_import = external_exports.get_mut(&import_path);
+
+                if specifiers_for_import.is_none() {
+                    external_exports.insert(import_path.to_owned(), vec![specifier]);
+                } else {
+                    specifiers_for_import.unwrap().push(specifier);
+                }
+
                 continue;
             }
 
@@ -206,7 +216,7 @@ fn get_named_export_names(specifier: &ExportNamedSpecifier) -> (String, String) 
     (actual_name, exported_name)
 }
 
-fn add_facade_export_all_exports(
+fn add_export_all_facade_exports(
     base_import_path: &PathBuf,
     exports: ExportsFacadeAll,
     buffer: &mut Declarations,
@@ -230,33 +240,40 @@ fn add_named_facade_exports(
     exports: ExternalSpecifiers,
     buffer: &mut Declarations,
 ) -> Result<()> {
-    for (import_file_path, exported_specifier) in exports {
+    for (import_file_path, specifiers) in exports {
         let import_file_path = base_import_path.join(import_file_path);
 
         let import_module = parse_import(&import_file_path)?;
         let import_module_dir = import_file_path.parent().unwrap().to_path_buf();
 
-        let (facade_default_export, mut facade_named_exports) =
+        let (default_facade_export, mut named_facade_exports) =
             get_exports_in_module(import_module_dir, import_module)?;
 
-        if exported_specifier.is_named() {
-            let specifier = exported_specifier.as_named().unwrap();
-            let (actual_name, exported_name) = get_named_export_names(specifier);
+        for specifiers in specifiers {
+            if specifiers.is_named() {
+                let specifier = specifiers.as_named().unwrap();
+                let (actual_name, exported_name) = get_named_export_names(specifier);
 
-            if actual_name.eq("default") {
-                buffer.insert(exported_name, facade_default_export.unwrap());
-            } else {
-                buffer.insert(
-                    exported_name.to_owned(),
-                    facade_named_exports.remove(&actual_name).unwrap(),
-                );
+                let exported_entity = if actual_name.eq("default") {
+                    default_facade_export.to_owned().unwrap()
+                } else {
+                    named_facade_exports.remove(&actual_name).unwrap()
+                };
+
+                buffer.insert(exported_name, exported_entity);
+                continue;
             }
-        } else if exported_specifier.is_namespace() {
-            let specifier = exported_specifier.as_namespace().unwrap();
-            let exported_name = unwrap_module_export_name(&specifier.name);
 
-            for (actual_name, declaration) in facade_named_exports {
-                buffer.insert(format!("{}.{}", exported_name, actual_name), declaration);
+            if specifiers.is_namespace() {
+                let specifier = specifiers.as_namespace().unwrap();
+                let exported_name = unwrap_module_export_name(&specifier.name);
+
+                for (actual_name, declaration) in named_facade_exports.iter() {
+                    buffer.insert(
+                        format!("{}.{}", exported_name, actual_name),
+                        declaration.to_owned(),
+                    );
+                }
             }
         }
     }

@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use swc_ecma_ast::{Class, ClassDecl, DefaultDecl, ExportDecl, FnDecl, Function, VarDeclarator};
 
+#[derive(Clone)]
 pub enum EntityDeclaration {
     Var(String, VarDeclarator),
     Class(String, Box<Class>),
