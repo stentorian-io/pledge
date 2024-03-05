@@ -1,30 +1,34 @@
 use crate::ecma::entity::EntityDeclaration;
-use anyhow::Result;
+use crate::ecma::parser::parse_import;
+use anyhow::{bail, Result};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use swc_ecma_ast::{
     ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr, Module, ModuleExportName,
     NamedExport,
 };
 
-pub type Declarations<'decl> = HashMap<String, EntityDeclaration<'decl>>;
-pub type DeclarationsWithExport<'decl> = Vec<&'decl ExportDecl>;
-pub type ExportsFacade<'decl> = Vec<&'decl ExportAll>;
-pub type ExportsNamed<'decl> = Vec<&'decl NamedExport>;
-pub type DefaultExportDeclaration<'decl> = Option<&'decl ExportDefaultDecl>;
-pub type DefaultExportExpression<'decl> = Option<&'decl ExportDefaultExpr>;
+pub type Declarations = HashMap<String, EntityDeclaration>;
+pub type DeclarationsWithExport<'module> = Vec<&'module ExportDecl>;
+pub type ExportsFacade<'module> = Vec<&'module ExportAll>;
+pub type ExportsNamed<'module> = Vec<&'module NamedExport>;
+pub type DefaultExportDeclaration<'module> = Option<&'module ExportDefaultDecl>;
+pub type DefaultExportExpression<'module> = Option<&'module ExportDefaultExpr>;
 
-pub fn get_exports_in_module(module: &Module) -> Result<(Option<EntityDeclaration>, Declarations)> {
+pub fn get_exports_in_module(
+    base_import_path: PathBuf,
+    module: Module,
+) -> Result<(Option<EntityDeclaration>, Declarations)> {
     let (
         mut declarations,
         declarations_with_export,
-        // TODO:
-        _exports_facade,
+        exports_facade,
         exports_named,
         default_export_declaration,
         default_export_expression,
-    ) = get_items_in_module(module)?;
+    ) = get_items_in_module(&module)?;
 
-    let named_exports = get_named_export_declarations(
+    let mut named_exports = get_named_export_declarations(
         &declarations_with_export,
         &exports_named,
         &mut declarations,
@@ -35,6 +39,19 @@ pub fn get_exports_in_module(module: &Module) -> Result<(Option<EntityDeclaratio
         &default_export_expression,
         declarations,
     )?;
+
+    for facade_export in exports_facade {
+        let import_file_path = facade_export.src.value.to_string();
+        let import_file_path = base_import_path.join(import_file_path);
+
+        let import_module = parse_import(&import_file_path)?;
+        let import_module_dir_path = import_file_path.parent().unwrap().to_path_buf();
+
+        let (_, facade_named_exports) =
+            get_exports_in_module(import_module_dir_path, import_module)?;
+
+        named_exports.extend(facade_named_exports);
+    }
 
     Ok((default_export, named_exports))
 }
@@ -71,13 +88,13 @@ fn get_items_in_module(
                 } else if declaration.is_fn_decl() {
                     EntityDeclaration::from(declaration.as_fn_decl().unwrap())?
                 } else if declaration.is_ts_module() {
-                    todo!()
+                    todo!("handle TS module declarations")
                 } else if declaration.is_ts_enum() {
-                    todo!()
+                    todo!("handle TS enum declarations")
                 } else if declaration.is_ts_interface() {
-                    todo!()
+                    todo!("handle TS interface declarations")
                 } else if declaration.is_ts_type_alias() {
-                    todo!()
+                    todo!("handle TS type alias declarations")
                 } else {
                     continue;
                 };
@@ -98,9 +115,9 @@ fn get_items_in_module(
             } else if module_declaration.is_export_named() {
                 exports_named.push(module_declaration.as_export_named().unwrap());
             } else if module_declaration.is_ts_export_assignment() {
-                todo!()
+                todo!("handle TS export assignments")
             } else if module_declaration.is_ts_namespace_export() {
-                todo!()
+                todo!("handle TS namespace exports")
             }
         }
     }
@@ -115,11 +132,11 @@ fn get_items_in_module(
     ))
 }
 
-fn get_default_export_declaration<'decl>(
-    default_export_declaration: &DefaultExportDeclaration<'decl>,
-    default_export_expression: &DefaultExportExpression<'decl>,
-    mut declarations: Declarations<'decl>,
-) -> Result<Option<EntityDeclaration<'decl>>> {
+fn get_default_export_declaration<'module>(
+    default_export_declaration: &DefaultExportDeclaration<'module>,
+    default_export_expression: &DefaultExportExpression<'module>,
+    mut declarations: Declarations,
+) -> Result<Option<EntityDeclaration>> {
     if let Some(export) = default_export_declaration {
         return Ok(Some(EntityDeclaration::from(&export.decl)?));
     } else if default_export_expression.is_none() {
@@ -137,11 +154,11 @@ fn get_default_export_declaration<'decl>(
     Ok(None)
 }
 
-fn get_named_export_declarations<'decl>(
-    declarations_with_export: &DeclarationsWithExport<'decl>,
-    exports_named: &ExportsNamed<'decl>,
-    declarations: &mut Declarations<'decl>,
-) -> Result<Declarations<'decl>> {
+fn get_named_export_declarations<'module>(
+    declarations_with_export: &DeclarationsWithExport<'module>,
+    exports_named: &ExportsNamed<'module>,
+    declarations: &mut Declarations,
+) -> Result<Declarations> {
     let mut exports: Declarations = Declarations::new();
 
     for export in declarations_with_export {
@@ -172,6 +189,13 @@ fn get_named_export_declarations<'decl>(
                 if declaration.is_some() {
                     exports.insert(name, declaration.unwrap());
                 }
+            } else if specifier.is_namespace() {
+                todo!("handle named export namespace specifiers")
+            } else if specifier.is_default() {
+                // This is likely used internally by SWC as part of their AST, since
+                // there's no way to name a default named export. A { default } export
+                // is handled by the is_named case above.
+                bail!("Cannot handle named default export specifier.")
             }
         }
     }

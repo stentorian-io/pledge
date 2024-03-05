@@ -58,6 +58,17 @@ impl PkgEntry {
     pub fn load_file(&self) -> Result<Option<Vec<u8>>> {
         self.contents.load_file(&self.path)
     }
+
+    pub fn dir_path(&self) -> PathBuf {
+        let dir_path_pkg = &self.contents.pkg_dir;
+        let dir_path_entry = self.path.parent();
+
+        return if dir_path_entry.is_some() {
+            dir_path_pkg.join(dir_path_entry.unwrap())
+        } else {
+            dir_path_pkg.to_path_buf()
+        };
+    }
 }
 
 impl PkgEntries {

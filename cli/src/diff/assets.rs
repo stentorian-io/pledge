@@ -1,13 +1,16 @@
 use crate::diff::modules::diff_modules;
+use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntry;
-use crate::pkg::Pkg;
 use std::collections::HashMap;
 
-pub fn diff_pkg_assets(previous: &Pkg, current: &Pkg) -> anyhow::Result<u32> {
+pub fn diff_pkg_assets(
+    previous_contents: &PkgContents,
+    current_contents: &PkgContents,
+) -> anyhow::Result<u32> {
     let mut red_flag_count: u32 = 0;
 
-    let previous_assets = previous.contents.asset_list()?;
-    let current_assets = current.contents.asset_list()?;
+    let previous_assets = previous_contents.asset_list()?;
+    let current_assets = current_contents.asset_list()?;
 
     for missing_asset in previous_assets.difference(&current_assets) {
         red_flag_count += 1;
