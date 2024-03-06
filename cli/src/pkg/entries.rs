@@ -146,10 +146,39 @@ impl PkgEntries {
             return Ok(entries);
         }
 
+        let is_browser_field = field_name.eq("browser");
+
         for (entry_name, entry_value) in property.entries() {
-            // Ignore exclusion entries — if property is browser.
-            if entry_value.is_boolean() {
-                continue;
+            if is_browser_field {
+                let mut should_skip_entry = false;
+
+                if entry_value.is_boolean() {
+                    if entry_value.as_bool().unwrap() {
+                        bail!("Browser override '{entry_name}' has unexpected value 'true'.");
+                    } else {
+                        // Browser exclusion entries are not used for comparisons or static analysis.
+                        should_skip_entry = true;
+                    }
+                }
+
+                if entry_name.starts_with("./") {
+                    match pkg_contents.pkg_dir.join(entry_name).try_exists() {
+                        Ok(does_entry_exist) => {
+                            if !does_entry_exist {
+                                bail!("Browser override '{entry_name}' does not exist.");
+                            }
+                        }
+                        Err(_) => {
+                            println!(
+                                "Unable to verify existence of browser override '{entry_name}'."
+                            )
+                        }
+                    }
+                }
+
+                if should_skip_entry {
+                    continue;
+                }
             }
 
             if entry_value.is_string() {
