@@ -1,7 +1,7 @@
 use crate::fs::file::FileExt;
 use crate::pkg::entries::PkgEntry;
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use swc_common::errors::{ColorConfig, Handler};
 use swc_common::input::StringInput;
@@ -26,13 +26,13 @@ pub fn parse_pkg_entry(entry: &PkgEntry) -> Result<Module> {
     };
 
     let source_map: Lrc<SourceMap> = Default::default();
-    let source_name = FileName::Real(entry.path.clone());
+    let source_name = FileName::Real(entry.path.to_owned());
     let source_file = source_map.new_source_file(source_name, file_data);
 
     parse_source_file(source_map, Rc::clone(&source_file))
 }
 
-pub fn parse_import(file_path: &PathBuf) -> Result<Module> {
+pub fn parse_import(file_path: &Path) -> Result<Module> {
     let source_map: Lrc<SourceMap> = Default::default();
     let source_file = source_map.load_file(file_path)?;
 

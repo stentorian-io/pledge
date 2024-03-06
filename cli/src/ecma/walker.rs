@@ -2,7 +2,7 @@ use crate::ecma::entity::EntityDeclaration;
 use crate::ecma::parser::parse_import;
 use anyhow::{bail, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use swc_ecma_ast::{
     ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr, ExportNamedSpecifier,
     ExportSpecifier, Module, ModuleExportName, NamedExport,
@@ -139,10 +139,10 @@ fn get_default_export_declaration<'module>(
     let export_name = export_identity.sym.to_string();
 
     if let Some(declaration) = declarations.remove(&export_name) {
-        return Ok(Some(declaration));
+        Ok(Some(declaration))
+    } else {
+        Ok(None)
     }
-
-    Ok(None)
 }
 
 fn get_named_export_declarations<'module>(
@@ -168,12 +168,10 @@ fn get_named_export_declarations<'module>(
                 let import_path = import_path.value.as_str();
                 let import_path = PathBuf::from(import_path);
 
-                let specifiers_for_import = external_exports.get_mut(&import_path);
-
-                if specifiers_for_import.is_none() {
-                    external_exports.insert(import_path.to_owned(), vec![specifier]);
+                if let Some(specifiers_for_import) = external_exports.get_mut(&import_path) {
+                    specifiers_for_import.push(specifier);
                 } else {
-                    specifiers_for_import.unwrap().push(specifier);
+                    external_exports.insert(import_path.to_owned(), vec![specifier]);
                 }
 
                 continue;
@@ -189,10 +187,9 @@ fn get_named_export_declarations<'module>(
             if specifier.is_named() {
                 let specifier = specifier.as_named().unwrap();
                 let (actual_name, exported_name) = get_named_export_names(specifier);
-                let exported_declaration = declarations.remove(&actual_name);
 
-                if exported_declaration.is_some() {
-                    internal_exports.insert(exported_name, exported_declaration.unwrap());
+                if let Some(exported_declaration) = declarations.remove(&actual_name) {
+                    internal_exports.insert(exported_name, exported_declaration);
                 }
             }
         }
@@ -211,13 +208,13 @@ fn unwrap_module_export_name(name: &ModuleExportName) -> String {
 fn get_named_export_names(specifier: &ExportNamedSpecifier) -> (String, String) {
     let actual_name = unwrap_module_export_name(&specifier.orig);
     let given_name = specifier.exported.as_ref().map(unwrap_module_export_name);
-    let exported_name = given_name.or(Some(actual_name.to_owned())).unwrap();
+    let exported_name = given_name.unwrap_or(actual_name.to_owned());
 
     (actual_name, exported_name)
 }
 
 fn add_export_all_facade_exports(
-    base_import_path: &PathBuf,
+    base_import_path: &Path,
     exports: ExportsFacadeAll,
     buffer: &mut Declarations,
 ) -> Result<()> {
@@ -236,7 +233,7 @@ fn add_export_all_facade_exports(
 }
 
 fn add_named_facade_exports(
-    base_import_path: &PathBuf,
+    base_import_path: &Path,
     exports: ExternalSpecifiers,
     buffer: &mut Declarations,
 ) -> Result<()> {

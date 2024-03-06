@@ -60,14 +60,11 @@ impl PkgEntry {
     }
 
     pub fn dir_path(&self) -> PathBuf {
-        let dir_path_pkg = &self.contents.pkg_dir;
-        let dir_path_entry = self.path.parent();
-
-        return if dir_path_entry.is_some() {
-            dir_path_pkg.join(dir_path_entry.unwrap())
+        if let Some(dir_path_entry) = self.path.parent() {
+            self.contents.pkg_dir.join(dir_path_entry)
         } else {
-            dir_path_pkg.to_path_buf()
-        };
+            self.contents.pkg_dir.to_owned()
+        }
     }
 }
 

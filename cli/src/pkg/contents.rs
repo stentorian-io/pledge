@@ -57,7 +57,7 @@ impl PkgContents {
 
         let pkg_dir = &self.pkg_dir.to_path_buf();
         let mut matched_files = HashSet::new();
-        let mut exclude_patterns = self.exclude_patterns.clone();
+        let mut exclude_patterns = self.exclude_patterns.to_owned();
 
         for ext in FileExt::iter() {
             if !ext.is_other() {

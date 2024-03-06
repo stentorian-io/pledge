@@ -30,7 +30,7 @@ pub fn load_from_dir(pkg_dir: PathBuf) -> Result<Pkg> {
 pub fn fetch_from_server(local_pkg: &Pkg) -> Result<Pkg> {
     let pkg_dir = &local_pkg.dir;
     let pkg_dir_tmp = pkg_dir.join(".tmp");
-    let pkg_registry_url = local_pkg.registry_url.clone();
+    let pkg_registry_url = local_pkg.registry_url.to_owned();
 
     let tarball = fetch_last_published_tarball_of(&pkg_dir_tmp, local_pkg)?;
     let pkg = unpack_tarball_into_pkg(pkg_dir.to_owned(), pkg_registry_url, tarball)?;
