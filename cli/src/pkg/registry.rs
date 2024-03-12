@@ -15,7 +15,9 @@ pub fn load_from_dir(pkg_dir: PathBuf) -> Result<Pkg> {
 
     println!("Will use {} as registry.", &pkg_registry_url);
 
-    let pkg_contents = Rc::new(PkgContents::new(&pkg_dir, &pkg_json, None)?);
+    let pkg_contents = PkgContents::new(pkg_dir.to_owned(), &pkg_json, None)?;
+    let pkg_contents = Rc::new(pkg_contents);
+
     let pkg_entries = PkgEntries::new(&pkg_json, Rc::clone(&pkg_contents))?;
 
     Ok(Pkg::new(
@@ -63,7 +65,10 @@ fn unpack_tarball_into_pkg(
     pkg_tarball.download_if_needed()?;
 
     let pkg_json = get_pkg_json_from_tarball(&mut pkg_tarball)?;
-    let pkg_contents = Rc::new(PkgContents::new(&pkg_dir, &pkg_json, Some(pkg_tarball))?);
+
+    let pkg_contents = PkgContents::new(pkg_dir.to_owned(), &pkg_json, Some(pkg_tarball))?;
+    let pkg_contents = Rc::new(pkg_contents);
+
     let pkg_entries = PkgEntries::new(&pkg_json, Rc::clone(&pkg_contents))?;
 
     Ok(Pkg::new(

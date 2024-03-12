@@ -1,5 +1,5 @@
 use anyhow::Result;
-use glob::Pattern;
+use glob::{glob, Pattern};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ pub fn get_matching_files_in_dir<OnMatch>(
     buffer: &mut HashSet<PathBuf>,
     include_patterns: &Vec<Pattern>,
     exclude_patterns: &Vec<Pattern>,
+    exclude_negation_patterns: &Vec<Pattern>,
     on_match: &OnMatch,
 ) -> Result<()>
 where
@@ -32,6 +33,7 @@ where
                 buffer,
                 include_patterns,
                 exclude_patterns,
+                exclude_negation_patterns,
                 on_match,
             )?;
 
@@ -40,6 +42,14 @@ where
 
         if path_matches_a_pattern_in(&entry_path, include_patterns) {
             buffer.insert(on_match(entry_path)?);
+        }
+    }
+
+    // Explicitly include any files excluded under the exclusion patterns
+    // that are also covered by a negated exclusion pattern.
+    for pattern in exclude_negation_patterns {
+        for file_path in glob(pattern.as_str())? {
+            buffer.insert(on_match(file_path?)?);
         }
     }
 
