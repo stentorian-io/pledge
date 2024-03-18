@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::path::Path;
 use strum_macros::EnumIter;
 
@@ -13,6 +13,7 @@ pub enum FileExt {
     Cts,
     Mts,
     Other(String),
+    None,
 }
 
 impl FileExt {
@@ -33,7 +34,7 @@ impl FileExt {
             return Ok(extension);
         }
 
-        bail!("Cannot get file extension from '{}'.", path.display());
+        Ok(Self::None)
     }
 
     pub fn is_ts(&self) -> bool {
@@ -58,6 +59,7 @@ impl FileExt {
             Self::Cts => "cts",
             Self::Mts => "mts",
             Self::Other(other) => other,
+            Self::None => "",
         }
     }
 }
