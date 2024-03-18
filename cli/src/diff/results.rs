@@ -4,6 +4,10 @@ use std::process::ExitCode;
 use std::time::Instant;
 use strum_macros::Display;
 
+const TERM_STYLE_BOLD: &str = "\x1b[1m";
+const TERM_STYLE_RED: &str = "\x1b[31m";
+const TERM_STYLE_RESET: &str = "\x1b[0m";
+
 type ExportName = String;
 pub type BrokenExport = (ExportName, BreakType);
 
@@ -47,9 +51,10 @@ impl DiffResults {
 
     pub fn print_asset_issues(&self) {
         if !self.removed_assets.is_empty() {
-            println!(
-                "\n{} to assets:",
-                Self::get_breaking_change_count_prefix(&self.removed_assets.len()),
+            Self::print_breaking_change_tally_header(
+                &self.removed_assets.len(),
+                "to assets:".into(),
+                true,
             );
 
             for missing_asset_path in self.removed_assets.iter() {
@@ -67,16 +72,15 @@ impl DiffResults {
             }
 
             match &entry.kind {
-                PkgEntryType::Main => println!(
-                    "\n{} to {} entry:",
-                    Self::get_breaking_change_count_prefix(&entry_issue_count),
-                    entry.kind
+                PkgEntryType::Main => Self::print_breaking_change_tally_header(
+                    &entry_issue_count,
+                    format!("to {} entry:", entry.kind),
+                    true,
                 ),
-                entry_kind => println!(
-                    "\n{} to {} entry {}:",
-                    Self::get_breaking_change_count_prefix(&entry_issue_count),
-                    entry_kind,
-                    entry.name
+                entry_kind => Self::print_breaking_change_tally_header(
+                    &entry_issue_count,
+                    format!("to {} entry {}:", entry_kind, entry.name),
+                    true,
                 ),
             }
 
@@ -93,16 +97,18 @@ impl DiffResults {
     pub fn print_conclusion(&self, start_timestamp: Instant) -> ExitCode {
         let issue_count = self.issue_count();
         let elapsed_time = start_timestamp.elapsed().as_secs_f32();
+        let is_error = issue_count.gt(&0);
 
-        println!(
-            "\n{} in {elapsed_time:.2}s.",
-            Self::get_breaking_change_count_prefix(&issue_count)
+        Self::print_breaking_change_tally_header(
+            &issue_count,
+            format!("in {elapsed_time:.2}s."),
+            is_error,
         );
 
-        if issue_count.eq(&0) {
-            ExitCode::SUCCESS
-        } else {
+        if is_error {
             ExitCode::FAILURE
+        } else {
+            ExitCode::SUCCESS
         }
     }
 
@@ -116,11 +122,19 @@ impl DiffResults {
         self.removed_assets.len() + broken_entry_issue_count
     }
 
-    fn get_breaking_change_count_prefix(issue_count: &usize) -> String {
-        if issue_count.eq(&0) {
+    fn print_breaking_change_tally_header(issue_count: &usize, suffix: String, is_error: bool) {
+        let prefix = if issue_count.eq(&0) {
             format!("Found {issue_count} breaking change")
         } else {
             format!("Found {issue_count} breaking changes")
-        }
+        };
+
+        let prefix = if is_error {
+            format!("{TERM_STYLE_RED}{prefix}")
+        } else {
+            prefix
+        };
+
+        println!("{TERM_STYLE_BOLD}\n{prefix} {suffix}{TERM_STYLE_RESET}");
     }
 }
