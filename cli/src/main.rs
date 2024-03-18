@@ -1,15 +1,13 @@
-use crate::diff::comparer;
-use crate::pkg::registry;
 use anyhow::{bail, Result};
+use breakpoint::diff::comparer;
+use breakpoint::pkg::registry;
 use std::env;
 use std::path::PathBuf;
+use std::process::ExitCode;
+use std::time::Instant;
 
-mod diff;
-mod ecma;
-mod fs;
-mod pkg;
-
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
+    let start_timestamp = Instant::now();
     let args: Vec<String> = env::args().collect();
 
     if args.len().ne(&2) {
@@ -22,15 +20,10 @@ fn main() -> Result<()> {
     let pkg_current = registry::load_from_dir(working_dir)?;
     let pkg_previous = registry::fetch_from_server(&pkg_current)?;
 
-    let red_flag_count = comparer::count_breaking_changes_between(pkg_previous, pkg_current)?;
+    let diff_result = comparer::count_breaking_changes_between(pkg_previous, pkg_current)?;
 
-    if red_flag_count.eq(&1) {
-        bail!("Found {red_flag_count} breaking change.");
-    } else if red_flag_count.gt(&1) {
-        bail!("Found {red_flag_count} breaking changes.");
-    } else {
-        println!("No breaking changes found!");
-    }
+    diff_result.print_asset_issues();
+    diff_result.print_entry_issues();
 
-    Ok(())
+    Ok(diff_result.print_conclusion(start_timestamp))
 }

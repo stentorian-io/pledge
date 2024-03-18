@@ -12,12 +12,6 @@ use swc_ecma_parser::lexer::Lexer;
 use swc_ecma_parser::{Parser, Syntax};
 
 pub fn parse_pkg_entry(entry: &PkgEntry) -> Result<Module> {
-    println!(
-        "Loading '{}' module '{}'...",
-        entry.name,
-        entry.path.display()
-    );
-
     // Entry module files are loaded from a PkgEntry's load_file method instead of the
     // SourceMap equivalent since we load a file either from disk or from a tarball.
     let file_data = match entry.load_file()? {

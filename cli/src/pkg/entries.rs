@@ -6,6 +6,7 @@ use json::JsonValue;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use strum_macros::Display;
 
 pub struct PkgEntry {
     pub name: String,
@@ -19,6 +20,18 @@ pub struct PkgEntries {
     pub bin: HashMap<String, PkgEntry>,
     pub browser: HashMap<String, PkgEntry>,
     pub exports: HashMap<String, PkgEntry>,
+}
+
+#[derive(Display, Debug, Clone)]
+pub enum PkgEntryType {
+    #[strum(serialize = "main")]
+    Main,
+    #[strum(serialize = "bin")]
+    Bin,
+    #[strum(serialize = "browser")]
+    Browser,
+    #[strum(serialize = "exports")]
+    Exports,
 }
 
 impl PkgEntry {
