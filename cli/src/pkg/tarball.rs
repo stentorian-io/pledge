@@ -110,11 +110,20 @@ impl PkgTarball {
 
             for entry in archive.entries()? {
                 let mut entry = entry.unwrap();
+
                 let entry_path = entry
                     .header()
                     .path()?
                     .strip_prefix("package")?
                     .to_path_buf();
+
+                let file_path = if file_path.starts_with("./") {
+                    file_path.strip_prefix("./")?
+                } else if file_path.starts_with("/") {
+                    file_path.strip_prefix("/")?
+                } else {
+                    file_path
+                };
 
                 if entry_path.eq(file_path) {
                     let mut buffer = Vec::new();
