@@ -1,5 +1,5 @@
 use crate::diff::assets::{diff_pkg_assets, diff_pkg_entries, diff_pkg_entry_exports};
-use crate::diff::results::{BreakType, BrokenEntry, BrokenExport, DiffResults};
+use crate::diff::results::{BreakType, BrokenEntryResult, BrokenExport, DiffResults};
 use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::{PkgEntry, PkgEntryType};
 use crate::pkg::Pkg;
@@ -60,7 +60,7 @@ fn count_breaking_changes_between_entries(
         diff_pkg_entries(&previous_entries, &current_entries)?;
 
     for missing_entry_name in missing_entries {
-        diff_results.broken_entries.push(BrokenEntry {
+        diff_results.broken_entries.push(BrokenEntryResult {
             is_missing: true,
             kind: entry_type.clone(),
             name: missing_entry_name.to_owned(),
@@ -75,7 +75,7 @@ fn count_breaking_changes_between_entries(
         let broken_exports =
             count_breaking_changes_between_entry_exports(previous_entry, current_entry)?;
 
-        diff_results.broken_entries.push(BrokenEntry {
+        diff_results.broken_entries.push(BrokenEntryResult {
             is_missing: false,
             kind: entry_type.clone(),
             name: entry_name.to_owned(),

@@ -1,3 +1,4 @@
+pub mod analyzer;
 mod assets;
-pub mod comparer;
+pub mod printer;
 mod results;

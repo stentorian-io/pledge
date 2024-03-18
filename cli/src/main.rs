@@ -1,5 +1,6 @@
 use anyhow::{bail, Result};
-use breakpoint::diff::comparer;
+use breakpoint::diff::analyzer;
+use breakpoint::diff::printer;
 use breakpoint::pkg::registry;
 use std::env;
 use std::path::PathBuf;
@@ -20,10 +21,10 @@ fn main() -> Result<ExitCode> {
     let pkg_current = registry::load_from_dir(working_dir)?;
     let pkg_previous = registry::fetch_from_server(&pkg_current)?;
 
-    let diff_result = comparer::count_breaking_changes_between(pkg_previous, pkg_current)?;
+    let diff_results = analyzer::count_breaking_changes_between(pkg_previous, pkg_current)?;
 
-    diff_result.print_asset_issues();
-    diff_result.print_entry_issues();
+    printer::print_asset_issues(&diff_results);
+    printer::print_entry_issues(&diff_results);
 
-    Ok(diff_result.print_conclusion(start_timestamp))
+    Ok(printer::print_exit(&diff_results, start_timestamp))
 }
