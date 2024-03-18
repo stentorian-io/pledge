@@ -35,7 +35,7 @@ pub fn fetch_from_server(local_pkg: &Pkg) -> Result<Pkg> {
     let pkg_registry_url = local_pkg.registry_url.to_owned();
 
     let tarball = fetch_last_published_tarball_of(&pkg_dir_tmp, local_pkg)?;
-    let pkg = unpack_tarball_into_pkg(pkg_dir.to_owned(), pkg_registry_url, tarball)?;
+    let pkg = download_and_unpack_pkg_tarball(pkg_dir.to_owned(), pkg_registry_url, tarball)?;
 
     Ok(pkg)
 }
@@ -57,7 +57,7 @@ fn fetch_last_published_tarball_of(pkg_dir: &PathBuf, local_pkg: &Pkg) -> Result
     Ok(pkg_tarball)
 }
 
-fn unpack_tarball_into_pkg(
+fn download_and_unpack_pkg_tarball(
     pkg_dir: PathBuf,
     pkg_registry_url: Url,
     mut pkg_tarball: PkgTarball,
