@@ -102,7 +102,7 @@ fn count_breaking_changes_between_entry_exports(
     if is_default_export_missing {
         broken_exports.push((String::from("Default export"), BreakType::Removed));
     } else if matching_default_export.is_some() {
-        todo!()
+        todo!("handle matching default export breaking diff analysis")
     }
 
     for missing_export_name in missing_named_exports {
@@ -113,7 +113,7 @@ fn count_breaking_changes_between_entry_exports(
     }
 
     for _named_export in matching_named_exports {
-        todo!()
+        todo!("handle matching named export breaking diff analysis")
     }
 
     Ok(broken_exports)

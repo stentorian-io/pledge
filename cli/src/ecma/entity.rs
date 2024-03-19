@@ -47,15 +47,15 @@ impl AsEntityDeclaration for &ExportDecl {
 
             Ok(EntityDeclaration::Var(name, declarator.to_owned()))
         } else if self.decl.is_ts_interface() {
-            todo!()
+            todo!("handle TS interface entity declaration")
         } else if self.decl.is_ts_enum() {
-            todo!()
+            todo!("handle TS enum entity declaration")
         } else if self.decl.is_ts_module() {
-            todo!()
+            todo!("handle TS module entity declaration")
         } else if self.decl.is_ts_type_alias() {
-            todo!()
+            todo!("handle TS type alias entity declaration")
         } else if self.decl.is_using() {
-            todo!()
+            todo!("handle using entity declaration")
         } else {
             bail!("Unsupported ExportDecl entity.")
         }
@@ -77,7 +77,7 @@ impl AsEntityDeclaration for &DefaultDecl {
 
             Ok(EntityDeclaration::Class(name, class))
         } else if self.is_ts_interface_decl() {
-            todo!()
+            todo!("handle TS interface entity declaration")
         } else {
             bail!("Unsupported DefaultDecl entity.")
         }
