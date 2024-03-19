@@ -20,12 +20,12 @@ impl PkgTarball {
     pub fn new(name: String, dir: PathBuf, source_url: Url, checksum: Vec<u8>) -> Result<Self> {
         let data = None;
 
-        Ok(PkgTarball {
-            name,
-            dir,
+        Ok(Self {
             source_url,
             checksum,
             data,
+            name,
+            dir,
         })
     }
 

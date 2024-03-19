@@ -3,7 +3,7 @@ use crate::ecma::parser::parse_pkg_entry;
 use crate::ecma::walker::get_exports_in_module;
 use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntry;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -11,8 +11,13 @@ pub fn diff_pkg_assets(
     previous_contents: &PkgContents,
     current_contents: &PkgContents,
 ) -> Result<Vec<PathBuf>> {
-    let previous_assets = previous_contents.asset_list()?;
-    let current_assets = current_contents.asset_list()?;
+    let previous_assets = previous_contents
+        .asset_list()
+        .with_context(|| "Failed to get list of previous package's assets.")?;
+
+    let current_assets = current_contents
+        .asset_list()
+        .with_context(|| "Failed to get list of current package's assets.")?;
 
     Ok(previous_assets
         .difference(&current_assets)
@@ -61,14 +66,35 @@ pub fn diff_pkg_entry_exports(
     let mut missing_named_exports = Vec::new();
     let mut matching_named_exports = HashMap::new();
 
-    let previous_module = parse_pkg_entry(previous_entry)?;
-    let current_module = parse_pkg_entry(current_entry)?;
+    let previous_module = parse_pkg_entry(previous_entry).with_context(|| {
+        format!(
+            "Failed to parse previous package entry module: {}",
+            previous_entry.name
+        )
+    })?;
+
+    let current_module = parse_pkg_entry(current_entry).with_context(|| {
+        format!(
+            "Failed to parse current package entry module: {}",
+            current_entry.name
+        )
+    })?;
 
     let (previous_default_export, previous_named_exports) =
-        get_exports_in_module(previous_entry.dir_path(), previous_module)?;
+        get_exports_in_module(previous_entry.dir_path(), previous_module).with_context(|| {
+            format!(
+                "Failed to get exports from previous package entry module: {}",
+                previous_entry.name
+            )
+        })?;
 
     let (current_default_export, mut current_named_exports) =
-        get_exports_in_module(current_entry.dir_path(), current_module)?;
+        get_exports_in_module(current_entry.dir_path(), current_module).with_context(|| {
+            format!(
+                "Failed to get exports from current package entry module: {}",
+                current_entry.name
+            )
+        })?;
 
     if previous_default_export.is_some() {
         if current_default_export.is_some() {

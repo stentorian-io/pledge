@@ -3,61 +3,67 @@ use crate::diff::results::{BreakType, BrokenEntryResult, BrokenExport, DiffResul
 use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::{PkgEntry, PkgEntryType};
 use crate::pkg::Pkg;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 
-pub fn count_breaking_changes_between(previous_pkg: Pkg, current_pkg: Pkg) -> Result<DiffResults> {
+pub fn get_diff_between(previous_pkg: Pkg, current_pkg: Pkg) -> Result<DiffResults> {
     let mut diff_report = DiffResults::new();
 
-    count_breaking_changes_between_contents(
+    analyze_changes_between_contents(
         &mut diff_report,
         &previous_pkg.contents,
         &current_pkg.contents,
-    )?;
+    )
+    .with_context(|| "Failed to count breaking changes between previous/current contents.")?;
 
-    count_breaking_changes_between_entries(
+    analyze_changes_between_entries(
         PkgEntryType::Main,
         &mut diff_report,
         &previous_pkg.entries.main,
         &current_pkg.entries.main,
-    )?;
+    )
+    .with_context(|| "Failed to count breaking changes between previous/current main entries.")?;
 
-    count_breaking_changes_between_entries(
+    analyze_changes_between_entries(
         PkgEntryType::Browser,
         &mut diff_report,
         &previous_pkg.entries.browser,
         &current_pkg.entries.browser,
-    )?;
+    )
+    .with_context(|| {
+        "Failed to count breaking changes between previous/current browser entries."
+    })?;
 
-    count_breaking_changes_between_entries(
+    analyze_changes_between_entries(
         PkgEntryType::Exports,
         &mut diff_report,
         &previous_pkg.entries.exports,
         &current_pkg.entries.exports,
-    )?;
+    )
+    .with_context(|| {
+        "Failed to count breaking changes between previous/current exports entries."
+    })?;
 
     Ok(diff_report)
 }
 
-fn count_breaking_changes_between_contents(
+fn analyze_changes_between_contents(
     diff_results: &mut DiffResults,
     previous_contents: &PkgContents,
     current_contents: &PkgContents,
 ) -> Result<()> {
-    let missing_assets = diff_pkg_assets(&previous_contents, &current_contents)?;
-    diff_results.removed_assets = missing_assets;
-
+    diff_results.removed_assets = diff_pkg_assets(&previous_contents, &current_contents)?;
     Ok(())
 }
 
-fn count_breaking_changes_between_entries(
+fn analyze_changes_between_entries(
     entry_type: PkgEntryType,
     diff_results: &mut DiffResults,
     previous_entries: &HashMap<String, PkgEntry>,
     current_entries: &HashMap<String, PkgEntry>,
 ) -> Result<()> {
-    let (missing_entries, matching_entries) =
-        diff_pkg_entries(&previous_entries, &current_entries)?;
+    let (missing_entries, matching_entries) = diff_pkg_entries(&previous_entries, &current_entries)
+        .with_context(|| "Failed to analyze diff between previous & current entries.")?;
 
     for missing_entry_name in missing_entries {
         diff_results.broken_entries.push(BrokenEntryResult {
@@ -72,8 +78,10 @@ fn count_breaking_changes_between_entries(
         let (entry_name, entries) = matching_entry;
         let (previous_entry, current_entry) = entries;
 
-        let broken_exports =
-            count_breaking_changes_between_entry_exports(previous_entry, current_entry)?;
+        let broken_exports = analyze_changes_between_entry_exports(previous_entry, current_entry)
+            .with_context(|| {
+            format!("Failed to analyze export diff between previous & current entry: {entry_name}")
+        })?;
 
         diff_results.broken_entries.push(BrokenEntryResult {
             is_missing: false,
@@ -86,7 +94,7 @@ fn count_breaking_changes_between_entries(
     Ok(())
 }
 
-fn count_breaking_changes_between_entry_exports(
+fn analyze_changes_between_entry_exports(
     previous_entry: &PkgEntry,
     current_entry: &PkgEntry,
 ) -> Result<Vec<BrokenExport>> {

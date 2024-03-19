@@ -37,19 +37,17 @@ pub enum PkgEntryType {
 impl PkgEntry {
     pub fn new(name: String, path: PathBuf, contents: Rc<PkgContents>) -> Result<Self> {
         let pkg_file_path = contents.pkg_dir.join(&path);
+        let pkg_entry_ext = FileExt::from(&path);
 
-        let ext = FileExt::from(&path)
-            .with_context(|| format!("Failed to get file extension for entry '{name}'."))?;
-
-        if let FileExt::Other(other) = ext {
+        if let FileExt::Other(other) = pkg_entry_ext {
             bail!("Invalid entry file extension '{other}'.");
         }
 
         let entry = Self {
             contents: Rc::clone(&contents),
             path: path.to_owned(),
+            ext: pkg_entry_ext,
             name,
-            ext,
         };
 
         if contents.is_tarball() {
@@ -59,17 +57,16 @@ impl PkgEntry {
         if !pkg_file_path.try_exists()? {
             bail!("Entry '{}' does not exist.", path.display());
         } else if !path_matches_a_pattern_in(&pkg_file_path, &contents.include_patterns) {
-            bail!(
-                "Entry '{}' exists but is not included in 'files'.",
-                path.display()
-            );
+            bail!("Entry '{}' exists but is not in 'files'.", path.display());
         }
 
         Ok(entry)
     }
 
     pub fn load_file(&self) -> Result<Option<Vec<u8>>> {
-        self.contents.load_file(&self.path)
+        self.contents
+            .load_file(&self.path)
+            .with_context(|| format!("Failed to load package entry file: {}", self.path.display()))
     }
 
     pub fn dir_path(&self) -> PathBuf {
@@ -83,10 +80,17 @@ impl PkgEntry {
 
 impl PkgEntries {
     pub fn new(pkg_json: &JsonValue, pkg_contents: Rc<PkgContents>) -> Result<PkgEntries> {
-        let main = Self::resolve_main_entry(pkg_json, Rc::clone(&pkg_contents))?;
-        let browser = Self::resolve_browser_entries(pkg_json, Rc::clone(&pkg_contents))?;
-        let bin = Self::resolve_bin_entries(pkg_json, Rc::clone(&pkg_contents))?;
-        let exports = Self::resolve_exports_entries(pkg_json, Rc::clone(&pkg_contents))?;
+        let main = Self::resolve_main_entry(pkg_json, Rc::clone(&pkg_contents))
+            .with_context(|| "Failed to resolve main entry.")?;
+
+        let browser = Self::resolve_browser_entries(pkg_json, Rc::clone(&pkg_contents))
+            .with_context(|| "Failed to resolve browser entries.")?;
+
+        let bin = Self::resolve_bin_entries(pkg_json, Rc::clone(&pkg_contents))
+            .with_context(|| "Failed to resolve bin entries.")?;
+
+        let exports = Self::resolve_exports_entries(pkg_json, Rc::clone(&pkg_contents))
+            .with_context(|| "Failed to resolve exports entries.")?;
 
         Ok(Self {
             main,

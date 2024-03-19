@@ -1,6 +1,6 @@
 use crate::pkg::contents::PkgContents;
 use crate::pkg::entries::PkgEntries;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use json::JsonValue;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
@@ -54,8 +54,9 @@ impl Pkg {
             bail!("Expected package path to contain a package.json file.");
         }
 
-        let data = read_to_string(path)?;
-        let config = Self::parse_config_as_json(data)?;
+        let config = read_to_string(path)?;
+        let config = Self::parse_config_as_json(config)
+            .with_context(|| "Failed to parse package.json file contents.")?;
 
         Ok(config)
     }

@@ -1,7 +1,7 @@
 use crate::fs::file::FileExt;
 use crate::fs::path::get_matching_files_in_dir;
 use crate::pkg::tarball::PkgTarball;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glob::Pattern;
 use json::iterators::Members;
 use json::JsonValue;
@@ -25,7 +25,7 @@ impl PkgContents {
         pkg_json: &JsonValue,
         pkg_tarball: Option<PkgTarball>,
     ) -> Result<Self> {
-        let mut contents = PkgContents {
+        let mut contents = Self {
             pkg_dir,
             pkg_tarball,
             include_patterns: Vec::new(),
@@ -35,10 +35,14 @@ impl PkgContents {
 
         if contents.pkg_tarball.is_none() {
             let include_globs = pkg_json["files"].members();
-            let include_patterns = contents.get_file_include_patterns(include_globs)?;
 
-            let (exclude_patterns, exclude_negation_patterns) =
-                contents.get_file_exclude_patterns(&include_patterns)?;
+            let include_patterns = contents
+                .get_file_include_patterns(include_globs)
+                .with_context(|| "Failed to gather package file include patterns.")?;
+
+            let (exclude_patterns, exclude_negation_patterns) = contents
+                .get_file_exclude_patterns(&include_patterns)
+                .with_context(|| "Failed to gather package file exclude patterns.")?;
 
             contents.include_patterns = include_patterns;
             contents.exclude_patterns = exclude_patterns;
@@ -55,12 +59,14 @@ impl PkgContents {
     pub fn asset_list(&self) -> Result<HashSet<PathBuf>> {
         if self.is_tarball() {
             let tarball = self.pkg_tarball.as_ref().unwrap();
-            let tarball_files = tarball.get_files(Some(|entry: &Entry<&[u8]>| {
-                let entry_path = &entry.path().unwrap().to_path_buf();
-                let entry_ext = FileExt::from(entry_path)?;
+            let tarball_files = tarball
+                .get_files(Some(|entry: &Entry<&[u8]>| {
+                    let entry_path = &entry.path().unwrap().to_path_buf();
+                    let entry_ext = FileExt::from(entry_path);
 
-                Ok(entry_ext.is_other())
-            }))?;
+                    Ok(entry_ext.is_other())
+                }))
+                .with_context(|| "Failed to get package tarball files.")?;
 
             return Ok(tarball_files);
         }
@@ -72,7 +78,14 @@ impl PkgContents {
             if !ext.is_other() {
                 let glob_path = format!("**/*.{}", ext.to_value());
                 let glob_path = self.pkg_dir.join(glob_path);
-                let glob_pattern = Pattern::new(glob_path.to_str().unwrap())?;
+
+                let glob_pattern =
+                    Pattern::new(glob_path.to_str().unwrap()).with_context(|| {
+                        format!(
+                            "Invalid FileExt exclusion glob pattern: {}",
+                            glob_path.display()
+                        )
+                    })?;
 
                 exclude_patterns.push(glob_pattern);
             }
@@ -85,7 +98,8 @@ impl PkgContents {
             &exclude_patterns,
             &self.exclude_negation_patterns,
             &|entry_path| Ok(entry_path.strip_prefix(&self.pkg_dir)?.to_path_buf()),
-        )?;
+        )
+        .with_context(|| "Failed to get package directory files.")?;
 
         Ok(matched_files)
     }
@@ -93,19 +107,34 @@ impl PkgContents {
     pub fn load_file(&self, file_path: &PathBuf) -> Result<Option<Vec<u8>>> {
         if self.is_tarball() {
             let tarball = self.pkg_tarball.as_ref().unwrap();
-            let tarball_file = tarball.load_file_by_path(file_path)?;
+
+            let tarball_file = tarball.load_file_by_path(file_path).with_context(|| {
+                format!(
+                    "Failed to load package tarball file: {}",
+                    file_path.display()
+                )
+            })?;
 
             return Ok(tarball_file);
         }
 
-        Ok(Some(fs::read(self.pkg_dir.join(file_path))?))
+        Ok(Some(fs::read(self.pkg_dir.join(file_path)).with_context(
+            || {
+                format!(
+                    "Failed to load package directory file: {}",
+                    file_path.display()
+                )
+            },
+        )?))
     }
 
-    pub fn get_file_include_patterns(&self, include_globs: Members) -> Result<Vec<Pattern>> {
+    fn get_file_include_patterns(&self, include_globs: Members) -> Result<Vec<Pattern>> {
         if include_globs.len().eq(&0) {
             let glob_path = self.pkg_dir.join("**/*");
             let glob_path = glob_path.to_str().unwrap();
-            let glob_pattern = Pattern::new(glob_path)?;
+
+            let glob_pattern = Pattern::new(glob_path)
+                .with_context(|| format!("Invalid 'all files' glob pattern: {glob_path}"))?;
 
             return Ok(vec![glob_pattern]);
         }
@@ -122,7 +151,9 @@ impl PkgContents {
 
             let glob_path = self.pkg_dir.join(glob_path);
             let glob_path = glob_path.to_str().unwrap();
-            let glob_pattern = Pattern::new(glob_path)?;
+
+            let glob_pattern = Pattern::new(glob_path)
+                .with_context(|| format!("Invalid 'files' glob pattern: {glob_path}"))?;
 
             patterns.push(glob_pattern)
         }
@@ -131,7 +162,7 @@ impl PkgContents {
     }
 
     // See https://docs.npmjs.com/cli/v10/configuring-npm/package-json#files
-    pub fn get_file_exclude_patterns(
+    fn get_file_exclude_patterns(
         &self,
         include_patterns: &Vec<Pattern>,
     ) -> Result<(Vec<Pattern>, Vec<Pattern>)> {
@@ -149,7 +180,10 @@ impl PkgContents {
         ];
 
         for glob in hard_exclude_globs {
-            exclude_patterns.insert(self.to_pkg_file_pattern(glob)?);
+            exclude_patterns.insert(
+                self.to_pkg_file_pattern(glob)
+                    .with_context(|| "Failed to create pkg file hard exclude glob pattern.")?,
+            );
         }
 
         // These files are excluded by default, but can be configured to be included.
@@ -178,7 +212,10 @@ impl PkgContents {
             }
 
             if should_keep_glob {
-                exclude_patterns.insert(self.to_pkg_file_pattern(soft_exclude_glob)?);
+                exclude_patterns.insert(
+                    self.to_pkg_file_pattern(soft_exclude_glob)
+                        .with_context(|| "Failed to create pkg file soft exclude glob pattern.")?,
+                );
             }
         }
 
@@ -195,10 +232,14 @@ impl PkgContents {
         ]);
 
         for exclude_negation_glob in exclude_negation_globs {
-            exclude_negation_patterns.insert(self.to_pkg_file_pattern(exclude_negation_glob)?);
+            exclude_negation_patterns.insert(
+                self.to_pkg_file_pattern(exclude_negation_glob)
+                    .with_context(|| "Failed to create pkg file exclude negation glob pattern.")?,
+            );
         }
 
-        self.get_npm_ignore_globs_if_any_in(&mut exclude_patterns, &mut exclude_negation_patterns)?;
+        self.get_npm_ignore_globs_if_any_in(&mut exclude_patterns, &mut exclude_negation_patterns)
+            .with_context(|| "Failed to get pkg file exclusion patterns from ignore file.")?;
 
         let exclude_patterns = exclude_patterns.into_iter().collect();
         let exclude_negation_patterns = exclude_negation_patterns.into_iter().collect();
@@ -206,7 +247,7 @@ impl PkgContents {
         Ok((exclude_patterns, exclude_negation_patterns))
     }
 
-    pub fn get_npm_ignore_globs_if_any_in(
+    fn get_npm_ignore_globs_if_any_in(
         &self,
         exclude_patterns: &mut HashSet<Pattern>,
         exclude_negation_patterns: &mut HashSet<Pattern>,
@@ -228,10 +269,15 @@ impl PkgContents {
 
             if let Some(line) = line.strip_prefix("!") {
                 if !line.is_empty() {
-                    exclude_negation_patterns.insert(self.to_pkg_file_pattern(line.trim_end())?);
+                    exclude_negation_patterns
+                        .insert(self.to_pkg_file_pattern(line.trim_end()).with_context(|| {
+                        "Failed to create pkg file exclude negation glob pattern from ignore file."
+                    })?);
                 }
             } else {
-                exclude_patterns.insert(self.to_pkg_file_pattern(line.trim_end())?);
+                exclude_patterns.insert(self.to_pkg_file_pattern(line.trim_end()).with_context(
+                    || "Failed to create pkg file exclude glob pattern from ignore file.",
+                )?);
             }
         }
 
@@ -242,6 +288,9 @@ impl PkgContents {
         let glob_path = self.pkg_dir.join(glob);
         let glob_path = glob_path.to_str().unwrap();
 
-        Ok(Pattern::new(glob_path)?)
+        let glob_pattern = Pattern::new(glob_path)
+            .with_context(|| format!("Invalid pkg file glob pattern: {glob_path}"))?;
+
+        Ok(glob_pattern)
     }
 }

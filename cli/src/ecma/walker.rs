@@ -1,6 +1,6 @@
 use crate::ecma::entity::EntityDeclaration;
 use crate::ecma::parser::parse_import;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use swc_ecma_ast::{
@@ -27,22 +27,49 @@ pub fn get_exports_in_module(
         exports_named,
         default_export_declaration,
         default_export_expression,
-    ) = get_items_in_module(&module)?;
+    ) = get_items_in_module(&module).with_context(|| {
+        format!(
+            "Failed to walk through relevant items in module: {}",
+            base_import_path.display()
+        )
+    })?;
 
-    let (mut named_exports, named_facade_exports) = get_named_export_declarations(
-        &declarations_with_export,
-        &exports_named,
-        &mut declarations,
-    )?;
+    let (mut named_exports, named_facade_exports) =
+        get_named_export_declarations(&declarations_with_export, &exports_named, &mut declarations)
+            .with_context(|| {
+                format!(
+                    "Failed to extract named exports in module: {}",
+                    base_import_path.display()
+                )
+            })?;
 
     let default_export = get_default_export_declaration(
         &default_export_declaration,
         &default_export_expression,
         declarations,
-    )?;
+    )
+    .with_context(|| {
+        format!(
+            "Failed to extract default export in module: {}",
+            base_import_path.display()
+        )
+    })?;
 
-    add_export_all_facade_exports(&base_import_path, exports_facade_all, &mut named_exports)?;
-    add_named_facade_exports(&base_import_path, named_facade_exports, &mut named_exports)?;
+    add_export_all_facade_exports(&base_import_path, exports_facade_all, &mut named_exports)
+        .with_context(|| {
+            format!(
+                "Failed to walk through export all (*) exports in module: {}",
+                base_import_path.display()
+            )
+        })?;
+
+    add_named_facade_exports(&base_import_path, named_facade_exports, &mut named_exports)
+        .with_context(|| {
+            format!(
+                "Failed to walk through facade named exports in module: {}",
+                base_import_path.display()
+            )
+        })?;
 
     Ok((default_export, named_exports))
 }
@@ -180,7 +207,7 @@ fn get_named_export_declarations<'module>(
             if specifier.is_default() {
                 // This is likely used internally by SWC as part of their AST, since
                 // there's no way to name a default named export. A { default } export
-                // is handled by the is_named case above.
+                // is handled by the specifier.is_named handler.
                 bail!("Cannot handle named default export specifier.")
             }
 
@@ -222,9 +249,22 @@ fn add_export_all_facade_exports(
         let import_file_path = export.src.value.to_string();
         let import_file_path = base_import_path.join(import_file_path);
 
-        let import_module = parse_import(&import_file_path)?;
+        let import_module = parse_import(&import_file_path).with_context(|| {
+            format!(
+                "Failed to parse imported module: {}",
+                import_file_path.display()
+            )
+        })?;
+
         let import_module_dir = import_file_path.parent().unwrap().to_path_buf();
-        let (_, facade_named_exports) = get_exports_in_module(import_module_dir, import_module)?;
+
+        let (_, facade_named_exports) = get_exports_in_module(import_module_dir, import_module)
+            .with_context(|| {
+                format!(
+                    "Failed to get exports in module: {}",
+                    import_file_path.display()
+                )
+            })?;
 
         buffer.extend(facade_named_exports);
     }
@@ -240,11 +280,22 @@ fn add_named_facade_exports(
     for (import_file_path, specifiers) in exports {
         let import_file_path = base_import_path.join(import_file_path);
 
-        let import_module = parse_import(&import_file_path)?;
+        let import_module = parse_import(&import_file_path).with_context(|| {
+            format!(
+                "Failed to parse imported module: {}",
+                import_file_path.display()
+            )
+        })?;
+
         let import_module_dir = import_file_path.parent().unwrap().to_path_buf();
 
         let (default_facade_export, mut named_facade_exports) =
-            get_exports_in_module(import_module_dir, import_module)?;
+            get_exports_in_module(import_module_dir, import_module).with_context(|| {
+                format!(
+                    "Failed to get exports in module: {}",
+                    import_file_path.display()
+                )
+            })?;
 
         for specifiers in specifiers {
             if specifiers.is_named() {

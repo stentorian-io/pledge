@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use glob::{glob, Pattern};
 use std::collections::HashSet;
 use std::fs;
@@ -17,7 +17,7 @@ pub fn get_matching_files_in_dir<OnMatch>(
     on_match: &OnMatch,
 ) -> Result<()>
 where
-    OnMatch: Fn(PathBuf) -> Result<PathBuf>,
+    OnMatch: Fn(&PathBuf) -> Result<PathBuf>,
 {
     for entry in fs::read_dir(dir)? {
         let entry = entry.unwrap();
@@ -35,13 +35,24 @@ where
                 exclude_patterns,
                 exclude_negation_patterns,
                 on_match,
-            )?;
+            )
+            .with_context(|| {
+                format!(
+                    "Failed to get matching files in dir: {}",
+                    entry_path.display()
+                )
+            })?;
 
             continue;
         }
 
         if path_matches_a_pattern_in(&entry_path, include_patterns) {
-            buffer.insert(on_match(entry_path)?);
+            buffer.insert(on_match(&entry_path).with_context(|| {
+                format!(
+                    "Failed to process include file match: {}",
+                    entry_path.display()
+                )
+            })?);
         }
     }
 
@@ -49,7 +60,14 @@ where
     // that are also covered by a negated exclusion pattern.
     for pattern in exclude_negation_patterns {
         for file_path in glob(pattern.as_str())? {
-            buffer.insert(on_match(file_path?)?);
+            let file_path = file_path.unwrap();
+
+            buffer.insert(on_match(&file_path).with_context(|| {
+                format!(
+                    "Failed to process exclude negation file match: {}",
+                    file_path.display()
+                )
+            })?);
         }
     }
 

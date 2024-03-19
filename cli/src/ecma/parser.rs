@@ -1,6 +1,6 @@
 use crate::fs::file::FileExt;
 use crate::pkg::entries::PkgEntry;
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use swc_common::errors::{ColorConfig, Handler};
@@ -12,18 +12,25 @@ use swc_ecma_parser::lexer::Lexer;
 use swc_ecma_parser::{Parser, Syntax};
 
 pub fn parse_pkg_entry(entry: &PkgEntry) -> Result<Module> {
+    let entry_path = &entry.path;
+
     // Entry module files are loaded from a PkgEntry's load_file method instead of the
     // SourceMap equivalent since we load a file either from disk or from a tarball.
     let file_data = match entry.load_file()? {
         Some(data) => String::from_utf8(data)?,
-        None => bail!("Entry module '{}' does not exist.", entry.path.display()),
+        None => bail!("Entry module '{}' does not exist.", entry_path.display()),
     };
 
     let source_map: Lrc<SourceMap> = Default::default();
-    let source_name = FileName::Real(entry.path.to_owned());
+    let source_name = FileName::Real(entry_path.to_owned());
     let source_file = source_map.new_source_file(source_name, file_data);
 
-    parse_source_file(source_map, Rc::clone(&source_file))
+    parse_source_file(source_map, Rc::clone(&source_file)).with_context(|| {
+        format!(
+            "Failed to parse package entry module: {}",
+            entry_path.display()
+        )
+    })
 }
 
 pub fn parse_import(file_path: &Path) -> Result<Module> {
@@ -35,7 +42,7 @@ pub fn parse_import(file_path: &Path) -> Result<Module> {
 
 fn parse_source_file(source_map: Lrc<SourceMap>, source_file: Rc<SourceFile>) -> Result<Module> {
     let source_file_path = PathBuf::from(source_file.name.to_string());
-    let source_file_ext = FileExt::from(&source_file_path)?;
+    let source_file_ext = FileExt::from(&source_file_path);
 
     let syntax = if source_file_ext.is_ts() {
         Syntax::Typescript(Default::default())

@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::path::Path;
 use strum_macros::EnumIter;
 
@@ -17,7 +16,7 @@ pub enum FileExt {
 }
 
 impl FileExt {
-    pub fn from(path: &Path) -> Result<Self> {
+    pub fn from(path: &Path) -> Self {
         if let Some(extension) = path.extension() {
             let extension = match extension.to_str().unwrap() {
                 "js" => Self::Js,
@@ -31,10 +30,10 @@ impl FileExt {
                 other => Self::Other(other.into()),
             };
 
-            return Ok(extension);
+            return extension;
         }
 
-        Ok(Self::None)
+        Self::None
     }
 
     pub fn is_ts(&self) -> bool {
