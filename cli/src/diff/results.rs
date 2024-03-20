@@ -30,19 +30,13 @@ impl BrokenEntryResult {
     }
 }
 
+#[derive(Default)]
 pub struct DiffResults {
     pub removed_assets: Vec<PathBuf>,
     pub broken_entries: Vec<BrokenEntryResult>,
 }
 
 impl DiffResults {
-    pub fn new() -> Self {
-        Self {
-            removed_assets: Vec::new(),
-            broken_entries: Vec::new(),
-        }
-    }
-
     pub fn issue_count(&self) -> usize {
         let broken_entry_issue_count = self
             .broken_entries

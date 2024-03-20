@@ -7,6 +7,13 @@ use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+type PkgEntriesMissing<'entry> = Vec<&'entry String>;
+type PkgEntriesMatching<'entry> = HashMap<&'entry String, (&'entry PkgEntry, &'entry PkgEntry)>;
+
+type PkgEntryDefaultExport = Option<EntityDeclaration>;
+type PkgEntryNamedExportsMissing = Vec<String>;
+type PkgEntryNamedExportsMatching = HashMap<String, EntityDeclaration>;
+
 pub fn diff_pkg_assets(
     previous_contents: &PkgContents,
     current_contents: &PkgContents,
@@ -28,23 +35,18 @@ pub fn diff_pkg_assets(
 pub fn diff_pkg_entries<'entry>(
     previous_entries: &'entry HashMap<String, PkgEntry>,
     current_entries: &'entry HashMap<String, PkgEntry>,
-) -> Result<(
-    Vec<&'entry String>,
-    HashMap<&'entry String, (&'entry PkgEntry, &'entry PkgEntry)>,
-)> {
-    let mut missing_entries = Vec::new();
-    let mut matching_entries = HashMap::new();
+) -> Result<(PkgEntriesMissing<'entry>, PkgEntriesMatching<'entry>)> {
+    let mut missing_entries = PkgEntriesMissing::new();
+    let mut matching_entries = PkgEntriesMatching::new();
 
     for (previous_entry_name, previous_entry) in previous_entries.iter() {
-        let matching_current_entry = current_entries.get(previous_entry_name);
-
-        if matching_current_entry.is_none() {
-            missing_entries.push(previous_entry_name);
-        } else {
+        if let Some(matching_current_entry) = current_entries.get(previous_entry_name) {
             matching_entries.insert(
                 previous_entry_name,
-                (previous_entry, matching_current_entry.unwrap()),
+                (previous_entry, matching_current_entry),
             );
+        } else {
+            missing_entries.push(previous_entry_name);
         }
     }
 
@@ -56,15 +58,15 @@ pub fn diff_pkg_entry_exports(
     current_entry: &PkgEntry,
 ) -> Result<(
     bool,
-    Option<EntityDeclaration>,
-    Vec<String>,
-    HashMap<String, EntityDeclaration>,
+    PkgEntryDefaultExport,
+    PkgEntryNamedExportsMissing,
+    PkgEntryNamedExportsMatching,
 )> {
     let mut is_default_export_missing = false;
     let mut matching_default_export = None;
 
-    let mut missing_named_exports = Vec::new();
-    let mut matching_named_exports = HashMap::new();
+    let mut missing_named_exports = PkgEntryNamedExportsMissing::new();
+    let mut matching_named_exports = PkgEntryNamedExportsMatching::new();
 
     let previous_module = parse_pkg_entry(previous_entry).with_context(|| {
         format!(

@@ -258,16 +258,18 @@ impl PkgContents {
             return Ok(());
         }
 
-        for line in file_contents.unwrap().split("\n") {
+        for line in file_contents.unwrap().split('\n') {
             let line = line.trim_start();
 
             if line.is_empty() {
                 continue;
-            } else if line.starts_with("#") {
+            }
+
+            if line.starts_with('#') {
                 continue;
             }
 
-            if let Some(line) = line.strip_prefix("!") {
+            if let Some(line) = line.strip_prefix('!') {
                 if !line.is_empty() {
                     exclude_negation_patterns
                         .insert(self.to_pkg_file_pattern(line.trim_end()).with_context(|| {

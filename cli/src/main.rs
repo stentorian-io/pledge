@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 fn main() -> Result<ExitCode> {
-    let start_timestamp = Instant::now();
+    let start = Instant::now();
     let args: Vec<String> = env::args().collect();
 
     if args.len().ne(&2) {
@@ -30,5 +30,5 @@ fn main() -> Result<ExitCode> {
     printer::print_asset_issues(&diff_results);
     printer::print_entry_issues(&diff_results);
 
-    Ok(printer::print_exit(&diff_results, start_timestamp))
+    Ok(printer::print_exit(&diff_results, start))
 }
