@@ -67,7 +67,7 @@ pub fn print_exit(diff_results: &DiffResults, start_timestamp: Instant) -> ExitC
 }
 
 fn print_breaking_change_tally_header(issue_count: &usize, suffix: String, is_error: bool) {
-    let prefix = if issue_count.eq(&0) {
+    let prefix = if issue_count.eq(&1) {
         format!("Found {issue_count} breaking change")
     } else {
         format!("Found {issue_count} breaking changes")
