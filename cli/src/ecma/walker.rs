@@ -303,12 +303,15 @@ fn add_named_facade_exports(
                 let (actual_name, exported_name) = get_named_export_names(specifier);
 
                 let exported_entity = if actual_name.eq("default") {
-                    default_facade_export.to_owned().unwrap()
+                    default_facade_export.to_owned()
                 } else {
-                    named_facade_exports.remove(&actual_name).unwrap()
+                    named_facade_exports.remove(&actual_name)
                 };
 
-                buffer.insert(exported_name, exported_entity);
+                if exported_entity.is_some() {
+                    buffer.insert(exported_name, exported_entity.unwrap());
+                }
+
                 continue;
             }
 
