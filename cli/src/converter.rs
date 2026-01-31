@@ -11,7 +11,7 @@ use crate::pkg::entries::{PkgEntries, PkgEntry, PkgEntryType};
 use crate::pkg::Pkg;
 use anyhow::{Context, Result};
 use interlint_format::{
-    ClassSig, Entrypoint, EnumMember, EnumSig, Export, FunctionSig, InterfaceSig, Metadata,
+    Asset, ClassSig, Entrypoint, EnumMember, EnumSig, Export, FunctionSig, InterfaceSig, Metadata,
     Module, Parameter, Property, PublicInterface, Signature, TypeAliasSig, TypeInfo, TypeKind,
     TypeParameter, VariableSig, Visibility,
 };
@@ -42,6 +42,9 @@ pub fn pkg_to_public_interface(pkg: &Pkg) -> Result<PublicInterface> {
 
     // Add modules from each entry type
     add_modules_from_entries(&mut interface, &pkg.entries)?;
+
+    // Add assets from package contents
+    add_assets_from_contents(&mut interface, pkg)?;
 
     Ok(interface)
 }
@@ -1007,4 +1010,24 @@ fn type_alias_to_sig(name: &str, type_alias: &TsTypeAliasDecl) -> TypeAliasSig {
         visibility: Visibility::Public,
         doc: None,
     }
+}
+
+/// Add assets from package contents to the PublicInterface.
+fn add_assets_from_contents(interface: &mut PublicInterface, pkg: &Pkg) -> Result<()> {
+    let assets = pkg.contents.asset_list()
+        .with_context(|| "Failed to get asset list from package contents")?;
+
+    for asset_path in assets {
+        let path_str = asset_path.to_string_lossy().to_string();
+        let extension = asset_path
+            .extension()
+            .map(|ext| ext.to_string_lossy().to_string());
+
+        interface.add_asset(Asset {
+            path: path_str,
+            extension,
+        });
+    }
+
+    Ok(())
 }
