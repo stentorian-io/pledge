@@ -1,42 +1,49 @@
 //! Compare handler for detecting breaking changes between public interfaces.
+//!
+//! This handler accepts ONLY binary MessagePack format. Text JSON is not supported.
 
-use axum::{extract::State, http::StatusCode, Json};
+use axum::{extract::State, http::StatusCode, response::Response};
 
+use crate::binary::{binary_error, BinaryJson, BinaryJsonResponse};
 use crate::diff::compare_interfaces;
-use crate::response::{CompareRequest, CompareResponse, ErrorResponse};
+use crate::response::{CompareRequest, CompareResponse};
 use crate::state::AppState;
 
 /// Compare two public interfaces and detect breaking changes.
 ///
 /// POST /v1/compare
 ///
-/// Request body: CompareRequest (JSON)
+/// Request body: CompareRequest (Binary MessagePack)
+/// - Content-Type: application/octet-stream or application/msgpack
 /// - previous: PublicInterface - The baseline/previous version
 /// - current: PublicInterface - The new/current version
 /// - min_severity: Option<Severity> - Minimum severity to report
 /// - include_additions: bool - Whether to include non-breaking additions
 ///
-/// Response: CompareResponse (JSON)
+/// Response: CompareResponse (Binary MessagePack)
+/// - Content-Type: application/octet-stream
 /// - changes: Vec<BreakingChange> - List of detected changes
 /// - summary: ComparisonSummary - Statistics about the changes
 /// - previous_version: String - Version from previous metadata
 /// - current_version: String - Version from current metadata
 /// - package_name: String - Package name from metadata
+///
+/// Errors:
+/// - 415 Unsupported Media Type: If Content-Type is not binary MessagePack
+/// - 400 Bad Request: If request body is invalid
 pub async fn compare(
     State(_state): State<AppState>,
-    Json(request): Json<CompareRequest>,
-) -> Result<Json<CompareResponse>, (StatusCode, Json<ErrorResponse>)> {
+    BinaryJson(request): BinaryJson<CompareRequest>,
+) -> Result<BinaryJsonResponse<CompareResponse>, Response> {
     // Validate that package names match
     if request.previous.metadata.name != request.current.metadata.name {
-        return Err((
+        return Err(binary_error(
             StatusCode::BAD_REQUEST,
-            Json(
-                ErrorResponse::new(format!(
-                    "Package names do not match: '{}' vs '{}'",
-                    request.previous.metadata.name, request.current.metadata.name
-                ))
-                .with_code("PACKAGE_NAME_MISMATCH"),
+            format!(
+                "Package names do not match: '{}' vs '{}'",
+                request.previous.metadata.name, request.current.metadata.name
             ),
+            Some("PACKAGE_NAME_MISMATCH"),
         ));
     }
 
@@ -66,12 +73,13 @@ pub async fn compare(
         current_export_count,
     );
 
-    Ok(Json(response))
+    Ok(BinaryJsonResponse(response))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::binary::{BINARY_CONTENT_TYPE, MSGPACK_CONTENT_TYPE};
     use axum::{body::Body, http::Request, routing::post, Router};
     use interlint_format::{
         Export, FunctionSig, Metadata, Module, PublicInterface, Signature, TypeInfo, Visibility,
@@ -97,7 +105,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compare_no_changes() {
+    async fn test_compare_no_changes_binary() {
         let app = create_test_app();
 
         let prev = PublicInterface::new(create_test_metadata("1.0.0"));
@@ -110,31 +118,38 @@ mod tests {
             include_additions: false,
         };
 
+        // Serialize request as MessagePack
+        let binary_body = rmp_serde::to_vec_named(&request).unwrap();
+
         let response = app
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/compare")
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(serde_json::to_string(&request).unwrap()))
+                    .header("Content-Type", BINARY_CONTENT_TYPE)
+                    .body(Body::from(binary_body))
                     .unwrap(),
             )
             .await
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("Content-Type").unwrap(),
+            BINARY_CONTENT_TYPE
+        );
 
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
-        let result: CompareResponse = serde_json::from_slice(&body).unwrap();
+        let result: CompareResponse = rmp_serde::from_slice(&body).unwrap();
 
         assert!(result.changes.is_empty());
         assert!(!result.summary.has_breaking_changes);
     }
 
     #[tokio::test]
-    async fn test_compare_with_breaking_change() {
+    async fn test_compare_with_breaking_change_binary() {
         let app = create_test_app();
 
         let mut prev = PublicInterface::new(create_test_metadata("1.0.0"));
@@ -166,13 +181,15 @@ mod tests {
             include_additions: false,
         };
 
+        let binary_body = rmp_serde::to_vec_named(&request).unwrap();
+
         let response = app
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/compare")
-                    .header("Content-Type", "application/json")
-                    .body(Body::from(serde_json::to_string(&request).unwrap()))
+                    .header("Content-Type", BINARY_CONTENT_TYPE)
+                    .body(Body::from(binary_body))
                     .unwrap(),
             )
             .await
@@ -183,7 +200,7 @@ mod tests {
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
-        let result: CompareResponse = serde_json::from_slice(&body).unwrap();
+        let result: CompareResponse = rmp_serde::from_slice(&body).unwrap();
 
         assert_eq!(result.changes.len(), 1);
         assert!(result.summary.has_breaking_changes);
@@ -191,7 +208,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_compare_package_name_mismatch() {
+    async fn test_compare_package_name_mismatch_binary() {
         let app = create_test_app();
 
         let prev = PublicInterface::new(Metadata {
@@ -219,6 +236,47 @@ mod tests {
             include_additions: false,
         };
 
+        let binary_body = rmp_serde::to_vec_named(&request).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/compare")
+                    .header("Content-Type", BINARY_CONTENT_TYPE)
+                    .body(Body::from(binary_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        // Error response is also binary MessagePack
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let error: crate::binary::BinaryErrorResponse = rmp_serde::from_slice(&body).unwrap();
+
+        assert!(error.error.contains("Package names do not match"));
+        assert_eq!(error.code, Some("PACKAGE_NAME_MISMATCH".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_reject_json_request() {
+        let app = create_test_app();
+
+        let prev = PublicInterface::new(create_test_metadata("1.0.0"));
+        let curr = PublicInterface::new(create_test_metadata("1.0.1"));
+
+        let request = CompareRequest {
+            previous: prev,
+            current: curr,
+            min_severity: None,
+            include_additions: false,
+        };
+
+        // Try to send as JSON - should be rejected
         let response = app
             .oneshot(
                 Request::builder()
@@ -231,14 +289,68 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
 
-        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+    #[tokio::test]
+    async fn test_accept_msgpack_content_type() {
+        let app = create_test_app();
+
+        let prev = PublicInterface::new(create_test_metadata("1.0.0"));
+        let curr = PublicInterface::new(create_test_metadata("1.0.1"));
+
+        let request = CompareRequest {
+            previous: prev,
+            current: curr,
+            min_severity: None,
+            include_additions: false,
+        };
+
+        let binary_body = rmp_serde::to_vec_named(&request).unwrap();
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/compare")
+                    .header("Content-Type", MSGPACK_CONTENT_TYPE)
+                    .body(Body::from(binary_body))
+                    .unwrap(),
+            )
             .await
             .unwrap();
-        let error: ErrorResponse = serde_json::from_slice(&body).unwrap();
 
-        assert!(error.error.contains("Package names do not match"));
-        assert_eq!(error.code, Some("PACKAGE_NAME_MISMATCH".to_string()));
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_reject_missing_content_type() {
+        let app = create_test_app();
+
+        let prev = PublicInterface::new(create_test_metadata("1.0.0"));
+        let curr = PublicInterface::new(create_test_metadata("1.0.1"));
+
+        let request = CompareRequest {
+            previous: prev,
+            current: curr,
+            min_severity: None,
+            include_additions: false,
+        };
+
+        let binary_body = rmp_serde::to_vec_named(&request).unwrap();
+
+        // No Content-Type header
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/compare")
+                    .body(Body::from(binary_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 }

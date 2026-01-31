@@ -2,6 +2,7 @@
 //!
 //! Provides REST API endpoints for comparing public interfaces and detecting breaking changes.
 
+mod binary;
 mod config;
 mod diff;
 mod handlers;

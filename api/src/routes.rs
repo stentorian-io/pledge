@@ -61,7 +61,29 @@ mod tests {
         let state = AppState::new();
         let app = create_router(state);
 
-        // Send empty body to verify route exists (will fail validation but not 404)
+        // Send empty binary body with correct content type - route exists but will fail deserialization
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/compare")
+                    .header("Content-Type", "application/octet-stream")
+                    .body(Body::from(vec![0u8; 0]))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        // Should be 400 (Bad Request) for invalid binary data, not 404
+        assert_ne!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_router_compare_rejects_json() {
+        let state = AppState::new();
+        let app = create_router(state);
+
+        // JSON content type should be rejected with 415
         let response = app
             .oneshot(
                 Request::builder()
@@ -74,8 +96,7 @@ mod tests {
             .await
             .unwrap();
 
-        // Should be 422 (Unprocessable Entity) for invalid JSON, not 404
-        assert_ne!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
 
     #[tokio::test]

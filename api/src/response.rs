@@ -373,28 +373,3 @@ pub struct HealthResponse {
     pub version: String,
 }
 
-/// Error response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorResponse {
-    /// Error message
-    pub error: String,
-    /// Error code (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-}
-
-impl ErrorResponse {
-    /// Create a new error response.
-    pub fn new(error: impl Into<String>) -> Self {
-        Self {
-            error: error.into(),
-            code: None,
-        }
-    }
-
-    /// Add an error code.
-    pub fn with_code(mut self, code: impl Into<String>) -> Self {
-        self.code = Some(code.into());
-        self
-    }
-}
