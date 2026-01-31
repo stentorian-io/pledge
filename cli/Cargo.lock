@@ -89,6 +89,7 @@ dependencies = [
  "predicates",
  "reqwest",
  "serde",
+ "serde_json",
  "streaming-iterator",
  "strum",
  "strum_macros",

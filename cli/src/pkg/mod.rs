@@ -10,6 +10,7 @@ use url::Url;
 pub mod contents;
 pub mod entries;
 pub mod pack;
+pub mod package_config_extractor;
 pub mod registry;
 pub mod registry_client;
 pub mod tarball;

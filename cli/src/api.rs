@@ -14,7 +14,10 @@
 //! better performance and smaller payload sizes.
 
 use anyhow::{bail, Context, Result};
-use interlint_format::{binary, PublicInterface};
+use interlint_format::{
+    binary, PackageConfig, PackageConfigCompareRequest, PackageConfigCompareResponse,
+    PublicInterface,
+};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
@@ -322,6 +325,45 @@ impl ApiClient {
 
         Ok(response.status().is_success())
     }
+
+    /// Compare two package.json configurations for breaking changes.
+    ///
+    /// Sends package config data as interlint binary format (MessagePack with header).
+    pub fn compare_package_config(
+        &self,
+        old_config: PackageConfig,
+        new_config: PackageConfig,
+    ) -> Result<PackageConfigCompareResponse> {
+        let url = format!("{}/v1/compare-package-config", self.base_url);
+
+        let request = PackageConfigCompareRequest { old_config, new_config };
+
+        let body = binary::encode(&request)
+            .context("Failed to encode request to binary format")?;
+
+        let response = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/x-interlint")
+            .header("Accept", "application/x-interlint")
+            .body(body)
+            .send()
+            .context("Failed to send package config compare request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+            bail!("API request failed with status {}: {}", status, body);
+        }
+
+        let bytes = response.bytes()
+            .context("Failed to read response body")?;
+
+        let result: PackageConfigCompareResponse = binary::decode(&bytes)
+            .context("Failed to decode binary response")?;
+
+        Ok(result)
+    }
 }
 
 impl Default for ApiClient {
@@ -445,6 +487,90 @@ fn print_change(change: &BreakingChange, indent: &str) {
         println!("{}  Previous: {}", indent, prev);
     }
     if let Some(curr) = &change.current {
+        println!("{}  Current: {}", indent, curr);
+    }
+    if let Some(suggestion) = &change.suggestion {
+        println!("{}  Suggestion: {}", indent, suggestion);
+    }
+}
+
+/// Print package config comparison results to stdout.
+pub fn print_package_config_changes(response: &PackageConfigCompareResponse) {
+    use interlint_format::PackageChangeSeverity;
+
+    if !response.summary.has_breaking_changes {
+        println!("\n  No breaking changes detected in package.json.");
+        return;
+    }
+
+    println!("\n  Package.json Breaking Changes Detected:");
+    println!("  ========================================\n");
+
+    // Group by severity
+    let breaking: Vec<_> = response
+        .changes
+        .iter()
+        .filter(|c| c.severity == PackageChangeSeverity::Breaking)
+        .collect();
+    let potentially_breaking: Vec<_> = response
+        .changes
+        .iter()
+        .filter(|c| c.severity == PackageChangeSeverity::PotentiallyBreaking)
+        .collect();
+    let safe: Vec<_> = response
+        .changes
+        .iter()
+        .filter(|c| c.severity == PackageChangeSeverity::Safe)
+        .collect();
+
+    if !breaking.is_empty() {
+        println!("  BREAKING ({}):", breaking.len());
+        for change in breaking {
+            print_package_change(change, "    ");
+        }
+        println!();
+    }
+
+    if !potentially_breaking.is_empty() {
+        println!("  POTENTIALLY BREAKING ({}):", potentially_breaking.len());
+        for change in potentially_breaking {
+            print_package_change(change, "    ");
+        }
+        println!();
+    }
+
+    if !safe.is_empty() {
+        println!("  SAFE ({}):", safe.len());
+        for change in safe {
+            print_package_change(change, "    ");
+        }
+        println!();
+    }
+
+    // Print summary
+    let summary = &response.summary;
+    println!("  Summary:");
+    println!("  ---------");
+    println!("  Total changes: {}", summary.total_changes);
+    println!("  Breaking: {}", summary.breaking_count);
+    println!(
+        "  Potentially breaking: {}",
+        summary.potentially_breaking_count
+    );
+    println!("  Safe: {}", summary.safe_count);
+    println!("  Recommended bump: {}", summary.recommended_bump);
+}
+
+/// Print a single package.json change.
+fn print_package_change(change: &interlint_format::PackageJsonChange, indent: &str) {
+    println!(
+        "{}- [{}] {} at '{}'",
+        indent, change.category, change.description, change.field_path
+    );
+    if let Some(prev) = &change.old_value {
+        println!("{}  Previous: {}", indent, prev);
+    }
+    if let Some(curr) = &change.new_value {
         println!("{}  Current: {}", indent, curr);
     }
     if let Some(suggestion) = &change.suggestion {
