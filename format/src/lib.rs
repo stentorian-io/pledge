@@ -10,15 +10,23 @@
 //!
 //! - **Language-agnostic**: Works with JavaScript, TypeScript, Rust, Python, Go, etc.
 //! - **Package-manager agnostic**: Not tied to npm, cargo, pip, or any specific ecosystem
-//! - **Serializable**: All types implement Serialize and Deserialize via serde
+//! - **Binary format**: Compact MessagePack serialization with integrity checks
 //! - **Type-safe**: Strong typing for all signature components
+//!
+//! ## Binary Format
+//!
+//! The crate uses a binary format with:
+//! - Magic bytes header ("ILMJ" - InterLint MessagePack JSON)
+//! - Version field for forward compatibility
+//! - CRC32 checksum for data integrity
+//! - MessagePack payload for compact serialization
 //!
 //! ## Example
 //!
 //! ```rust
 //! use interlint_format::{
 //!     PublicInterface, Metadata, Module, Export, Entrypoint,
-//!     Signature, FunctionSig, TypeInfo, Visibility,
+//!     Signature, FunctionSig, TypeInfo, Visibility, binary,
 //! };
 //!
 //! // Create package metadata
@@ -61,13 +69,23 @@
 //! });
 //!
 //! interface.add_module(module);
+//!
+//! // Encode to binary format
+//! let bytes = binary::encode(&interface).unwrap();
+//! assert!(binary::is_valid_format(&bytes));
+//!
+//! // Decode from binary format
+//! let decoded: PublicInterface = binary::decode(&bytes).unwrap();
+//! assert_eq!(decoded.metadata.name, "my-package");
 //! ```
 
+pub mod binary;
 pub mod module;
 pub mod signature;
 pub mod types;
 
 // Re-export all public types for convenience
+pub use binary::{decode, encode, is_valid_format, BinaryError, FormatInfo, MAGIC, FORMAT_VERSION};
 pub use module::{Asset, Entrypoint, Export, Metadata, Module, PublicInterface, ReExport, ReExportName};
 pub use signature::{
     ClassSig, EnumMember, EnumSig, FunctionSig, IndexSignature, InterfaceSig, NamespaceSig,

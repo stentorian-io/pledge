@@ -1,16 +1,16 @@
 # interlint-format
 
-A language-agnostic format for describing code signatures and exports.
+A language-agnostic binary format for describing code signatures and exports.
 
 ## Overview
 
-`interlint-format` provides data structures for representing the public interface of a package or module, including functions, classes, interfaces, enums, type aliases, and variables. It serves as a universal intermediate representation that can describe APIs from any programming language.
+`interlint-format` provides data structures for representing the public interface of a package or module, including functions, classes, interfaces, enums, type aliases, and variables. It uses a compact binary format with MessagePack serialization for efficient storage and transmission.
 
 ## Features
 
 - **Language-agnostic**: Works with JavaScript, TypeScript, Rust, Python, Go, and any other language
 - **Package-manager agnostic**: Not tied to npm, cargo, pip, or any specific ecosystem
-- **Serializable**: All types implement `Serialize` and `Deserialize` via serde
+- **Binary format**: Compact MessagePack serialization with integrity verification
 - **Type-safe**: Strong typing for all signature components
 - **Complete type system**: Supports primitives, generics, unions, intersections, arrays, maps, and more
 
@@ -21,6 +21,100 @@ Add this to your `Cargo.toml`:
 ```toml
 [dependencies]
 interlint-format = "0.1.0"
+```
+
+## Binary Format
+
+The crate uses a custom binary format with the following structure:
+
+### ILMJ Header Structure
+
+```text
++--------+--------+--------+--------+--------+--------+--------+--...--+
+| MAGIC (4 bytes) | VER(2) | CRC32 (4 bytes) |   MessagePack Data     |
++--------+--------+--------+--------+--------+--------+--------+--...--+
+| 'I' 'L' 'M' 'J' | u16 LE |    u32 LE       |   Variable length      |
++--------+--------+--------+--------+--------+--------+--------+--...--+
+```
+
+| Field | Size | Description |
+|-------|------|-------------|
+| Magic | 4 bytes | `ILMJ` (InterLint MessagePack JSON) - identifies the format |
+| Version | 2 bytes | Format version (little-endian u16), currently `1` |
+| CRC32 | 4 bytes | Checksum of the MessagePack payload (little-endian u32) |
+| Payload | Variable | MessagePack-encoded data |
+
+**Header size**: 10 bytes total
+
+### Integrity Verification
+
+The CRC32 checksum ensures data integrity:
+- Computed over the MessagePack payload only (not the header)
+- Uses the crc32fast algorithm
+- Verified automatically during decoding
+
+## Public API
+
+### Core Functions
+
+```rust
+use interlint_format::binary;
+
+// Encode any serializable value to binary format
+let bytes: Vec<u8> = binary::encode(&value)?;
+
+// Decode binary data back to a typed value
+let value: MyType = binary::decode(&bytes)?;
+
+// Quick validation without full deserialization
+let valid: bool = binary::is_valid_format(&bytes);
+```
+
+### API Reference
+
+| Function | Description |
+|----------|-------------|
+| `encode<T: Serialize>(value: &T) -> Result<Vec<u8>>` | Serialize to binary format with header and CRC32 |
+| `decode<T: DeserializeOwned>(data: &[u8]) -> Result<T>` | Deserialize from binary format with validation |
+| `is_valid_format(data: &[u8]) -> bool` | Check if data has valid header, version, and checksum |
+| `get_format_info(data: &[u8]) -> Option<FormatInfo>` | Extract format metadata without deserialization |
+
+### Error Types
+
+```rust
+use interlint_format::BinaryError;
+
+match binary::decode::<PublicInterface>(&data) {
+    Ok(interface) => { /* use interface */ }
+    Err(BinaryError::DataTooShort(len)) => { /* data smaller than 10 bytes */ }
+    Err(BinaryError::InvalidMagic(magic)) => { /* not ILMJ format */ }
+    Err(BinaryError::UnsupportedVersion(v)) => { /* unknown version */ }
+    Err(BinaryError::ChecksumMismatch { expected, actual }) => { /* corrupted data */ }
+    Err(BinaryError::Serialize(e)) => { /* MessagePack encoding error */ }
+    Err(BinaryError::Deserialize(e)) => { /* MessagePack decoding error */ }
+}
+```
+
+### Format Inspection
+
+```rust
+use interlint_format::binary::{get_format_info, FormatInfo};
+
+if let Some(info) = get_format_info(&data) {
+    println!("Version: {}", info.version);
+    println!("Checksum: {:#010x}", info.checksum);
+    println!("Payload size: {} bytes", info.payload_size);
+    println!("Total size: {} bytes", info.total_size);
+}
+```
+
+### Constants
+
+```rust
+use interlint_format::{MAGIC, FORMAT_VERSION};
+
+assert_eq!(MAGIC, b"ILMJ");
+assert_eq!(FORMAT_VERSION, 1);
 ```
 
 ## Data Structures
@@ -85,12 +179,12 @@ The `TypeKind` enum supports 17 type categories:
 
 ## Usage Examples
 
-### Creating a Public Interface
+### Encoding and Decoding a Public Interface
 
 ```rust
 use interlint_format::{
     PublicInterface, Metadata, Module, Export, Entrypoint,
-    Signature, FunctionSig, TypeInfo, Visibility,
+    Signature, FunctionSig, TypeInfo, Visibility, binary,
 };
 
 // Create package metadata
@@ -112,6 +206,37 @@ interface.add_entrypoint(Entrypoint {
     module_path: "src/index.ts".to_string(),
     conditions: vec!["import".to_string(), "types".to_string()],
 });
+
+// Create a module with exports
+let mut module = Module::new("src/index.ts");
+
+module.add_export(Export {
+    name: "greet".to_string(),
+    original_name: None,
+    signature: Signature::Function(FunctionSig {
+        name: "greet".to_string(),
+        type_parameters: vec![],
+        parameters: vec![],
+        return_type: TypeInfo::primitive("string"),
+        is_async: false,
+        is_generator: false,
+        visibility: Visibility::Public,
+        doc: Some("Returns a greeting".to_string()),
+    }),
+    is_default: false,
+});
+
+interface.add_module(module);
+
+// Encode to binary format
+let bytes = binary::encode(&interface).expect("encoding failed");
+
+// Validate format
+assert!(binary::is_valid_format(&bytes));
+
+// Decode back
+let decoded: PublicInterface = binary::decode(&bytes).expect("decoding failed");
+assert_eq!(decoded.metadata.name, "my-package");
 ```
 
 ### Adding Function Exports
@@ -284,29 +409,6 @@ let string_array = TypeInfo::array(TypeInfo::primitive("string"));
 // Void and any types
 let void_type = TypeInfo::void();
 let any_type = TypeInfo::any();
-```
-
-### Serialization
-
-All types are serializable with serde:
-
-```rust
-use interlint_format::{PublicInterface, Metadata};
-
-let interface = PublicInterface::new(Metadata {
-    name: "my-package".to_string(),
-    version: "1.0.0".to_string(),
-    description: None,
-    repository: None,
-    license: None,
-    language: Some("rust".to_string()),
-});
-
-// Serialize to JSON
-let json = serde_json::to_string_pretty(&interface).unwrap();
-
-// Deserialize from JSON
-let parsed: PublicInterface = serde_json::from_str(&json).unwrap();
 ```
 
 ### Querying the Interface
