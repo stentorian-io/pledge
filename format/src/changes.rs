@@ -146,6 +146,331 @@ use serde::{Deserialize, Serialize};
 use crate::types::TypeInfo;
 
 // =============================================================================
+// Module System Breaking Changes (package.json exports/imports)
+// =============================================================================
+
+/// Module system breaking changes related to package.json exports/imports.
+///
+/// These changes affect how consumers can import from the package, which
+/// subpaths are available, and under what conditions (node/browser/import/require).
+///
+/// # Examples
+///
+/// ```rust
+/// use interlint_format::changes::ModuleSystemChange;
+///
+/// // Subpath removal is critical - consumers will get import errors
+/// let change = ModuleSystemChange::ExportsSubpathRemoved {
+///     subpath: "./utils".to_string(),
+///     conditions_affected: vec!["import".to_string(), "require".to_string()],
+///     migration_hint: Some("Use ./helpers instead".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ModuleSystemChange {
+    /// An exports subpath was removed entirely.
+    ///
+    /// This is always a critical breaking change as consumers importing
+    /// from this subpath will get module resolution errors.
+    ExportsSubpathRemoved {
+        /// The subpath that was removed (e.g., "./utils", ".")
+        subpath: String,
+        /// Conditions that were affected (e.g., ["import", "require"])
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        conditions_affected: Vec<String>,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// An exports subpath was renamed to a different path.
+    ///
+    /// Critical breaking change - old import paths will fail.
+    ExportsSubpathRenamed {
+        /// The old subpath
+        old_subpath: String,
+        /// The new subpath
+        new_subpath: String,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// A condition was removed from an exports subpath.
+    ///
+    /// For example, removing "require" means CommonJS consumers can no longer
+    /// import from this subpath.
+    ExportsConditionRemoved {
+        /// The affected subpath
+        subpath: String,
+        /// The condition that was removed (e.g., "require", "node", "browser")
+        condition: String,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// The order of conditions changed for an exports subpath.
+    ///
+    /// Condition order matters in Node.js - first matching condition wins.
+    /// Reordering can change which file is resolved.
+    ExportsConditionOrderChanged {
+        /// The affected subpath
+        subpath: String,
+        /// Previous condition order
+        old_order: Vec<String>,
+        /// New condition order
+        new_order: Vec<String>,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// A subpath was explicitly set to null (blocked).
+    ///
+    /// Setting an export to null explicitly prevents import from that path.
+    ExportsNullAdded {
+        /// The subpath that was nulled
+        subpath: String,
+        /// The condition under which it was nulled (if conditional)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        condition: Option<String>,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// The browser field structure changed.
+    ///
+    /// The browser field can be a string, object, or boolean, and changing
+    /// between these affects bundler behavior.
+    BrowserFieldStructureChanged {
+        /// Previous structure type ("string", "object", "boolean", "absent")
+        old_type: String,
+        /// New structure type
+        new_type: String,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// The module type changed (ESM vs CommonJS).
+    ///
+    /// Changing "type" field affects how .js files are interpreted.
+    ModuleTypeChanged {
+        /// Previous type (None = CommonJS default)
+        old_type: Option<String>,
+        /// New type ("module" for ESM, "commonjs" for CJS)
+        new_type: Option<String>,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// A package entry point changed.
+    ///
+    /// Changes to main, module, types, or other entry point fields.
+    EntryPointChanged {
+        /// The field that changed (e.g., "main", "module", "types")
+        field: String,
+        /// Previous path (None if not present)
+        old_path: Option<String>,
+        /// New path (None if removed)
+        new_path: Option<String>,
+        /// Optional migration hint
+        #[serde(skip_serializing_if = "Option::is_none")]
+        migration_hint: Option<String>,
+    },
+
+    /// Import maps or imports field changed.
+    ImportsChanged {
+        /// The import specifier that changed (e.g., "#utils")
+        specifier: String,
+        /// The type of change
+        change_type: ImportsChangeType,
+        /// Previous resolution target
+        #[serde(skip_serializing_if = "Option::is_none")]
+        old_target: Option<String>,
+        /// New resolution target
+        #[serde(skip_serializing_if = "Option::is_none")]
+        new_target: Option<String>,
+    },
+}
+
+/// Type of change in the imports field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportsChangeType {
+    /// Import specifier was added
+    Added,
+    /// Import specifier was removed
+    Removed,
+    /// Import specifier target changed
+    TargetChanged,
+}
+
+impl ModuleSystemChange {
+    /// Get the severity of this module system change.
+    pub fn severity(&self) -> Severity {
+        match self {
+            // Critical - will break imports
+            ModuleSystemChange::ExportsSubpathRemoved { .. }
+            | ModuleSystemChange::ExportsSubpathRenamed { .. }
+            | ModuleSystemChange::ExportsNullAdded { .. } => Severity::Major,
+
+            // Major - can break specific environments
+            ModuleSystemChange::ExportsConditionRemoved { .. }
+            | ModuleSystemChange::ModuleTypeChanged { .. } => Severity::Major,
+
+            // Minor - behavior may differ
+            ModuleSystemChange::ExportsConditionOrderChanged { .. }
+            | ModuleSystemChange::BrowserFieldStructureChanged { .. }
+            | ModuleSystemChange::EntryPointChanged { .. } => Severity::Minor,
+
+            // Imports changes vary
+            ModuleSystemChange::ImportsChanged { change_type, .. } => match change_type {
+                ImportsChangeType::Removed => Severity::Major,
+                ImportsChangeType::TargetChanged => Severity::Minor,
+                ImportsChangeType::Added => Severity::Info,
+            },
+        }
+    }
+
+    /// Get a description of this change.
+    pub fn description(&self) -> String {
+        match self {
+            ModuleSystemChange::ExportsSubpathRemoved { subpath, .. } => {
+                format!("Exports subpath '{}' was removed", subpath)
+            }
+            ModuleSystemChange::ExportsSubpathRenamed {
+                old_subpath,
+                new_subpath,
+                ..
+            } => {
+                format!(
+                    "Exports subpath '{}' was renamed to '{}'",
+                    old_subpath, new_subpath
+                )
+            }
+            ModuleSystemChange::ExportsConditionRemoved {
+                subpath, condition, ..
+            } => {
+                format!(
+                    "Condition '{}' was removed from exports subpath '{}'",
+                    condition, subpath
+                )
+            }
+            ModuleSystemChange::ExportsConditionOrderChanged { subpath, .. } => {
+                format!("Condition order changed for exports subpath '{}'", subpath)
+            }
+            ModuleSystemChange::ExportsNullAdded { subpath, .. } => {
+                format!("Exports subpath '{}' was explicitly blocked (set to null)", subpath)
+            }
+            ModuleSystemChange::BrowserFieldStructureChanged {
+                old_type, new_type, ..
+            } => {
+                format!("Browser field structure changed from {} to {}", old_type, new_type)
+            }
+            ModuleSystemChange::ModuleTypeChanged { old_type, new_type, .. } => {
+                format!(
+                    "Module type changed from {} to {}",
+                    old_type.as_deref().unwrap_or("commonjs"),
+                    new_type.as_deref().unwrap_or("commonjs")
+                )
+            }
+            ModuleSystemChange::EntryPointChanged { field, .. } => {
+                format!("Entry point '{}' changed", field)
+            }
+            ModuleSystemChange::ImportsChanged { specifier, change_type, .. } => {
+                match change_type {
+                    ImportsChangeType::Added => format!("Import '{}' was added", specifier),
+                    ImportsChangeType::Removed => format!("Import '{}' was removed", specifier),
+                    ImportsChangeType::TargetChanged => {
+                        format!("Import '{}' target changed", specifier)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Type Change Impact - Who is affected by the change
+// =============================================================================
+
+/// Indicates who is affected by a type change.
+///
+/// Some type changes affect different groups differently:
+///
+/// - **ConsumerBreaking**: Breaks code that *uses* the API (calls functions,
+///   reads properties, etc.)
+/// - **ImplementerBreaking**: Breaks code that *implements* interfaces or
+///   extends classes
+/// - **Both**: Breaks both consumers and implementers
+///
+/// # Example
+///
+/// Adding an optional property to an interface is:
+/// - Safe for consumers (they don't need to provide it)
+/// - Breaking for implementers (they must add the property)
+///
+/// Removing a method from a class is:
+/// - Breaking for consumers (they can't call it anymore)
+/// - Safe for subclasses (they don't need to override it)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TypeChangeImpact {
+    /// Breaks code that uses/consumes the API.
+    ///
+    /// Examples:
+    /// - Removing a method (consumers can't call it)
+    /// - Changing return type (consumers expect different type)
+    /// - Adding required parameter (consumers must update calls)
+    ConsumerBreaking,
+
+    /// Breaks code that implements interfaces or extends classes.
+    ///
+    /// Examples:
+    /// - Adding required method to interface (implementers must add it)
+    /// - Adding optional property (implementers may need to handle it)
+    /// - Tightening generic constraint (implementations may not satisfy)
+    ImplementerBreaking,
+
+    /// Breaks both consumers and implementers.
+    ///
+    /// Examples:
+    /// - Changing property type (affects both readers and providers)
+    /// - Removing required property (consumers can't read, implementers can't omit)
+    Both,
+}
+
+impl TypeChangeImpact {
+    /// Returns true if this change affects API consumers.
+    pub fn affects_consumers(&self) -> bool {
+        matches!(self, TypeChangeImpact::ConsumerBreaking | TypeChangeImpact::Both)
+    }
+
+    /// Returns true if this change affects implementers.
+    pub fn affects_implementers(&self) -> bool {
+        matches!(self, TypeChangeImpact::ImplementerBreaking | TypeChangeImpact::Both)
+    }
+
+    /// Combine two impacts into the broader one.
+    pub fn combine(self, other: TypeChangeImpact) -> TypeChangeImpact {
+        match (self, other) {
+            (TypeChangeImpact::Both, _) | (_, TypeChangeImpact::Both) => TypeChangeImpact::Both,
+            (TypeChangeImpact::ConsumerBreaking, TypeChangeImpact::ImplementerBreaking)
+            | (TypeChangeImpact::ImplementerBreaking, TypeChangeImpact::ConsumerBreaking) => {
+                TypeChangeImpact::Both
+            }
+            (TypeChangeImpact::ConsumerBreaking, _) => TypeChangeImpact::ConsumerBreaking,
+            (TypeChangeImpact::ImplementerBreaking, _) => TypeChangeImpact::ImplementerBreaking,
+        }
+    }
+}
+
+// =============================================================================
 // Severity and Classification
 // =============================================================================
 
@@ -905,6 +1230,9 @@ pub struct TypeChange {
     /// Severity of this change
     #[serde(default)]
     pub severity: Severity,
+    /// Who is affected by this change (consumers, implementers, or both)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impact: Option<TypeChangeImpact>,
     /// Optional migration hint
     #[serde(skip_serializing_if = "Option::is_none")]
     pub migration_hint: Option<String>,
@@ -1590,6 +1918,36 @@ mod tests {
     }
 
     #[test]
+    fn test_module_system_change() {
+        let change = ModuleSystemChange::ExportsSubpathRemoved {
+            subpath: "./utils".to_string(),
+            conditions_affected: vec!["import".to_string()],
+            migration_hint: Some("Use ./helpers instead".to_string()),
+        };
+
+        assert_eq!(change.severity(), Severity::Major);
+        assert!(change.description().contains("./utils"));
+    }
+
+    #[test]
+    fn test_type_change_impact() {
+        assert!(TypeChangeImpact::ConsumerBreaking.affects_consumers());
+        assert!(!TypeChangeImpact::ConsumerBreaking.affects_implementers());
+
+        assert!(!TypeChangeImpact::ImplementerBreaking.affects_consumers());
+        assert!(TypeChangeImpact::ImplementerBreaking.affects_implementers());
+
+        assert!(TypeChangeImpact::Both.affects_consumers());
+        assert!(TypeChangeImpact::Both.affects_implementers());
+
+        // Test combine
+        assert_eq!(
+            TypeChangeImpact::ConsumerBreaking.combine(TypeChangeImpact::ImplementerBreaking),
+            TypeChangeImpact::Both
+        );
+    }
+
+    #[test]
     fn test_change_report() {
         let mut report = ChangeReport::new("my-package", "1.0.0", "2.0.0");
 
@@ -1648,6 +2006,7 @@ mod tests {
                 new_type: Some(TypeInfo::primitive("string")),
             }],
             severity: Severity::Major,
+            impact: None,
             migration_hint: Some("Add apiKey field".to_string()),
         }));
 

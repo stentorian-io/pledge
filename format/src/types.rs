@@ -52,6 +52,144 @@
 
 use serde::{Deserialize, Serialize};
 
+// =============================================================================
+// Variance - Position-based type compatibility
+// =============================================================================
+
+/// Variance describes how a type parameter behaves in subtyping relationships.
+///
+/// Understanding variance is essential for detecting breaking changes in generic types:
+///
+/// - **Covariant**: Subtyping follows the type parameter direction (output positions)
+/// - **Contravariant**: Subtyping reverses direction (input positions)
+/// - **Invariant**: No subtyping allowed (both read and write)
+/// - **Bivariant**: Subtyping in both directions (loose, often method parameters)
+///
+/// # Breaking Change Detection
+///
+/// Variance affects which type changes are breaking:
+///
+/// | Variance | Narrowing Type | Widening Type |
+/// |----------|----------------|---------------|
+/// | Covariant | Breaking | Safe |
+/// | Contravariant | Safe | Breaking |
+/// | Invariant | Breaking | Breaking |
+/// | Bivariant | Safe | Safe |
+///
+/// # Examples
+///
+/// ```rust
+/// use interlint_format::Variance;
+///
+/// // Return types are covariant
+/// let return_variance = Variance::Covariant;
+/// assert!(return_variance.is_safe_to_widen()); // Can return more general type
+///
+/// // Parameters are contravariant
+/// let param_variance = Variance::Contravariant;
+/// assert!(param_variance.is_safe_to_narrow()); // Can accept more specific type
+///
+/// // Mutable properties are invariant
+/// let prop_variance = Variance::Invariant;
+/// assert!(!prop_variance.is_safe_to_widen());
+/// assert!(!prop_variance.is_safe_to_narrow());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Variance {
+    /// Covariant - subtyping follows type parameter direction.
+    ///
+    /// Used in output positions (return types, readonly properties).
+    /// `T` can be replaced with a subtype of `T`.
+    #[default]
+    Covariant,
+
+    /// Contravariant - subtyping reverses direction.
+    ///
+    /// Used in input positions (function parameters).
+    /// `T` can be replaced with a supertype of `T`.
+    Contravariant,
+
+    /// Invariant - no subtyping relationship.
+    ///
+    /// Used when type appears in both input and output positions
+    /// (mutable properties, class type parameters with methods).
+    Invariant,
+
+    /// Bivariant - subtyping in both directions (loose).
+    ///
+    /// Used for method parameters in some type systems (TypeScript methods).
+    /// Less type-safe but allows more flexibility.
+    Bivariant,
+}
+
+impl Variance {
+    /// Returns true if widening the type is safe (won't break consumers).
+    ///
+    /// Widening means replacing `T` with a supertype of `T`.
+    /// This is safe for covariant and bivariant positions.
+    pub fn is_safe_to_widen(&self) -> bool {
+        matches!(self, Variance::Covariant | Variance::Bivariant)
+    }
+
+    /// Returns true if narrowing the type is safe (won't break consumers).
+    ///
+    /// Narrowing means replacing `T` with a subtype of `T`.
+    /// This is safe for contravariant and bivariant positions.
+    pub fn is_safe_to_narrow(&self) -> bool {
+        matches!(self, Variance::Contravariant | Variance::Bivariant)
+    }
+
+    /// Combine two variances (for nested type positions).
+    ///
+    /// When a type parameter appears inside another generic type,
+    /// the variances are combined:
+    /// - Covariant * Covariant = Covariant
+    /// - Covariant * Contravariant = Contravariant
+    /// - Contravariant * Contravariant = Covariant
+    /// - Anything with Invariant = Invariant
+    /// - Bivariant with anything = Bivariant (in TypeScript)
+    pub fn combine(&self, other: Variance) -> Variance {
+        match (self, other) {
+            (Variance::Invariant, _) | (_, Variance::Invariant) => Variance::Invariant,
+            (Variance::Bivariant, _) | (_, Variance::Bivariant) => Variance::Bivariant,
+            (Variance::Covariant, Variance::Covariant) => Variance::Covariant,
+            (Variance::Contravariant, Variance::Contravariant) => Variance::Covariant,
+            (Variance::Covariant, Variance::Contravariant)
+            | (Variance::Contravariant, Variance::Covariant) => Variance::Contravariant,
+        }
+    }
+
+    /// Get the variance for a function return type.
+    pub fn for_return_type() -> Self {
+        Variance::Covariant
+    }
+
+    /// Get the variance for a function parameter.
+    pub fn for_parameter() -> Self {
+        Variance::Contravariant
+    }
+
+    /// Get the variance for a readonly property.
+    pub fn for_readonly_property() -> Self {
+        Variance::Covariant
+    }
+
+    /// Get the variance for a mutable property.
+    pub fn for_mutable_property() -> Self {
+        Variance::Invariant
+    }
+
+    /// Get the variance for a method parameter (TypeScript-style bivariance).
+    pub fn for_method_parameter() -> Self {
+        Variance::Bivariant
+    }
+}
+
+// =============================================================================
+// TypeKind - Classification of types
+// =============================================================================
+
 /// The kind of type being represented.
 ///
 /// This enum categorizes types into 18 distinct categories, enabling
@@ -332,6 +470,33 @@ pub struct TypeInfo {
     /// its declared type. Used for union types containing null.
     #[serde(default)]
     pub nullable: bool,
+
+    /// For object types, the properties with their names and types.
+    ///
+    /// Used for structural comparison of object types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub properties: Vec<ObjectProperty>,
+}
+
+/// A property within an object type.
+///
+/// Used for structural type comparison to detect breaking changes
+/// in object shapes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectProperty {
+    /// The name of the property.
+    pub name: String,
+
+    /// The type of the property.
+    pub type_info: Box<TypeInfo>,
+
+    /// Whether the property is optional (can be undefined).
+    #[serde(default)]
+    pub optional: bool,
+
+    /// Whether the property is readonly.
+    #[serde(default)]
+    pub readonly: bool,
 }
 
 impl Default for TypeInfo {
@@ -347,6 +512,7 @@ impl Default for TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
         }
     }
 }
@@ -378,6 +544,7 @@ impl TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
         }
     }
 
@@ -407,6 +574,7 @@ impl TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
         }
     }
 
@@ -442,6 +610,7 @@ impl TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
         }
     }
 
@@ -471,6 +640,7 @@ impl TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
         }
     }
 
@@ -500,6 +670,318 @@ impl TypeInfo {
             param_types: Vec::new(),
             return_type: None,
             nullable: false,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Create a literal type from a value.
+    ///
+    /// Literal types represent specific values like `"hello"`, `42`, `true`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use interlint_format::{TypeInfo, TypeKind};
+    ///
+    /// let hello = TypeInfo::literal("'hello'");
+    /// assert_eq!(hello.kind, TypeKind::Literal);
+    /// assert_eq!(hello.repr, "'hello'");
+    /// ```
+    pub fn literal(value: impl Into<String>) -> Self {
+        Self {
+            kind: TypeKind::Literal,
+            repr: value.into(),
+            type_arguments: Vec::new(),
+            constituents: Vec::new(),
+            element_type: None,
+            key_type: None,
+            value_type: None,
+            param_types: Vec::new(),
+            return_type: None,
+            nullable: false,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Create a union type from multiple constituent types.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use interlint_format::{TypeInfo, TypeKind};
+    ///
+    /// let union = TypeInfo::union(vec![
+    ///     TypeInfo::primitive("string"),
+    ///     TypeInfo::primitive("number"),
+    /// ]);
+    /// assert_eq!(union.kind, TypeKind::Union);
+    /// assert_eq!(union.repr, "string | number");
+    /// ```
+    pub fn union(constituents: Vec<TypeInfo>) -> Self {
+        let repr = constituents
+            .iter()
+            .map(|t| t.repr.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        let nullable = constituents.iter().any(|t| {
+            t.repr == "null" || t.repr == "undefined" || t.nullable
+        });
+        Self {
+            kind: TypeKind::Union,
+            repr,
+            type_arguments: Vec::new(),
+            constituents,
+            element_type: None,
+            key_type: None,
+            value_type: None,
+            param_types: Vec::new(),
+            return_type: None,
+            nullable,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Create an intersection type from multiple constituent types.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use interlint_format::{TypeInfo, TypeKind};
+    ///
+    /// let intersection = TypeInfo::intersection(vec![
+    ///     TypeInfo::reference("HasName"),
+    ///     TypeInfo::reference("HasAge"),
+    /// ]);
+    /// assert_eq!(intersection.kind, TypeKind::Intersection);
+    /// assert_eq!(intersection.repr, "HasName & HasAge");
+    /// ```
+    pub fn intersection(constituents: Vec<TypeInfo>) -> Self {
+        let repr = constituents
+            .iter()
+            .map(|t| t.repr.as_str())
+            .collect::<Vec<_>>()
+            .join(" & ");
+        Self {
+            kind: TypeKind::Intersection,
+            repr,
+            type_arguments: Vec::new(),
+            constituents,
+            element_type: None,
+            key_type: None,
+            value_type: None,
+            param_types: Vec::new(),
+            return_type: None,
+            nullable: false,
+            properties: Vec::new(),
+        }
+    }
+
+    /// Create an object type with properties.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use interlint_format::{TypeInfo, TypeKind, ObjectProperty};
+    ///
+    /// let obj = TypeInfo::object(vec![
+    ///     ObjectProperty {
+    ///         name: "name".to_string(),
+    ///         type_info: Box::new(TypeInfo::primitive("string")),
+    ///         optional: false,
+    ///         readonly: false,
+    ///     },
+    /// ]);
+    /// assert_eq!(obj.kind, TypeKind::Object);
+    /// ```
+    pub fn object(properties: Vec<ObjectProperty>) -> Self {
+        let repr = format!(
+            "{{ {} }}",
+            properties
+                .iter()
+                .map(|p| format!(
+                    "{}{}{}",
+                    if p.readonly { "readonly " } else { "" },
+                    p.name,
+                    if p.optional { "?" } else { "" }
+                ))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        Self {
+            kind: TypeKind::Object,
+            repr,
+            type_arguments: Vec::new(),
+            constituents: Vec::new(),
+            element_type: None,
+            key_type: None,
+            value_type: None,
+            param_types: Vec::new(),
+            return_type: None,
+            nullable: false,
+            properties,
+        }
+    }
+
+    /// Check if this type is structurally compatible with another type
+    /// in a given variance position.
+    ///
+    /// Returns true if replacing `self` with `other` would be safe.
+    pub fn is_compatible_with(&self, other: &TypeInfo, variance: Variance) -> bool {
+        // Same type is always compatible
+        if self == other {
+            return true;
+        }
+
+        // Bivariant is always compatible
+        if variance == Variance::Bivariant {
+            return true;
+        }
+
+        // Any type is compatible with anything
+        if self.kind == TypeKind::Any || other.kind == TypeKind::Any {
+            return true;
+        }
+
+        // Unknown is only compatible with unknown or any
+        if self.kind == TypeKind::Unknown {
+            return other.kind == TypeKind::Unknown || other.kind == TypeKind::Any;
+        }
+
+        // Never is subtype of everything
+        if self.kind == TypeKind::Never {
+            return variance.is_safe_to_narrow();
+        }
+
+        // Everything is subtype of never in contravariant position
+        if other.kind == TypeKind::Never {
+            return variance.is_safe_to_widen();
+        }
+
+        // For structural comparison, we need to check based on kind
+        match (&self.kind, &other.kind) {
+            // Primitives must match exactly (or be in a subtyping relationship)
+            (TypeKind::Primitive, TypeKind::Primitive) => {
+                self.repr == other.repr || self.is_primitive_subtype_of(other)
+            }
+
+            // Arrays are covariant in their element type
+            (TypeKind::Array, TypeKind::Array) => {
+                if let (Some(self_elem), Some(other_elem)) =
+                    (&self.element_type, &other.element_type)
+                {
+                    self_elem.is_compatible_with(other_elem, variance)
+                } else {
+                    false
+                }
+            }
+
+            // Unions: in covariant position, self must be subset of other
+            // In contravariant position, other must be subset of self
+            (TypeKind::Union, TypeKind::Union) => {
+                match variance {
+                    Variance::Covariant => {
+                        // All self constituents must be in other
+                        self.constituents.iter().all(|s| {
+                            other.constituents.iter().any(|o| s.is_compatible_with(o, variance))
+                        })
+                    }
+                    Variance::Contravariant => {
+                        // All other constituents must be in self
+                        other.constituents.iter().all(|o| {
+                            self.constituents.iter().any(|s| s.is_compatible_with(o, Variance::Covariant))
+                        })
+                    }
+                    Variance::Invariant => {
+                        // Must be exactly the same
+                        self.constituents.len() == other.constituents.len()
+                            && self.constituents.iter().all(|s| {
+                                other.constituents.iter().any(|o| s == o)
+                            })
+                    }
+                    Variance::Bivariant => true,
+                }
+            }
+
+            // Objects need structural comparison
+            (TypeKind::Object, TypeKind::Object) => {
+                self.is_object_compatible_with(other, variance)
+            }
+
+            // Different kinds are generally not compatible
+            _ => false,
+        }
+    }
+
+    /// Check if this primitive type is a subtype of another primitive.
+    fn is_primitive_subtype_of(&self, other: &TypeInfo) -> bool {
+        // Handle common subtyping relationships
+        match (self.repr.as_str(), other.repr.as_str()) {
+            // number literal subtypes
+            ("integer", "number") => true,
+            ("float", "number") => true,
+            // string literal subtypes
+            (s, "string") if s.starts_with('"') && s.ends_with('"') => true,
+            // boolean literal subtypes
+            ("true", "boolean") | ("false", "boolean") => true,
+            // void to undefined (TypeScript)
+            ("void", "undefined") => true,
+            _ => false,
+        }
+    }
+
+    /// Check object structural compatibility.
+    fn is_object_compatible_with(&self, other: &TypeInfo, variance: Variance) -> bool {
+        match variance {
+            Variance::Covariant => {
+                // Self must have all required properties of other with compatible types
+                for other_prop in &other.properties {
+                    if other_prop.optional {
+                        continue; // Optional properties don't need to exist
+                    }
+                    let self_prop = self.properties.iter().find(|p| p.name == other_prop.name);
+                    match self_prop {
+                        Some(sp) => {
+                            // Check type compatibility (property read is covariant)
+                            let prop_variance = if sp.readonly && other_prop.readonly {
+                                Variance::Covariant
+                            } else {
+                                Variance::Invariant
+                            };
+                            if !sp.type_info.is_compatible_with(&other_prop.type_info, prop_variance) {
+                                return false;
+                            }
+                        }
+                        None => return false, // Missing required property
+                    }
+                }
+                true
+            }
+            Variance::Contravariant => {
+                // Other must have all required properties of self
+                other.is_object_compatible_with(self, Variance::Covariant)
+            }
+            Variance::Invariant => {
+                // Must have same properties with same types
+                if self.properties.len() != other.properties.len() {
+                    return false;
+                }
+                for self_prop in &self.properties {
+                    let other_prop = other.properties.iter().find(|p| p.name == self_prop.name);
+                    match other_prop {
+                        Some(op) => {
+                            if self_prop.optional != op.optional
+                                || self_prop.readonly != op.readonly
+                                || !self_prop.type_info.is_compatible_with(&op.type_info, Variance::Invariant)
+                            {
+                                return false;
+                            }
+                        }
+                        None => return false,
+                    }
+                }
+                true
+            }
+            Variance::Bivariant => true,
         }
     }
 }

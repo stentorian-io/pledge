@@ -53,14 +53,8 @@ fn arb_simple_type_info() -> impl Strategy<Value = TypeInfo> {
         .prop_map(|(kind, repr, nullable)| TypeInfo {
             kind,
             repr,
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
             nullable,
+            ..Default::default()
         })
 }
 

@@ -613,14 +613,7 @@ mod tests {
                     type_info: TypeInfo {
                         kind,
                         repr: format!("type_{i}"),
-                        type_arguments: vec![],
-                        constituents: vec![],
-                        element_type: None,
-                        key_type: None,
-                        value_type: None,
-                        param_types: vec![],
-                        return_type: None,
-                        nullable: false,
+                        ..Default::default()
                     },
                     is_const: true,
                     visibility: Visibility::Public,
@@ -655,50 +648,28 @@ mod tests {
         let nested_type = TypeInfo {
             kind: TypeKind::Map,
             repr: "Map<string, Array<number | null>>".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
             key_type: Some(Box::new(TypeInfo::primitive("string"))),
             value_type: Some(Box::new(TypeInfo {
                 kind: TypeKind::Array,
                 repr: "Array<number | null>".to_string(),
-                type_arguments: vec![],
-                constituents: vec![],
                 element_type: Some(Box::new(TypeInfo {
                     kind: TypeKind::Union,
                     repr: "number | null".to_string(),
-                    type_arguments: vec![],
                     constituents: vec![
                         TypeInfo::primitive("number"),
                         TypeInfo {
                             kind: TypeKind::Literal,
                             repr: "null".to_string(),
-                            type_arguments: vec![],
-                            constituents: vec![],
-                            element_type: None,
-                            key_type: None,
-                            value_type: None,
-                            param_types: vec![],
-                            return_type: None,
                             nullable: true,
+                            ..Default::default()
                         },
                     ],
-                    element_type: None,
-                    key_type: None,
-                    value_type: None,
-                    param_types: vec![],
-                    return_type: None,
                     nullable: true,
+                    ..Default::default()
                 })),
-                key_type: None,
-                value_type: None,
-                param_types: vec![],
-                return_type: None,
-                nullable: false,
+                ..Default::default()
             })),
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         module.add_export(Export {
@@ -996,13 +967,7 @@ mod tests {
                 kind: TypeKind::Generic,
                 repr: "Generator<number>".to_string(),
                 type_arguments: vec![TypeInfo::primitive("number")],
-                constituents: vec![],
-                element_type: None,
-                key_type: None,
-                value_type: None,
-                param_types: vec![],
-                return_type: None,
-                nullable: false,
+                ..Default::default()
             },
             is_async: false,
             is_generator: true,
@@ -1026,13 +991,7 @@ mod tests {
                 kind: TypeKind::Generic,
                 repr: "AsyncGenerator<number>".to_string(),
                 type_arguments: vec![TypeInfo::primitive("number")],
-                constituents: vec![],
-                element_type: None,
-                key_type: None,
-                value_type: None,
-                param_types: vec![],
-                return_type: None,
-                nullable: false,
+                ..Default::default()
             },
             is_async: true,
             is_generator: true,
@@ -1344,14 +1303,9 @@ mod tests {
         let func_type = TypeInfo {
             kind: TypeKind::Function,
             repr: "(x: string, y: number) => boolean".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
             param_types: vec![TypeInfo::primitive("string"), TypeInfo::primitive("number")],
             return_type: Some(Box::new(TypeInfo::primitive("boolean"))),
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&func_type).expect("should encode function type");
@@ -1366,29 +1320,18 @@ mod tests {
         let union_type = TypeInfo {
             kind: TypeKind::Union,
             repr: "string | number | null".to_string(),
-            type_arguments: vec![],
             constituents: vec![
                 TypeInfo::primitive("string"),
                 TypeInfo::primitive("number"),
                 TypeInfo {
                     kind: TypeKind::Literal,
                     repr: "null".to_string(),
-                    type_arguments: vec![],
-                    constituents: vec![],
-                    element_type: None,
-                    key_type: None,
-                    value_type: None,
-                    param_types: vec![],
-                    return_type: None,
                     nullable: true,
+                    ..Default::default()
                 },
             ],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
             nullable: true,
+            ..Default::default()
         };
 
         let encoded = encode(&union_type).expect("should encode union type");
@@ -1403,18 +1346,12 @@ mod tests {
         let intersection_type = TypeInfo {
             kind: TypeKind::Intersection,
             repr: "A & B & C".to_string(),
-            type_arguments: vec![],
             constituents: vec![
                 TypeInfo::reference("A"),
                 TypeInfo::reference("B"),
                 TypeInfo::reference("C"),
             ],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&intersection_type).expect("should encode intersection");
@@ -1433,13 +1370,7 @@ mod tests {
                 TypeInfo::primitive("number"),
                 TypeInfo::primitive("boolean"),
             ],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&tuple_type).expect("should encode tuple");
@@ -1457,21 +1388,9 @@ mod tests {
                 kind: TypeKind::Generic,
                 repr: "Result<T, E>".to_string(),
                 type_arguments: vec![TypeInfo::reference("T"), TypeInfo::reference("E")],
-                constituents: vec![],
-                element_type: None,
-                key_type: None,
-                value_type: None,
-                param_types: vec![],
-                return_type: None,
-                nullable: false,
+                ..Default::default()
             }],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&generic_type).expect("should encode generic");
@@ -1487,13 +1406,7 @@ mod tests {
             kind: TypeKind::Set,
             repr: "Set<string>".to_string(),
             type_arguments: vec![TypeInfo::primitive("string")],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&set_type).expect("should encode set type");
@@ -1507,13 +1420,7 @@ mod tests {
             kind: TypeKind::Async,
             repr: "Promise<void>".to_string(),
             type_arguments: vec![TypeInfo::void()],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&async_type).expect("should encode async type");
@@ -1526,14 +1433,7 @@ mod tests {
         let never_type = TypeInfo {
             kind: TypeKind::Never,
             repr: "never".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&never_type).expect("should encode never type");
@@ -1546,14 +1446,7 @@ mod tests {
         let unknown_type = TypeInfo {
             kind: TypeKind::Unknown,
             repr: "unknown".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&unknown_type).expect("should encode unknown type");
@@ -1566,14 +1459,7 @@ mod tests {
         let literal_type = TypeInfo {
             kind: TypeKind::Literal,
             repr: "\"success\"".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&literal_type).expect("should encode literal type");
@@ -1586,14 +1472,7 @@ mod tests {
         let object_type = TypeInfo {
             kind: TypeKind::Object,
             repr: "{ name: string; age: number }".to_string(),
-            type_arguments: vec![],
-            constituents: vec![],
-            element_type: None,
-            key_type: None,
-            value_type: None,
-            param_types: vec![],
-            return_type: None,
-            nullable: false,
+            ..Default::default()
         };
 
         let encoded = encode(&object_type).expect("should encode object type");
@@ -1925,14 +1804,7 @@ mod tests {
                     return_type: TypeInfo {
                         kind: TypeKind::Async,
                         repr: "Promise<void>".to_string(),
-                        type_arguments: vec![],
-                        constituents: vec![],
-                        element_type: None,
-                        key_type: None,
-                        value_type: None,
-                        param_types: vec![],
-                        return_type: None,
-                        nullable: false,
+                        ..Default::default()
                     },
                     is_async: true,
                     is_generator: false,

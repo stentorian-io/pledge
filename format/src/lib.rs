@@ -174,7 +174,7 @@ pub use signature::{
     ClassSig, EnumMember, EnumSig, FunctionSig, IndexSignature, InterfaceSig, NamespaceSig,
     Parameter, Property, Signature, TypeAliasSig, VariableSig, Visibility,
 };
-pub use types::{TypeInfo, TypeKind, TypeParameter};
+pub use types::{ObjectProperty, TypeInfo, TypeKind, TypeParameter, Variance};
 
 // Re-export new changes module types (preferred API)
 pub use changes::{
@@ -205,7 +205,10 @@ pub use changes::{
     ExportAddedChange,
     ExportRemovedChange,
     GenericConstraintChange,
+    // Module system changes
+    ImportsChangeType,
     ModuleChange,
+    ModuleSystemChange,
     MovedExport,
     // Parameter and property changes
     ParameterChange,
@@ -218,6 +221,8 @@ pub use changes::{
     Severity,
     SignatureChange,
     TypeChange,
+    // Type change impact
+    TypeChangeImpact,
     VisibilityChange,
     VisibilityLevel,
 };
