@@ -154,16 +154,23 @@ cargo run -- ./path/to/local/package
 
 ## API Interaction
 
-The CLI sends requests to the interlint API at `POST /v1/compare`:
+The CLI sends requests to the interlint API at `POST /v1/compare` using the interlint binary format:
 
-```json
+- **Content-Type**: `application/x-interlint`
+- **Wire format**: MessagePack with 8-byte header and CRC32 checksum
+- **Request body**: Binary-encoded `CompareRequest` containing previous and current `PublicInterface`
+
+```
+Request structure (binary MessagePack):
 {
-  "previous": { /* PublicInterface */ },
-  "current": { /* PublicInterface */ }
+  "previous": PublicInterface,
+  "current": PublicInterface
 }
 ```
 
-Response includes breaking changes with severity levels and suggested version bump.
+Response includes breaking changes with severity levels and suggested version bump, also in binary format.
+
+**Note**: There is no JSON output option. All interface data uses the binary `.ilmj` format for efficiency.
 
 ## Adding More Test Cases
 

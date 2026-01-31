@@ -189,7 +189,7 @@ breakpoint/
 
 5. **Conversion**: Transforms SWC's AST types into the language-agnostic `interlint-format` types
 
-6. **API Communication**: Sends the previous and current `PublicInterface` to the Interlint API for semantic comparison
+6. **API Communication**: Serializes interfaces using the interlint binary format (MessagePack with header and checksum) and sends to the Interlint API
 
 7. **Result Display**: Prints breaking changes grouped by severity with suggestions for fixes
 
@@ -197,9 +197,19 @@ breakpoint/
 
 - **swc_ecma_parser**: Fast TypeScript/JavaScript parser
 - **reqwest**: HTTP client for API communication and npm registry
-- **interlint-format**: Shared format types for public interface representation
+- **interlint-format**: Shared format types and binary serialization (MessagePack)
 - **tar/flate2**: Tarball handling for npm package downloads
 - **glob**: Pattern matching for file inclusion/exclusion
+
+### Binary Format
+
+The CLI uses the interlint binary format for all API communication:
+
+- **Wire format**: MessagePack with 8-byte header and CRC32 checksum
+- **Content-Type**: `application/x-interlint`
+- **File extension**: `.ilmj` (for saved interface files)
+
+This binary format is more compact and efficient than JSON, reducing bandwidth and improving parsing performance. There is no JSON output option for interface data.
 
 ## Example Output
 
