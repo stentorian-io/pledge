@@ -112,19 +112,64 @@ breakpoint --previous ./main-branch ./feature-branch
 |----------|-------------|---------|
 | `INTERLINT_API_URL` | URL of the Interlint API server | `http://localhost:3000` |
 
+**Setting Environment Variables:**
+
+```bash
+# Bash/Zsh
+export INTERLINT_API_URL=http://custom-api.example.com:3000
+breakpoint /path/to/package
+
+# PowerShell (Windows)
+$env:INTERLINT_API_URL = "http://custom-api.example.com:3000"
+.\target\release\breakpoint.exe C:\path\to\package
+
+# Inline (one-time use)
+INTERLINT_API_URL=http://localhost:8080 breakpoint /path/to/package
+```
+
 ### Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | `0` | No breaking changes detected |
 | `1` | Breaking changes detected |
+| `1` | Error occurred (see stderr for details) |
 
 This makes it easy to integrate with CI/CD pipelines:
 
 ```bash
 # In your CI script
-breakpoint . || echo "Breaking changes detected!"
+breakpoint .
+if [ $? -eq 0 ]; then
+  echo "✅ No breaking changes"
+else
+  echo "❌ Breaking changes detected"
+  exit 1
+fi
+
+# Or short form
+breakpoint . || { echo "Breaking changes found"; exit 1; }
 ```
+
+### Common Errors
+
+If breakpoint fails, check the error message:
+
+```
+Error: Failed to connect to http://localhost:3000
+  → Start the API server: cd api && cargo run
+
+Error: Failed to load and pack current package
+  → Check package.json validity: npm validate
+
+Error: Failed to parse file
+  → Check for TypeScript/JavaScript syntax errors: npx tsc --noEmit
+
+Error: No previous version found
+  → This is normal for first-time publishes
+```
+
+For detailed troubleshooting, see [TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md).
 
 ## Supported Languages and File Types
 
@@ -372,6 +417,11 @@ jobs:
 
 Additional documentation is available in the `docs/` directory:
 
+### Getting Started & Troubleshooting
+- [Troubleshooting Guide](./docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [Server Requirements](./docs/SERVER_REQUIREMENTS.md) - API server setup and configuration
+
+### Technical Documentation
 - [Query Patterns Reference](./docs/query-patterns-reference.md) - Tree-sitter query patterns for JS/TS
 - [Parser Interface Design](./docs/parser-interface-design.md) - Language-agnostic parser architecture
 - [Package Manager Research](./docs/package-manager-research.md) - npm/pnpm/yarn/bun pack commands and registry API
