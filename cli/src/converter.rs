@@ -104,9 +104,11 @@ fn add_modules_from_entries(interface: &mut PublicInterface, entries: &PkgEntrie
         (&entries.bin, PkgEntryType::Bin),
     ];
 
-    for (entry_map, _entry_type) in all_entries {
-        for (_name, entry) in entry_map {
+    for (entry_map, entry_type) in all_entries {
+        println!("Processing {} entries: {} found", entry_type, entry_map.len());
+        for (name, entry) in entry_map {
             let path_str = entry.path.to_string_lossy().to_string();
+            println!("  - Entry '{}': {}", name, path_str);
 
             // Skip already processed modules
             if processed_paths.contains_key(&path_str) {
@@ -115,8 +117,14 @@ fn add_modules_from_entries(interface: &mut PublicInterface, entries: &PkgEntrie
             processed_paths.insert(path_str.clone(), true);
 
             // Parse and convert the module
-            if let Ok(module) = entry_to_module(entry) {
-                interface.add_module(module);
+            match entry_to_module(entry) {
+                Ok(module) => {
+                    println!("    -> Successfully parsed, {} exports", module.exports.len());
+                    interface.add_module(module);
+                }
+                Err(e) => {
+                    eprintln!("    -> Failed to parse: {}", e);
+                }
             }
         }
     }
@@ -132,11 +140,17 @@ fn entry_to_module(entry: &PkgEntry) -> Result<Module> {
     // Parse the entry file
     let parsed = parse_pkg_entry(entry)
         .with_context(|| format!("Failed to parse entry: {}", path))?;
+    println!("    -> File parsed successfully");
 
     // Get exports from the parsed module
     let base_path = entry.dir_path();
+    let base_path_display = base_path.display().to_string();
+    println!("    -> Extracting exports (base_path: {})", base_path_display);
     let (default_export, named_exports) = get_exports_in_module(base_path, parsed)
-        .with_context(|| format!("Failed to get exports from module: {}", path))?;
+        .with_context(|| {
+            format!("Failed to get exports from module: {} (base_path: {})", path, base_path_display)
+        })?;
+    println!("    -> Extracted {} named exports + {} default", named_exports.len(), if default_export.is_some() { 1 } else { 0 });
 
     // Add default export if present
     if let Some(default_decl) = default_export {
@@ -421,6 +435,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
                 param_types: vec![],
                 return_type: None,
                 nullable: false,
+                properties: vec![],
             }
         }
         "unknown" => {
@@ -435,6 +450,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
                 param_types: vec![],
                 return_type: None,
                 nullable: false,
+                properties: vec![],
             }
         }
         "object" => {
@@ -449,6 +465,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
                 param_types: vec![],
                 return_type: None,
                 nullable: false,
+                properties: vec![],
             }
         }
         _ => {}
@@ -482,6 +499,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
             param_types: vec![],
             return_type: None,
             nullable: false,
+            properties: vec![],
         };
     }
 
@@ -507,6 +525,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
             param_types: vec![],
             return_type: None,
             nullable: false,
+            properties: vec![],
         };
     }
 
@@ -531,6 +550,7 @@ fn parse_type_string(type_str: &str) -> TypeInfo {
                 param_types: vec![],
                 return_type: None,
                 nullable: false,
+                properties: vec![],
             };
         }
     }
