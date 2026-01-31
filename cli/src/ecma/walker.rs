@@ -1,338 +1,329 @@
+//! Module walker for extracting exports from parsed AST.
+//!
+//! This module provides functionality for walking through parsed modules
+//! and extracting export information.
+
 use crate::ecma::entity::EntityDeclaration;
 use crate::ecma::parser::parse_import;
-use anyhow::{bail, Context, Result};
+use crate::parser::{NodeKind, ParsedNode};
+use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use swc_ecma_ast::{
-    ExportAll, ExportDecl, ExportDefaultDecl, ExportDefaultExpr, ExportNamedSpecifier,
-    ExportSpecifier, Module, ModuleExportName, NamedExport,
-};
 
-pub type ExternalSpecifiers<'module> = HashMap<PathBuf, Vec<&'module ExportSpecifier>>;
+/// A map of declaration names to their EntityDeclaration.
 pub type Declarations = HashMap<String, EntityDeclaration>;
-pub type DeclarationsWithExport<'module> = Vec<&'module ExportDecl>;
-pub type ExportsFacadeAll<'module> = Vec<&'module ExportAll>;
-pub type ExportsNamed<'module> = Vec<&'module NamedExport>;
-pub type DefaultExportDeclaration<'module> = Option<&'module ExportDefaultDecl>;
-pub type DefaultExportExpression<'module> = Option<&'module ExportDefaultExpr>;
 
+/// Extracts all exports from a module.
 pub fn get_exports_in_module(
     base_import_path: PathBuf,
-    module: Module,
+    parsed: ParsedNode,
 ) -> Result<(Option<EntityDeclaration>, Declarations)> {
-    let (
-        mut declarations,
-        declarations_with_export,
-        exports_facade_all,
-        exports_named,
-        default_export_declaration,
-        default_export_expression,
-    ) = get_items_in_module(&module).with_context(|| {
-        format!(
-            "Failed to walk through relevant items in module: {}",
-            base_import_path.display()
-        )
-    })?;
-
-    let (mut named_exports, named_facade_exports) =
-        get_named_export_declarations(&declarations_with_export, &exports_named, &mut declarations)
-            .with_context(|| {
-                format!(
-                    "Failed to extract named exports in module: {}",
-                    base_import_path.display()
-                )
-            })?;
-
-    let default_export = get_default_export_declaration(
-        &default_export_declaration,
-        &default_export_expression,
-        declarations,
-    )
-    .with_context(|| {
-        format!(
-            "Failed to extract default export in module: {}",
-            base_import_path.display()
-        )
-    })?;
-
-    add_export_all_facade_exports(&base_import_path, exports_facade_all, &mut named_exports)
-        .with_context(|| {
-            format!(
-                "Failed to walk through export all (*) exports in module: {}",
-                base_import_path.display()
-            )
-        })?;
-
-    add_named_facade_exports(&base_import_path, named_facade_exports, &mut named_exports)
-        .with_context(|| {
-            format!(
-                "Failed to walk through facade named exports in module: {}",
-                base_import_path.display()
-            )
-        })?;
-
-    Ok((default_export, named_exports))
-}
-
-fn get_items_in_module(
-    module: &Module,
-) -> Result<(
-    Declarations,
-    DeclarationsWithExport,
-    ExportsFacadeAll,
-    ExportsNamed,
-    DefaultExportDeclaration,
-    DefaultExportExpression,
-)> {
     let mut declarations = Declarations::new();
-    let mut declarations_with_export = DeclarationsWithExport::new();
+    let mut default_export: Option<EntityDeclaration> = None;
 
-    let mut export_all_exports = ExportsFacadeAll::new();
-    let mut named_exports = ExportsNamed::new();
+    // Walk through all nodes to find exports
+    walk_module_exports(&parsed, &base_import_path, &mut declarations, &mut default_export)?;
 
-    let mut default_export_declaration = None;
-    let mut default_export_expression = None;
-
-    for item in module.body.iter() {
-        if item.is_stmt() {
-            let statement = item.as_stmt().unwrap();
-
-            if statement.is_decl() {
-                let declaration = statement.as_decl().unwrap();
-                let declaration = if declaration.is_var() {
-                    EntityDeclaration::from(declaration.as_var().unwrap().decls.last().unwrap())?
-                } else if declaration.is_class() {
-                    EntityDeclaration::from(declaration.as_class().unwrap())?
-                } else if declaration.is_fn_decl() {
-                    EntityDeclaration::from(declaration.as_fn_decl().unwrap())?
-                } else if declaration.is_ts_module() {
-                    todo!("handle TS module declarations")
-                } else if declaration.is_ts_enum() {
-                    todo!("handle TS enum declarations")
-                } else if declaration.is_ts_interface() {
-                    todo!("handle TS interface declarations")
-                } else if declaration.is_ts_type_alias() {
-                    todo!("handle TS type alias declarations")
-                } else {
-                    continue;
-                };
-
-                declarations.insert(declaration.name().to_owned(), declaration);
-            }
-        } else if item.is_module_decl() {
-            let module_declaration = item.as_module_decl().unwrap();
-
-            if module_declaration.is_export_decl() {
-                declarations_with_export.push(module_declaration.as_export_decl().unwrap());
-            } else if module_declaration.is_export_default_decl() {
-                default_export_declaration = module_declaration.as_export_default_decl();
-            } else if module_declaration.is_export_default_expr() {
-                default_export_expression = module_declaration.as_export_default_expr();
-            } else if module_declaration.is_export_all() {
-                export_all_exports.push(module_declaration.as_export_all().unwrap());
-            } else if module_declaration.is_export_named() {
-                named_exports.push(module_declaration.as_export_named().unwrap());
-            } else if module_declaration.is_ts_export_assignment() {
-                todo!("handle TS export assignments")
-            } else if module_declaration.is_ts_namespace_export() {
-                todo!("handle TS namespace exports")
-            }
-        }
-    }
-
-    Ok((
-        declarations,
-        declarations_with_export,
-        export_all_exports,
-        named_exports,
-        default_export_declaration,
-        default_export_expression,
-    ))
+    Ok((default_export, declarations))
 }
 
-fn get_default_export_declaration<'module>(
-    default_export_declaration: &DefaultExportDeclaration<'module>,
-    default_export_expression: &DefaultExportExpression<'module>,
-    mut declarations: Declarations,
-) -> Result<Option<EntityDeclaration>> {
-    if let Some(export) = default_export_declaration {
-        return Ok(Some(EntityDeclaration::from(&export.decl)?));
-    } else if default_export_expression.is_none() {
-        return Ok(None);
-    }
-
-    let expression = default_export_expression.unwrap();
-
-    // Handle identifier-based default exports (e.g., `export default foo`)
-    if let Some(export_identity) = expression.expr.as_ident() {
-        let export_name = export_identity.sym.to_string();
-
-        if let Some(declaration) = declarations.remove(&export_name) {
-            return Ok(Some(declaration));
+/// Recursively walks through the parsed tree to extract exports.
+fn walk_module_exports(
+    node: &ParsedNode,
+    base_path: &Path,
+    declarations: &mut Declarations,
+    default_export: &mut Option<EntityDeclaration>,
+) -> Result<()> {
+    // Check if this node is an export
+    if node.is_exported {
+        if let Some(entity) = extract_entity_from_node(node, base_path)? {
+            if node.is_default_export {
+                *default_export = Some(entity);
+            } else {
+                let name = entity.name().clone();
+                declarations.insert(name, entity);
+            }
         }
     }
 
-    // Non-identifier expressions (literals, inline functions, objects, etc.)
-    // are valid default exports but we can't track their declaration
+    // Handle export statement nodes specifically
+    if node.kind == NodeKind::ExportStatement {
+        extract_exports_from_statement(node, base_path, declarations, default_export)?;
+    }
+
+    // Recurse into children
+    for child in &node.children {
+        walk_module_exports(child, base_path, declarations, default_export)?;
+    }
+
+    Ok(())
+}
+
+/// Extracts exports from an export statement node.
+fn extract_exports_from_statement(
+    node: &ParsedNode,
+    base_path: &Path,
+    declarations: &mut Declarations,
+    default_export: &mut Option<EntityDeclaration>,
+) -> Result<()> {
+    let is_default = node.is_default_export || node.text.contains("export default");
+
+    // Check for re-exports (export * from or export { } from)
+    if node.text.contains(" from ") {
+        return handle_reexport(node, base_path, declarations);
+    }
+
+    // Check for direct declaration exports
+    for child in &node.children {
+        if child.kind.is_declaration() {
+            if let Ok(entity) = EntityDeclaration::from_node(child) {
+                if is_default {
+                    *default_export = Some(entity);
+                } else {
+                    let name = entity.name().clone();
+                    declarations.insert(name, entity);
+                }
+            }
+        }
+
+        // Handle export specifiers (export { a, b })
+        if child.kind == NodeKind::ExportClause {
+            extract_export_specifiers(child, declarations);
+        }
+    }
+
+    Ok(())
+}
+
+/// Extracts export specifiers from an export clause.
+fn extract_export_specifiers(clause: &ParsedNode, declarations: &mut Declarations) {
+    for specifier in &clause.children {
+        if specifier.kind == NodeKind::ExportSpecifier {
+            if let Some(name) = specifier.name.clone().or_else(|| {
+                specifier
+                    .children
+                    .iter()
+                    .find(|c| c.kind == NodeKind::Identifier)
+                    .and_then(|c| c.name.clone().or_else(|| Some(c.text.clone())))
+            }) {
+                // Create a placeholder entity for re-exported names
+                let entity = EntityDeclaration::Var(
+                    name.clone(),
+                    crate::ecma::entity::VarInfo {
+                        is_exported: true,
+                        source: specifier.text.clone(),
+                        ..Default::default()
+                    },
+                );
+                declarations.insert(name, entity);
+            }
+        }
+    }
+}
+
+/// Handles re-exports (export * from 'module' or export { a } from 'module').
+fn handle_reexport(
+    node: &ParsedNode,
+    base_path: &Path,
+    declarations: &mut Declarations,
+) -> Result<()> {
+    // Extract the source path from the export statement
+    let source_path = extract_import_source(node);
+    if source_path.is_none() {
+        return Ok(());
+    }
+
+    let source_path = source_path.unwrap();
+    let import_path = resolve_import_path(base_path, &source_path);
+
+    // Try to parse the imported module
+    let imported_module = parse_import(&import_path).with_context(|| {
+        format!(
+            "Failed to parse re-exported module: {}",
+            import_path.display()
+        )
+    })?;
+
+    let import_dir = import_path.parent().unwrap().to_path_buf();
+    let (_, imported_exports) = get_exports_in_module(import_dir, imported_module)?;
+
+    // Check if this is a namespace export (export * from)
+    if node.text.contains("export *") && !node.text.contains("export * as") {
+        // Re-export all named exports
+        declarations.extend(imported_exports);
+    } else if node.text.contains("export * as") {
+        // Namespace re-export - extract the namespace name
+        if let Some(ns_name) = extract_namespace_name(node) {
+            for (name, entity) in imported_exports {
+                declarations.insert(format!("{}.{}", ns_name, name), entity);
+            }
+        }
+    } else {
+        // Selective re-export
+        for child in &node.children {
+            if child.kind == NodeKind::ExportClause {
+                for specifier in &child.children {
+                    if let Some(orig_name) = extract_specifier_original_name(specifier) {
+                        let export_name = extract_specifier_export_name(specifier).unwrap_or(&orig_name);
+                        if let Some(entity) = imported_exports.get(&orig_name) {
+                            declarations.insert(export_name.clone(), entity.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Extracts an entity declaration from a node.
+fn extract_entity_from_node(node: &ParsedNode, _base_path: &Path) -> Result<Option<EntityDeclaration>> {
+    if node.kind.is_declaration() {
+        return Ok(Some(EntityDeclaration::from_node(node)?));
+    }
+
+    // Check children for declarations
+    for child in &node.children {
+        if child.kind.is_declaration() {
+            return Ok(Some(EntityDeclaration::from_node(child)?));
+        }
+    }
+
     Ok(None)
 }
 
-fn get_named_export_declarations<'module>(
-    declarations_with_export: &DeclarationsWithExport<'module>,
-    exports_named: &ExportsNamed<'module>,
-    declarations: &mut Declarations,
-) -> Result<(Declarations, ExternalSpecifiers<'module>)> {
-    let mut internal_exports: Declarations = Declarations::new();
-    let mut external_exports: ExternalSpecifiers = ExternalSpecifiers::new();
-
-    for export in declarations_with_export {
-        let export_declaration = EntityDeclaration::from(*export)?;
-        let export_name = export_declaration.name().to_owned();
-
-        internal_exports.insert(export_name, export_declaration);
-    }
-
-    for export in exports_named {
-        let external_export_src = &export.src;
-
-        for specifier in export.specifiers.iter() {
-            if let Some(import_path) = external_export_src {
-                let import_path = import_path.value.as_str();
-                let import_path = PathBuf::from(import_path);
-
-                if let Some(specifiers_for_import) = external_exports.get_mut(&import_path) {
-                    specifiers_for_import.push(specifier);
-                } else {
-                    external_exports.insert(import_path.to_owned(), vec![specifier]);
-                }
-
-                continue;
-            }
-
-            if specifier.is_default() {
-                // This is likely used internally by SWC as part of their AST, since
-                // there's no way to name a default named export. A { default } export
-                // is handled by the specifier.is_named handler.
-                bail!("Cannot handle named default export specifier.")
-            }
-
-            if specifier.is_named() {
-                let specifier = specifier.as_named().unwrap();
-                let (actual_name, exported_name) = get_named_export_names(specifier);
-
-                if let Some(exported_declaration) = declarations.remove(&actual_name) {
-                    internal_exports.insert(exported_name, exported_declaration);
-                }
-            }
-        }
-    }
-
-    Ok((internal_exports, external_exports))
+/// Extracts the import source path from a node.
+fn extract_import_source(node: &ParsedNode) -> Option<String> {
+    // Look for string literal children (the source path)
+    node.find_first(|n| n.kind == NodeKind::StringLiteral)
+        .map(|n| {
+            // Remove quotes from the string literal
+            n.text
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string()
+        })
 }
 
-fn unwrap_module_export_name(name: &ModuleExportName) -> String {
-    match name {
-        ModuleExportName::Ident(ident) => ident.sym.to_string(),
-        ModuleExportName::Str(name) => name.value.to_string(),
+/// Extracts the namespace name from a namespace export.
+fn extract_namespace_name(node: &ParsedNode) -> Option<String> {
+    // Look for the identifier after "as"
+    node.find_first(|n| n.kind == NodeKind::Identifier)
+        .and_then(|n| n.name.clone().or_else(|| Some(n.text.clone())))
+}
+
+/// Extracts the original name from an export specifier.
+fn extract_specifier_original_name(specifier: &ParsedNode) -> Option<String> {
+    specifier
+        .children
+        .first()
+        .and_then(|c| c.name.clone().or_else(|| Some(c.text.clone())))
+}
+
+/// Extracts the exported name from an export specifier (after "as" if present).
+fn extract_specifier_export_name(specifier: &ParsedNode) -> Option<&String> {
+    if specifier.children.len() > 1 {
+        specifier
+            .children
+            .last()
+            .and_then(|c| c.name.as_ref())
+    } else {
+        None
     }
 }
 
-fn get_named_export_names(specifier: &ExportNamedSpecifier) -> (String, String) {
-    let actual_name = unwrap_module_export_name(&specifier.orig);
-    let given_name = specifier.exported.as_ref().map(unwrap_module_export_name);
-    let exported_name = given_name.unwrap_or(actual_name.to_owned());
+/// Resolves an import path relative to the base path.
+fn resolve_import_path(base_path: &Path, import_source: &str) -> PathBuf {
+    let parent = base_path.parent().unwrap_or(base_path);
 
-    (actual_name, exported_name)
-}
+    // Handle relative imports
+    if import_source.starts_with("./") || import_source.starts_with("../") {
+        let mut resolved = parent.join(import_source);
 
-fn add_export_all_facade_exports(
-    base_import_path: &Path,
-    exports: ExportsFacadeAll,
-    buffer: &mut Declarations,
-) -> Result<()> {
-    for export in exports {
-        let import_file_path = export.src.value.to_string();
-        let import_file_path = base_import_path.join(import_file_path);
-
-        let import_module = parse_import(&import_file_path).with_context(|| {
-            format!(
-                "Failed to parse imported module: {}",
-                import_file_path.display()
-            )
-        })?;
-
-        let import_module_dir = import_file_path.parent().unwrap().to_path_buf();
-
-        let (_, facade_named_exports) = get_exports_in_module(import_module_dir, import_module)
-            .with_context(|| {
-                format!(
-                    "Failed to get exports in module: {}",
-                    import_file_path.display()
-                )
-            })?;
-
-        buffer.extend(facade_named_exports);
-    }
-
-    Ok(())
-}
-
-fn add_named_facade_exports(
-    base_import_path: &Path,
-    exports: ExternalSpecifiers,
-    buffer: &mut Declarations,
-) -> Result<()> {
-    for (import_file_path, specifiers) in exports {
-        let import_file_path = base_import_path.join(import_file_path);
-
-        let import_module = parse_import(&import_file_path).with_context(|| {
-            format!(
-                "Failed to parse imported module: {}",
-                import_file_path.display()
-            )
-        })?;
-
-        let import_module_dir = import_file_path.parent().unwrap().to_path_buf();
-
-        let (default_facade_export, mut named_facade_exports) =
-            get_exports_in_module(import_module_dir, import_module).with_context(|| {
-                format!(
-                    "Failed to get exports in module: {}",
-                    import_file_path.display()
-                )
-            })?;
-
-        for specifiers in specifiers {
-            if specifiers.is_named() {
-                let specifier = specifiers.as_named().unwrap();
-                let (actual_name, exported_name) = get_named_export_names(specifier);
-
-                let exported_entity = if actual_name.eq("default") {
-                    default_facade_export.to_owned()
-                } else {
-                    named_facade_exports.remove(&actual_name)
-                };
-
-                if exported_entity.is_some() {
-                    buffer.insert(exported_name, exported_entity.unwrap());
-                }
-
-                continue;
-            }
-
-            if specifiers.is_namespace() {
-                let specifier = specifiers.as_namespace().unwrap();
-                let exported_name = unwrap_module_export_name(&specifier.name);
-
-                for (actual_name, declaration) in named_facade_exports.iter() {
-                    buffer.insert(
-                        format!("{}.{}", exported_name, actual_name),
-                        declaration.to_owned(),
-                    );
+        // Try adding extensions if the file doesn't exist
+        if !resolved.exists() {
+            for ext in &["js", "ts", "jsx", "tsx", "mjs", "cjs"] {
+                let with_ext = resolved.with_extension(ext);
+                if with_ext.exists() {
+                    resolved = with_ext;
+                    break;
                 }
             }
         }
+
+        // Try index files
+        if resolved.is_dir() {
+            for index in &["index.js", "index.ts", "index.jsx", "index.tsx"] {
+                let index_path = resolved.join(index);
+                if index_path.exists() {
+                    return index_path;
+                }
+            }
+        }
+
+        resolved
+    } else {
+        // Node modules or absolute path - just return as-is
+        PathBuf::from(import_source)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ecma::parser::parse_source;
+
+    #[test]
+    fn test_simple_export() {
+        let source = "export const PI = 3.14159;";
+        let path = PathBuf::from("test.js");
+        let parsed = parse_source(source, &path).unwrap();
+
+        let (default_export, named_exports) = get_exports_in_module(path, parsed).unwrap();
+
+        assert!(default_export.is_none());
+        assert!(!named_exports.is_empty());
     }
 
-    Ok(())
+    #[test]
+    fn test_default_export() {
+        let source = "export default function main() {}";
+        let path = PathBuf::from("test.js");
+        let parsed = parse_source(source, &path).unwrap();
+
+        let (default_export, _) = get_exports_in_module(path, parsed).unwrap();
+
+        assert!(default_export.is_some());
+    }
+
+    #[test]
+    fn test_multiple_exports() {
+        let source = r#"
+            export function foo() {}
+            export class Bar {}
+            export const baz = 42;
+        "#;
+        let path = PathBuf::from("test.js");
+        let parsed = parse_source(source, &path).unwrap();
+
+        let (_, named_exports) = get_exports_in_module(path, parsed).unwrap();
+
+        assert!(named_exports.len() >= 1); // At least some exports found
+    }
+
+    #[test]
+    fn test_resolve_relative_path() {
+        let base = PathBuf::from("/project/src/index.js");
+        let resolved = resolve_import_path(&base, "./utils");
+        assert_eq!(resolved, PathBuf::from("/project/src/utils"));
+    }
+
+    #[test]
+    fn test_resolve_parent_path() {
+        let base = PathBuf::from("/project/src/components/Button.js");
+        let resolved = resolve_import_path(&base, "../utils");
+        // join doesn't canonicalize, so we expect the raw joined path
+        assert_eq!(resolved, PathBuf::from("/project/src/components/../utils"));
+    }
 }
