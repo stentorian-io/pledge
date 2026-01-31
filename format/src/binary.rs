@@ -1349,10 +1349,7 @@ mod tests {
             element_type: None,
             key_type: None,
             value_type: None,
-            param_types: vec![
-                TypeInfo::primitive("string"),
-                TypeInfo::primitive("number"),
-            ],
+            param_types: vec![TypeInfo::primitive("string"), TypeInfo::primitive("number")],
             return_type: Some(Box::new(TypeInfo::primitive("boolean"))),
             nullable: false,
         };
@@ -1459,10 +1456,7 @@ mod tests {
             type_arguments: vec![TypeInfo {
                 kind: TypeKind::Generic,
                 repr: "Result<T, E>".to_string(),
-                type_arguments: vec![
-                    TypeInfo::reference("T"),
-                    TypeInfo::reference("E"),
-                ],
+                type_arguments: vec![TypeInfo::reference("T"), TypeInfo::reference("E")],
                 constituents: vec![],
                 element_type: None,
                 key_type: None,
@@ -1949,15 +1943,13 @@ mod tests {
             constructor: Some(Box::new(FunctionSig {
                 name: "constructor".to_string(),
                 type_parameters: vec![],
-                parameters: vec![
-                    Parameter {
-                        name: "config".to_string(),
-                        type_info: TypeInfo::reference("Config"),
-                        optional: true,
-                        rest: false,
-                        default_value: Some("{}".to_string()),
-                    },
-                ],
+                parameters: vec![Parameter {
+                    name: "config".to_string(),
+                    type_info: TypeInfo::reference("Config"),
+                    optional: true,
+                    rest: false,
+                    default_value: Some("{}".to_string()),
+                }],
                 return_type: TypeInfo::void(),
                 is_async: false,
                 is_generator: false,

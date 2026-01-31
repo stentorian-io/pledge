@@ -85,13 +85,15 @@ fn arb_parameter() -> impl Strategy<Value = Parameter> {
         any::<bool>(),
         proptest::option::of("[a-zA-Z0-9_\"']+"),
     )
-        .prop_map(|(name, type_info, optional, rest, default_value)| Parameter {
-            name,
-            type_info,
-            optional,
-            rest,
-            default_value,
-        })
+        .prop_map(
+            |(name, type_info, optional, rest, default_value)| Parameter {
+                name,
+                type_info,
+                optional,
+                rest,
+                default_value,
+            },
+        )
 }
 
 fn arb_property() -> impl Strategy<Value = Property> {
@@ -129,7 +131,16 @@ fn arb_function_sig() -> impl Strategy<Value = FunctionSig> {
         proptest::option::of("[a-zA-Z0-9 .,;:!?]{0,200}"),
     )
         .prop_map(
-            |(name, type_parameters, parameters, return_type, is_async, is_generator, visibility, doc)| {
+            |(
+                name,
+                type_parameters,
+                parameters,
+                return_type,
+                is_async,
+                is_generator,
+                visibility,
+                doc,
+            )| {
                 FunctionSig {
                     name,
                     type_parameters,
@@ -158,7 +169,18 @@ fn arb_class_sig() -> impl Strategy<Value = ClassSig> {
         proptest::option::of("[a-zA-Z0-9 .,;:!?]{0,200}"),
     )
         .prop_map(
-            |(name, type_parameters, extends, implements, properties, methods, constructor, is_abstract, visibility, doc)| {
+            |(
+                name,
+                type_parameters,
+                extends,
+                implements,
+                properties,
+                methods,
+                constructor,
+                is_abstract,
+                visibility,
+                doc,
+            )| {
                 ClassSig {
                     name,
                     type_parameters,
@@ -193,13 +215,16 @@ fn arb_variable_sig() -> impl Strategy<Value = VariableSig> {
 }
 
 fn arb_index_signature() -> impl Strategy<Value = IndexSignature> {
-    (arb_simple_type_info(), arb_simple_type_info(), any::<bool>()).prop_map(
-        |(key_type, value_type, readonly)| IndexSignature {
+    (
+        arb_simple_type_info(),
+        arb_simple_type_info(),
+        any::<bool>(),
+    )
+        .prop_map(|(key_type, value_type, readonly)| IndexSignature {
             key_type,
             value_type,
             readonly,
-        },
-    )
+        })
 }
 
 fn arb_interface_sig() -> impl Strategy<Value = InterfaceSig> {
@@ -214,7 +239,16 @@ fn arb_interface_sig() -> impl Strategy<Value = InterfaceSig> {
         proptest::option::of("[a-zA-Z0-9 .,;:!?]{0,200}"),
     )
         .prop_map(
-            |(name, type_parameters, extends, properties, methods, index_signature, visibility, doc)| {
+            |(
+                name,
+                type_parameters,
+                extends,
+                properties,
+                methods,
+                index_signature,
+                visibility,
+                doc,
+            )| {
                 InterfaceSig {
                     name,
                     type_parameters,
@@ -339,13 +373,17 @@ fn arb_metadata() -> impl Strategy<Value = Metadata> {
 }
 
 fn arb_public_interface() -> impl Strategy<Value = PublicInterface> {
-    (arb_metadata(), proptest::collection::vec(arb_module(), 0..3)).prop_map(|(metadata, modules)| {
-        let mut interface = PublicInterface::new(metadata);
-        for module in modules {
-            interface.add_module(module);
-        }
-        interface
-    })
+    (
+        arb_metadata(),
+        proptest::collection::vec(arb_module(), 0..3),
+    )
+        .prop_map(|(metadata, modules)| {
+            let mut interface = PublicInterface::new(metadata);
+            for module in modules {
+                interface.add_module(module);
+            }
+            interface
+        })
 }
 
 // ==================== Property Tests ====================
