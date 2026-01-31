@@ -16,11 +16,36 @@ The API analyzes changes between interface versions and provides:
 ## Features
 
 - **High Performance**: Built with Axum and Tokio for async, non-blocking I/O
+- **Binary MessagePack Format**: All compare requests use binary MessagePack for efficient serialization
 - **Language Agnostic**: Works with any language that can export to `interlint-format`
 - **Comprehensive Detection**: Identifies 35+ types of breaking changes
 - **Severity Classification**: Critical, Major, Minor, and Warning levels
 - **CORS Enabled**: Ready for browser-based integrations
 - **Request Tracing**: Built-in HTTP request tracing for observability
+
+## Binary Format
+
+The `/v1/compare` endpoint accepts **only binary MessagePack format**. JSON requests are not supported and will return `415 Unsupported Media Type`.
+
+### Why Binary MessagePack?
+
+- **Compact**: 30-50% smaller than JSON for typical payloads
+- **Fast**: Faster serialization/deserialization than text JSON
+- **Type-safe**: Better handling of binary data and complex types
+
+### Content-Type Requirements
+
+| Endpoint | Request Format | Response Format |
+|----------|----------------|-----------------|
+| `GET /health` | N/A | JSON |
+| `POST /v1/compare` | Binary MessagePack | Binary MessagePack |
+
+### Accepted Content-Types for `/v1/compare`
+
+- `application/octet-stream` (preferred)
+- `application/msgpack`
+
+Any other Content-Type (including `application/json`) will be rejected with `415 Unsupported Media Type`.
 
 ## API Endpoints
 
@@ -45,13 +70,16 @@ Returns the service status and version.
 
 ```
 POST /v1/compare
+Content-Type: application/octet-stream
 ```
 
 Compares two public interfaces and returns detected breaking changes.
 
-**Request Body:**
+**Important**: This endpoint accepts **only binary MessagePack format**. JSON requests will be rejected with `415 Unsupported Media Type`.
 
-```json
+**Request Body (MessagePack-encoded):**
+
+```
 {
   "previous": { /* PublicInterface */ },
   "current": { /* PublicInterface */ },
@@ -60,9 +88,11 @@ Compares two public interfaces and returns detected breaking changes.
 }
 ```
 
-**Response:**
+**Response (MessagePack-encoded):**
 
-```json
+The response is returned with `Content-Type: application/octet-stream`. When decoded, the structure is:
+
+```
 {
   "changes": [
     {
@@ -92,9 +122,20 @@ Compares two public interfaces and returns detected breaking changes.
 }
 ```
 
-**Error Response (400 Bad Request):**
+**Error Response (415 Unsupported Media Type):**
+
+Returned when sending JSON or other non-MessagePack content:
 
 ```json
+{
+  "error": "Expected binary MessagePack format (Content-Type: application/octet-stream or application/msgpack), got: application/json",
+  "code": "INVALID_CONTENT_TYPE"
+}
+```
+
+**Error Response (400 Bad Request, MessagePack-encoded):**
+
+```
 {
   "error": "Package names do not match: 'package-a' vs 'package-b'",
   "code": "PACKAGE_NAME_MISMATCH"
@@ -170,10 +211,11 @@ interlint-api/
 │   ├── routes.rs        # Router setup and middleware configuration
 │   ├── response.rs      # Request/response types and breaking change definitions
 │   ├── diff.rs          # Core diff detection algorithm
+│   ├── binary.rs        # Binary MessagePack extractor and response types
 │   └── handlers/
 │       ├── mod.rs       # Handler module exports
-│       ├── health.rs    # Health check handler
-│       └── compare.rs   # Compare endpoint handler
+│       ├── health.rs    # Health check handler (JSON)
+│       └── compare.rs   # Compare endpoint handler (binary MessagePack)
 └── Cargo.toml
 ```
 
@@ -226,57 +268,108 @@ Configuration is loaded from environment variables:
 
 ## Example Usage
 
-### Using curl
+### Health Check (JSON)
 
 ```bash
-# Health check
 curl http://localhost:3000/health
-
-# Compare interfaces
-curl -X POST http://localhost:3000/v1/compare \
-  -H "Content-Type: application/json" \
-  -d '{
-    "previous": {
-      "metadata": {
-        "name": "my-package",
-        "version": "1.0.0"
-      },
-      "entrypoints": [],
-      "modules": [{
-        "path": "index.ts",
-        "exports": [{
-          "name": "greet",
-          "is_default": false,
-          "signature": {
-            "type": "function",
-            "name": "greet",
-            "type_parameters": [],
-            "parameters": [],
-            "return_type": { "repr": "string", "kind": "primitive" },
-            "is_async": false,
-            "is_generator": false,
-            "visibility": "public"
-          }
-        }]
-      }],
-      "assets": []
-    },
-    "current": {
-      "metadata": {
-        "name": "my-package",
-        "version": "2.0.0"
-      },
-      "entrypoints": [],
-      "modules": [{
-        "path": "index.ts",
-        "exports": []
-      }],
-      "assets": []
-    }
-  }'
 ```
 
-### Response
+Response:
+```json
+{
+  "status": "healthy",
+  "version": "0.1.0"
+}
+```
+
+### Compare Interfaces (Binary MessagePack)
+
+Since the compare endpoint requires binary MessagePack format, you cannot use plain curl with JSON. You need to use a client library that supports MessagePack serialization.
+
+#### Using Rust
+
+```rust
+use rmp_serde;
+use reqwest;
+
+let request = CompareRequest {
+    previous: /* PublicInterface */,
+    current: /* PublicInterface */,
+    min_severity: None,
+    include_additions: false,
+};
+
+// Serialize to MessagePack
+let body = rmp_serde::to_vec_named(&request)?;
+
+// Send request
+let response = reqwest::Client::new()
+    .post("http://localhost:3000/v1/compare")
+    .header("Content-Type", "application/octet-stream")
+    .body(body)
+    .send()
+    .await?;
+
+// Deserialize response from MessagePack
+let bytes = response.bytes().await?;
+let result: CompareResponse = rmp_serde::from_slice(&bytes)?;
+```
+
+#### Using Node.js
+
+```javascript
+const msgpack = require('@msgpack/msgpack');
+
+const request = {
+  previous: { /* PublicInterface */ },
+  current: { /* PublicInterface */ },
+  min_severity: null,
+  include_additions: false
+};
+
+// Serialize to MessagePack
+const body = msgpack.encode(request);
+
+// Send request
+const response = await fetch('http://localhost:3000/v1/compare', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/octet-stream' },
+  body: body
+});
+
+// Deserialize response from MessagePack
+const buffer = await response.arrayBuffer();
+const result = msgpack.decode(new Uint8Array(buffer));
+```
+
+#### Using Python
+
+```python
+import msgpack
+import requests
+
+request = {
+    "previous": { ... },  # PublicInterface
+    "current": { ... },   # PublicInterface
+    "min_severity": None,
+    "include_additions": False
+}
+
+# Serialize to MessagePack
+body = msgpack.packb(request)
+
+# Send request
+response = requests.post(
+    'http://localhost:3000/v1/compare',
+    headers={'Content-Type': 'application/octet-stream'},
+    data=body
+)
+
+# Deserialize response from MessagePack
+result = msgpack.unpackb(response.content)
+```
+
+### Example Response (decoded from MessagePack)
 
 ```json
 {
@@ -325,7 +418,8 @@ cargo test test_compare_with_breaking_change
 |-------|---------|
 | `axum` | Web framework |
 | `tokio` | Async runtime |
-| `serde` / `serde_json` | JSON serialization |
+| `serde` / `serde_json` | Serialization framework |
+| `rmp-serde` | MessagePack serialization |
 | `tower-http` | HTTP middleware (CORS, tracing) |
 | `tracing` / `tracing-subscriber` | Structured logging |
 | `interlint-format` | Public interface data structures |
