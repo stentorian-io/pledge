@@ -1,0 +1,23 @@
+{
+  "name": "@interlint/test-fixture",
+  "version": "2.0.0",
+  "description": "Test fixture package for interlint CLI - version with BREAKING changes",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": {
+      "types": "src/index.ts",
+      "default": "src/index.ts"
+    }
+  },
+  "files": [
+    "src/**/*"
+  ],
+  "keywords": [
+    "test",
+    "fixture",
+    "interlint"
+  ],
+  "author": "Interlint",
+  "license": "MIT"
+}
