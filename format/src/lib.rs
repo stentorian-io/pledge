@@ -151,6 +151,7 @@ pub mod binary;
 pub mod breaking_changes;
 pub mod changes;
 pub mod module;
+pub mod package_config;
 pub mod signature;
 pub mod types;
 
@@ -219,4 +220,11 @@ pub use changes::{
     TypeChange,
     VisibilityChange,
     VisibilityLevel,
+};
+
+// Re-export package_config types
+pub use package_config::{
+    ExportsField, ExportsValue, PackageChangeCategory, PackageChangeSeverity,
+    PackageConfig, PackageConfigChangeType, PackageConfigCompareRequest,
+    PackageConfigCompareResponse, PackageConfigComparisonSummary, PackageJsonChange, PeerDepMeta,
 };
