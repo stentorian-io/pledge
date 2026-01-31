@@ -13,6 +13,34 @@
 //! - **Binary format**: Compact MessagePack serialization with integrity checks
 //! - **Type-safe**: Strong typing for all signature components
 //!
+//! ## Breaking Change Categories
+//!
+//! The interlint format supports detecting two distinct categories of breaking changes
+//! via the [`breaking_changes`] module:
+//!
+//! ### Library/Code Breaking Changes ([`LibraryBreakingChange`])
+//!
+//! Changes that affect the programmatic API consumers import and use:
+//!
+//! - **API Signature Changes**: Function parameters, return types, async modifiers
+//! - **Type Changes**: Struct fields, enum variants, generics, inheritance
+//! - **Behavior Changes**: Error handling, return values, side effects
+//! - **Dependency Version Changes**: Major version bumps in dependencies
+//!
+//! ### Package/Asset Breaking Changes ([`PackageBreakingChange`])
+//!
+//! Changes that affect non-code files distributed with the package:
+//!
+//! - **Asset Format Changes**: CSS/JSON/image format changes
+//! - **Asset Path Changes**: Moved, renamed, or removed assets
+//! - **Asset Dependency Changes**: References between assets
+//! - **Asset Metadata Changes**: Configuration and metadata files
+//!
+//! This distinction is important because asset changes affect build/deployment
+//! workflows rather than runtime code.
+//!
+//! See [`breaking_changes`] module for detailed documentation and builders.
+//!
 //! ## Binary Format
 //!
 //! The crate uses a binary format with:
@@ -80,6 +108,7 @@
 //! ```
 
 pub mod binary;
+pub mod breaking_changes;
 pub mod module;
 pub mod signature;
 pub mod types;
@@ -92,3 +121,8 @@ pub use signature::{
     Parameter, Property, Signature, TypeAliasSig, VariableSig, Visibility,
 };
 pub use types::{TypeInfo, TypeKind, TypeParameter};
+pub use breaking_changes::{
+    BreakingChange, ChangeLocation, LibraryBreakingChange, PackageBreakingChange, Severity,
+    TypeChangeKind, ApiSignatureChangeBuilder, AssetFormatChangeBuilder, BehaviorChangeBuilder,
+    TypeChangeBuilder,
+};
