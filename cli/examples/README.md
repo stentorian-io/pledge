@@ -67,6 +67,29 @@ examples/
    cargo build --release
    ```
 
+### CLI Usage
+
+```bash
+# Compare two local directories
+breakpoint --previous <previous-path> <current-path>
+
+# Compare against npm registry (fetches previous version automatically)
+breakpoint <current-path>
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `INTERLINT_API_URL` | API server URL | `http://localhost:3000` |
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No breaking changes detected |
+| 1 | Breaking changes detected |
+
 ### Manual Testing
 
 #### Test Breaking Changes Detection
@@ -75,30 +98,26 @@ Compare v1 against v2-breaking (should detect breaking changes):
 
 ```bash
 # Using the built CLI
-./target/release/breakpoint compare \
-  --previous ./examples/v1 \
-  --current ./examples/v2-breaking
+./target/release/breakpoint --previous ./examples/v1 ./examples/v2-breaking
 
 # Or using cargo run
-cargo run -- compare \
-  --previous ./examples/v1 \
-  --current ./examples/v2-breaking
+cargo run -- --previous ./examples/v1 ./examples/v2-breaking
 ```
 
-**Expected output:** Multiple breaking changes detected:
-- `createUser`: Required parameter added
-- `UserService.getUser`: Parameter type changed
-- `Config.timeout`: Optional became required
-- `VERSION`: Export removed
+**Expected output:** 6 breaking changes detected:
+- `VERSION`: Export removed (CRITICAL)
+- `createUser`: Required parameter added (CRITICAL)
+- `Config.timeout`: Optional became required (CRITICAL)
+- `UserService.users`: Type changed (MAJOR)
+- `UserService.getUser`: Parameter type changed (MAJOR)
+- `Status`: Union type expanded (MAJOR)
 
 #### Test Compatible Changes
 
 Compare v1 against v2-compatible (should NOT detect breaking changes):
 
 ```bash
-cargo run -- compare \
-  --previous ./examples/v1 \
-  --current ./examples/v2-compatible
+cargo run -- --previous ./examples/v1 ./examples/v2-compatible
 ```
 
 **Expected output:** No breaking changes (only minor/patch changes)
@@ -114,15 +133,11 @@ cargo build --release
 
 echo ""
 echo "=== Test 1: Breaking Changes (v1 -> v2-breaking) ==="
-./target/release/breakpoint compare \
-  --previous ./examples/v1 \
-  --current ./examples/v2-breaking || true
+./target/release/breakpoint --previous ./examples/v1 ./examples/v2-breaking || true
 
 echo ""
 echo "=== Test 2: Compatible Changes (v1 -> v2-compatible) ==="
-./target/release/breakpoint compare \
-  --previous ./examples/v1 \
-  --current ./examples/v2-compatible
+./target/release/breakpoint --previous ./examples/v1 ./examples/v2-compatible
 
 echo ""
 echo "=== All tests completed ==="
@@ -130,33 +145,25 @@ echo "=== All tests completed ==="
 
 ### Using with npm Registry (Alternative)
 
-If you want to test with real npm packages:
+If you want to test with real npm packages, the CLI can fetch the previous version from npm:
 
 ```bash
-# Compare two versions of a real package
-cargo run -- compare \
-  --previous lodash@4.17.20 \
-  --current lodash@4.17.21
+# The CLI will fetch the latest published version as "previous"
+cargo run -- ./path/to/local/package
 ```
 
 ## API Interaction
 
-The CLI sends requests to the interlint API at `http://localhost:3000/analyze`:
+The CLI sends requests to the interlint API at `POST /v1/compare`:
 
 ```json
 {
-  "previous": {
-    "exports": [
-      { "name": "createUser", "kind": "function", "signature": "..." }
-    ]
-  },
-  "current": {
-    "exports": [
-      { "name": "createUser", "kind": "function", "signature": "..." }
-    ]
-  }
+  "previous": { /* PublicInterface */ },
+  "current": { /* PublicInterface */ }
 }
 ```
+
+Response includes breaking changes with severity levels and suggested version bump.
 
 ## Adding More Test Cases
 
