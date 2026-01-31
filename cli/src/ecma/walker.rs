@@ -162,14 +162,19 @@ fn get_default_export_declaration<'module>(
     }
 
     let expression = default_export_expression.unwrap();
-    let export_identity = expression.expr.as_ident().unwrap();
-    let export_name = export_identity.sym.to_string();
 
-    if let Some(declaration) = declarations.remove(&export_name) {
-        Ok(Some(declaration))
-    } else {
-        Ok(None)
+    // Handle identifier-based default exports (e.g., `export default foo`)
+    if let Some(export_identity) = expression.expr.as_ident() {
+        let export_name = export_identity.sym.to_string();
+
+        if let Some(declaration) = declarations.remove(&export_name) {
+            return Ok(Some(declaration));
+        }
     }
+
+    // Non-identifier expressions (literals, inline functions, objects, etc.)
+    // are valid default exports but we can't track their declaration
+    Ok(None)
 }
 
 fn get_named_export_declarations<'module>(
