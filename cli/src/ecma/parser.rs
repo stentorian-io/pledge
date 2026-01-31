@@ -45,9 +45,15 @@ fn parse_source_file(source_map: Lrc<SourceMap>, source_file: Rc<SourceFile>) ->
     let source_file_ext = FileExt::from(&source_file_path);
 
     let syntax = if source_file_ext.is_ts() {
-        Syntax::Typescript(Default::default())
+        Syntax::Typescript(swc_ecma_parser::TsConfig {
+            tsx: source_file_ext.is_jsx(),
+            ..Default::default()
+        })
     } else {
-        Syntax::Es(Default::default())
+        Syntax::Es(swc_ecma_parser::EsConfig {
+            jsx: source_file_ext.is_jsx(),
+            ..Default::default()
+        })
     };
 
     let lexer = Lexer::new(

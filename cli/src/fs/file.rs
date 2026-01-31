@@ -43,6 +43,10 @@ impl FileExt {
         )
     }
 
+    pub fn is_jsx(&self) -> bool {
+        matches!(self, FileExt::Jsx | FileExt::Tsx)
+    }
+
     pub fn is_other(&self) -> bool {
         matches!(self, FileExt::Other(_))
     }
