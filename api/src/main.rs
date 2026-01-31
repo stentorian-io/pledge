@@ -6,6 +6,7 @@ mod binary;
 mod config;
 mod diff;
 mod handlers;
+mod pkg_config_diff;
 mod response;
 mod routes;
 mod state;
