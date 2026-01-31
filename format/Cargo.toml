@@ -1,0 +1,9 @@
+[package]
+name = "interlint-format"
+version = "0.1.0"
+edition = "2021"
+description = "Language-agnostic format for describing code signatures and exports"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
