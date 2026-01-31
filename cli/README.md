@@ -15,6 +15,9 @@ Breakpoint is part of the Interlint ecosystem and serves as the command-line int
 
 ## Features
 
+- **Native pack integration**: Uses your package manager's `pack` command (npm, pnpm, yarn, bun) for accurate file inclusion
+- **Package manager detection**: Automatically detects your package manager from lockfiles
+- **First-publish detection**: Gracefully handles first-time publishes with no previous version to compare
 - **Automatic registry comparison**: Fetches the latest published version from npm for comparison
 - **Local comparison mode**: Compare two local package directories directly
 - **TypeScript-first**: Full support for TypeScript syntax including generics, interfaces, and type aliases
@@ -52,6 +55,11 @@ cargo build --release
 
 - Rust 1.70+ (for building from source)
 - Interlint API server running (default: `http://localhost:3000`)
+- One of the following package managers installed:
+  - npm (included with Node.js)
+  - pnpm
+  - yarn
+  - bun
 
 ## Usage
 
@@ -79,11 +87,14 @@ breakpoint /path/to/my-npm-package
 ```
 
 This mode:
-1. Reads `package.json` to get the package name and version
-2. Fetches the latest published version from the npm registry
-3. Parses both versions and extracts public APIs
-4. Sends to Interlint API for comparison
-5. Reports any breaking changes found
+1. Detects your package manager (npm, pnpm, yarn, bun) from lockfiles
+2. Packs your package using the native `pack` command
+3. Checks the npm registry for a previous version
+4. If found, downloads and extracts the previous version tarball
+5. If not found (first publish), shows a summary and skips comparison
+6. Parses both versions and extracts public APIs
+7. Sends to Interlint API for comparison
+8. Reports any breaking changes found
 
 #### Compare Two Local Versions
 
@@ -158,40 +169,48 @@ Breakpoint analyzes exports from these `package.json` fields:
 ```
 breakpoint/
 ├── src/
-│   ├── main.rs          # CLI entry point and argument parsing
-│   ├── lib.rs           # Library exports
-│   ├── api.rs           # Interlint API client
-│   ├── converter.rs     # AST to PublicInterface conversion
-│   ├── ecma/            # ECMAScript/TypeScript parsing
-│   │   ├── parser.rs    # SWC-based parser
-│   │   ├── walker.rs    # AST traversal and export extraction
-│   │   └── entity.rs    # Declaration types (Func, Class, etc.)
-│   ├── fs/              # File system utilities
-│   │   ├── file.rs      # File extension handling
-│   │   └── path.rs      # Path matching and glob patterns
-│   └── pkg/             # Package handling
-│       ├── mod.rs       # Package struct and config parsing
-│       ├── registry.rs  # npm registry integration
-│       ├── entries.rs   # Package entry point resolution
-│       ├── contents.rs  # File inclusion/exclusion (files, .npmignore)
-│       └── tarball.rs   # Tarball download and extraction
+│   ├── main.rs              # CLI entry point and argument parsing
+│   ├── lib.rs               # Library exports
+│   ├── api.rs               # Interlint API client
+│   ├── converter.rs         # AST to PublicInterface conversion
+│   ├── ecma/                # ECMAScript/TypeScript parsing
+│   │   ├── parser.rs        # Tree-sitter based parser
+│   │   ├── walker.rs        # AST traversal and export extraction
+│   │   └── entity.rs        # Declaration types (Func, Class, etc.)
+│   ├── fs/                  # File system utilities
+│   │   ├── file.rs          # File extension handling
+│   │   └── path.rs          # Path matching and glob patterns
+│   └── pkg/                 # Package handling
+│       ├── mod.rs           # Package struct and config parsing
+│       ├── pack.rs          # Package manager detection and native packing
+│       ├── registry.rs      # npm registry integration
+│       ├── registry_client.rs # HTTP client for registry operations
+│       ├── entries.rs       # Package entry point resolution
+│       ├── contents.rs      # File inclusion/exclusion (files, .npmignore)
+│       └── tarball.rs       # Tarball download and extraction
 ```
 
 ### How It Works
 
-1. **Package Loading**: Reads `package.json` and resolves entry points based on `main`, `exports`, `browser`, and `bin` fields
+1. **Package Manager Detection**: Detects npm/pnpm/yarn/bun from lockfiles or `packageManager` field in package.json
 
-2. **File Discovery**: Respects `files` field and `.npmignore` patterns to determine which files are part of the package
+2. **Native Packing**: Executes the package manager's `pack` command to create a tarball, ensuring accurate file inclusion
 
-3. **Parsing**: Uses [SWC](https://swc.rs/) (Speedy Web Compiler) to parse TypeScript/JavaScript into an AST
+3. **Registry Check**: Makes an HTTP request to check if the package exists in the npm registry
 
-4. **Export Extraction**: Walks the AST to find all exported declarations, following re-exports and namespace exports
+4. **Previous Version**: If the package exists, downloads the latest published tarball with SHA-512 integrity verification. If not (first publish), displays a summary and skips comparison
 
-5. **Conversion**: Transforms SWC's AST types into the language-agnostic `interlint-format` types
+5. **Package Loading**: Reads `package.json` and resolves entry points based on `main`, `exports`, `browser`, and `bin` fields
 
-6. **API Communication**: Serializes interfaces using the interlint binary format (MessagePack with header and checksum) and sends to the Interlint API
+6. **Parsing**: Uses [tree-sitter](https://tree-sitter.github.io/) to parse TypeScript/JavaScript into an AST
 
-7. **Result Display**: Prints breaking changes grouped by severity with suggestions for fixes
+7. **Export Extraction**: Walks the AST to find all exported declarations, following re-exports and namespace exports
+
+8. **Conversion**: Transforms the AST types into the language-agnostic `interlint-format` types
+
+9. **API Communication**: Serializes interfaces using the interlint binary format (MessagePack with header and checksum) and sends to the Interlint API
+
+10. **Result Display**: Prints breaking changes grouped by severity with suggestions for fixes
 
 ### Dependencies
 
@@ -253,8 +272,13 @@ Analysis completed in 1.23s
 ### No Breaking Changes
 
 ```
-Will use https://registry.npmjs.org/ as registry.
-Loading previous version from: ./examples/v1
+Loading current package...
+Detected npm from lockfile: package-lock.json
+Using npm 10.8.2 for packing
+Packing with npm 10.8.2
+Checking registry for previous version of 'my-package'...
+Found package in registry, fetching latest version...
+Downloaded my-package v1.0.0
 Converting packages to format...
 Previous: 15 exports across 1 modules
 Current: 17 exports across 1 modules
@@ -264,6 +288,27 @@ Sending to Interlint API for analysis...
   No breaking changes detected.
 
 Analysis completed in 0.89s
+```
+
+### First Publish (No Previous Version)
+
+```
+Loading current package...
+Detected pnpm from lockfile: pnpm-lock.yaml
+Using pnpm 8.15.0 for packing
+Packing with pnpm 8.15.0
+Checking registry for previous version of 'my-new-package'...
+
+⚠️  No previous version found for 'my-new-package'.
+   This appears to be the first publish of this package.
+   Skipping breaking change comparison.
+
+Analyzing package: my-new-package v1.0.0
+Package has 8 exports across 2 modules
+
+Analysis completed in 0.45s
+
+✅ Ready to publish my-new-package v1.0.0
 ```
 
 ## Testing
@@ -327,10 +372,9 @@ jobs:
 
 Additional documentation is available in the `docs/` directory:
 
-- [Tree-sitter Migration Guide](./docs/tree-sitter-migration.md) - Guide for migrating from SWC to tree-sitter
 - [Query Patterns Reference](./docs/query-patterns-reference.md) - Tree-sitter query patterns for JS/TS
 - [Parser Interface Design](./docs/parser-interface-design.md) - Language-agnostic parser architecture
-- [Language Support Roadmap](./docs/language-support-roadmap.md) - Roadmap for Python, Go, Rust support
+- [Package Manager Research](./docs/package-manager-research.md) - npm/pnpm/yarn/bun pack commands and registry API
 
 ## Related Projects
 

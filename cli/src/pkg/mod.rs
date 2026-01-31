@@ -9,7 +9,9 @@ use url::Url;
 
 pub mod contents;
 pub mod entries;
+pub mod pack;
 pub mod registry;
+pub mod registry_client;
 pub mod tarball;
 
 pub struct Pkg {
