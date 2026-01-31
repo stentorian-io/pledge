@@ -15,7 +15,7 @@
 
 use anyhow::{bail, Context, Result};
 use interlint_format::{
-    binary, PackageConfig, PackageConfigCompareRequest, PackageConfigCompareResponse,
+    PackageConfig, PackageConfigCompareRequest, PackageConfigCompareResponse,
     PublicInterface,
 };
 use serde::{Deserialize, Serialize};
@@ -112,6 +112,48 @@ pub enum BreakingChangeType {
     DefaultExportChanged,
     /// Generic type arguments changed
     TypeArgumentsChanged,
+    /// An asset file was removed from the package
+    AssetRemoved,
+    /// An asset file was added to the package
+    AssetAdded,
+
+    // Module System Breaking Changes (package.json exports/imports)
+    /// An exports subpath was removed (consumers can't import from it)
+    ExportsSubpathRemoved,
+    /// An exports subpath was renamed
+    ExportsSubpathRenamed,
+    /// A condition was removed from exports (e.g., "require" removed)
+    ExportsConditionRemoved,
+    /// Condition order changed (affects resolution)
+    ExportsConditionOrderChanged,
+    /// Subpath was explicitly blocked (null)
+    ExportsNullAdded,
+    /// Browser field structure changed
+    BrowserFieldChanged,
+    /// Module type changed (ESM/CJS)
+    ModuleTypeChanged,
+    /// Entry point changed (main, module, types)
+    EntryPointChanged,
+    /// Imports field changed
+    ImportsChanged,
+
+    // Structural Type Changes
+    /// Union type member was removed
+    UnionMemberRemoved,
+    /// Union type member was added
+    UnionMemberAdded,
+    /// Intersection type member was removed
+    IntersectionMemberRemoved,
+    /// Intersection type member was added
+    IntersectionMemberAdded,
+    /// Type became nullable
+    TypeBecameNullable,
+    /// Type was nullable, now is not
+    TypeBecameNonNullable,
+    /// Object shape changed (structural comparison)
+    ObjectShapeChanged,
+    /// Generic variance violation (incompatible type change)
+    GenericVarianceViolation,
 }
 
 /// A single breaking change detected.
@@ -253,14 +295,15 @@ impl ApiClient {
 
         let request = CompareRequest { previous, current };
 
-        let body = binary::encode(&request)
-            .context("Failed to encode request to binary format")?;
+        // Encode as raw MessagePack (server expects no interlint header)
+        let body = rmp_serde::to_vec_named(&request)
+            .context("Failed to encode request to MessagePack format")?;
 
         let response = self
             .client
             .post(&url)
-            .header("Content-Type", "application/x-interlint")
-            .header("Accept", "application/x-interlint")
+            .header("Content-Type", "application/msgpack")
+            .header("Accept", "application/msgpack")
             .body(body)
             .send()
             .context("Failed to send compare request")?;
@@ -274,8 +317,9 @@ impl ApiClient {
         let bytes = response.bytes()
             .context("Failed to read response body")?;
 
-        let result: CompareResponse = binary::decode(&bytes)
-            .context("Failed to decode binary response")?;
+        // Decode raw MessagePack response (server sends no interlint header)
+        let result: CompareResponse = rmp_serde::from_slice(&bytes)
+            .context("Failed to decode MessagePack response")?;
 
         Ok(result)
     }
@@ -286,14 +330,15 @@ impl ApiClient {
     pub fn analyze(&self, interface: PublicInterface) -> Result<AnalysisResponse> {
         let url = format!("{}/v1/analyze", self.base_url);
 
-        let body = binary::encode(&interface)
-            .context("Failed to encode interface to binary format")?;
+        // Encode as raw MessagePack (server expects no interlint header)
+        let body = rmp_serde::to_vec_named(&interface)
+            .context("Failed to encode interface to MessagePack format")?;
 
         let response = self
             .client
             .post(&url)
-            .header("Content-Type", "application/x-interlint")
-            .header("Accept", "application/x-interlint")
+            .header("Content-Type", "application/msgpack")
+            .header("Accept", "application/msgpack")
             .body(body)
             .send()
             .context("Failed to send analyze request")?;
@@ -307,8 +352,9 @@ impl ApiClient {
         let bytes = response.bytes()
             .context("Failed to read response body")?;
 
-        let result: AnalysisResponse = binary::decode(&bytes)
-            .context("Failed to decode binary response")?;
+        // Decode raw MessagePack response (server sends no interlint header)
+        let result: AnalysisResponse = rmp_serde::from_slice(&bytes)
+            .context("Failed to decode MessagePack response")?;
 
         Ok(result)
     }
@@ -338,14 +384,15 @@ impl ApiClient {
 
         let request = PackageConfigCompareRequest { old_config, new_config };
 
-        let body = binary::encode(&request)
-            .context("Failed to encode request to binary format")?;
+        // Encode as raw MessagePack (server expects no interlint header)
+        let body = rmp_serde::to_vec_named(&request)
+            .context("Failed to encode request to MessagePack format")?;
 
         let response = self
             .client
             .post(&url)
-            .header("Content-Type", "application/x-interlint")
-            .header("Accept", "application/x-interlint")
+            .header("Content-Type", "application/msgpack")
+            .header("Accept", "application/msgpack")
             .body(body)
             .send()
             .context("Failed to send package config compare request")?;
@@ -359,8 +406,9 @@ impl ApiClient {
         let bytes = response.bytes()
             .context("Failed to read response body")?;
 
-        let result: PackageConfigCompareResponse = binary::decode(&bytes)
-            .context("Failed to decode binary response")?;
+        // Decode raw MessagePack response (server sends no interlint header)
+        let result: PackageConfigCompareResponse = rmp_serde::from_slice(&bytes)
+            .context("Failed to decode MessagePack response")?;
 
         Ok(result)
     }
