@@ -99,6 +99,10 @@ pub enum BreakingChangeType {
     DefaultExportChanged,
     /// Generic type arguments changed
     TypeArgumentsChanged,
+    /// An asset file was removed from the package
+    AssetRemoved,
+    /// An asset file was added to the package
+    AssetAdded,
 }
 
 impl BreakingChangeType {
@@ -145,6 +149,10 @@ impl BreakingChangeType {
             BreakingChangeType::MethodAdded => Severity::Warning,
             BreakingChangeType::EnumMemberAdded => Severity::Warning,
             BreakingChangeType::TypeParameterAdded => Severity::Warning,
+            BreakingChangeType::AssetAdded => Severity::Warning,
+
+            // Major - asset removal breaks consumers
+            BreakingChangeType::AssetRemoved => Severity::Major,
         }
     }
 }

@@ -23,6 +23,9 @@ pub fn compare_interfaces(
     // Compare modules
     compare_modules(previous, current, &mut changes, include_additions);
 
+    // Compare assets
+    compare_assets(previous, current, &mut changes, include_additions);
+
     // Sort by severity (most severe first)
     changes.sort_by(|a, b| b.severity.weight().cmp(&a.severity.weight()));
 
@@ -1127,6 +1130,42 @@ fn compare_namespace_exports(
                 is_default: false,
             };
             compare_export_signatures(&prev_export, &curr_export, path, changes, include_additions);
+        }
+    }
+}
+
+/// Compare assets between two package interfaces.
+fn compare_assets(
+    previous: &PublicInterface,
+    current: &PublicInterface,
+    changes: &mut Vec<BreakingChange>,
+    include_additions: bool,
+) {
+    let prev_assets: HashSet<&str> = previous.assets.iter().map(|a| a.path.as_str()).collect();
+    let curr_assets: HashSet<&str> = current.assets.iter().map(|a| a.path.as_str()).collect();
+
+    // Removed assets (breaking change)
+    for path in prev_assets.difference(&curr_assets) {
+        changes.push(
+            BreakingChange::new(
+                BreakingChangeType::AssetRemoved,
+                format!("asset:{}", path),
+                path.to_string(),
+                format!("Asset '{}' was removed from the package", path),
+            )
+            .with_suggestion("Ensure consumers are not referencing this asset".to_string()),
+        );
+    }
+
+    // Added assets (informational)
+    if include_additions {
+        for path in curr_assets.difference(&prev_assets) {
+            changes.push(BreakingChange::new(
+                BreakingChangeType::AssetAdded,
+                format!("asset:{}", path),
+                path.to_string(),
+                format!("Asset '{}' was added to the package", path),
+            ));
         }
     }
 }
