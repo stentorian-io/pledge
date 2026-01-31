@@ -16,7 +16,11 @@ pub fn parse_pkg_entry(entry: &PkgEntry) -> Result<ParsedNode> {
     let entry_path = &entry.path;
 
     let file_data = match entry.load_file()? {
-        Some(data) => String::from_utf8(data)?,
+        Some(data) => {
+            let content = String::from_utf8(data)?;
+            println!("    -> Successfully loaded file: {} ({} bytes)", entry_path.display(), content.len());
+            content
+        }
         None => bail!("Entry module '{}' does not exist.", entry_path.display()),
     };
 

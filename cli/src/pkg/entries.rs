@@ -213,18 +213,37 @@ impl PkgEntries {
                 bail!("Expected '{field_name}' field to be an object.");
             }
 
-            for (sub_entry_name, sub_entry_path) in entry_value.entries() {
-                if !sub_entry_path.is_string() {
-                    bail!("Expected '{sub_entry_name}' in '{field_name}' field to be a string.");
-                }
+            // For nested export conditions (e.g., { ".": { "types": "...", "default": "..." } })
+            // we need to pick the first valid string value, preferring "default" or "import"
+            let mut resolved_path: Option<String> = None;
 
+            // Try to find "default" or "import" first
+            for preferred_key in &["default", "import", "require"] {
+                let path_value = &entry_value[*preferred_key];
+                if path_value.is_string() {
+                    resolved_path = Some(path_value.to_string());
+                    break;
+                }
+            }
+
+            // If no preferred key found, use the first string value
+            if resolved_path.is_none() {
+                for (_sub_entry_name, sub_entry_path) in entry_value.entries() {
+                    if sub_entry_path.is_string() {
+                        resolved_path = Some(sub_entry_path.to_string());
+                        break;
+                    }
+                }
+            }
+
+            if let Some(path) = resolved_path {
                 let entry = PkgEntry::new(
-                    sub_entry_name.into(),
-                    sub_entry_path.to_string().into(),
+                    entry_name.into(),
+                    path.into(),
                     Rc::clone(&pkg_contents),
                 )?;
 
-                entries.insert(sub_entry_name.into(), entry);
+                entries.insert(entry_name.into(), entry);
             }
         }
 

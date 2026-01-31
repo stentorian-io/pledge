@@ -173,7 +173,7 @@ impl EntityDeclaration {
                 };
                 Ok(Self::Enum(name, info))
             }
-            NodeKind::TypeAnnotation => {
+            NodeKind::TypeAnnotation | NodeKind::TypeAliasDeclaration => {
                 let info = TypeAliasInfo {
                     is_exported: node.is_exported,
                     source: node.text.clone(),

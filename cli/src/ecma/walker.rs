@@ -6,7 +6,7 @@
 use crate::ecma::entity::EntityDeclaration;
 use crate::ecma::parser::parse_import;
 use crate::parser::{NodeKind, ParsedNode};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +22,13 @@ pub fn get_exports_in_module(
     let mut default_export: Option<EntityDeclaration> = None;
 
     // Walk through all nodes to find exports
-    walk_module_exports(&parsed, &base_import_path, &mut declarations, &mut default_export)?;
+    match walk_module_exports(&parsed, &base_import_path, &mut declarations, &mut default_export) {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("Error during export extraction: {}", e);
+            return Err(e);
+        }
+    }
 
     Ok((default_export, declarations))
 }
@@ -137,12 +143,14 @@ fn handle_reexport(
     let import_path = resolve_import_path(base_path, &source_path);
 
     // Try to parse the imported module
-    let imported_module = parse_import(&import_path).with_context(|| {
-        format!(
-            "Failed to parse re-exported module: {}",
-            import_path.display()
-        )
-    })?;
+    // If parsing fails (e.g., file not accessible in tarball), skip this re-export
+    let imported_module = match parse_import(&import_path) {
+        Ok(module) => module,
+        Err(e) => {
+            eprintln!("Warning: Could not parse re-exported module '{}': {}. Skipping re-export.", import_path.display(), e);
+            return Ok(());
+        }
+    };
 
     let import_dir = import_path.parent().unwrap().to_path_buf();
     let (_, imported_exports) = get_exports_in_module(import_dir, imported_module)?;
