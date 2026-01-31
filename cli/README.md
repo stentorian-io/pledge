@@ -323,6 +323,15 @@ jobs:
             ./my-package
 ```
 
+## Documentation
+
+Additional documentation is available in the `docs/` directory:
+
+- [Tree-sitter Migration Guide](./docs/tree-sitter-migration.md) - Guide for migrating from SWC to tree-sitter
+- [Query Patterns Reference](./docs/query-patterns-reference.md) - Tree-sitter query patterns for JS/TS
+- [Parser Interface Design](./docs/parser-interface-design.md) - Language-agnostic parser architecture
+- [Language Support Roadmap](./docs/language-support-roadmap.md) - Roadmap for Python, Go, Rust support
+
 ## Related Projects
 
 - **interlint-format**: Shared types for representing public interfaces
