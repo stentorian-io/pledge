@@ -1,13 +1,885 @@
 //! Diff detection logic for comparing public interfaces.
+//!
+//! This module implements comprehensive breaking change detection including:
+//!
+//! - **Structural Type Comparison**: Deep comparison of types beyond string equality
+//! - **Variance-aware Analysis**: Different rules for input vs output positions
+//! - **Union/Intersection Tracking**: Detect member additions/removals
+//! - **Nullable Type Changes**: Track changes to nullability
+//! - **Object Shape Compatibility**: Structural subtyping checks
 
 use std::collections::{HashMap, HashSet};
 
 use interlint_format::{
     ClassSig, EnumSig, Export, FunctionSig, InterfaceSig, Module, Parameter, Property,
-    PublicInterface, Signature, TypeAliasSig, TypeInfo, VariableSig,
+    PublicInterface, Signature, TypeAliasSig, TypeInfo, TypeKind, VariableSig, Variance,
 };
 
 use crate::response::{BreakingChange, BreakingChangeType, Severity};
+
+// =============================================================================
+// Structural Type Comparison
+// =============================================================================
+
+/// Result of a structural type comparison.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct TypeComparisonResult {
+    /// Whether the types are compatible
+    pub compatible: bool,
+    /// List of specific differences found
+    pub differences: Vec<TypeDifference>,
+}
+
+/// A specific difference found between two types.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct TypeDifference {
+    /// Type of difference
+    pub kind: TypeDifferenceKind,
+    /// Path to the difference (e.g., "return_type", "param[0]")
+    pub path: String,
+    /// Description of the difference
+    pub description: String,
+    /// Previous value/type
+    pub previous: Option<String>,
+    /// Current value/type
+    pub current: Option<String>,
+}
+
+/// Kind of type difference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum TypeDifferenceKind {
+    /// Type kind changed (e.g., primitive -> object)
+    KindChanged,
+    /// Primitive type changed
+    PrimitiveChanged,
+    /// Array element type changed
+    ArrayElementChanged,
+    /// Union member added
+    UnionMemberAdded,
+    /// Union member removed
+    UnionMemberRemoved,
+    /// Intersection member added
+    IntersectionMemberAdded,
+    /// Intersection member removed
+    IntersectionMemberRemoved,
+    /// Object property added
+    ObjectPropertyAdded,
+    /// Object property removed
+    ObjectPropertyRemoved,
+    /// Object property type changed
+    ObjectPropertyTypeChanged,
+    /// Object property became required
+    ObjectPropertyBecameRequired,
+    /// Object property became optional
+    ObjectPropertyBecameOptional,
+    /// Type became nullable
+    BecameNullable,
+    /// Type became non-nullable
+    BecameNonNullable,
+    /// Generic type argument changed
+    TypeArgumentChanged,
+    /// Generic variance violation
+    VarianceViolation,
+    /// Function parameter type changed
+    FunctionParamChanged,
+    /// Function return type changed
+    FunctionReturnChanged,
+    /// Reference target changed
+    ReferenceChanged,
+}
+
+/// Compare two types structurally with variance awareness.
+///
+/// This function performs deep structural comparison of types, considering:
+/// - Type kinds (primitive, object, union, etc.)
+/// - Variance positions (covariant for returns, contravariant for params)
+/// - Structural subtyping for objects
+/// - Union/intersection member tracking
+///
+/// # Arguments
+///
+/// * `prev` - The previous type
+/// * `curr` - The current type
+/// * `variance` - The variance position (covariant, contravariant, invariant)
+/// * `path` - Path for error reporting (e.g., "MyFunction.return_type")
+///
+/// # Returns
+///
+/// A `TypeComparisonResult` containing compatibility status and detailed differences.
+pub fn compare_types_structural(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+) -> TypeComparisonResult {
+    let mut result = TypeComparisonResult {
+        compatible: true,
+        differences: Vec::new(),
+    };
+
+    // Fast path: identical types
+    if prev == curr {
+        return result;
+    }
+
+    // Check string representation equality first (handles most cases)
+    if prev.repr == curr.repr && prev.kind == curr.kind {
+        // Check nullability changes
+        if prev.nullable != curr.nullable {
+            if curr.nullable && !prev.nullable {
+                // Type became nullable - safe in covariant position
+                if !variance.is_safe_to_widen() {
+                    result.compatible = false;
+                }
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::BecameNullable,
+                    path: path.to_string(),
+                    description: format!("Type at '{}' became nullable", path),
+                    previous: Some(prev.repr.clone()),
+                    current: Some(format!("{} | null", curr.repr)),
+                });
+            } else {
+                // Type became non-nullable - breaking in covariant position
+                if !variance.is_safe_to_narrow() {
+                    result.compatible = false;
+                }
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::BecameNonNullable,
+                    path: path.to_string(),
+                    description: format!("Type at '{}' became non-nullable", path),
+                    previous: Some(format!("{} | null", prev.repr)),
+                    current: Some(curr.repr.clone()),
+                });
+            }
+        }
+        return result;
+    }
+
+    // Handle Any type - compatible with anything
+    if prev.kind == TypeKind::Any || curr.kind == TypeKind::Any {
+        return result;
+    }
+
+    // Handle Never type
+    if prev.kind == TypeKind::Never || curr.kind == TypeKind::Never {
+        // Never is subtype of everything, supertype of nothing
+        if prev.kind == TypeKind::Never && variance.is_safe_to_narrow() {
+            return result;
+        }
+        if curr.kind == TypeKind::Never && variance.is_safe_to_widen() {
+            return result;
+        }
+        result.compatible = false;
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::KindChanged,
+            path: path.to_string(),
+            description: format!("Type at '{}' changed involving 'never' type", path),
+            previous: Some(prev.repr.clone()),
+            current: Some(curr.repr.clone()),
+        });
+        return result;
+    }
+
+    // Check if kinds match
+    if prev.kind != curr.kind {
+        // Special case: union containing the other type
+        if curr.kind == TypeKind::Union && curr.constituents.iter().any(|c| types_equal(c, prev)) {
+            // Type was widened to a union containing the old type
+            if variance.is_safe_to_widen() {
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::UnionMemberAdded,
+                    path: path.to_string(),
+                    description: format!("Type at '{}' was widened to union", path),
+                    previous: Some(prev.repr.clone()),
+                    current: Some(curr.repr.clone()),
+                });
+                return result;
+            }
+        }
+
+        if prev.kind == TypeKind::Union && prev.constituents.iter().any(|c| types_equal(c, curr)) {
+            // Type was narrowed from a union
+            if variance.is_safe_to_narrow() {
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::UnionMemberRemoved,
+                    path: path.to_string(),
+                    description: format!("Type at '{}' was narrowed from union", path),
+                    previous: Some(prev.repr.clone()),
+                    current: Some(curr.repr.clone()),
+                });
+                return result;
+            }
+        }
+
+        result.compatible = false;
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::KindChanged,
+            path: path.to_string(),
+            description: format!(
+                "Type kind at '{}' changed from {:?} to {:?}",
+                path, prev.kind, curr.kind
+            ),
+            previous: Some(format!("{:?}", prev.kind)),
+            current: Some(format!("{:?}", curr.kind)),
+        });
+        return result;
+    }
+
+    // Compare based on kind
+    match prev.kind {
+        TypeKind::Primitive => {
+            compare_primitive_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Array => {
+            compare_array_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Union => {
+            compare_union_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Intersection => {
+            compare_intersection_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Object => {
+            compare_object_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Function => {
+            compare_function_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Generic => {
+            compare_generic_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Reference => {
+            compare_reference_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Tuple => {
+            compare_tuple_types(prev, curr, variance, path, &mut result);
+        }
+        TypeKind::Map => {
+            compare_map_types(prev, curr, variance, path, &mut result);
+        }
+        _ => {
+            // For other kinds, fall back to repr comparison
+            if prev.repr != curr.repr {
+                result.compatible = false;
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::KindChanged,
+                    path: path.to_string(),
+                    description: format!("Type at '{}' changed", path),
+                    previous: Some(prev.repr.clone()),
+                    current: Some(curr.repr.clone()),
+                });
+            }
+        }
+    }
+
+    // Check nullability
+    if prev.nullable != curr.nullable && result.compatible {
+        if curr.nullable && !prev.nullable {
+            if !variance.is_safe_to_widen() {
+                result.compatible = false;
+            }
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::BecameNullable,
+                path: path.to_string(),
+                description: format!("Type at '{}' became nullable", path),
+                previous: Some(prev.repr.clone()),
+                current: Some(curr.repr.clone()),
+            });
+        } else if !curr.nullable && prev.nullable {
+            if !variance.is_safe_to_narrow() {
+                result.compatible = false;
+            }
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::BecameNonNullable,
+                path: path.to_string(),
+                description: format!("Type at '{}' became non-nullable", path),
+                previous: Some(prev.repr.clone()),
+                current: Some(curr.repr.clone()),
+            });
+        }
+    }
+
+    result
+}
+
+/// Compare primitive types.
+fn compare_primitive_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    if prev.repr != curr.repr {
+        // Check if it's a valid subtype relationship
+        let is_subtype = is_primitive_subtype(&curr.repr, &prev.repr);
+        let is_supertype = is_primitive_subtype(&prev.repr, &curr.repr);
+
+        if is_subtype && variance.is_safe_to_narrow() {
+            // Narrowing is safe in contravariant position
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::PrimitiveChanged,
+                path: path.to_string(),
+                description: format!("Primitive type at '{}' narrowed", path),
+                previous: Some(prev.repr.clone()),
+                current: Some(curr.repr.clone()),
+            });
+        } else if is_supertype && variance.is_safe_to_widen() {
+            // Widening is safe in covariant position
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::PrimitiveChanged,
+                path: path.to_string(),
+                description: format!("Primitive type at '{}' widened", path),
+                previous: Some(prev.repr.clone()),
+                current: Some(curr.repr.clone()),
+            });
+        } else {
+            result.compatible = false;
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::PrimitiveChanged,
+                path: path.to_string(),
+                description: format!(
+                    "Primitive type at '{}' changed from '{}' to '{}'",
+                    path, prev.repr, curr.repr
+                ),
+                previous: Some(prev.repr.clone()),
+                current: Some(curr.repr.clone()),
+            });
+        }
+    }
+}
+
+/// Check if one primitive type is a subtype of another.
+fn is_primitive_subtype(subtype: &str, supertype: &str) -> bool {
+    match (subtype, supertype) {
+        // Number subtypes
+        ("integer", "number") => true,
+        ("float", "number") => true,
+        ("bigint", "number") => false, // bigint is not a subtype of number
+        // String literal subtypes
+        (s, "string") if s.starts_with('"') && s.ends_with('"') => true,
+        // Boolean literal subtypes
+        ("true", "boolean") | ("false", "boolean") => true,
+        // void/undefined relationship
+        ("void", "undefined") => true,
+        ("undefined", "void") => true,
+        // null handling
+        ("null", _) => false, // null is not a subtype of other types
+        // Same type
+        (a, b) if a == b => true,
+        _ => false,
+    }
+}
+
+/// Compare array types.
+fn compare_array_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    match (&prev.element_type, &curr.element_type) {
+        (Some(prev_elem), Some(curr_elem)) => {
+            // Arrays are covariant in their element type (for reading)
+            // but technically invariant if you consider both read and write
+            let elem_path = format!("{}[]", path);
+            let elem_result = compare_types_structural(prev_elem, curr_elem, variance, &elem_path);
+
+            if !elem_result.compatible {
+                result.compatible = false;
+            }
+            result.differences.extend(elem_result.differences);
+        }
+        _ => {
+            if prev.repr != curr.repr {
+                result.compatible = false;
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::ArrayElementChanged,
+                    path: path.to_string(),
+                    description: format!("Array type at '{}' changed", path),
+                    previous: Some(prev.repr.clone()),
+                    current: Some(curr.repr.clone()),
+                });
+            }
+        }
+    }
+}
+
+/// Compare union types.
+fn compare_union_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    let prev_members: HashSet<&str> = prev.constituents.iter().map(|t| t.repr.as_str()).collect();
+    let curr_members: HashSet<&str> = curr.constituents.iter().map(|t| t.repr.as_str()).collect();
+
+    // Find added members
+    for member in curr_members.difference(&prev_members) {
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::UnionMemberAdded,
+            path: path.to_string(),
+            description: format!("Union member '{}' was added at '{}'", member, path),
+            previous: None,
+            current: Some(member.to_string()),
+        });
+
+        // Adding union members widens the type
+        // Breaking in contravariant position (parameters)
+        if !variance.is_safe_to_widen() {
+            result.compatible = false;
+        }
+    }
+
+    // Find removed members
+    for member in prev_members.difference(&curr_members) {
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::UnionMemberRemoved,
+            path: path.to_string(),
+            description: format!("Union member '{}' was removed from '{}'", member, path),
+            previous: Some(member.to_string()),
+            current: None,
+        });
+
+        // Removing union members narrows the type
+        // Breaking in covariant position (return types)
+        if !variance.is_safe_to_narrow() {
+            result.compatible = false;
+        }
+    }
+}
+
+/// Compare intersection types.
+fn compare_intersection_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    let prev_members: HashSet<&str> = prev.constituents.iter().map(|t| t.repr.as_str()).collect();
+    let curr_members: HashSet<&str> = curr.constituents.iter().map(|t| t.repr.as_str()).collect();
+
+    // Find added members - makes the type narrower (more constraints)
+    for member in curr_members.difference(&prev_members) {
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::IntersectionMemberAdded,
+            path: path.to_string(),
+            description: format!("Intersection member '{}' was added at '{}'", member, path),
+            previous: None,
+            current: Some(member.to_string()),
+        });
+
+        // Adding intersection members narrows the type
+        // Breaking in covariant position (return types)
+        if !variance.is_safe_to_narrow() {
+            result.compatible = false;
+        }
+    }
+
+    // Find removed members - makes the type wider (fewer constraints)
+    for member in prev_members.difference(&curr_members) {
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::IntersectionMemberRemoved,
+            path: path.to_string(),
+            description: format!("Intersection member '{}' was removed from '{}'", member, path),
+            previous: Some(member.to_string()),
+            current: None,
+        });
+
+        // Removing intersection members widens the type
+        // Breaking in contravariant position (parameters)
+        if !variance.is_safe_to_widen() {
+            result.compatible = false;
+        }
+    }
+}
+
+/// Compare object types (structural comparison).
+fn compare_object_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    let prev_props: HashMap<&str, _> = prev.properties.iter().map(|p| (p.name.as_str(), p)).collect();
+    let curr_props: HashMap<&str, _> = curr.properties.iter().map(|p| (p.name.as_str(), p)).collect();
+
+    // Check for removed properties
+    for (name, prev_prop) in &prev_props {
+        if !curr_props.contains_key(name) {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::ObjectPropertyRemoved,
+                path: format!("{}.{}", path, name),
+                description: format!("Property '{}' was removed from object at '{}'", name, path),
+                previous: Some(prev_prop.type_info.repr.clone()),
+                current: None,
+            });
+
+            // Removing required property is breaking in covariant position
+            if !prev_prop.optional && !variance.is_safe_to_narrow() {
+                result.compatible = false;
+            }
+        }
+    }
+
+    // Check for added properties
+    for (name, curr_prop) in &curr_props {
+        if !prev_props.contains_key(name) {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::ObjectPropertyAdded,
+                path: format!("{}.{}", path, name),
+                description: format!("Property '{}' was added to object at '{}'", name, path),
+                previous: None,
+                current: Some(curr_prop.type_info.repr.clone()),
+            });
+
+            // Adding required property is breaking in contravariant position
+            if !curr_prop.optional && !variance.is_safe_to_widen() {
+                result.compatible = false;
+            }
+        }
+    }
+
+    // Compare properties that exist in both
+    for (name, prev_prop) in &prev_props {
+        if let Some(curr_prop) = curr_props.get(name) {
+            let prop_path = format!("{}.{}", path, name);
+
+            // Determine property variance
+            let prop_variance = if prev_prop.readonly && curr_prop.readonly {
+                variance // readonly properties preserve variance
+            } else {
+                Variance::Invariant // mutable properties are invariant
+            };
+
+            // Compare types
+            let prop_result = compare_types_structural(
+                &prev_prop.type_info,
+                &curr_prop.type_info,
+                prop_variance,
+                &prop_path,
+            );
+
+            if !prop_result.compatible {
+                result.compatible = false;
+            }
+            result.differences.extend(prop_result.differences);
+
+            // Check optional -> required
+            if prev_prop.optional && !curr_prop.optional {
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::ObjectPropertyBecameRequired,
+                    path: prop_path.clone(),
+                    description: format!("Property '{}' became required", name),
+                    previous: Some("optional".to_string()),
+                    current: Some("required".to_string()),
+                });
+
+                // Property becoming required is breaking in contravariant position
+                if !variance.is_safe_to_narrow() {
+                    result.compatible = false;
+                }
+            }
+
+            // Check required -> optional
+            if !prev_prop.optional && curr_prop.optional {
+                result.differences.push(TypeDifference {
+                    kind: TypeDifferenceKind::ObjectPropertyBecameOptional,
+                    path: prop_path,
+                    description: format!("Property '{}' became optional", name),
+                    previous: Some("required".to_string()),
+                    current: Some("optional".to_string()),
+                });
+
+                // Property becoming optional is breaking in covariant position
+                if !variance.is_safe_to_widen() {
+                    result.compatible = false;
+                }
+            }
+        }
+    }
+}
+
+/// Compare function types.
+fn compare_function_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    _variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    // Compare parameter types (contravariant)
+    let prev_params = &prev.param_types;
+    let curr_params = &curr.param_types;
+
+    let min_len = prev_params.len().min(curr_params.len());
+
+    for i in 0..min_len {
+        let param_path = format!("{}(param[{}])", path, i);
+        let param_result = compare_types_structural(
+            &prev_params[i],
+            &curr_params[i],
+            Variance::Contravariant,
+            &param_path,
+        );
+
+        if !param_result.compatible {
+            result.compatible = false;
+        }
+        result.differences.extend(param_result.differences);
+    }
+
+    // Check for added parameters
+    if curr_params.len() > prev_params.len() {
+        for i in min_len..curr_params.len() {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::FunctionParamChanged,
+                path: format!("{}(param[{}])", path, i),
+                description: format!("Parameter {} was added to function", i),
+                previous: None,
+                current: Some(curr_params[i].repr.clone()),
+            });
+        }
+        result.compatible = false;
+    }
+
+    // Check for removed parameters
+    if prev_params.len() > curr_params.len() {
+        for i in min_len..prev_params.len() {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::FunctionParamChanged,
+                path: format!("{}(param[{}])", path, i),
+                description: format!("Parameter {} was removed from function", i),
+                previous: Some(prev_params[i].repr.clone()),
+                current: None,
+            });
+        }
+        // Removing parameters may be safe if they were optional
+    }
+
+    // Compare return types (covariant)
+    match (&prev.return_type, &curr.return_type) {
+        (Some(prev_ret), Some(curr_ret)) => {
+            let ret_path = format!("{}.return", path);
+            let ret_result = compare_types_structural(
+                prev_ret,
+                curr_ret,
+                Variance::Covariant,
+                &ret_path,
+            );
+
+            if !ret_result.compatible {
+                result.compatible = false;
+            }
+            result.differences.extend(ret_result.differences);
+        }
+        (None, Some(curr_ret)) => {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::FunctionReturnChanged,
+                path: format!("{}.return", path),
+                description: "Return type was added".to_string(),
+                previous: None,
+                current: Some(curr_ret.repr.clone()),
+            });
+        }
+        (Some(prev_ret), None) => {
+            result.differences.push(TypeDifference {
+                kind: TypeDifferenceKind::FunctionReturnChanged,
+                path: format!("{}.return", path),
+                description: "Return type was removed".to_string(),
+                previous: Some(prev_ret.repr.clone()),
+                current: None,
+            });
+            result.compatible = false;
+        }
+        (None, None) => {}
+    }
+}
+
+/// Compare generic types.
+fn compare_generic_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    // Compare type arguments
+    let prev_args = &prev.type_arguments;
+    let curr_args = &curr.type_arguments;
+
+    if prev_args.len() != curr_args.len() {
+        result.compatible = false;
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::TypeArgumentChanged,
+            path: path.to_string(),
+            description: format!(
+                "Number of type arguments changed from {} to {}",
+                prev_args.len(),
+                curr_args.len()
+            ),
+            previous: Some(prev_args.len().to_string()),
+            current: Some(curr_args.len().to_string()),
+        });
+        return;
+    }
+
+    for (i, (prev_arg, curr_arg)) in prev_args.iter().zip(curr_args.iter()).enumerate() {
+        let arg_path = format!("{}<{}>", path, i);
+        // Type arguments are invariant by default (we don't know the variance)
+        let arg_result = compare_types_structural(prev_arg, curr_arg, variance, &arg_path);
+
+        if !arg_result.compatible {
+            result.compatible = false;
+        }
+        result.differences.extend(arg_result.differences);
+    }
+}
+
+/// Compare reference types.
+fn compare_reference_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    _variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    if prev.repr != curr.repr {
+        result.compatible = false;
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::ReferenceChanged,
+            path: path.to_string(),
+            description: format!(
+                "Type reference at '{}' changed from '{}' to '{}'",
+                path, prev.repr, curr.repr
+            ),
+            previous: Some(prev.repr.clone()),
+            current: Some(curr.repr.clone()),
+        });
+    }
+}
+
+/// Compare tuple types.
+fn compare_tuple_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    let prev_elems = &prev.type_arguments;
+    let curr_elems = &curr.type_arguments;
+
+    if prev_elems.len() != curr_elems.len() {
+        result.compatible = false;
+        result.differences.push(TypeDifference {
+            kind: TypeDifferenceKind::KindChanged,
+            path: path.to_string(),
+            description: format!(
+                "Tuple length changed from {} to {}",
+                prev_elems.len(),
+                curr_elems.len()
+            ),
+            previous: Some(prev_elems.len().to_string()),
+            current: Some(curr_elems.len().to_string()),
+        });
+        return;
+    }
+
+    for (i, (prev_elem, curr_elem)) in prev_elems.iter().zip(curr_elems.iter()).enumerate() {
+        let elem_path = format!("{}[{}]", path, i);
+        let elem_result = compare_types_structural(prev_elem, curr_elem, variance, &elem_path);
+
+        if !elem_result.compatible {
+            result.compatible = false;
+        }
+        result.differences.extend(elem_result.differences);
+    }
+}
+
+/// Compare map types.
+fn compare_map_types(
+    prev: &TypeInfo,
+    curr: &TypeInfo,
+    variance: Variance,
+    path: &str,
+    result: &mut TypeComparisonResult,
+) {
+    // Compare key types (invariant - used in both lookup and storage)
+    if let (Some(prev_key), Some(curr_key)) = (&prev.key_type, &curr.key_type) {
+        let key_path = format!("{}.key", path);
+        let key_result = compare_types_structural(prev_key, curr_key, Variance::Invariant, &key_path);
+
+        if !key_result.compatible {
+            result.compatible = false;
+        }
+        result.differences.extend(key_result.differences);
+    }
+
+    // Compare value types (follows the outer variance)
+    if let (Some(prev_val), Some(curr_val)) = (&prev.value_type, &curr.value_type) {
+        let val_path = format!("{}.value", path);
+        let val_result = compare_types_structural(prev_val, curr_val, variance, &val_path);
+
+        if !val_result.compatible {
+            result.compatible = false;
+        }
+        result.differences.extend(val_result.differences);
+    }
+}
+
+/// Convert type differences to breaking changes.
+#[allow(dead_code)]
+pub fn differences_to_breaking_changes(
+    differences: &[TypeDifference],
+    base_path: &str,
+    name: &str,
+) -> Vec<BreakingChange> {
+    differences
+        .iter()
+        .map(|diff| {
+            let change_type = match diff.kind {
+                TypeDifferenceKind::UnionMemberRemoved => BreakingChangeType::UnionMemberRemoved,
+                TypeDifferenceKind::UnionMemberAdded => BreakingChangeType::UnionMemberAdded,
+                TypeDifferenceKind::IntersectionMemberAdded => BreakingChangeType::IntersectionMemberAdded,
+                TypeDifferenceKind::IntersectionMemberRemoved => BreakingChangeType::IntersectionMemberRemoved,
+                TypeDifferenceKind::BecameNullable => BreakingChangeType::TypeBecameNullable,
+                TypeDifferenceKind::BecameNonNullable => BreakingChangeType::TypeBecameNonNullable,
+                TypeDifferenceKind::ObjectPropertyAdded => BreakingChangeType::PropertyAdded,
+                TypeDifferenceKind::ObjectPropertyRemoved => BreakingChangeType::PropertyRemoved,
+                TypeDifferenceKind::ObjectPropertyTypeChanged => BreakingChangeType::PropertyTypeChanged,
+                TypeDifferenceKind::ObjectPropertyBecameRequired => BreakingChangeType::PropertyBecameRequired,
+                TypeDifferenceKind::ObjectPropertyBecameOptional => BreakingChangeType::PropertyBecameOptional,
+                TypeDifferenceKind::VarianceViolation => BreakingChangeType::GenericVarianceViolation,
+                _ => BreakingChangeType::TypeChanged,
+            };
+
+            let mut change = BreakingChange::new(
+                change_type,
+                format!("{}#{}", base_path, diff.path),
+                name,
+                diff.description.clone(),
+            );
+
+            if let Some(ref prev) = diff.previous {
+                change = change.with_previous(prev);
+            }
+            if let Some(ref curr) = diff.current {
+                change = change.with_current(curr);
+            }
+
+            change
+        })
+        .collect()
+}
 
 /// Compare two public interfaces and return a list of breaking changes.
 pub fn compare_interfaces(
@@ -282,8 +1154,15 @@ fn compare_function_signatures(
         );
     }
 
-    // Check return type
-    if !types_equal(&prev.return_type, &curr.return_type) {
+    // Check return type with variance-aware comparison (covariant)
+    let return_comparison = compare_types_structural(
+        &prev.return_type,
+        &curr.return_type,
+        Variance::Covariant,
+        &format!("{}.return", path),
+    );
+
+    if !return_comparison.compatible {
         changes.push(
             BreakingChange::new(
                 BreakingChangeType::ReturnTypeChanged,
@@ -297,10 +1176,41 @@ fn compare_function_signatures(
             .with_previous(&prev.return_type.repr)
             .with_current(&curr.return_type.repr),
         );
+    } else if !return_comparison.differences.is_empty() {
+        // Add informational changes for compatible but different types
+        for diff in &return_comparison.differences {
+            let change_type = match diff.kind {
+                TypeDifferenceKind::UnionMemberAdded => BreakingChangeType::UnionMemberAdded,
+                TypeDifferenceKind::BecameNullable => BreakingChangeType::TypeBecameNullable,
+                _ => continue, // Skip non-breaking differences
+            };
+            let mut change = BreakingChange::new(
+                change_type,
+                path,
+                &prev.name,
+                diff.description.clone(),
+            )
+            .with_severity(Severity::Warning);
+
+            if let Some(ref prev_val) = diff.previous {
+                change = change.with_previous(prev_val);
+            }
+            if let Some(ref curr_val) = diff.current {
+                change = change.with_current(curr_val);
+            }
+            changes.push(change);
+        }
     }
 
-    // Compare parameters
-    compare_parameters(&prev.parameters, &curr.parameters, path, &prev.name, changes, include_additions);
+    // Compare parameters (with variance awareness)
+    compare_parameters_with_variance(
+        &prev.parameters,
+        &curr.parameters,
+        path,
+        &prev.name,
+        changes,
+        include_additions,
+    );
 
     // Compare type parameters
     compare_type_parameters(
@@ -330,8 +1240,8 @@ fn compare_function_signatures(
     }
 }
 
-/// Compare parameters between two function signatures.
-fn compare_parameters(
+/// Compare parameters with variance-aware type checking.
+fn compare_parameters_with_variance(
     prev: &[Parameter],
     curr: &[Parameter],
     path: &str,
@@ -367,14 +1277,9 @@ fn compare_parameters(
             } else {
                 Severity::Critical
             };
-            let change_type = if param.optional || param.default_value.is_some() {
-                BreakingChangeType::ParameterAdded
-            } else {
-                BreakingChangeType::ParameterAdded
-            };
             changes.push(
                 BreakingChange::new(
-                    change_type,
+                    BreakingChangeType::ParameterAdded,
                     path,
                     fn_name,
                     format!(
@@ -390,11 +1295,19 @@ fn compare_parameters(
         }
     }
 
-    // Compare parameters that exist in both
+    // Compare parameters that exist in both (with contravariant type checking)
     for (name, prev_param) in &prev_params {
         if let Some(curr_param) = curr_params.get(name) {
-            // Check type change
-            if !types_equal(&prev_param.type_info, &curr_param.type_info) {
+            // Check type change with variance-aware comparison
+            // Parameters are contravariant - widening is safe, narrowing breaks callers
+            let type_comparison = compare_types_structural(
+                &prev_param.type_info,
+                &curr_param.type_info,
+                Variance::Contravariant,
+                &format!("{}.{}", path, name),
+            );
+
+            if !type_comparison.compatible {
                 changes.push(
                     BreakingChange::new(
                         BreakingChangeType::ParameterTypeChanged,
@@ -408,6 +1321,31 @@ fn compare_parameters(
                     .with_previous(&prev_param.type_info.repr)
                     .with_current(&curr_param.type_info.repr),
                 );
+            } else {
+                // Report structural changes that are safe but noteworthy
+                for diff in &type_comparison.differences {
+                    let change_type = match diff.kind {
+                        TypeDifferenceKind::UnionMemberRemoved => BreakingChangeType::UnionMemberRemoved,
+                        TypeDifferenceKind::BecameNonNullable => BreakingChangeType::TypeBecameNonNullable,
+                        _ => continue,
+                    };
+
+                    let mut change = BreakingChange::new(
+                        change_type,
+                        path,
+                        fn_name,
+                        diff.description.clone(),
+                    )
+                    .with_severity(Severity::Warning);
+
+                    if let Some(ref prev_val) = diff.previous {
+                        change = change.with_previous(prev_val);
+                    }
+                    if let Some(ref curr_val) = diff.current {
+                        change = change.with_current(curr_val);
+                    }
+                    changes.push(change);
+                }
             }
 
             // Check optional -> required
@@ -794,8 +1732,23 @@ fn compare_properties(
     // Compare properties that exist in both
     for (name, prev_prop) in &prev_props {
         if let Some(curr_prop) = curr_props.get(name) {
-            // Check type change
-            if !types_equal(&prev_prop.type_info, &curr_prop.type_info) {
+            // Determine variance for property type comparison
+            // Readonly properties are covariant, mutable properties are invariant
+            let prop_variance = if prev_prop.readonly && curr_prop.readonly {
+                Variance::Covariant
+            } else {
+                Variance::Invariant
+            };
+
+            // Check type change with structural comparison
+            let type_comparison = compare_types_structural(
+                &prev_prop.type_info,
+                &curr_prop.type_info,
+                prop_variance,
+                &format!("{}.{}", path, name),
+            );
+
+            if !type_comparison.compatible {
                 changes.push(
                     BreakingChange::new(
                         BreakingChangeType::PropertyTypeChanged,
@@ -809,6 +1762,41 @@ fn compare_properties(
                     .with_previous(&prev_prop.type_info.repr)
                     .with_current(&curr_prop.type_info.repr),
                 );
+            } else {
+                // Add structural changes as separate entries
+                for diff in &type_comparison.differences {
+                    let change_type = match diff.kind {
+                        TypeDifferenceKind::UnionMemberRemoved => BreakingChangeType::UnionMemberRemoved,
+                        TypeDifferenceKind::UnionMemberAdded => BreakingChangeType::UnionMemberAdded,
+                        TypeDifferenceKind::BecameNullable => BreakingChangeType::TypeBecameNullable,
+                        TypeDifferenceKind::BecameNonNullable => BreakingChangeType::TypeBecameNonNullable,
+                        _ => continue,
+                    };
+
+                    let severity = match diff.kind {
+                        TypeDifferenceKind::BecameNonNullable => Severity::Major,
+                        TypeDifferenceKind::UnionMemberRemoved if prop_variance == Variance::Covariant => {
+                            Severity::Major
+                        }
+                        _ => Severity::Warning,
+                    };
+
+                    let mut change = BreakingChange::new(
+                        change_type,
+                        path,
+                        parent_name,
+                        diff.description.clone(),
+                    )
+                    .with_severity(severity);
+
+                    if let Some(ref prev_val) = diff.previous {
+                        change = change.with_previous(prev_val);
+                    }
+                    if let Some(ref curr_val) = diff.current {
+                        change = change.with_current(curr_val);
+                    }
+                    changes.push(change);
+                }
             }
 
             // Check optional -> required
@@ -854,6 +1842,34 @@ fn compare_properties(
                     )
                     .with_previous(format!("{:?}", prev_prop.visibility))
                     .with_current(format!("{:?}", curr_prop.visibility)),
+                );
+            }
+
+            // Check readonly change
+            if prev_prop.readonly != curr_prop.readonly {
+                let severity = if !prev_prop.readonly && curr_prop.readonly {
+                    // Mutable -> readonly is safe (consumers can still read)
+                    Severity::Warning
+                } else {
+                    // Readonly -> mutable changes the variance, potentially breaking
+                    Severity::Minor
+                };
+                changes.push(
+                    BreakingChange::new(
+                        BreakingChangeType::TypeChanged,
+                        path,
+                        parent_name,
+                        format!(
+                            "Property '{}' in '{}' changed from {} to {}",
+                            name,
+                            parent_name,
+                            if prev_prop.readonly { "readonly" } else { "mutable" },
+                            if curr_prop.readonly { "readonly" } else { "mutable" }
+                        ),
+                    )
+                    .with_severity(severity)
+                    .with_previous(if prev_prop.readonly { "readonly" } else { "mutable" })
+                    .with_current(if curr_prop.readonly { "readonly" } else { "mutable" }),
                 );
             }
         }
@@ -1012,7 +2028,16 @@ fn compare_type_alias_signatures(
     path: &str,
     changes: &mut Vec<BreakingChange>,
 ) {
-    if !types_equal(&prev.aliased_type, &curr.aliased_type) {
+    // Type aliases can be used in both input and output positions,
+    // so we treat them as invariant for breaking change detection
+    let comparison = compare_types_structural(
+        &prev.aliased_type,
+        &curr.aliased_type,
+        Variance::Invariant,
+        &format!("{}.type", path),
+    );
+
+    if !comparison.compatible {
         changes.push(
             BreakingChange::new(
                 BreakingChangeType::TypeChanged,
@@ -1026,6 +2051,40 @@ fn compare_type_alias_signatures(
             .with_previous(&prev.aliased_type.repr)
             .with_current(&curr.aliased_type.repr),
         );
+    }
+
+    // Add detailed structural changes
+    for diff in comparison.differences {
+        let change_type = match diff.kind {
+            TypeDifferenceKind::UnionMemberRemoved => BreakingChangeType::UnionMemberRemoved,
+            TypeDifferenceKind::UnionMemberAdded => BreakingChangeType::UnionMemberAdded,
+            TypeDifferenceKind::IntersectionMemberAdded => BreakingChangeType::IntersectionMemberAdded,
+            TypeDifferenceKind::IntersectionMemberRemoved => BreakingChangeType::IntersectionMemberRemoved,
+            TypeDifferenceKind::BecameNullable => BreakingChangeType::TypeBecameNullable,
+            TypeDifferenceKind::BecameNonNullable => BreakingChangeType::TypeBecameNonNullable,
+            TypeDifferenceKind::ObjectPropertyAdded => BreakingChangeType::PropertyAdded,
+            TypeDifferenceKind::ObjectPropertyRemoved => BreakingChangeType::PropertyRemoved,
+            TypeDifferenceKind::ObjectPropertyTypeChanged => BreakingChangeType::PropertyTypeChanged,
+            TypeDifferenceKind::ObjectPropertyBecameRequired => BreakingChangeType::PropertyBecameRequired,
+            TypeDifferenceKind::ObjectPropertyBecameOptional => BreakingChangeType::PropertyBecameOptional,
+            _ => continue, // Skip minor differences
+        };
+
+        let mut change = BreakingChange::new(
+            change_type,
+            path,
+            &prev.name,
+            diff.description,
+        );
+
+        if let Some(prev_val) = diff.previous {
+            change = change.with_previous(prev_val);
+        }
+        if let Some(curr_val) = diff.current {
+            change = change.with_current(curr_val);
+        }
+
+        changes.push(change);
     }
 }
 
@@ -1170,11 +2229,71 @@ fn compare_assets(
     }
 }
 
-/// Check if two types are equal.
+/// Check if two types are equal (simple string-based comparison).
+///
+/// For deep structural comparison, use `compare_types_structural` instead.
 fn types_equal(a: &TypeInfo, b: &TypeInfo) -> bool {
-    // Simple comparison based on repr for now
-    // Could be enhanced to do structural comparison
-    a.repr == b.repr && a.kind == b.kind
+    // Fast path: check kind and repr
+    if a.kind != b.kind || a.repr != b.repr {
+        return false;
+    }
+
+    // Check nullability
+    if a.nullable != b.nullable {
+        return false;
+    }
+
+    // For union/intersection types, check constituents
+    if matches!(a.kind, TypeKind::Union | TypeKind::Intersection) {
+        if a.constituents.len() != b.constituents.len() {
+            return false;
+        }
+        let a_members: HashSet<&str> = a.constituents.iter().map(|t| t.repr.as_str()).collect();
+        let b_members: HashSet<&str> = b.constituents.iter().map(|t| t.repr.as_str()).collect();
+        if a_members != b_members {
+            return false;
+        }
+    }
+
+    // For array types, check element type
+    if a.kind == TypeKind::Array {
+        match (&a.element_type, &b.element_type) {
+            (Some(a_elem), Some(b_elem)) => {
+                if !types_equal(a_elem, b_elem) {
+                    return false;
+                }
+            }
+            (None, None) => {}
+            _ => return false,
+        }
+    }
+
+    // For object types, check properties
+    if a.kind == TypeKind::Object && !a.properties.is_empty() {
+        if a.properties.len() != b.properties.len() {
+            return false;
+        }
+        for (ap, bp) in a.properties.iter().zip(b.properties.iter()) {
+            if ap.name != bp.name
+                || ap.optional != bp.optional
+                || ap.readonly != bp.readonly
+                || !types_equal(&ap.type_info, &bp.type_info)
+            {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// Check if two types are compatible considering variance.
+///
+/// Returns true if replacing `prev` with `curr` is safe in the given variance position.
+#[allow(dead_code)]
+fn types_compatible(prev: &TypeInfo, curr: &TypeInfo, variance: Variance) -> bool {
+    let result = compare_types_structural(prev, curr, variance, "");
+    result.compatible
 }
 
 /// Get a human-readable name for a signature kind.
@@ -1295,5 +2414,160 @@ mod tests {
 
         let changes = compare_interfaces(&prev, &curr, false);
         assert!(changes.is_empty());
+    }
+
+    // =========================================================================
+    // Structural Type Comparison Tests
+    // =========================================================================
+
+    #[test]
+    fn test_structural_comparison_identical() {
+        let t = TypeInfo::primitive("string");
+        let result = compare_types_structural(&t, &t, Variance::Covariant, "test");
+        assert!(result.compatible);
+        assert!(result.differences.is_empty());
+    }
+
+    #[test]
+    fn test_structural_comparison_primitive_change() {
+        let prev = TypeInfo::primitive("string");
+        let curr = TypeInfo::primitive("number");
+
+        let result = compare_types_structural(&prev, &curr, Variance::Covariant, "test");
+        assert!(!result.compatible);
+        assert!(!result.differences.is_empty());
+    }
+
+    #[test]
+    fn test_structural_comparison_nullable_change() {
+        let mut prev = TypeInfo::primitive("string");
+        let mut curr = TypeInfo::primitive("string");
+        curr.nullable = true;
+
+        // Becoming nullable is safe in covariant position
+        let result = compare_types_structural(&prev, &curr, Variance::Covariant, "test");
+        assert!(result.compatible);
+        assert!(!result.differences.is_empty());
+        assert!(result
+            .differences
+            .iter()
+            .any(|d| d.kind == TypeDifferenceKind::BecameNullable));
+
+        // Becoming nullable is breaking in contravariant position
+        let result_contra = compare_types_structural(&prev, &curr, Variance::Contravariant, "test");
+        assert!(!result_contra.compatible);
+
+        // Becoming non-nullable is breaking in covariant position
+        prev.nullable = true;
+        curr.nullable = false;
+        let result_non_null = compare_types_structural(&prev, &curr, Variance::Covariant, "test");
+        assert!(!result_non_null.compatible);
+    }
+
+    #[test]
+    fn test_structural_comparison_union_members() {
+        let prev = TypeInfo::union(vec![
+            TypeInfo::primitive("string"),
+            TypeInfo::primitive("number"),
+        ]);
+        let curr = TypeInfo::union(vec![
+            TypeInfo::primitive("string"),
+            TypeInfo::primitive("number"),
+            TypeInfo::primitive("boolean"),
+        ]);
+
+        // Adding union member widens the type - safe in covariant
+        let result = compare_types_structural(&prev, &curr, Variance::Covariant, "test");
+        assert!(result.compatible);
+        assert!(result
+            .differences
+            .iter()
+            .any(|d| d.kind == TypeDifferenceKind::UnionMemberAdded));
+
+        // Adding union member is breaking in contravariant (params)
+        let result_contra = compare_types_structural(&prev, &curr, Variance::Contravariant, "test");
+        assert!(!result_contra.compatible);
+
+        // Removing union member narrows the type - breaking in covariant
+        let result_removed = compare_types_structural(&curr, &prev, Variance::Covariant, "test");
+        assert!(!result_removed.compatible);
+        assert!(result_removed
+            .differences
+            .iter()
+            .any(|d| d.kind == TypeDifferenceKind::UnionMemberRemoved));
+    }
+
+    #[test]
+    fn test_structural_comparison_array() {
+        let prev = TypeInfo::array(TypeInfo::primitive("string"));
+        let curr = TypeInfo::array(TypeInfo::primitive("number"));
+
+        let result = compare_types_structural(&prev, &curr, Variance::Covariant, "test");
+        assert!(!result.compatible);
+    }
+
+    #[test]
+    fn test_variance_covariant() {
+        let variance = Variance::Covariant;
+        assert!(variance.is_safe_to_widen());
+        assert!(!variance.is_safe_to_narrow());
+    }
+
+    #[test]
+    fn test_variance_contravariant() {
+        let variance = Variance::Contravariant;
+        assert!(!variance.is_safe_to_widen());
+        assert!(variance.is_safe_to_narrow());
+    }
+
+    #[test]
+    fn test_variance_invariant() {
+        let variance = Variance::Invariant;
+        assert!(!variance.is_safe_to_widen());
+        assert!(!variance.is_safe_to_narrow());
+    }
+
+    #[test]
+    fn test_variance_bivariant() {
+        let variance = Variance::Bivariant;
+        assert!(variance.is_safe_to_widen());
+        assert!(variance.is_safe_to_narrow());
+    }
+
+    #[test]
+    fn test_variance_combine() {
+        // Covariant * Covariant = Covariant
+        assert_eq!(
+            Variance::Covariant.combine(Variance::Covariant),
+            Variance::Covariant
+        );
+
+        // Covariant * Contravariant = Contravariant
+        assert_eq!(
+            Variance::Covariant.combine(Variance::Contravariant),
+            Variance::Contravariant
+        );
+
+        // Contravariant * Contravariant = Covariant
+        assert_eq!(
+            Variance::Contravariant.combine(Variance::Contravariant),
+            Variance::Covariant
+        );
+
+        // Anything with Invariant = Invariant
+        assert_eq!(
+            Variance::Covariant.combine(Variance::Invariant),
+            Variance::Invariant
+        );
+    }
+
+    #[test]
+    fn test_primitive_subtype_relationships() {
+        assert!(is_primitive_subtype("integer", "number"));
+        assert!(is_primitive_subtype("float", "number"));
+        assert!(is_primitive_subtype("true", "boolean"));
+        assert!(is_primitive_subtype("false", "boolean"));
+        assert!(!is_primitive_subtype("number", "integer"));
+        assert!(!is_primitive_subtype("string", "number"));
     }
 }

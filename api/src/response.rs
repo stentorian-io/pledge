@@ -103,6 +103,50 @@ pub enum BreakingChangeType {
     AssetRemoved,
     /// An asset file was added to the package
     AssetAdded,
+
+    // =========================================================================
+    // Module System Breaking Changes (package.json exports/imports)
+    // =========================================================================
+
+    /// An exports subpath was removed (consumers can't import from it)
+    ExportsSubpathRemoved,
+    /// An exports subpath was renamed
+    ExportsSubpathRenamed,
+    /// A condition was removed from exports (e.g., "require" removed)
+    ExportsConditionRemoved,
+    /// Condition order changed (affects resolution)
+    ExportsConditionOrderChanged,
+    /// Subpath was explicitly blocked (null)
+    ExportsNullAdded,
+    /// Browser field structure changed
+    BrowserFieldChanged,
+    /// Module type changed (ESM/CJS)
+    ModuleTypeChanged,
+    /// Entry point changed (main, module, types)
+    EntryPointChanged,
+    /// Imports field changed
+    ImportsChanged,
+
+    // =========================================================================
+    // Structural Type Changes
+    // =========================================================================
+
+    /// Union type member was removed
+    UnionMemberRemoved,
+    /// Union type member was added
+    UnionMemberAdded,
+    /// Intersection type member was removed
+    IntersectionMemberRemoved,
+    /// Intersection type member was added
+    IntersectionMemberAdded,
+    /// Type became nullable
+    TypeBecameNullable,
+    /// Type was nullable, now is not
+    TypeBecameNonNullable,
+    /// Object shape changed (structural comparison)
+    ObjectShapeChanged,
+    /// Generic variance violation (incompatible type change)
+    GenericVarianceViolation,
 }
 
 impl BreakingChangeType {
@@ -117,6 +161,9 @@ impl BreakingChangeType {
             BreakingChangeType::ParameterBecameRequired => Severity::Critical,
             BreakingChangeType::PropertyBecameRequired => Severity::Critical,
             BreakingChangeType::ExportKindChanged => Severity::Critical,
+            BreakingChangeType::ExportsSubpathRemoved => Severity::Critical,
+            BreakingChangeType::ExportsNullAdded => Severity::Critical,
+            BreakingChangeType::TypeBecameNonNullable => Severity::Critical,
 
             // Major - likely breaks most consumers
             BreakingChangeType::SignatureChanged => Severity::Major,
@@ -135,9 +182,21 @@ impl BreakingChangeType {
             BreakingChangeType::VisibilityChanged => Severity::Major,
             BreakingChangeType::TypeArgumentsChanged => Severity::Major,
             BreakingChangeType::DefaultExportChanged => Severity::Major,
+            BreakingChangeType::AssetRemoved => Severity::Major,
+            BreakingChangeType::ExportsSubpathRenamed => Severity::Major,
+            BreakingChangeType::ExportsConditionRemoved => Severity::Major,
+            BreakingChangeType::ModuleTypeChanged => Severity::Major,
+            BreakingChangeType::ImportsChanged => Severity::Major,
+            BreakingChangeType::UnionMemberRemoved => Severity::Major,
+            BreakingChangeType::IntersectionMemberAdded => Severity::Major,
+            BreakingChangeType::ObjectShapeChanged => Severity::Major,
+            BreakingChangeType::GenericVarianceViolation => Severity::Major,
 
             // Minor - may break some consumers
             BreakingChangeType::AsyncModifierChanged => Severity::Minor,
+            BreakingChangeType::ExportsConditionOrderChanged => Severity::Minor,
+            BreakingChangeType::BrowserFieldChanged => Severity::Minor,
+            BreakingChangeType::EntryPointChanged => Severity::Minor,
 
             // Warning - informational or potentially breaking
             BreakingChangeType::ExportAdded => Severity::Warning,
@@ -150,9 +209,9 @@ impl BreakingChangeType {
             BreakingChangeType::EnumMemberAdded => Severity::Warning,
             BreakingChangeType::TypeParameterAdded => Severity::Warning,
             BreakingChangeType::AssetAdded => Severity::Warning,
-
-            // Major - asset removal breaks consumers
-            BreakingChangeType::AssetRemoved => Severity::Major,
+            BreakingChangeType::UnionMemberAdded => Severity::Warning,
+            BreakingChangeType::IntersectionMemberRemoved => Severity::Warning,
+            BreakingChangeType::TypeBecameNullable => Severity::Warning,
         }
     }
 }
