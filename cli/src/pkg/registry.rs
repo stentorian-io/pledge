@@ -3,7 +3,7 @@ use crate::pkg::entries::PkgEntries;
 use crate::pkg::tarball::PkgTarball;
 use crate::pkg::Pkg;
 use anyhow::{bail, Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE_64_STANDARD, Engine as _};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use json::JsonValue;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -144,7 +144,7 @@ fn get_pkg_tarball_from_dist(name: String, dir: &PathBuf, dist: &JsonValue) -> R
     }
 
     let tarball_url = Url::parse(tarball_url.as_str().unwrap())?;
-    let tarball_checksum = BASE_64_STANDARD.decode(tarball_hash_integrity)?;
+    let tarball_checksum = BASE64_STANDARD.decode(tarball_hash_integrity)?;
 
     PkgTarball::new(name, dir.to_owned(), tarball_url, tarball_checksum)
 }

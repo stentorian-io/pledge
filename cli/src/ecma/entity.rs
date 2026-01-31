@@ -1,11 +1,17 @@
 use anyhow::{bail, Result};
-use swc_ecma_ast::{Class, ClassDecl, DefaultDecl, ExportDecl, FnDecl, Function, VarDeclarator};
+use swc_ecma_ast::{
+    Class, ClassDecl, DefaultDecl, ExportDecl, FnDecl, Function, TsEnumDecl, TsInterfaceDecl,
+    TsTypeAliasDecl, VarDeclarator,
+};
 
 #[derive(Clone)]
 pub enum EntityDeclaration {
     Var(String, VarDeclarator),
     Class(String, Box<Class>),
     Func(String, Box<Function>),
+    Interface(String, Box<TsInterfaceDecl>),
+    Enum(String, Box<TsEnumDecl>),
+    TypeAlias(String, Box<TsTypeAliasDecl>),
 }
 
 pub trait AsEntityDeclaration {
@@ -22,6 +28,9 @@ impl EntityDeclaration {
             EntityDeclaration::Var(name, _) => name,
             EntityDeclaration::Class(name, _) => name,
             EntityDeclaration::Func(name, _) => name,
+            EntityDeclaration::Interface(name, _) => name,
+            EntityDeclaration::Enum(name, _) => name,
+            EntityDeclaration::TypeAlias(name, _) => name,
         }
     }
 }
@@ -47,15 +56,23 @@ impl AsEntityDeclaration for &ExportDecl {
 
             Ok(EntityDeclaration::Var(name, declarator.to_owned()))
         } else if self.decl.is_ts_interface() {
-            todo!("handle TS interface entity declaration")
+            let declaration = self.decl.as_ts_interface().unwrap();
+            let name = declaration.id.sym.to_string();
+            Ok(EntityDeclaration::Interface(name, declaration.clone()))
         } else if self.decl.is_ts_enum() {
-            todo!("handle TS enum entity declaration")
+            let declaration = self.decl.as_ts_enum().unwrap();
+            let name = declaration.id.sym.to_string();
+            Ok(EntityDeclaration::Enum(name, declaration.clone()))
         } else if self.decl.is_ts_module() {
-            todo!("handle TS module entity declaration")
+            // Skip TS module declarations for now (namespaces)
+            bail!("TS module/namespace declarations are not yet supported.")
         } else if self.decl.is_ts_type_alias() {
-            todo!("handle TS type alias entity declaration")
+            let declaration = self.decl.as_ts_type_alias().unwrap();
+            let name = declaration.id.sym.to_string();
+            Ok(EntityDeclaration::TypeAlias(name, declaration.clone()))
         } else if self.decl.is_using() {
-            todo!("handle using entity declaration")
+            // Skip using declarations (resource management)
+            bail!("Using declarations are not yet supported.")
         } else {
             bail!("Unsupported ExportDecl entity.")
         }
@@ -77,7 +94,9 @@ impl AsEntityDeclaration for &DefaultDecl {
 
             Ok(EntityDeclaration::Class(name, class))
         } else if self.is_ts_interface_decl() {
-            todo!("handle TS interface entity declaration")
+            let declaration = self.as_ts_interface_decl().unwrap();
+            let name = declaration.id.sym.to_string();
+            Ok(EntityDeclaration::Interface(name, Box::new((**declaration).clone())))
         } else {
             bail!("Unsupported DefaultDecl entity.")
         }
