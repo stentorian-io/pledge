@@ -2,9 +2,19 @@
 //!
 //! This module provides functions to send package public interfaces to
 //! the Interlint API for breaking change analysis.
+//!
+//! # Binary Format
+//!
+//! All interface data is serialized using the interlint binary format:
+//! - **Wire format**: MessagePack with 8-byte header and CRC32 checksum
+//! - **Content-Type**: `application/x-interlint`
+//! - **File extension**: `.ilmj` (for saved interface files)
+//!
+//! There is no JSON output option for interface data. The binary format provides
+//! better performance and smaller payload sizes.
 
 use anyhow::{bail, Context, Result};
-use interlint_format::PublicInterface;
+use interlint_format::{binary, PublicInterface};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
@@ -229,6 +239,8 @@ impl ApiClient {
     }
 
     /// Compare two package versions for breaking changes.
+    ///
+    /// Sends interface data as interlint binary format (MessagePack with header).
     pub fn compare(
         &self,
         previous: PublicInterface,
@@ -238,10 +250,15 @@ impl ApiClient {
 
         let request = CompareRequest { previous, current };
 
+        let body = binary::encode(&request)
+            .context("Failed to encode request to binary format")?;
+
         let response = self
             .client
             .post(&url)
-            .json(&request)
+            .header("Content-Type", "application/x-interlint")
+            .header("Accept", "application/x-interlint")
+            .body(body)
             .send()
             .context("Failed to send compare request")?;
 
@@ -251,21 +268,30 @@ impl ApiClient {
             bail!("API request failed with status {}: {}", status, body);
         }
 
-        let result: CompareResponse = response
-            .json()
-            .context("Failed to parse API response")?;
+        let bytes = response.bytes()
+            .context("Failed to read response body")?;
+
+        let result: CompareResponse = binary::decode(&bytes)
+            .context("Failed to decode binary response")?;
 
         Ok(result)
     }
 
     /// Analyze a single package interface (check for issues without comparison).
+    ///
+    /// Sends interface data as interlint binary format (MessagePack with header).
     pub fn analyze(&self, interface: PublicInterface) -> Result<AnalysisResponse> {
         let url = format!("{}/v1/analyze", self.base_url);
+
+        let body = binary::encode(&interface)
+            .context("Failed to encode interface to binary format")?;
 
         let response = self
             .client
             .post(&url)
-            .json(&interface)
+            .header("Content-Type", "application/x-interlint")
+            .header("Accept", "application/x-interlint")
+            .body(body)
             .send()
             .context("Failed to send analyze request")?;
 
@@ -275,9 +301,11 @@ impl ApiClient {
             bail!("API request failed with status {}: {}", status, body);
         }
 
-        let result: AnalysisResponse = response
-            .json()
-            .context("Failed to parse API response")?;
+        let bytes = response.bytes()
+            .context("Failed to read response body")?;
+
+        let result: AnalysisResponse = binary::decode(&bytes)
+            .context("Failed to decode binary response")?;
 
         Ok(result)
     }
