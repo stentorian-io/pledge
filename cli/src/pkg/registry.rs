@@ -10,6 +10,11 @@ use std::rc::Rc;
 use url::Url;
 
 pub fn load_from_dir(pkg_dir: PathBuf) -> Result<Pkg> {
+    // Canonicalize the path to ensure consistent path handling
+    // This fixes issues with relative paths and glob pattern matching
+    let pkg_dir = pkg_dir.canonicalize()
+        .with_context(|| format!("Failed to canonicalize package directory: {}", pkg_dir.display()))?;
+
     let pkg_json = Pkg::parse_config_in_dir(&pkg_dir)
         .with_context(|| "Failed to load and parse package.json config.")?;
 
