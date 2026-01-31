@@ -5,3 +5,4 @@
 # Test artifacts
 tests/fixtures/**/.tmp/
 tests/fixtures/**/*.tgz
+.tmp/
