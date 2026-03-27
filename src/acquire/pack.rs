@@ -7,6 +7,7 @@ use anyhow::{bail, Context};
 ///
 /// The filename is always read from npm's JSON output, never constructed manually.
 /// This handles scoped packages correctly: `@myorg/pkg` produces `myorg-pkg-1.0.0.tgz`.
+#[allow(dead_code)]
 pub fn pack_current(dir: &Path) -> anyhow::Result<PathBuf> {
     // Check npm is available before attempting pack
     Command::new("npm")

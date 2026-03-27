@@ -11,6 +11,7 @@ use tempfile::TempDir;
 /// npm tarballs always nest content under a `package/` subdirectory inside the archive.
 /// Returns `(TempDir, PathBuf)` where `TempDir` must be kept alive for the path to remain valid,
 /// and `PathBuf` points to the `package/` root inside the temp dir.
+#[allow(dead_code)]
 pub fn extract_tgz(tgz_path: &Path) -> anyhow::Result<(TempDir, PathBuf)> {
     let dir = TempDir::new().context("Failed to create temporary directory")?;
 
@@ -36,6 +37,7 @@ pub fn extract_tgz(tgz_path: &Path) -> anyhow::Result<(TempDir, PathBuf)> {
 ///
 /// Equivalent to `extract_tgz` but reads from a byte slice instead of a file.
 /// Used for tarballs downloaded from the npm registry (buffered in memory).
+#[allow(dead_code)]
 pub fn extract_tgz_from_bytes(bytes: &[u8]) -> anyhow::Result<(TempDir, PathBuf)> {
     let dir = TempDir::new().context("Failed to create temporary directory")?;
 
