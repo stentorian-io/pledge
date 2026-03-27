@@ -1,14 +1,7 @@
-mod acquire;
-mod cli;
-mod compare;
-mod discover;
-mod report;
-mod types;
-
 use clap::Parser;
-use cli::Cli;
-
-use acquire::AcquireResult;
+use interlint::acquire::{self, AcquireResult};
+use interlint::cli::Cli;
+use interlint::{compare, discover, report};
 
 #[tokio::main]
 async fn main() {

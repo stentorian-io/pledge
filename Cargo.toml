@@ -3,6 +3,14 @@ name = "interlint"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "interlint"
+path = "src/main.rs"
+
+[lib]
+name = "interlint"
+path = "src/lib.rs"
+
 [dependencies]
 # Parsing
 tree-sitter = "0.26.7"

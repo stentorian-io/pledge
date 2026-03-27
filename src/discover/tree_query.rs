@@ -98,15 +98,41 @@ const NAMED_EXPORT_QUERY: &str = r#"
       name: (identifier) @name)))
 "#;
 
-/// Captures `export default <expr>` or `export default function/class`.
+/// Captures `export default <expr>` — the `value:` field covers expressions and
+/// object/array literals. Named default exports (functions/classes with a name
+/// that are declared as `declaration:`) are handled by `DEFAULT_DECL_EXPORT_QUERY`.
 const DEFAULT_EXPORT_QUERY: &str = r#"
 (export_statement
   "default"
   value: (_) @value)
 "#;
 
-/// Captures `export const/let/var foo`, `export function foo`, `export class Foo`.
-const DECL_EXPORT_QUERY: &str = r#"
+/// Captures `export default function foo` and `export default class Foo` —
+/// these appear as `declaration:` children, not `value:`, in both grammars.
+/// We capture the keyword "default" position as the anchor since anonymous
+/// default declarations don't have a name node.
+const DEFAULT_DECL_EXPORT_QUERY: &str = r#"
+(export_statement
+  "default"
+  declaration: (_) @decl)
+"#;
+
+/// Captures `export const/let/var foo`, `export function foo`, `export class Foo`
+/// for **JavaScript** files. Class names use `identifier` in the JS grammar.
+const DECL_EXPORT_QUERY_JS: &str = r#"
+(export_statement
+  declaration: [
+    (lexical_declaration
+      (variable_declarator name: (identifier) @name))
+    (function_declaration name: (identifier) @name)
+    (class_declaration name: (identifier) @name)
+  ])
+"#;
+
+/// Captures `export const/let/var foo`, `export function foo`, `export class Foo`,
+/// `export type Foo`, `export interface Foo`, `export enum Foo`
+/// for **TypeScript** files. TypeScript uses `type_identifier` for class/type/interface names.
+const DECL_EXPORT_QUERY_TS: &str = r#"
 (export_statement
   declaration: [
     (lexical_declaration
@@ -119,8 +145,22 @@ const DECL_EXPORT_QUERY: &str = r#"
   ])
 "#;
 
-/// Captures `export * from './module'`.
+/// Captures `export * from './module'` (plain star re-export).
+///
+/// There are two tree-sitter forms for star re-exports:
+/// - `export * from './module'` → `(export_statement source: (string))`
+///   with a bare `*` token — no `namespace_export` child node.
+/// - `export * as name from './module'` → `(export_statement (namespace_export) source: (string))`
+///
+/// We use two separate queries to cover both forms.
 const STAR_EXPORT_QUERY: &str = r#"
+(export_statement
+  "*"
+  source: (string) @source)
+"#;
+
+/// Captures `export * as name from './module'` (namespace re-export).
+const NAMESPACE_EXPORT_QUERY: &str = r#"
 (export_statement
   (namespace_export)
   source: (string) @source)
@@ -198,7 +238,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Default exports ------------------------------------------------------
+    // --- Default exports (expression form) ------------------------------------
+    // Captures `export default <expr>` where the default value is an expression
+    // (e.g. `export default 42`, `export default obj`, `export default function() {}`).
+    // Named default declarations (`export default class Foo {}`) are handled below.
     {
         let query = Query::new(&language, DEFAULT_EXPORT_QUERY)
             .context("failed to compile DEFAULT_EXPORT_QUERY")?;
@@ -221,9 +264,50 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Declaration exports --------------------------------------------------
+    // --- Default exports (declaration form) -----------------------------------
+    // Captures `export default function foo() {}` and `export default class Foo {}`
+    // which appear as `declaration:` children rather than `value:` children.
+    // We only emit a "default" entry if one hasn't already been added above.
     {
-        let query = Query::new(&language, DECL_EXPORT_QUERY)
+        let query = Query::new(&language, DEFAULT_DECL_EXPORT_QUERY)
+            .context("failed to compile DEFAULT_DECL_EXPORT_QUERY")?;
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            if let Some(capture) = m.captures.first() {
+                let node = capture.node;
+                let line = node.start_position().row as u32 + 1;
+                let col = node.start_position().column as u32 + 1;
+                // Only add if no default has been emitted for this position yet.
+                let already_emitted = exports.iter().any(|e| {
+                    e.kind == RawExportKind::Default && e.line == line && e.col == col
+                });
+                if !already_emitted {
+                    exports.push(RawExport {
+                        name: "default".to_string(),
+                        kind: RawExportKind::Default,
+                        line,
+                        col,
+                        source: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // --- Declaration exports --------------------------------------------------
+    // Use grammar-specific queries: TypeScript uses `type_identifier` for class/
+    // interface/type names; JavaScript uses `identifier` for all names.
+    //
+    // We skip any declaration that is under `export default` (which has a
+    // "default" keyword child in the parent export_statement node) — those are
+    // handled by the default export queries above.
+    {
+        let decl_query_str = match lang {
+            SourceLanguage::TypeScript => DECL_EXPORT_QUERY_TS,
+            SourceLanguage::JavaScript => DECL_EXPORT_QUERY_JS,
+        };
+        let query = Query::new(&language, decl_query_str)
             .context("failed to compile DECL_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -232,6 +316,25 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 if capture.index == 0 {
                     // index 0 = @name
                     let node = capture.node;
+
+                    // Skip if this declaration is under `export default …`.
+                    // The export_statement parent will have a child with kind "default".
+                    let is_default_export = node
+                        .parent()                      // declaration node
+                        .and_then(|decl| decl.parent()) // export_statement
+                        .map(|stmt| {
+                            (0..stmt.child_count() as u32).any(|i| {
+                                stmt.child(i)
+                                    .map(|c| c.kind() == "default")
+                                    .unwrap_or(false)
+                            })
+                        })
+                        .unwrap_or(false);
+
+                    if is_default_export {
+                        continue;
+                    }
+
                     let name = node
                         .utf8_text(source)
                         .context("UTF-8 decode failed on declaration name")?
@@ -248,10 +351,16 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Star re-exports ------------------------------------------------------
-    {
-        let query = Query::new(&language, STAR_EXPORT_QUERY)
-            .context("failed to compile STAR_EXPORT_QUERY")?;
+    // --- Star re-exports (plain `export * from '...'`) ------------------------
+    // The JS/TS grammar represents `export * from '...'` with a bare `*` token
+    // directly inside the export_statement (no namespace_export child node).
+    for star_query_str in &[STAR_EXPORT_QUERY, NAMESPACE_EXPORT_QUERY] {
+        // NAMESPACE_EXPORT_QUERY may not compile for some grammar versions if
+        // the namespace_export node is absent — skip gracefully.
+        let query = match Query::new(&language, star_query_str) {
+            Ok(q) => q,
+            Err(_) => continue,
+        };
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -263,13 +372,23 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         .utf8_text(source)
                         .context("UTF-8 decode failed on star re-export source")?;
                     let module_spec = strip_quotes(raw_source);
-                    exports.push(RawExport {
-                        name: "*".to_string(),
-                        kind: RawExportKind::StarReexport,
-                        line: node.start_position().row as u32 + 1,
-                        col: node.start_position().column as u32 + 1,
-                        source: Some(module_spec.to_string()),
+                    let spec_str = module_spec.to_string();
+                    // Deduplicate: avoid adding the same source twice if both
+                    // queries match (shouldn't happen with correct grammar but
+                    // prevents accidental double recursion).
+                    let already = exports.iter().any(|e| {
+                        e.kind == RawExportKind::StarReexport
+                            && e.source.as_deref() == Some(&spec_str)
                     });
+                    if !already {
+                        exports.push(RawExport {
+                            name: "*".to_string(),
+                            kind: RawExportKind::StarReexport,
+                            line: node.start_position().row as u32 + 1,
+                            col: node.start_position().column as u32 + 1,
+                            source: Some(spec_str),
+                        });
+                    }
                 }
             }
         }
