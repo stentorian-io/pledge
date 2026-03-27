@@ -94,12 +94,10 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning]) {
         } else {
             println!("{}, {}, {}", major_str, minor_str, patch_str);
         }
+    } else if major_count > 0 {
+        println!("X {} major, {} minor, {} patch", major_count, minor_count, patch_count);
     } else {
-        if major_count > 0 {
-            println!("X {} major, {} minor, {} patch", major_count, minor_count, patch_count);
-        } else {
-            println!("{} major, {} minor, {} patch", major_count, minor_count, patch_count);
-        }
+        println!("{} major, {} minor, {} patch", major_count, minor_count, patch_count);
     }
 }
 
