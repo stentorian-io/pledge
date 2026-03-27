@@ -1,6 +1,0 @@
-{
-  "name": "test-missing-entry",
-  "version": "1.0.0",
-  "main": "nonexistent.js",
-  "files": ["*.js"]
-}
