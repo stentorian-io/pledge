@@ -1,0 +1,193 @@
+//! Integration tests for Phase 2: LSP Type Enrichment
+//!
+//! These tests require a real typescript-language-server to be available.
+//! Run with: cargo test --features lsp-tests --test lsp_integration
+//! Standard `cargo test` skips these tests entirely.
+
+#![cfg(feature = "lsp-tests")]
+
+use std::path::PathBuf;
+
+use interlint::compare;
+use interlint::discover;
+use interlint::lsp;
+use interlint::types::{ExportKind, ExportSymbol, Finding};
+
+fn fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
+
+/// Run the full pipeline: discover -> enrich -> compare
+async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
+    let old_root = fixture_path(old_dir);
+    let new_root = fixture_path(new_dir);
+
+    let (mut old_exports, _) = discover::discover_exports(&old_root).unwrap();
+    let (mut new_exports, _) = discover::discover_exports(&new_root).unwrap();
+
+    // Enrich both (may degrade if LSP not available — test handles both)
+    let old_result = lsp::enrich_exports(&mut old_exports, &old_root).await;
+    let new_result = lsp::enrich_exports(&mut new_exports, &new_root).await;
+
+    // Assert enrichment succeeded (these tests require LSP)
+    assert!(
+        matches!(old_result, Ok(lsp::EnrichResult::Enriched)),
+        "LSP enrichment failed for old: {:?}",
+        old_result
+    );
+    assert!(
+        matches!(new_result, Ok(lsp::EnrichResult::Enriched)),
+        "LSP enrichment failed for new: {:?}",
+        new_result
+    );
+
+    let findings = compare::compare_exports(&old_exports, &new_exports);
+    let has_breaking = compare::has_breaking_changes(&findings);
+    (findings, has_breaking)
+}
+
+/// Test: renamed type alias (Config -> Settings, same shape) does NOT produce false positive.
+/// Validates STRUCT-01 (structural shape comparison) and STRUCT-02 (alias resolution).
+///
+/// configure() param type changes from Config to Settings but shapes are identical —
+/// should NOT produce a `type-changed` finding.
+#[tokio::test]
+async fn renamed_type_alias_same_shape_no_false_positive() {
+    let (findings, _) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
+
+    // Config was removed (different export name), Settings was added
+    // But no type-changed finding for configure() param (Config vs Settings have same shape)
+    let configure_type_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.message.contains("configure") && f.rule == "type-changed")
+        .collect();
+    assert!(
+        configure_type_findings.is_empty(),
+        "configure() should not have type-changed when param shapes are identical: {:?}",
+        configure_type_findings
+    );
+}
+
+/// Test: nested field removal (AppSettings.database.ssl removed) is detected.
+/// Validates STRUCT-03 (recursive nested object comparison).
+#[tokio::test]
+async fn nested_field_removal_detected() {
+    let (findings, has_breaking) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
+
+    // AppSettings.database.ssl was removed
+    let ssl_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.message.contains("ssl") || f.message.contains("database"))
+        .collect();
+    assert!(
+        !ssl_findings.is_empty(),
+        "Should detect removal of database.ssl field. All findings: {:?}",
+        findings
+    );
+    assert!(has_breaking, "Nested field removal is a breaking change");
+}
+
+/// Test: field removal from User type (age removed) is detected.
+/// Validates basic field-removed rule.
+#[tokio::test]
+async fn field_removal_detected() {
+    let (findings, _) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
+
+    // User.age was removed
+    let age_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.message.contains("age") && f.rule == "field-removed")
+        .collect();
+    assert!(
+        !age_findings.is_empty(),
+        "Should detect removal of age field from User. All findings: {:?}",
+        findings
+    );
+}
+
+/// Test: type change (timeout: number -> string) is detected.
+/// Validates type-changed rule for primitive type changes.
+#[tokio::test]
+async fn type_change_detected() {
+    let (findings, _) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
+
+    // timeout changed from number to string
+    let timeout_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.message.contains("timeout") && f.rule == "type-changed")
+        .collect();
+    assert!(
+        !timeout_findings.is_empty(),
+        "Should detect timeout type change number->string. All findings: {:?}",
+        findings
+    );
+}
+
+/// Test: JSDoc-annotated JavaScript files produce type information via LSP.
+/// Validates STRUCT-04 (LSP type resolution for JSDoc JavaScript).
+#[tokio::test]
+async fn jsdoc_javascript_type_resolution() {
+    let (findings, has_breaking) = run_pipeline("jsdoc-pkg/old", "jsdoc-pkg/new").await;
+
+    // createUser param 'age' changed from number to string
+    // maxRetries changed from number to string
+    let type_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == "type-changed" || f.rule == "field-type-changed")
+        .collect();
+    assert!(
+        !type_findings.is_empty(),
+        "JSDoc JavaScript should yield type changes. All findings: {:?}",
+        findings
+    );
+    assert!(has_breaking, "JSDoc type changes are breaking");
+}
+
+
+/// Test: graceful degradation when LSP cannot initialize for a directory.
+/// Validates STRUCT-05 (graceful degradation — no panic, returns Degraded or Enriched).
+///
+/// We simulate LSP failure by passing a non-existent directory — the LSP cannot
+/// open files there, but enrich_exports should not panic or return Err.
+#[tokio::test]
+async fn graceful_degradation_without_lsp() {
+    let fake_root = PathBuf::from("/tmp/interlint-test-nonexistent-dir-a51e5386");
+
+    // Build a minimal ExportMap with one symbol referencing the fake directory
+    let mut exports = interlint::types::ExportMap::new();
+    exports.insert(
+        "test".to_string(),
+        ExportSymbol {
+            name: "test".to_string(),
+            kind: ExportKind::Named,
+            file: fake_root.join("index.ts"),
+            line: 1,
+            col: 0,
+            type_signature: None,
+            type_shape: None,
+        },
+    );
+
+    let result = lsp::enrich_exports(&mut exports, &fake_root).await;
+
+    // Must not return Err — graceful degradation is required (D-16, D-18)
+    match result {
+        Ok(lsp::EnrichResult::Degraded(_)) => {
+            // Expected — LSP failed on nonexistent dir; exports unchanged
+            assert!(
+                exports["test"].type_shape.is_none(),
+                "Degraded mode: type_shape should remain None"
+            );
+        }
+        Ok(lsp::EnrichResult::Enriched) => {
+            // Also acceptable — LSP may initialize but find no files to resolve
+            // Exports should still have no type_shape since file doesn't exist
+        }
+        Err(e) => {
+            panic!("enrich_exports should not return Err — must degrade gracefully: {:?}", e);
+        }
+    }
+}

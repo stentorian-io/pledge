@@ -9,6 +9,7 @@ use std::process::Stdio;
 use async_lsp::concurrency::ConcurrencyLayer;
 use async_lsp::lsp_types::{
     notification::{LogMessage, Progress, PublishDiagnostics, ShowMessage},
+    request::WorkDoneProgressCreate,
     ClientCapabilities, InitializeParams, InitializedParams, WindowClientCapabilities,
     WorkspaceFolder,
 };
@@ -86,9 +87,11 @@ pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSes
         .ok_or_else(|| LspError::InitFailed("failed to capture LSP stdin".to_string()))?
         .compat_write(); // Pitfall 3: tokio::io → futures::io bridge
 
-    // Build the async-lsp main loop with middleware layers
-    // Register handlers for all common server-to-client notifications to avoid
-    // the default router error behavior for unhandled non-$/ notifications.
+    // Build the async-lsp main loop with middleware layers.
+    //
+    // The default unhandled_notification handler breaks the mainloop for non-$/ methods.
+    // typescript-language-server sends notifications we may not enumerate, so we override
+    // unhandled_notification to continue (ignore unknown notifications) rather than break.
     let (mainloop, mut server) = async_lsp::MainLoop::new_client(|_server| {
         let mut router = Router::new(ClientState);
         router
@@ -101,7 +104,16 @@ pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSes
             .notification::<LogMessage>(|_, params| {
                 tracing::debug!("LSP logMessage: {}", params.message);
                 ControlFlow::Continue(())
-            });
+            })
+            // Catch-all for any other server notifications (e.g., telemetry/event,
+            // $/typescriptVersion, window/progress); continue rather than break mainloop.
+            .unhandled_notification(|_, notif| {
+                tracing::debug!("LSP unhandled notification: {}", notif.method);
+                ControlFlow::Continue(())
+            })
+            // Handle server→client work progress requests (typescript-language-server
+            // sends window/workDoneProgress/create before indexing — respond with Ok(()))
+            .request::<WorkDoneProgressCreate, _>(|_, _| async { Ok(()) });
         ServiceBuilder::new()
             .layer(TracingLayer::default())
             .layer(CatchUnwindLayer::default())

@@ -27,6 +27,7 @@ pub enum LspError {
 }
 
 /// Result of LSP enrichment — either successful enrichment or graceful degradation.
+#[derive(Debug)]
 pub enum EnrichResult {
     /// Types were resolved (possibly partially — some symbols may have type_shape: None)
     Enriched,
@@ -71,13 +72,20 @@ pub async fn enrich_exports(
     // Collect file list first so we can process without holding borrow on exports
     let file_list: Vec<(PathBuf, Vec<String>)> = file_groups.into_iter().collect();
 
-    for (file_path, symbol_names) in &file_list {
+    for (rel_file_path, symbol_names) in &file_list {
         if budget_start.elapsed() >= total_budget {
             tracing::warn!(
                 "LSP total budget (60s) exceeded; remaining symbols will lack type info"
             );
             break;
         }
+
+        // ExportSymbol.file is relative to pkg_root — resolve to absolute for hover/URI (Bug fix R1)
+        let abs_file_path = if rel_file_path.is_absolute() {
+            rel_file_path.clone()
+        } else {
+            pkg_root.join(rel_file_path)
+        };
 
         // Build hover-info list: (name, line, col) for each symbol in this file
         let hover_inputs: Vec<hover::SymbolHoverInput> = symbol_names
@@ -93,10 +101,10 @@ pub async fn enrich_exports(
 
         // Send hover requests for this file's symbols
         let results =
-            match hover::hover_file_symbols(&session, file_path, &hover_inputs).await {
+            match hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs).await {
                 Ok(r) => r,
                 Err(e) => {
-                    tracing::warn!("hover failed for {}: {e}", file_path.display());
+                    tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
                     continue;
                 }
             };

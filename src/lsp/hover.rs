@@ -187,6 +187,11 @@ pub async fn hover_file_symbols(
         let type_sig = hover_with_retry(session, file_uri.clone(), input.line, input.col, is_first).await;
         is_first = false;
 
+        tracing::debug!(
+            "hover: {} (line={} col={}) => sig={:?}",
+            input.name, input.line, input.col, type_sig
+        );
+
         let type_shape = type_sig
             .as_deref()
             .map(parse_type_string);
