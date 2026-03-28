@@ -3,6 +3,9 @@ name = "interlint"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+lsp-tests = []
+
 [[bin]]
 name = "interlint"
 path = "src/main.rs"
@@ -41,3 +44,13 @@ thiserror = "2.0"
 indicatif = "0.18"
 owo-colors = "4.3"
 supports-color = "3.0"
+
+# LSP client
+async-lsp = "0.2.3"
+tower = "0.5"
+tokio-util = { version = "0.7", features = ["compat"] }
+
+# Utilities
+dirs = "6.0.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

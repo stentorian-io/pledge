@@ -101,6 +101,8 @@ pub fn collect_exports(
                     file: rel_path.clone(),
                     line: export.line,
                     col: export.col,
+                    type_signature: None,
+                    type_shape: None,
                 });
             }
             RawExportKind::Default => {
@@ -110,6 +112,8 @@ pub fn collect_exports(
                     file: rel_path.clone(),
                     line: export.line,
                     col: export.col,
+                    type_signature: None,
+                    type_shape: None,
                 });
             }
             RawExportKind::StarReexport => {
@@ -158,6 +162,8 @@ pub fn collect_exports(
                                     .to_path_buf(),
                                 line: export.line,
                                 col: export.col,
+                                type_signature: None,
+                                type_shape: None,
                             });
                         }
                         None => {
