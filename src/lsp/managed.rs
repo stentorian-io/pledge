@@ -228,6 +228,23 @@ fn extract_file_from_tgz(bytes: &[u8], target_path: &str) -> anyhow::Result<Vec<
     anyhow::bail!("file '{target_path}' not found in tarball")
 }
 
+/// Remove the managed typescript-language-server cache directory.
+///
+/// Used by the `--clear-cache` CLI flag (D-21).
+pub fn clear_cache() -> anyhow::Result<()> {
+    let cache_dir = dirs::cache_dir()
+        .ok_or_else(|| anyhow::anyhow!("cannot determine platform cache directory"))?
+        .join("interlint");
+
+    if cache_dir.exists() {
+        std::fs::remove_dir_all(&cache_dir).map_err(|e| {
+            anyhow::anyhow!("cannot remove cache directory {}: {e}", cache_dir.display())
+        })?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

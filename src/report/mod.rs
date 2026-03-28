@@ -22,7 +22,10 @@ fn should_use_color() -> bool {
 ///   file:line:col  severity  message  rule-id
 ///
 /// followed by a blank line and a summary count line.
-pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning]) {
+///
+/// When `degraded` is true, a note is appended to the summary line indicating
+/// that type analysis was unavailable (D-18).
+pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded: bool) {
     let color = should_use_color();
 
     // Print warnings to stderr (non-fatal resolution issues)
@@ -40,7 +43,11 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning]) {
         } else {
             println!("No breaking changes found.");
         }
-        println!("0 major, 0 minor, 0 patch");
+        if degraded {
+            println!("0 major, 0 minor, 0 patch (type analysis unavailable)");
+        } else {
+            println!("0 major, 0 minor, 0 patch");
+        }
         return;
     }
 
@@ -85,19 +92,21 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning]) {
         .filter(|f| f.severity == Severity::Patch)
         .count();
 
+    let degraded_note = if degraded { " (type analysis unavailable)" } else { "" };
+
     if color {
         let major_str = format!("{} major", major_count).red().bold().to_string();
         let minor_str = format!("{} minor", minor_count).yellow().to_string();
         let patch_str = format!("{} patch", patch_count).blue().to_string();
         if major_count > 0 {
-            println!("{} {}, {}, {}", "X".red().bold(), major_str, minor_str, patch_str);
+            println!("{} {}, {}, {}{}", "X".red().bold(), major_str, minor_str, patch_str, degraded_note);
         } else {
-            println!("{}, {}, {}", major_str, minor_str, patch_str);
+            println!("{}, {}, {}{}", major_str, minor_str, patch_str, degraded_note);
         }
     } else if major_count > 0 {
-        println!("X {} major, {} minor, {} patch", major_count, minor_count, patch_count);
+        println!("X {} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
     } else {
-        println!("{} major, {} minor, {} patch", major_count, minor_count, patch_count);
+        println!("{} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
     }
 }
 
