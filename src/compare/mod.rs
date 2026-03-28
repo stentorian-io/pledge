@@ -1,5 +1,7 @@
 // Comparison engine: diff old vs new ExportMaps
 
+pub mod type_diff;
+
 use std::path::PathBuf;
 
 use crate::types::{ExportMap, Finding, Severity};
@@ -43,6 +45,25 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 col: sym.col,
                 message: format!("exported symbol `{}` was added", name),
             });
+        }
+    }
+
+    // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
+    for (name, old_sym) in old {
+        if let Some(new_sym) = new.get(name) {
+            if let (Some(old_shape), Some(new_shape)) =
+                (&old_sym.type_shape, &new_sym.type_shape)
+            {
+                let type_findings = type_diff::diff_types(
+                    old_shape,
+                    new_shape,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                );
+                findings.extend(type_findings);
+            }
         }
     }
 
