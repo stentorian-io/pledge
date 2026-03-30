@@ -133,31 +133,21 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         // Union sub: every member of sub must be a subtype of sup
         // e.g. (string | number) <: (string | number | boolean) iff
         //   string <: (string | number | boolean) AND number <: (string | number | boolean)
-        (Union(members), _) => members
-            .iter()
-            .all(|m| is_subtype_of(m, sup, depth + 1)),
+        (Union(members), _) => members.iter().all(|m| is_subtype_of(m, sup, depth + 1)),
 
         // Union sup: sub must be a subtype of at least one member
         // e.g. string <: (string | number) iff string <: string OR string <: number
-        (_, Union(members)) => members
-            .iter()
-            .any(|m| is_subtype_of(sub, m, depth + 1)),
+        (_, Union(members)) => members.iter().any(|m| is_subtype_of(sub, m, depth + 1)),
 
         // Intersection sub: sub is a subtype of sup if any member of sub is a subtype of sup
         // (Intersection is narrower than any of its members, so it subtypes if any does)
-        (Intersection(members), _) => members
-            .iter()
-            .any(|m| is_subtype_of(m, sup, depth + 1)),
+        (Intersection(members), _) => members.iter().any(|m| is_subtype_of(m, sup, depth + 1)),
 
         // Intersection sup: sub must satisfy ALL members of the intersection
-        (_, Intersection(members)) => members
-            .iter()
-            .all(|m| is_subtype_of(sub, m, depth + 1)),
+        (_, Intersection(members)) => members.iter().all(|m| is_subtype_of(sub, m, depth + 1)),
 
         // Array: covariant in element type
-        (Array(sub_inner), Array(sup_inner)) => {
-            is_subtype_of(sub_inner, sup_inner, depth + 1)
-        }
+        (Array(sub_inner), Array(sup_inner)) => is_subtype_of(sub_inner, sup_inner, depth + 1),
 
         // Tuple: same length and each position covariant
         (Tuple(sub_elems), Tuple(sup_elems)) => {
@@ -273,14 +263,13 @@ pub fn format_type(shape: &TypeShape) -> String {
         Array(inner) => format!("{}[]", format_type(inner)),
         Tuple(elems) => format!(
             "[{}]",
-            elems
-                .iter()
-                .map(format_type)
-                .collect::<Vec<_>>()
-                .join(", ")
+            elems.iter().map(format_type).collect::<Vec<_>>().join(", ")
         ),
         Object(_) => "{ ... }".to_string(),
-        Function { params, return_type } => {
+        Function {
+            params,
+            return_type,
+        } => {
             let params_str = params
                 .iter()
                 .map(|p: &ParamShape| format!("{}: {}", p.name, format_type(&p.shape)))
@@ -375,7 +364,10 @@ mod tests {
         // anything <: any
         assert!(sub(&string(), &any), "string <: any");
         assert!(sub(&number(), &any), "number <: any");
-        assert!(sub(&TypeShape::Opaque("X".to_string()), &any), "Opaque <: any");
+        assert!(
+            sub(&TypeShape::Opaque("X".to_string()), &any),
+            "Opaque <: any"
+        );
         // any <: anything (any is also a bottom-like escape hatch in TS)
         assert!(sub(&any, &string()), "any <: string");
         assert!(sub(&any, &number()), "any <: number");
@@ -701,10 +693,7 @@ mod tests {
     fn test_array_covariant() {
         let str_arr = TypeShape::Array(Box::new(string()));
         let num_arr = TypeShape::Array(Box::new(number()));
-        assert!(
-            sub(&str_arr, &str_arr),
-            "string[] <: string[] (reflexive)"
-        );
+        assert!(sub(&str_arr, &str_arr), "string[] <: string[] (reflexive)");
         assert!(!sub(&str_arr, &num_arr), "string[] is NOT <: number[]");
     }
 
@@ -749,8 +738,7 @@ mod tests {
             base: Box::new(TypeShape::Object(BTreeMap::new())),
             index: Box::new(string()),
         };
-        let template =
-            TypeShape::Template(vec![TemplatePart::Literal("prefix_".to_string())]);
+        let template = TypeShape::Template(vec![TemplatePart::Literal("prefix_".to_string())]);
 
         // All should return false regardless of direction
         assert!(!sub(&cond, &string()), "Conditional is NOT <: string");

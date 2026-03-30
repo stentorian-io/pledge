@@ -538,7 +538,12 @@ mod tests {
 
         let findings = compare_metadata(old_dir.path(), new_dir.path());
         // Expect: peer-dep-version-bumped + entry-point-changed
-        assert_eq!(findings.len(), 2, "expected 2 findings, got: {:?}", findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "expected 2 findings, got: {:?}",
+            findings
+        );
 
         let rules: Vec<&str> = findings.iter().map(|f| f.rule).collect();
         assert!(

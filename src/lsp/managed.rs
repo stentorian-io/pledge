@@ -32,12 +32,12 @@ pub enum LspBinary {
 /// Returns `LspError::Unavailable` with a prescriptive message if all options fail.
 pub async fn resolve_lsp_binary() -> Result<LspBinary, LspError> {
     let cache_dir = dirs::cache_dir()
-        .ok_or_else(|| LspError::Unavailable("cannot determine platform cache directory".to_string()))?
+        .ok_or_else(|| {
+            LspError::Unavailable("cannot determine platform cache directory".to_string())
+        })?
         .join("interlint");
 
-    let cached_script = cache_dir.join(format!(
-        "typescript-language-server-{PINNED_VERSION}.mjs"
-    ));
+    let cached_script = cache_dir.join(format!("typescript-language-server-{PINNED_VERSION}.mjs"));
 
     // 1. Check managed cache first
     if cached_script.exists() {
@@ -59,7 +59,10 @@ pub async fn resolve_lsp_binary() -> Result<LspBinary, LspError> {
 
     // 2. Check PATH for typescript-language-server
     if let Some(direct) = find_direct_binary().await {
-        tracing::debug!("Using typescript-language-server from PATH: {}", direct.display());
+        tracing::debug!(
+            "Using typescript-language-server from PATH: {}",
+            direct.display()
+        );
         return Ok(LspBinary::Direct(direct));
     }
 
@@ -77,7 +80,10 @@ pub async fn resolve_lsp_binary() -> Result<LspBinary, LspError> {
 
     match download_and_cache(&cache_dir, &cached_script).await {
         Ok(()) => {
-            tracing::info!("Downloaded typescript-language-server to {}", cached_script.display());
+            tracing::info!(
+                "Downloaded typescript-language-server to {}",
+                cached_script.display()
+            );
             Ok(LspBinary::Managed {
                 node,
                 script: cached_script,
@@ -164,11 +170,9 @@ async fn download_and_cache(
     tracing::debug!("Downloading typescript-language-server from {url}");
 
     let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("network error downloading typescript-language-server: {e}"))?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        anyhow::anyhow!("network error downloading typescript-language-server: {e}")
+    })?;
 
     if !resp.status().is_success() {
         anyhow::bail!(
@@ -186,8 +190,9 @@ async fn download_and_cache(
     let script_bytes = extract_file_from_tgz(&bytes, "package/lib/cli.mjs")?;
 
     // Write to cache directory
-    std::fs::create_dir_all(cache_dir)
-        .map_err(|e| anyhow::anyhow!("cannot create cache directory {}: {e}", cache_dir.display()))?;
+    std::fs::create_dir_all(cache_dir).map_err(|e| {
+        anyhow::anyhow!("cannot create cache directory {}: {e}", cache_dir.display())
+    })?;
 
     std::fs::write(cached_script, &script_bytes)
         .map_err(|e| anyhow::anyhow!("cannot write cached script: {e}"))?;

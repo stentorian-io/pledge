@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use crate::types::{ExportKind, ExportMap, ExportSymbol};
 use super::tree_query::{language_for_file, parse_exports, RawExportKind};
+use crate::types::{ExportKind, ExportMap, ExportSymbol};
 
 /// Maximum number of re-export hops before aborting a resolution chain (D-12).
 #[allow(dead_code)]
@@ -122,14 +122,7 @@ pub fn collect_exports(
                     let resolved = candidates.into_iter().find(|p| p.exists());
                     match resolved {
                         Some(target) => {
-                            collect_exports(
-                                &target,
-                                pkg_root,
-                                map,
-                                visited,
-                                warnings,
-                                depth + 1,
-                            )?;
+                            collect_exports(&target, pkg_root, map, visited, warnings, depth + 1)?;
                         }
                         None => {
                             warnings.push(ResolveWarning::new(format!(
@@ -208,14 +201,11 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     // 3. Declaration files.
     let d_ts = joined.with_extension("ts");
     // Build "foo.d.ts" by appending ".d.ts" to the stem.
-    let mut d_ts_name = joined
-        .file_stem()
-        .unwrap_or_default()
-        .to_os_string();
+    let mut d_ts_name = joined.file_stem().unwrap_or_default().to_os_string();
     d_ts_name.push(".d.ts");
     candidates.push(joined.with_file_name(d_ts_name));
     let _ = d_ts; // suppress unused warning
-    // 4. JavaScript extensions.
+                  // 4. JavaScript extensions.
     candidates.push(joined.with_extension("js"));
     candidates.push(joined.with_extension("mjs"));
     candidates.push(joined.with_extension("cjs"));

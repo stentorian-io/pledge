@@ -279,9 +279,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 let line = node.start_position().row as u32 + 1;
                 let col = node.start_position().column as u32 + 1;
                 // Only add if no default has been emitted for this position yet.
-                let already_emitted = exports.iter().any(|e| {
-                    e.kind == RawExportKind::Default && e.line == line && e.col == col
-                });
+                let already_emitted = exports
+                    .iter()
+                    .any(|e| e.kind == RawExportKind::Default && e.line == line && e.col == col);
                 if !already_emitted {
                     exports.push(RawExport {
                         name: "default".to_string(),
@@ -307,8 +307,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             SourceLanguage::TypeScript => DECL_EXPORT_QUERY_TS,
             SourceLanguage::JavaScript => DECL_EXPORT_QUERY_JS,
         };
-        let query = Query::new(&language, decl_query_str)
-            .context("failed to compile DECL_EXPORT_QUERY")?;
+        let query =
+            Query::new(&language, decl_query_str).context("failed to compile DECL_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -320,7 +320,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     // Skip if this declaration is under `export default …`.
                     // The export_statement parent will have a child with kind "default".
                     let is_default_export = node
-                        .parent()                      // declaration node
+                        .parent() // declaration node
                         .and_then(|decl| decl.parent()) // export_statement
                         .map(|stmt| {
                             (0..stmt.child_count() as u32).any(|i| {
@@ -454,7 +454,9 @@ fn collect_reexport_positions(
     parser
         .set_language(language)
         .context("failed to set language for dedup parser")?;
-    let tree = parser.parse(source, None).context("parse failed in dedup")?;
+    let tree = parser
+        .parse(source, None)
+        .context("parse failed in dedup")?;
     let root = tree.root_node();
 
     let mut cursor = QueryCursor::new();

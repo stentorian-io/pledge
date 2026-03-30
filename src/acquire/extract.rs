@@ -15,8 +15,8 @@ use tempfile::TempDir;
 pub fn extract_tgz(tgz_path: &Path) -> anyhow::Result<(TempDir, PathBuf)> {
     let dir = TempDir::new().context("Failed to create temporary directory")?;
 
-    let file =
-        std::fs::File::open(tgz_path).with_context(|| format!("Cannot open {}", tgz_path.display()))?;
+    let file = std::fs::File::open(tgz_path)
+        .with_context(|| format!("Cannot open {}", tgz_path.display()))?;
 
     let decoder = GzDecoder::new(file);
     let mut archive = Archive::new(decoder);
@@ -27,7 +27,9 @@ pub fn extract_tgz(tgz_path: &Path) -> anyhow::Result<(TempDir, PathBuf)> {
     let pkg_root = dir.path().join("package");
 
     if !pkg_root.join("package.json").exists() {
-        bail!("Extracted tarball does not contain package/package.json — unexpected tarball layout");
+        bail!(
+            "Extracted tarball does not contain package/package.json — unexpected tarball layout"
+        );
     }
 
     Ok((dir, pkg_root))
@@ -51,7 +53,9 @@ pub fn extract_tgz_from_bytes(bytes: &[u8]) -> anyhow::Result<(TempDir, PathBuf)
     let pkg_root = dir.path().join("package");
 
     if !pkg_root.join("package.json").exists() {
-        bail!("Extracted tarball does not contain package/package.json — unexpected tarball layout");
+        bail!(
+            "Extracted tarball does not contain package/package.json — unexpected tarball layout"
+        );
     }
 
     Ok((dir, pkg_root))

@@ -10,15 +10,13 @@
 
 use std::path::Path;
 
-use crate::types::{Finding, Severity};
-use crate::types::shape::{TypeShape, ParamShape};
 use super::subtype::{
-    is_subtype_of, format_type,
-    RULE_PARAM_ADDED, RULE_PARAM_REMOVED, RULE_PARAM_TYPE_NARROWED,
-    RULE_RETURN_TYPE_WIDENED, RULE_PARAM_REORDERED,
-    RULE_FIELD_REMOVED, RULE_FIELD_ADDED, RULE_FIELD_TYPE_CHANGED,
-    RULE_TYPE_INCOMPATIBLE,
+    format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
+    RULE_PARAM_ADDED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED, RULE_PARAM_TYPE_NARROWED,
+    RULE_RETURN_TYPE_WIDENED, RULE_TYPE_INCOMPATIBLE,
 };
+use crate::types::shape::{ParamShape, TypeShape};
+use crate::types::{Finding, Severity};
 
 const MAX_DEPTH: usize = 20;
 
@@ -81,9 +79,7 @@ fn diff_recursive(
             file: file.to_path_buf(),
             line,
             col,
-            message: format!(
-                "type comparison truncated at depth {MAX_DEPTH} for `{symbol_name}`"
-            ),
+            message: format!("type comparison truncated at depth {MAX_DEPTH} for `{symbol_name}`"),
         });
         return;
     }
@@ -96,9 +92,7 @@ fn diff_recursive(
             file: file.to_path_buf(),
             line,
             col,
-            message: format!(
-                "type of `{symbol_name}` changed incompatibly (unresolvable type)"
-            ),
+            message: format!("type of `{symbol_name}` changed incompatibly (unresolvable type)"),
         });
         return;
     }
@@ -127,9 +121,7 @@ fn diff_recursive(
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!(
-                    "type of `{display}` changed incompatibly (unresolvable type)"
-                ),
+                message: format!("type of `{display}` changed incompatibly (unresolvable type)"),
             });
         }
 
@@ -283,8 +275,7 @@ fn diff_recursive(
                     ),
                 });
             } else {
-                for (i, (old_elem, new_elem)) in
-                    old_elems.iter().zip(new_elems.iter()).enumerate()
+                for (i, (old_elem, new_elem)) in old_elems.iter().zip(new_elems.iter()).enumerate()
                 {
                     let idx_path = if field_path.is_empty() {
                         format!("[{i}]")
@@ -359,9 +350,16 @@ fn diff_recursive(
             },
         ) => {
             diff_functions(
-                old_params, old_ret,
-                new_params, new_ret,
-                symbol_name, field_path, file, line, col, depth,
+                old_params,
+                old_ret,
+                new_params,
+                new_ret,
+                symbol_name,
+                field_path,
+                file,
+                line,
+                col,
+                depth,
                 findings,
             );
         }
@@ -575,11 +573,7 @@ fn diff_functions(
     // Params are contravariant: new param type must accept everything old param type did.
     // Check: is new_param a supertype of old_param? i.e., is_subtype_of(old_param, new_param)?
     // If NOT, the new param type is narrower — breaking.
-    for (i, (old_param, new_param)) in old_params
-        .iter()
-        .zip(new_params.iter())
-        .enumerate()
-    {
+    for (i, (old_param, new_param)) in old_params.iter().zip(new_params.iter()).enumerate() {
         if old_param.shape != new_param.shape {
             // Contravariant check: new param must accept what old param accepted.
             // new_param is "safe" if old_param <: new_param (old is subtype of new)
@@ -670,7 +664,10 @@ mod tests {
             TypeShape::Primitive(PrimitiveKind::String),
             TypeShape::Primitive(PrimitiveKind::String),
         );
-        assert!(findings.is_empty(), "identical shapes should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "identical shapes should produce no findings"
+        );
     }
 
     // Test 2: Different primitives produce type-incompatible (D-02: no more "type-changed")
@@ -699,22 +696,34 @@ mod tests {
         let mut old_fields = BTreeMap::new();
         old_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         old_fields.insert(
             "y".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
         let mut new_fields = BTreeMap::new();
         new_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
 
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
         assert!(rule_ids(&findings).contains(&"field-removed"));
         let removed = findings.iter().find(|f| f.rule == "field-removed").unwrap();
-        assert!(removed.message.contains("y"), "message should mention field 'y'");
+        assert!(
+            removed.message.contains("y"),
+            "message should mention field 'y'"
+        );
         assert_eq!(removed.severity, Severity::Major);
     }
 
@@ -724,16 +733,25 @@ mod tests {
         let mut old_fields = BTreeMap::new();
         old_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         let mut new_fields = BTreeMap::new();
         new_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
 
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
-        assert!(!findings.is_empty(), "should have findings for changed field type");
+        assert!(
+            !findings.is_empty(),
+            "should have findings for changed field type"
+        );
         // Should produce type-incompatible (from leaf-level primitive diff)
         assert!(
             findings.iter().any(|f| f.rule == "type-incompatible"),
@@ -754,16 +772,25 @@ mod tests {
         let mut old_fields = BTreeMap::new();
         old_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         let mut new_fields = BTreeMap::new();
         new_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         new_fields.insert(
             "y".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
 
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
@@ -779,16 +806,25 @@ mod tests {
         let mut old_fields = BTreeMap::new();
         old_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         let mut new_fields = BTreeMap::new();
         new_fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         new_fields.insert(
             "y".to_string(),
-            FieldShape { optional: true, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: true,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
 
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
@@ -803,30 +839,44 @@ mod tests {
         let mut inner_old = BTreeMap::new();
         inner_old.insert(
             "timeout".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         let mut inner_new = BTreeMap::new();
         inner_new.insert(
             "timeout".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
 
         let mut old_fields = BTreeMap::new();
         old_fields.insert(
             "config".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Object(inner_old) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Object(inner_old),
+            },
         );
         let mut new_fields = BTreeMap::new();
         new_fields.insert(
             "config".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Object(inner_new) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Object(inner_new),
+            },
         );
 
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
         assert!(!findings.is_empty());
         // Should mention the nested path "config.timeout"
         assert!(
-            findings.iter().any(|f| f.message.contains("config.timeout")),
+            findings
+                .iter()
+                .any(|f| f.message.contains("config.timeout")),
             "finding should mention 'config.timeout', got: {:?}",
             findings.iter().map(|f| &f.message).collect::<Vec<_>>()
         );
@@ -884,7 +934,10 @@ mod tests {
             "narrowed union should use type-incompatible, not type-changed"
         );
         // D-04: message should include old and new type values
-        let f = findings.iter().find(|f| f.rule == "type-incompatible").unwrap();
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "type-incompatible")
+            .unwrap();
         assert!(
             f.message.contains("string") || f.message.contains("boolean"),
             "message should reference type values: {}",
@@ -902,7 +955,9 @@ mod tests {
             TypeShape::Primitive(PrimitiveKind::String),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "Opaque old + Primitive new should produce type-incompatible Major"
         );
 
@@ -912,7 +967,9 @@ mod tests {
             TypeShape::Opaque("x".to_string()),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "Primitive old + Opaque new should produce type-incompatible Major"
         );
 
@@ -922,7 +979,9 @@ mod tests {
             TypeShape::Opaque("y".to_string()),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "different Opaques should produce type-incompatible Major"
         );
     }
@@ -951,7 +1010,10 @@ mod tests {
                 let mut fields = BTreeMap::new();
                 fields.insert(
                     "a".to_string(),
-                    FieldShape { optional: false, shape: nested_object(depth - 1) },
+                    FieldShape {
+                        optional: false,
+                        shape: nested_object(depth - 1),
+                    },
                 );
                 TypeShape::Object(fields)
             }
@@ -966,7 +1028,10 @@ mod tests {
                 let mut fields = BTreeMap::new();
                 fields.insert(
                     "a".to_string(),
-                    FieldShape { optional: false, shape: nested_object_num(depth - 1) },
+                    FieldShape {
+                        optional: false,
+                        shape: nested_object_num(depth - 1),
+                    },
                 );
                 TypeShape::Object(fields)
             }
@@ -974,10 +1039,15 @@ mod tests {
 
         // Should not panic, should produce at most MAX_DEPTH-bounded findings
         let findings = diff(nested_object(22), nested_object_num(22));
-        assert!(!findings.is_empty(), "should find some change in deeply nested object");
+        assert!(
+            !findings.is_empty(),
+            "should find some change in deeply nested object"
+        );
         // The truncation finding should be present
         assert!(
-            findings.iter().any(|f| f.rule == "type-comparison-truncated"),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-comparison-truncated"),
             "should have truncation finding at depth 20"
         );
     }
@@ -1005,7 +1075,10 @@ mod tests {
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
             },
         );
-        assert!(!findings.is_empty(), "return type change should produce findings");
+        assert!(
+            !findings.is_empty(),
+            "return type change should produce findings"
+        );
         assert!(
             findings.iter().any(|f| f.rule == "return-type-widened"),
             "should produce return-type-widened for incompatible return type change"
@@ -1040,9 +1113,14 @@ mod tests {
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
             },
         );
-        assert!(!findings.is_empty(), "adding required param should produce findings");
         assert!(
-            findings.iter().any(|f| f.rule == "param-added" && f.severity == Severity::Major),
+            !findings.is_empty(),
+            "adding required param should produce findings"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule == "param-added" && f.severity == Severity::Major),
             "required param added should be Major param-added"
         );
     }
@@ -1067,17 +1145,23 @@ mod tests {
         let mut fields = BTreeMap::new();
         fields.insert(
             "x".to_string(),
-            FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) },
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         );
         fields.insert(
             "y".to_string(),
-            FieldShape { optional: true, shape: TypeShape::Primitive(PrimitiveKind::String) },
+            FieldShape {
+                optional: true,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
         );
-        let findings = diff(
-            TypeShape::Object(fields.clone()),
-            TypeShape::Object(fields),
+        let findings = diff(TypeShape::Object(fields.clone()), TypeShape::Object(fields));
+        assert!(
+            findings.is_empty(),
+            "identical objects should produce no findings"
         );
-        assert!(findings.is_empty(), "identical objects should produce no findings");
     }
 
     // ─── New signature detection tests (SIG-01..05) ────────────────────────────
@@ -1110,11 +1194,19 @@ mod tests {
             },
         );
         assert!(
-            findings.iter().any(|f| f.rule == "param-type-narrowed" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "param-type-narrowed" && f.severity == Severity::Major),
             "narrowed param type should produce param-type-narrowed Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
-        let f = findings.iter().find(|f| f.rule == "param-type-narrowed").unwrap();
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "param-type-narrowed")
+            .unwrap();
         // D-04: message should include old and new type values
         assert!(
             f.message.contains("string | number") || f.message.contains("number | string"),
@@ -1158,7 +1250,10 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.severity == Severity::Major),
             "widening param type should produce no Major findings, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1270,11 +1365,19 @@ mod tests {
             },
         );
         assert!(
-            findings.iter().any(|f| f.rule == "param-reordered" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "param-reordered" && f.severity == Severity::Major),
             "reordered params should produce param-reordered Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
-        let f = findings.iter().find(|f| f.rule == "param-reordered").unwrap();
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "param-reordered")
+            .unwrap();
         assert!(
             f.message.contains("a") && f.message.contains("b"),
             "param-reordered message should list param names: {}",
@@ -1312,9 +1415,14 @@ mod tests {
             },
         );
         assert!(
-            findings.iter().any(|f| f.rule == "param-added" && f.severity == Severity::Minor),
+            findings
+                .iter()
+                .any(|f| f.rule == "param-added" && f.severity == Severity::Minor),
             "optional param added should produce param-added Minor, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-added").unwrap();
         assert!(
@@ -1354,9 +1462,14 @@ mod tests {
             },
         );
         assert!(
-            findings.iter().any(|f| f.rule == "param-removed" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "param-removed" && f.severity == Severity::Major),
             "removed param should produce param-removed Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-removed").unwrap();
         assert!(
@@ -1378,7 +1491,9 @@ mod tests {
             TypeShape::Primitive(PrimitiveKind::String),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "Opaque old + Primitive new should produce type-incompatible Major"
         );
 
@@ -1388,7 +1503,9 @@ mod tests {
             TypeShape::Opaque("x".to_string()),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "Primitive old + Opaque new should produce type-incompatible Major"
         );
 
@@ -1398,7 +1515,9 @@ mod tests {
             TypeShape::Opaque("y".to_string()),
         );
         assert!(
-            findings.iter().any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
             "different Opaques should produce type-incompatible Major"
         );
     }

@@ -67,7 +67,10 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
             Ok(p) => p,
             Err(_) => {
                 // File does not exist — skip per D-14.
-                eprintln!("[warn] entry point does not exist: {}", entry.path.display());
+                eprintln!(
+                    "[warn] entry point does not exist: {}",
+                    entry.path.display()
+                );
                 continue;
             }
         };

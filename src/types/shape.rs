@@ -159,7 +159,10 @@ impl TypeShape {
                 name,
                 args: args.into_iter().map(|a| a.normalize()).collect(),
             },
-            TypeShape::Function { params, return_type } => TypeShape::Function {
+            TypeShape::Function {
+                params,
+                return_type,
+            } => TypeShape::Function {
                 params: params
                     .into_iter()
                     .map(|p| ParamShape {

@@ -146,7 +146,6 @@ async fn jsdoc_javascript_type_resolution() {
     assert!(has_breaking, "JSDoc type changes are breaking");
 }
 
-
 /// Test: SIG-01..05 signature changes detected with LSP enrichment.
 /// Validates that all five signature change rules produce findings when type shapes are available.
 #[tokio::test]
@@ -182,7 +181,9 @@ async fn sig_changes_detected_with_lsp() {
         .filter(|f| f.rule == "param-added")
         .collect();
     assert!(
-        param_added_findings.iter().any(|f| f.severity == Severity::Minor),
+        param_added_findings
+            .iter()
+            .any(|f| f.severity == Severity::Minor),
         "SIG-04: should have a Minor param-added finding for optional param, got: {:?}",
         param_added_findings
     );
@@ -238,7 +239,10 @@ async fn graceful_degradation_without_lsp() {
             // Exports should still have no type_shape since file doesn't exist
         }
         Err(e) => {
-            panic!("enrich_exports should not return Err — must degrade gracefully: {:?}", e);
+            panic!(
+                "enrich_exports should not return Err — must degrade gracefully: {:?}",
+                e
+            );
         }
     }
 }

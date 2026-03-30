@@ -12,8 +12,8 @@ use async_lsp::lsp_types::{
 };
 use async_lsp::LanguageServer;
 
-use crate::types::shape::TypeShape;
 use crate::types::parser::parse_type_string;
+use crate::types::shape::TypeShape;
 
 use super::client::LspSession;
 use super::LspError;
@@ -109,9 +109,7 @@ pub async fn hover_symbol(
 
     let hover_fut = session.server.clone().hover(HoverParams {
         text_document_position_params: TextDocumentPositionParams {
-            text_document: TextDocumentIdentifier {
-                uri: file_uri,
-            },
+            text_document: TextDocumentIdentifier { uri: file_uri },
             position: async_lsp::lsp_types::Position::new(lsp_line, lsp_col),
         },
         work_done_progress_params: WorkDoneProgressParams::default(),
@@ -184,17 +182,19 @@ pub async fn hover_file_symbols(
     let mut is_first = true;
 
     for input in inputs {
-        let type_sig = hover_with_retry(session, file_uri.clone(), input.line, input.col, is_first).await;
+        let type_sig =
+            hover_with_retry(session, file_uri.clone(), input.line, input.col, is_first).await;
         is_first = false;
 
         tracing::debug!(
             "hover: {} (line={} col={}) => sig={:?}",
-            input.name, input.line, input.col, type_sig
+            input.name,
+            input.line,
+            input.col,
+            type_sig
         );
 
-        let type_shape = type_sig
-            .as_deref()
-            .map(parse_type_string);
+        let type_shape = type_sig.as_deref().map(parse_type_string);
 
         results.push((input.name.clone(), type_sig, type_shape));
     }
@@ -214,7 +214,10 @@ async fn hover_with_retry(
     with_retry: bool,
 ) -> Option<String> {
     if !with_retry {
-        return hover_symbol(session, file_uri, line, col).await.ok().flatten();
+        return hover_symbol(session, file_uri, line, col)
+            .await
+            .ok()
+            .flatten();
     }
 
     // First hover — retry up to 3 times if None is returned

@@ -42,12 +42,10 @@ pub async fn acquire_packages(dir: &std::path::Path) -> anyhow::Result<AcquireRe
     // Read package name from package.json
     let pkg_json_path = dir.join("package.json");
     let pkg_json_bytes = std::fs::read(&pkg_json_path).map_err(|_| {
-        anyhow::anyhow!(
-            "No package.json found. Run interlint from your package root directory."
-        )
+        anyhow::anyhow!("No package.json found. Run interlint from your package root directory.")
     })?;
-    let pkg_json: serde_json::Value = serde_json::from_slice(&pkg_json_bytes)
-        .context("Failed to parse package.json")?;
+    let pkg_json: serde_json::Value =
+        serde_json::from_slice(&pkg_json_bytes).context("Failed to parse package.json")?;
     let name = pkg_json["name"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("package.json is missing the \"name\" field"))?;

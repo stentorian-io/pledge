@@ -62,7 +62,9 @@ fn strip_function_name_prefix(input: &str) -> Option<&str> {
     let rest = input.strip_prefix("function")?;
     let rest = rest.trim_start();
     // Skip the function name identifier (may be empty for anonymous)
-    let end = rest.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rest.len());
     Some(rest[end..].trim_start())
 }
 
@@ -350,7 +352,11 @@ impl<'a> TypeParser<'a> {
             self.expect_char(':')?;
             self.skip_whitespace();
             let shape = self.parse_type()?;
-            params.push(ParamShape { name, optional, shape });
+            params.push(ParamShape {
+                name,
+                optional,
+                shape,
+            });
             self.skip_whitespace();
             if self.peek_char() == Some(',') {
                 self.advance();
@@ -506,7 +512,10 @@ impl<'a> TypeParser<'a> {
         if self.peek_char() == Some('-') {
             self.advance();
         }
-        let has_digits = self.peek_char().map(|c| c.is_ascii_digit()).unwrap_or(false);
+        let has_digits = self
+            .peek_char()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false);
         if !has_digits {
             self.pos = start;
             return None;
@@ -532,8 +541,8 @@ impl<'a> TypeParser<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::types::shape::{FieldShape, LiteralKind, PrimitiveKind, TypeShape};
     use super::parse_type_string;
+    use crate::types::shape::{FieldShape, LiteralKind, PrimitiveKind, TypeShape};
 
     fn assert_shape(input: &str, expected: TypeShape) {
         let result = parse_type_string(input);
@@ -595,7 +604,10 @@ mod tests {
 
     #[test]
     fn test_number_literal() {
-        assert_shape("42", TypeShape::Literal(LiteralKind::Number("42".to_string())));
+        assert_shape(
+            "42",
+            TypeShape::Literal(LiteralKind::Number("42".to_string())),
+        );
     }
 
     #[test]
@@ -616,7 +628,11 @@ mod tests {
     #[test]
     fn test_intersection() {
         let result = parse_type_string("string & { x: number }");
-        assert!(matches!(result, TypeShape::Intersection(_)), "expected Intersection, got {:?}", result);
+        assert!(
+            matches!(result, TypeShape::Intersection(_)),
+            "expected Intersection, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -624,8 +640,20 @@ mod tests {
         use std::collections::BTreeMap;
         let result = parse_type_string("{ x: number; y: string }");
         let mut fields = BTreeMap::new();
-        fields.insert("x".to_string(), FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::Number) });
-        fields.insert("y".to_string(), FieldShape { optional: false, shape: TypeShape::Primitive(PrimitiveKind::String) });
+        fields.insert(
+            "x".to_string(),
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
+        );
+        fields.insert(
+            "y".to_string(),
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
+        );
         let expected = TypeShape::Object(fields);
         assert_eq!(result, expected);
     }
@@ -672,7 +700,11 @@ mod tests {
     #[test]
     fn test_function_type() {
         let result = parse_type_string("(x: string, y: number) => boolean");
-        if let TypeShape::Function { params, return_type } = result {
+        if let TypeShape::Function {
+            params,
+            return_type,
+        } = result
+        {
             assert_eq!(params.len(), 2);
             assert_eq!(params[0].name, "x");
             assert_eq!(params[0].shape, TypeShape::Primitive(PrimitiveKind::String));
@@ -756,7 +788,11 @@ mod tests {
     #[test]
     fn test_function_optional_param() {
         let result = parse_type_string("(x?: string) => void");
-        if let TypeShape::Function { params, return_type } = result {
+        if let TypeShape::Function {
+            params,
+            return_type,
+        } = result
+        {
             assert_eq!(params.len(), 1);
             assert!(params[0].optional, "param should be optional");
             assert_eq!(params[0].shape, TypeShape::Primitive(PrimitiveKind::String));
@@ -787,9 +823,9 @@ mod tests {
     fn test_array_nested() {
         assert_shape(
             "string[][]",
-            TypeShape::Array(Box::new(TypeShape::Array(Box::new(
-                TypeShape::Primitive(PrimitiveKind::String),
-            )))),
+            TypeShape::Array(Box::new(TypeShape::Array(Box::new(TypeShape::Primitive(
+                PrimitiveKind::String,
+            ))))),
         );
     }
 

@@ -1,5 +1,5 @@
-pub mod shape;
 pub mod parser;
+pub mod shape;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

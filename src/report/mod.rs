@@ -70,10 +70,7 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
             }
         };
 
-        println!(
-            "{}  {}  {}  {}",
-            location, severity_str, f.message, f.rule
-        );
+        println!("{}  {}  {}  {}", location, severity_str, f.message, f.rule);
     }
 
     println!();
@@ -92,21 +89,41 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
         .filter(|f| f.severity == Severity::Patch)
         .count();
 
-    let degraded_note = if degraded { " (type analysis unavailable)" } else { "" };
+    let degraded_note = if degraded {
+        " (type analysis unavailable)"
+    } else {
+        ""
+    };
 
     if color {
         let major_str = format!("{} major", major_count).red().bold().to_string();
         let minor_str = format!("{} minor", minor_count).yellow().to_string();
         let patch_str = format!("{} patch", patch_count).blue().to_string();
         if major_count > 0 {
-            println!("{} {}, {}, {}{}", "X".red().bold(), major_str, minor_str, patch_str, degraded_note);
+            println!(
+                "{} {}, {}, {}{}",
+                "X".red().bold(),
+                major_str,
+                minor_str,
+                patch_str,
+                degraded_note
+            );
         } else {
-            println!("{}, {}, {}{}", major_str, minor_str, patch_str, degraded_note);
+            println!(
+                "{}, {}, {}{}",
+                major_str, minor_str, patch_str, degraded_note
+            );
         }
     } else if major_count > 0 {
-        println!("X {} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
+        println!(
+            "X {} major, {} minor, {} patch{}",
+            major_count, minor_count, patch_count, degraded_note
+        );
     } else {
-        println!("{} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
+        println!(
+            "{} major, {} minor, {} patch{}",
+            major_count, minor_count, patch_count, degraded_note
+        );
     }
 }
 

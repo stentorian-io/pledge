@@ -91,10 +91,7 @@ fn test_metadata_changes_detected() {
         rules
     );
     let bumped = findings_with_rule(&findings, "peer-dep-version-bumped");
-    assert!(
-        bumped[0].message.contains("react"),
-        "should mention react"
-    );
+    assert!(bumped[0].message.contains("react"), "should mention react");
     assert!(
         bumped[0].message.contains("^17.0.0"),
         "should mention old version"
@@ -166,7 +163,10 @@ fn test_metadata_changes_detected() {
 fn test_metadata_no_changes() {
     let path = fixture_path("meta-change-pkg/old");
     let findings = metadata::compare_metadata(&path, &path);
-    assert!(findings.is_empty(), "same metadata should produce no findings");
+    assert!(
+        findings.is_empty(),
+        "same metadata should produce no findings"
+    );
 }
 
 /// Verify that metadata Major findings register as breaking changes.

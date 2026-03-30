@@ -33,9 +33,7 @@ pub async fn fetch_package_metadata(name: &str) -> anyhow::Result<Option<Package
 
     if !resp.status().is_success() {
         let status = resp.status();
-        bail!(
-            "Cannot reach npm registry — check your network connection. (HTTP {status})"
-        );
+        bail!("Cannot reach npm registry — check your network connection. (HTTP {status})");
     }
 
     let packument: serde_json::Value = resp
@@ -46,9 +44,7 @@ pub async fn fetch_package_metadata(name: &str) -> anyhow::Result<Option<Package
     let latest_version = packument["dist-tags"]["latest"]
         .as_str()
         .ok_or_else(|| {
-            anyhow::anyhow!(
-                "npm registry response missing dist-tags.latest for package '{name}'"
-            )
+            anyhow::anyhow!("npm registry response missing dist-tags.latest for package '{name}'")
         })?
         .to_string();
 

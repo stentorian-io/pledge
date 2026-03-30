@@ -100,14 +100,14 @@ pub async fn enrich_exports(
             .collect();
 
         // Send hover requests for this file's symbols
-        let results =
-            match hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs).await {
-                Ok(r) => r,
-                Err(e) => {
-                    tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
-                    continue;
-                }
-            };
+        let results = match hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs).await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
+                continue;
+            }
+        };
 
         // Apply results back to exports
         for (name, type_signature, type_shape) in results {
