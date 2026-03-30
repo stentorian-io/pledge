@@ -15,6 +15,7 @@ enum RunOutcome {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
     match run(cli).await {
@@ -53,13 +54,17 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             let (exports, warnings) = discover::discover_exports(&current_root)?;
             spinner.finish_and_clear();
 
-            for w in &warnings {
-                eprintln!("warning: {}", w.message);
-            }
-            report::print_first_publish_report(&exports);
+            let all_warnings: Vec<_> = warnings.into_iter().collect();
 
-            // No breaking changes on first publish
-            Ok(RunOutcome::Clean)
+            let mut findings = compare::first_publish_findings(&exports);
+            findings.sort_by(|a, b| a.severity.cmp(&b.severity));
+            report::print_report(&findings, &all_warnings, false);
+
+            if compare::has_breaking_changes(&findings) {
+                Ok(RunOutcome::Breaking)
+            } else {
+                Ok(RunOutcome::Clean)
+            }
         }
 
         // Normal flow: compare current against previous version

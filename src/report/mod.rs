@@ -7,7 +7,7 @@ use owo_colors::OwoColorize;
 use supports_color::Stream;
 
 use crate::discover::resolver::ResolveWarning;
-use crate::types::{ExportMap, Finding, Severity};
+use crate::types::{Finding, Severity};
 
 /// Returns true if stdout supports ANSI color output (per D-03).
 fn should_use_color() -> bool {
@@ -107,41 +107,6 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
         println!("X {} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
     } else {
         println!("{} major, {} minor, {} patch{}", major_count, minor_count, patch_count, degraded_note);
-    }
-}
-
-/// Print a first-publish report (PKG-03): all current exports listed as added,
-/// with a success message since there are no breaking changes.
-pub fn print_first_publish_report(exports: &ExportMap) {
-    let color = should_use_color();
-
-    for (name, sym) in exports {
-        let file_str = sym.file.display().to_string();
-        let location = format!("{}:{}:{}", file_str, sym.line, sym.col);
-        let severity_str = if color {
-            format!("{}", "minor".yellow())
-        } else {
-            "minor".to_string()
-        };
-        println!(
-            "{}  {}  exported symbol `{}` was added (first publish)  export-added",
-            location, severity_str, name
-        );
-    }
-
-    println!();
-
-    let count = exports.len();
-    if color {
-        println!("{}", "No breaking changes found.".green());
-        println!(
-            "{}, {} minor, 0 patch",
-            "0 major".red().bold(),
-            count
-        );
-    } else {
-        println!("No breaking changes found.");
-        println!("0 major, {} minor, 0 patch", count);
     }
 }
 
