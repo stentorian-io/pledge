@@ -35,6 +35,9 @@ serde_json = "1.0"
 tar = "0.4"
 flate2 = "1.0"
 
+# Semver range parsing (npm-flavored)
+node-semver = "2.2.0"
+
 # Utilities
 tempfile = "3.27"
 anyhow = "1.0"
