@@ -280,7 +280,7 @@ impl<'a> TypeParser<'a> {
         // Save position so we can backtrack
         let saved_pos = self.pos;
 
-        // Attempt function parse: consume `(`, parse params, consume `)`, check for `=>`
+        // Attempt function parse: consume `(`, parse params, consume `)`, check for `=>` or `:`
         self.expect_char('(')?;
         self.skip_whitespace();
 
@@ -295,7 +295,7 @@ impl<'a> TypeParser<'a> {
         }
         self.skip_whitespace();
 
-        // Check for `=>`
+        // Check for `=>` (arrow function type syntax)
         if self.peek_str("=>") {
             self.pos += 2;
             self.skip_whitespace();
@@ -306,7 +306,19 @@ impl<'a> TypeParser<'a> {
             });
         }
 
-        // No `=>` — this was a parenthesized type (single element)
+        // Check for `:` (TypeScript declaration syntax from LSP hover, e.g. `(x: string): void`)
+        // This handles LSP hover output like `function foo(x: string): string` after prefix strip.
+        if self.peek_char() == Some(':') {
+            self.advance(); // consume `:`
+            self.skip_whitespace();
+            let return_type = self.parse_type()?;
+            return Some(TypeShape::Function {
+                params: params?,
+                return_type: Box::new(return_type),
+            });
+        }
+
+        // No `=>` or `:` — this was a parenthesized type (single element)
         // Backtrack and parse as parenthesized
         self.pos = saved_pos;
         self.parse_parenthesized()

@@ -109,15 +109,16 @@ async fn field_removal_detected() {
 }
 
 /// Test: type change (timeout: number -> string) is detected.
-/// Validates type-changed rule for primitive type changes.
+/// Validates type-incompatible rule for primitive type changes.
+/// Note: rule name is "type-incompatible" (the canonical catch-all for primitive/cross-kind diffs).
 #[tokio::test]
 async fn type_change_detected() {
     let (findings, _) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
 
-    // timeout changed from number to string
+    // timeout changed from number to string — emits type-incompatible per D-02
     let timeout_findings: Vec<_> = findings
         .iter()
-        .filter(|f| f.message.contains("timeout") && f.rule == "type-changed")
+        .filter(|f| f.message.contains("timeout") && f.rule == "type-incompatible")
         .collect();
     assert!(
         !timeout_findings.is_empty(),
@@ -128,15 +129,20 @@ async fn type_change_detected() {
 
 /// Test: JSDoc-annotated JavaScript files produce type information via LSP.
 /// Validates STRUCT-04 (LSP type resolution for JSDoc JavaScript).
+/// Note: type change findings use "type-incompatible" or "param-type-narrowed" rules per D-02.
 #[tokio::test]
 async fn jsdoc_javascript_type_resolution() {
     let (findings, has_breaking) = run_pipeline("jsdoc-pkg/old", "jsdoc-pkg/new").await;
 
-    // createUser param 'age' changed from number to string
-    // maxRetries changed from number to string
+    // createUser param 'age' changed from number to string (param-type-narrowed or type-incompatible)
+    // maxRetries changed from number to string (type-incompatible)
     let type_findings: Vec<_> = findings
         .iter()
-        .filter(|f| f.rule == "type-changed" || f.rule == "field-type-changed")
+        .filter(|f| {
+            f.rule == "type-incompatible"
+                || f.rule == "field-type-changed"
+                || f.rule == "param-type-narrowed"
+        })
         .collect();
     assert!(
         !type_findings.is_empty(),

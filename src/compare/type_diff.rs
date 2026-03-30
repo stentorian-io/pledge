@@ -598,23 +598,44 @@ fn diff_functions(
     }
 
     // SIG-03: Return type widening.
-    // Return types are covariant: new return must be a subtype of old return.
-    // Check: is old_ret a subtype of new_ret?
-    // If NOT, the new return type is wider — breaking.
-    // If old_ret <: new_ret (old is subtype of new), return type was narrowed — safe.
-    if old_ret != new_ret && !is_subtype_of(old_ret, new_ret, depth + 1) {
-        findings.push(Finding {
-            severity: Severity::Major,
-            rule: RULE_RETURN_TYPE_WIDENED,
-            file: file.to_path_buf(),
-            line,
-            col,
-            message: format!(
-                "return type widened from `{}` to `{}` in `{symbol_name}`",
-                format_type(old_ret),
-                format_type(new_ret)
-            ),
-        });
+    // Return types are covariant: the safe direction is new_ret <: old_ret (new is narrower).
+    // Widening occurs when old_ret <: new_ret but new_ret !<: old_ret (new strictly wider).
+    // Example: string -> string | number is widening (breaking for callers that assumed string).
+    // Incompatible change (string -> number): neither subtypes the other → emit type-incompatible
+    // instead of return-type-widened to be accurate.
+    if old_ret != new_ret {
+        let old_subtypes_new = is_subtype_of(old_ret, new_ret, depth + 1);
+        let new_subtypes_old = is_subtype_of(new_ret, old_ret, depth + 1);
+        if old_subtypes_new && !new_subtypes_old {
+            // New return type is strictly wider — breaking (callers see more possible values)
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_RETURN_TYPE_WIDENED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "return type widened from `{}` to `{}` in `{symbol_name}`",
+                    format_type(old_ret),
+                    format_type(new_ret)
+                ),
+            });
+        } else if !old_subtypes_new && !new_subtypes_old {
+            // Completely incompatible return types — emit type-incompatible
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_TYPE_INCOMPATIBLE,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "return type of `{symbol_name}` changed incompatibly from `{}` to `{}`",
+                    format_type(old_ret),
+                    format_type(new_ret)
+                ),
+            });
+        }
+        // else: new_subtypes_old (new is narrower or equal) — safe, no finding
     }
 }
 
@@ -1052,9 +1073,9 @@ mod tests {
         );
     }
 
-    // Test 13: Function return type changed — should produce return-type-widened
+    // Test 13: Function return type changed — incompatible primitives produce type-incompatible
     // Old: returns number, new: returns string — these are incompatible (neither is subtype)
-    // is_subtype_of(number, string) = false → return-type-widened
+    // Neither number <: string nor string <: number → type-incompatible (not return-type-widened)
     #[test]
     fn test_function_return_type_changed() {
         let findings = diff(
@@ -1080,8 +1101,9 @@ mod tests {
             "return type change should produce findings"
         );
         assert!(
-            findings.iter().any(|f| f.rule == "return-type-widened"),
-            "should produce return-type-widened for incompatible return type change"
+            findings.iter().any(|f| f.rule == "type-incompatible"),
+            "incompatible return type change (number->string) should produce type-incompatible, got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
         );
     }
 
@@ -1257,31 +1279,17 @@ mod tests {
         );
     }
 
-    // Test 19: Return type widened (SIG-03)
+    // Test 19: Return type widened (SIG-03) — BREAKING
     // Old: () => string, New: () => string | number
-    // is_subtype_of(string, string | number) = true → old ret IS subtype of new ret
-    // Wait — that means return was narrowed FROM the caller's perspective, which is SAFE.
-    // Actually: SIG-03 says "return type widened" is breaking.
-    // Covariant: old_ret <: new_ret is SAFE (narrowing). old_ret NOT <: new_ret is BREAKING (widening).
-    // string <: (string | number) = true → SAFE (return was narrowed from string|number to string? No...)
-    // Let me re-check: old=string, new=string|number. Old callers expect string. New returns string|number.
-    // Callers might get a number back when they expected string → BREAKING.
-    // is_subtype_of(old_ret=string, new_ret=string|number) = true (string <: string|number)
-    // But that means our check (!is_subtype_of(old_ret, new_ret)) would NOT emit — that's wrong.
-    //
-    // Let me re-read the plan: "if !is_subtype_of(&old_ret, &new_ret, depth+1) — old return is NOT
-    // a subtype of new return (covariant check fails): emit return-type-widened Major"
-    // "If the check passes (old return is subtype of new return), that's safe — return type was narrowed."
-    //
-    // So: old=string, new=string|number → string <: string|number → plan says "safe (return type narrowed)"
-    // But old=string|number, new=string → string|number NOT <: string → plan says "widened" = BREAKING
-    //
-    // This is counterintuitive naming but consistent with the subtype check logic.
-    // For test 19, we need a case where is_subtype_of(old_ret, new_ret) fails.
-    // old=string|number, new=string → old_ret NOT <: new_ret → return-type-widened Major
+    // old_ret <: new_ret (string <: string|number) but new_ret !<: old_ret → NEW is strictly wider
+    // Callers that expected string now may get number → BREAKING → return-type-widened Major
     #[test]
     fn test_return_type_widened_major() {
         let findings = diff(
+            TypeShape::Function {
+                params: vec![],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
+            },
             TypeShape::Function {
                 params: vec![],
                 return_type: Box::new(TypeShape::Union(vec![
@@ -1289,29 +1297,21 @@ mod tests {
                     TypeShape::Primitive(PrimitiveKind::Number),
                 ])),
             },
-            TypeShape::Function {
-                params: vec![],
-                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
-            },
         );
         assert!(
             findings.iter().any(|f| f.rule == "return-type-widened" && f.severity == Severity::Major),
-            "old return (string|number) not subtype of new return (string) should produce return-type-widened Major, got: {:?}",
+            "old=string, new=string|number: return type widened should produce return-type-widened Major, got: {:?}",
             findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
     }
 
     // Test 20: Return type narrowed (SIG-03 inverse — safe)
     // Old: () => string | number, New: () => string
-    // Wait, this is actually the same as test 19 case above.
-    // Per plan logic: old=string, new=string|number → string <: string|number → SAFE
+    // new_ret <: old_ret (string <: string|number) → new is strictly narrower → SAFE
+    // Callers that received string|number now always get string — they still work fine
     #[test]
     fn test_return_type_narrowed_safe() {
         let findings = diff(
-            TypeShape::Function {
-                params: vec![],
-                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
-            },
             TypeShape::Function {
                 params: vec![],
                 return_type: Box::new(TypeShape::Union(vec![
@@ -1319,11 +1319,15 @@ mod tests {
                     TypeShape::Primitive(PrimitiveKind::Number),
                 ])),
             },
+            TypeShape::Function {
+                params: vec![],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
+            },
         );
-        // old=string, new=string|number → is_subtype_of(string, string|number) = true → safe
+        // old=string|number, new=string → new_ret <: old_ret → safe (narrowing)
         assert!(
             !findings.iter().any(|f| f.rule == "return-type-widened"),
-            "old=string, new=string|number: old is subtype of new, should be safe (no return-type-widened), got: {:?}",
+            "old=string|number, new=string: return type narrowed should be safe (no return-type-widened), got: {:?}",
             findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
     }
