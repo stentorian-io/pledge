@@ -18,14 +18,11 @@ use std::path::Path;
 
 use crate::types::{Finding, Severity};
 
-// Rule ID constants (per Pitfall 6: Finding.rule is &'static str)
-const RULE_PEER_DEP_BUMPED: &str = "peer-dep-version-bumped";
-const RULE_PEER_DEP_ADDED: &str = "peer-dep-added";
-const RULE_PEER_DEP_REMOVED: &str = "peer-dep-removed";
-const RULE_ENGINE_BUMPED: &str = "engine-version-bumped";
-const RULE_ENGINE_ADDED: &str = "engine-added";
-const RULE_ENTRY_POINT_CHANGED: &str = "entry-point-changed";
-const RULE_MODULE_TYPE_CHANGED: &str = "module-type-changed";
+// Rule ID constants imported from subtype.rs (single source of truth)
+use super::subtype::{
+    RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED, RULE_MODULE_TYPE_CHANGED,
+    RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
+};
 
 /// Compare package metadata from both package roots and return a list of findings.
 ///

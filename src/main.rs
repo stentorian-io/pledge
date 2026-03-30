@@ -112,7 +112,15 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
 
             // Step 3: Compare (type-aware when shapes available, fallback to presence-only)
             let all_warnings: Vec<_> = old_warnings.into_iter().chain(new_warnings).collect();
-            let findings = compare::compare_exports(&old_exports, &new_exports);
+            let mut findings = compare::compare_exports(&old_exports, &new_exports);
+
+            // Step 3b: Metadata comparison (META-01..07)
+            let metadata_findings =
+                compare::metadata::compare_metadata(&previous_root, &current_root);
+            findings.extend(metadata_findings);
+
+            // Re-sort after merging (Major first, then Minor, then Patch — D-01)
+            findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 
             // Step 4: Report
             report::print_report(&findings, &all_warnings, degraded);

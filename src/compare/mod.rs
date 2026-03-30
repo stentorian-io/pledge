@@ -36,7 +36,7 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         }
     }
 
-    // New exports (for completeness — Phase 3 DET-03/DET-04 will refine)
+    // New exports (DET-03, DET-04, OUT-05): compatible additions reported as Minor
     for (name, sym) in new {
         if !old.contains_key(name) {
             findings.push(Finding {
