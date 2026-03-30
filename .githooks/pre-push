@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# .githooks/pre-push -- Thorough quality gate (~45s)
+# Enforces: LSP integration tests, coverage threshold (QG-04)
+set -euo pipefail
+
+# Prerequisite: typescript-language-server (per D-14)
+if ! command -v typescript-language-server &>/dev/null; then
+    echo ""
+    echo "FAILED: typescript-language-server is not installed."
+    echo "  Install with: npm install -g typescript-language-server"
+    echo ""
+    echo "Pushes that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+# Prerequisite: cargo-llvm-cov (per D-09)
+if ! command -v cargo-llvm-cov &>/dev/null; then
+    echo ""
+    echo "FAILED: cargo-llvm-cov is not installed."
+    echo "  Install with:"
+    echo "    rustup component add llvm-tools"
+    echo "    cargo install cargo-llvm-cov"
+    echo ""
+    echo "Pushes that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+# Prerequisite: .coverage-baseline file
+if [ ! -f .coverage-baseline ]; then
+    echo ""
+    echo "FAILED: .coverage-baseline file not found."
+    echo "  Create it with: scripts/update-baseline.sh"
+    echo ""
+    echo "Pushes that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-push] Running full integration suite (lsp-tests)..."
+if ! cargo test --features lsp-tests; then
+    echo ""
+    echo "FAILED: Integration tests failed."
+    echo "  Review test output above."
+    echo ""
+    echo "Pushes that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-push] Running coverage check..."
+BASELINE=$(cat .coverage-baseline)
+if ! cargo llvm-cov --fail-under-lines "$BASELINE"; then
+    echo ""
+    echo "FAILED: Coverage dropped below baseline (${BASELINE}%)."
+    echo "  Current coverage is below the required threshold."
+    echo "  Add tests to restore coverage, then retry."
+    echo ""
+    echo "Pushes that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-push] All checks passed."

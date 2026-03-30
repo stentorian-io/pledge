@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit -- Fast quality gate (~4s)
+# Enforces: formatting (QG-01), linting (QG-02), tests (QG-03)
+set -euo pipefail
+
+echo "[pre-commit] Checking formatting..."
+if ! cargo fmt --check; then
+    echo ""
+    echo "FAILED: Code has formatting violations."
+    echo "  Fix with: cargo fmt"
+    echo ""
+    echo "Commits that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-commit] Running clippy..."
+if ! cargo clippy -- -D warnings; then
+    echo ""
+    echo "FAILED: Clippy found warnings treated as errors."
+    echo "  Review and fix the warnings above."
+    echo ""
+    echo "Commits that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-commit] Running tests..."
+if ! cargo test; then
+    echo ""
+    echo "FAILED: One or more tests failed."
+    echo "  Review test output above."
+    echo ""
+    echo "Commits that bypass quality checks (--no-verify) are not permitted."
+    exit 1
+fi
+
+echo "[pre-commit] All checks passed."
