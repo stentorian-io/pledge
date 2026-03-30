@@ -1,5 +1,7 @@
 // Comparison engine: diff old vs new ExportMaps
 
+pub mod metadata;
+pub mod subtype;
 pub mod type_diff;
 
 use std::path::PathBuf;
