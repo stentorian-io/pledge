@@ -28,7 +28,6 @@ pub struct Finding {
 pub enum ExportKind {
     Named,
     Default,
-    Namespace,
 }
 
 #[allow(dead_code)]
