@@ -31,13 +31,15 @@ Analyzes the package at `path` (defaults to current directory), compares it agai
   cargo install cargo-llvm-cov
   ```
 
-### Activate Git Hooks
+### Repository Setup
 
-Quality checks are enforced via git hooks. Activate them after cloning:
+After cloning, run:
 
 ```sh
-git config core.hooksPath scripts/git-hooks
+make setup
 ```
+
+This activates the git hooks that enforce quality checks on every commit and push.
 
 ### What the Hooks Check
 
