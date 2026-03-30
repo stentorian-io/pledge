@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .githooks/pre-commit -- Fast quality gate (~4s)
+# scripts/git-hooks/pre-commit -- Fast quality gate (~4s)
 # Enforces: formatting (QG-01), linting (QG-02), tests (QG-03)
 set -euo pipefail
 

@@ -36,8 +36,7 @@ Analyzes the package at `path` (defaults to current directory), compares it agai
 Quality checks are enforced via git hooks. Activate them after cloning:
 
 ```sh
-git config core.hooksPath .githooks
-chmod +x .githooks/pre-commit .githooks/pre-push
+git config core.hooksPath scripts/git-hooks
 ```
 
 ### What the Hooks Check

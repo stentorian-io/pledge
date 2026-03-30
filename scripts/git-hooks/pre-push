@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .githooks/pre-push -- Thorough quality gate (~45s)
+# scripts/git-hooks/pre-push -- Thorough quality gate (~45s)
 # Enforces: LSP integration tests, coverage threshold (QG-04)
 set -euo pipefail
 
