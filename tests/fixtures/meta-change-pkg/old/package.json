@@ -1,0 +1,12 @@
+{
+  "name": "meta-change-pkg",
+  "version": "1.0.0",
+  "main": "./lib/index.js",
+  "type": "commonjs",
+  "peerDependencies": {
+    "react": "^17.0.0"
+  },
+  "engines": {
+    "node": ">=14"
+  }
+}

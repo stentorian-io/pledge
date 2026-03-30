@@ -1,0 +1,14 @@
+{
+  "name": "meta-change-pkg",
+  "version": "2.0.0",
+  "main": "./dist/index.js",
+  "type": "module",
+  "peerDependencies": {
+    "react": "^18.0.0",
+    "vue": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  }
+}
