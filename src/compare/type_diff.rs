@@ -120,6 +120,7 @@ fn diff_recursive(
     match (&old_n, &new_n) {
         // Opaque after normalization (shouldn't happen due to early return above, but be safe)
         (TypeShape::Opaque(_), _) | (_, TypeShape::Opaque(_)) => {
+            let display = make_display_name(symbol_name, field_path);
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_TYPE_INCOMPATIBLE,
@@ -127,7 +128,7 @@ fn diff_recursive(
                 line,
                 col,
                 message: format!(
-                    "type of `{symbol_name}` changed incompatibly (unresolvable type)"
+                    "type of `{display}` changed incompatibly (unresolvable type)"
                 ),
             });
         }
@@ -216,6 +217,7 @@ fn diff_recursive(
 
         // Both Array — use subtype check on inner type
         (TypeShape::Array(old_inner), TypeShape::Array(new_inner)) => {
+            let display = make_display_name(symbol_name, field_path);
             if !is_subtype_of(new_inner, old_inner, depth + 1)
                 && !is_subtype_of(old_inner, new_inner, depth + 1)
             {
@@ -227,7 +229,7 @@ fn diff_recursive(
                     line,
                     col,
                     message: format!(
-                        "type of `{symbol_name}` changed from `{}` to `{}`",
+                        "type of `{display}` changed from `{}` to `{}`",
                         format_type(&old_n),
                         format_type(&new_n)
                     ),
@@ -255,7 +257,7 @@ fn diff_recursive(
                         line,
                         col,
                         message: format!(
-                            "type of `{symbol_name}` changed from `{}` to `{}`",
+                            "type of `{display}` changed from `{}` to `{}`",
                             format_type(&old_n),
                             format_type(&new_n)
                         ),
@@ -267,6 +269,7 @@ fn diff_recursive(
         // Both Tuple — compare element counts and diff each position
         (TypeShape::Tuple(old_elems), TypeShape::Tuple(new_elems)) => {
             if old_elems.len() != new_elems.len() {
+                let display = make_display_name(symbol_name, field_path);
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_TYPE_INCOMPATIBLE,
@@ -274,7 +277,7 @@ fn diff_recursive(
                     line,
                     col,
                     message: format!(
-                        "type of `{symbol_name}` changed from `{}` to `{}`",
+                        "type of `{display}` changed from `{}` to `{}`",
                         format_type(&old_n),
                         format_type(&new_n)
                     ),
@@ -307,6 +310,7 @@ fn diff_recursive(
         (TypeShape::Union(_), TypeShape::Union(_)) => {
             if !is_subtype_of(&old_n, &new_n, depth + 1) {
                 // Old union is not a subtype of new union — some members were removed/narrowed
+                let display = make_display_name(symbol_name, field_path);
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_TYPE_INCOMPATIBLE,
@@ -314,7 +318,7 @@ fn diff_recursive(
                     line,
                     col,
                     message: format!(
-                        "type of `{symbol_name}` narrowed from `{}` to `{}`",
+                        "type of `{display}` narrowed from `{}` to `{}`",
                         format_type(&old_n),
                         format_type(&new_n)
                     ),
@@ -327,6 +331,7 @@ fn diff_recursive(
         (TypeShape::Intersection(_), TypeShape::Intersection(_)) => {
             if !is_subtype_of(&new_n, &old_n, depth + 1) {
                 // New intersection requires more constraints than old — narrowing
+                let display = make_display_name(symbol_name, field_path);
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_TYPE_INCOMPATIBLE,
@@ -334,7 +339,7 @@ fn diff_recursive(
                     line,
                     col,
                     message: format!(
-                        "type of `{symbol_name}` changed incompatibly from `{}` to `{}`",
+                        "type of `{display}` changed incompatibly from `{}` to `{}`",
                         format_type(&old_n),
                         format_type(&new_n)
                     ),
@@ -373,6 +378,7 @@ fn diff_recursive(
             },
         ) => {
             if old_name != new_name || old_args.len() != new_args.len() {
+                let display = make_display_name(symbol_name, field_path);
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_TYPE_INCOMPATIBLE,
@@ -380,7 +386,7 @@ fn diff_recursive(
                     line,
                     col,
                     message: format!(
-                        "type of `{symbol_name}` changed from `{}` to `{}`",
+                        "type of `{display}` changed from `{}` to `{}`",
                         format_type(&old_n),
                         format_type(&new_n)
                     ),
@@ -409,6 +415,7 @@ fn diff_recursive(
 
         // Both Primitive — if we got here after equality check, they differ
         (TypeShape::Primitive(_), TypeShape::Primitive(_)) => {
+            let display = make_display_name(symbol_name, field_path);
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_TYPE_INCOMPATIBLE,
@@ -416,7 +423,7 @@ fn diff_recursive(
                 line,
                 col,
                 message: format!(
-                    "type of `{symbol_name}` changed from `{}` to `{}`",
+                    "type of `{display}` changed from `{}` to `{}`",
                     format_type(&old_n),
                     format_type(&new_n)
                 ),
@@ -425,6 +432,7 @@ fn diff_recursive(
 
         // Both Literal — if we got here after equality check, they differ
         (TypeShape::Literal(_), TypeShape::Literal(_)) => {
+            let display = make_display_name(symbol_name, field_path);
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_TYPE_INCOMPATIBLE,
@@ -432,7 +440,7 @@ fn diff_recursive(
                 line,
                 col,
                 message: format!(
-                    "type of `{symbol_name}` changed from `{}` to `{}`",
+                    "type of `{display}` changed from `{}` to `{}`",
                     format_type(&old_n),
                     format_type(&new_n)
                 ),
@@ -441,6 +449,7 @@ fn diff_recursive(
 
         // Different variant entirely — emit type-incompatible (Major)
         _ => {
+            let display = make_display_name(symbol_name, field_path);
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_TYPE_INCOMPATIBLE,
@@ -448,7 +457,7 @@ fn diff_recursive(
                 line,
                 col,
                 message: format!(
-                    "type of `{symbol_name}` changed incompatibly from `{}` to `{}`",
+                    "type of `{display}` changed incompatibly from `{}` to `{}`",
                     format_type(&old_n),
                     format_type(&new_n)
                 ),
@@ -467,7 +476,7 @@ fn diff_functions(
     new_params: &[ParamShape],
     new_ret: &TypeShape,
     symbol_name: &str,
-    field_path: &str,
+    _field_path: &str,
     file: &Path,
     line: u32,
     col: u32,
@@ -494,7 +503,7 @@ fn diff_functions(
             .collect();
 
         if common_in_old.len() >= 2 && common_in_old != common_in_new {
-            let fn_name = if field_path.is_empty() { symbol_name } else { symbol_name };
+            let fn_name = symbol_name;
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_PARAM_REORDERED,
@@ -598,22 +607,20 @@ fn diff_functions(
     // Return types are covariant: new return must be a subtype of old return.
     // Check: is old_ret a subtype of new_ret?
     // If NOT, the new return type is wider — breaking.
-    if old_ret != new_ret {
-        if !is_subtype_of(old_ret, new_ret, depth + 1) {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_RETURN_TYPE_WIDENED,
-                file: file.to_path_buf(),
-                line,
-                col,
-                message: format!(
-                    "return type widened from `{}` to `{}` in `{symbol_name}`",
-                    format_type(old_ret),
-                    format_type(new_ret)
-                ),
-            });
-        }
-        // If old_ret <: new_ret (old is subtype of new), return type was narrowed — safe.
+    // If old_ret <: new_ret (old is subtype of new), return type was narrowed — safe.
+    if old_ret != new_ret && !is_subtype_of(old_ret, new_ret, depth + 1) {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_RETURN_TYPE_WIDENED,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "return type widened from `{}` to `{}` in `{symbol_name}`",
+                format_type(old_ret),
+                format_type(new_ret)
+            ),
+        });
     }
 }
 
@@ -623,6 +630,17 @@ fn make_path(prefix: &str, field: &str) -> String {
         field.to_string()
     } else {
         format!("{prefix}.{field}")
+    }
+}
+
+/// Build a display name for finding messages that includes the field path when present.
+/// e.g. symbol_name="MyType", field_path="config.timeout" → "MyType.config.timeout"
+/// e.g. symbol_name="MyType", field_path="" → "MyType"
+fn make_display_name(symbol_name: &str, field_path: &str) -> String {
+    if field_path.is_empty() {
+        symbol_name.to_string()
+    } else {
+        format!("{symbol_name}.{field_path}")
     }
 }
 
@@ -1094,7 +1112,7 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.rule == "param-type-narrowed" && f.severity == Severity::Major),
             "narrowed param type should produce param-type-narrowed Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-type-narrowed").unwrap();
         // D-04: message should include old and new type values
@@ -1140,7 +1158,7 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.severity == Severity::Major),
             "widening param type should produce no Major findings, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
     }
 
@@ -1184,7 +1202,7 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.rule == "return-type-widened" && f.severity == Severity::Major),
             "old return (string|number) not subtype of new return (string) should produce return-type-widened Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
     }
 
@@ -1211,7 +1229,7 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.rule == "return-type-widened"),
             "old=string, new=string|number: old is subtype of new, should be safe (no return-type-widened), got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
     }
 
@@ -1254,7 +1272,7 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.rule == "param-reordered" && f.severity == Severity::Major),
             "reordered params should produce param-reordered Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-reordered").unwrap();
         assert!(
@@ -1296,7 +1314,7 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.rule == "param-added" && f.severity == Severity::Minor),
             "optional param added should produce param-added Minor, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-added").unwrap();
         assert!(
@@ -1338,7 +1356,7 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.rule == "param-removed" && f.severity == Severity::Major),
             "removed param should produce param-removed Major, got: {:?}",
-            findings.iter().map(|f| (f.rule, f.severity)).collect::<Vec<_>>()
+            findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
         );
         let f = findings.iter().find(|f| f.rule == "param-removed").unwrap();
         assert!(
