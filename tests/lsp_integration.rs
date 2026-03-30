@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use interlint::compare;
 use interlint::discover;
 use interlint::lsp;
-use interlint::types::{ExportKind, ExportSymbol, Finding};
+use interlint::types::{ExportKind, ExportSymbol, Finding, Severity};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -146,6 +146,57 @@ async fn jsdoc_javascript_type_resolution() {
     assert!(has_breaking, "JSDoc type changes are breaking");
 }
 
+
+/// Test: SIG-01..05 signature changes detected with LSP enrichment.
+/// Validates that all five signature change rules produce findings when type shapes are available.
+#[tokio::test]
+async fn sig_changes_detected_with_lsp() {
+    let (findings, has_breaking) = run_pipeline("sig-change-pkg/old", "sig-change-pkg/new").await;
+    let rules: Vec<&str> = findings.iter().map(|f| f.rule).collect();
+
+    // SIG-01: added required param (greet now takes 2 required params instead of 1)
+    assert!(
+        rules.contains(&"param-added"),
+        "SIG-01: param-added not found in rules: {:?}",
+        rules
+    );
+
+    // SIG-02: narrowed param type (process input: string | number -> string)
+    assert!(
+        rules.contains(&"param-type-narrowed"),
+        "SIG-02: param-type-narrowed not found in rules: {:?}",
+        rules
+    );
+
+    // SIG-03: widened return type (getData returns string -> string | number)
+    assert!(
+        rules.contains(&"return-type-widened"),
+        "SIG-03: return-type-widened not found in rules: {:?}",
+        rules
+    );
+
+    // SIG-04: optional param added (configure gets optional port?) — should be Minor
+    // param-added is used for both required (Major) and optional (Minor) params
+    let param_added_findings: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == "param-added")
+        .collect();
+    assert!(
+        param_added_findings.iter().any(|f| f.severity == Severity::Minor),
+        "SIG-04: should have a Minor param-added finding for optional param, got: {:?}",
+        param_added_findings
+    );
+
+    // SIG-05: param order changed (transform(a, b) -> transform(b, a))
+    assert!(
+        rules.contains(&"param-reordered"),
+        "SIG-05: param-reordered not found in rules: {:?}",
+        rules
+    );
+
+    // Overall: signature changes ARE breaking
+    assert!(has_breaking, "SIG changes should produce breaking findings");
+}
 
 /// Test: graceful degradation when LSP cannot initialize for a directory.
 /// Validates STRUCT-05 (graceful degradation — no panic, returns Degraded or Enriched).
