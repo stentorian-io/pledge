@@ -355,6 +355,89 @@ pub fn compare_exports_diff(old_pkg: &serde_json::Value, new_pkg: &serde_json::V
 mod tests {
     use super::*;
 
+    // ─── Task 1 TDD: CJS/ESM migration and types/runtime mismatch tests ───────
+
+    #[test]
+    fn test_exp08_cjs_to_esm_require_removed() {
+        // EXP-08: old has require condition, new drops it -> cjs-to-esm finding
+        let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
+        let findings = compare_exports_diff(&old, &new);
+        let cjs_to_esm: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CJS_TO_ESM).collect();
+        assert_eq!(cjs_to_esm.len(), 1, "expected 1 cjs-to-esm finding, got: {:?}", findings);
+        assert_eq!(cjs_to_esm[0].severity, Severity::Major);
+        assert!(cjs_to_esm[0].message.contains("."));
+    }
+
+    #[test]
+    fn test_exp08_no_cjs_to_esm_when_both_conditions_present() {
+        // EXP-08 negative: both require and import exist in both versions, targets changed -> NO cjs-to-esm
+        let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"require": "./dist/index.cjs", "import": "./dist/index.mjs"}}}"#);
+        let findings = compare_exports_diff(&old, &new);
+        assert!(
+            findings.iter().all(|f| f.rule != RULE_CJS_TO_ESM),
+            "cjs-to-esm should NOT fire when both conditions still present, got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn test_exp09_esm_to_cjs_import_removed() {
+        // EXP-09: old has import condition only, new has only require -> esm-to-cjs finding
+        let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"require": "./index.cjs"}}}"#);
+        let findings = compare_exports_diff(&old, &new);
+        let esm_to_cjs: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ESM_TO_CJS).collect();
+        assert_eq!(esm_to_cjs.len(), 1, "expected 1 esm-to-cjs finding, got: {:?}", findings);
+        assert_eq!(esm_to_cjs[0].severity, Severity::Major);
+    }
+
+    #[test]
+    fn test_exp10_types_runtime_mismatch_dcts_with_import() {
+        // EXP-10: types -> .d.cts (CJS types) but only import condition (ESM) -> mismatch
+        let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
+        let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
+        let findings = compare_exports_diff(&old, &new);
+        let mismatch: Vec<_> = findings.iter().filter(|f| f.rule == RULE_TYPES_RUNTIME_MISMATCH).collect();
+        assert_eq!(mismatch.len(), 1, "expected 1 types-runtime-mismatch finding, got: {:?}", findings);
+        assert_eq!(mismatch[0].severity, Severity::Major);
+        assert!(mismatch[0].message.contains(".d.cts"));
+    }
+
+    #[test]
+    fn test_exp10_no_mismatch_for_format_neutral_dts() {
+        // EXP-10 negative: types -> .d.ts (format-neutral) with import -> NO mismatch
+        let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
+        let findings = compare_exports_diff(&old, &new);
+        assert!(
+            findings.iter().all(|f| f.rule != RULE_TYPES_RUNTIME_MISMATCH),
+            "types-runtime-mismatch should NOT fire for .d.ts (format-neutral), got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn test_module_format_from_condition_key() {
+        assert_eq!(format_from_condition_key("require"), Some(ModuleFormat::Cjs));
+        assert_eq!(format_from_condition_key("import"), Some(ModuleFormat::Esm));
+        assert_eq!(format_from_condition_key("default"), None);
+        assert_eq!(format_from_condition_key("types"), None);
+    }
+
+    #[test]
+    fn test_module_format_from_extension() {
+        assert_eq!(format_from_extension("./index.cjs"), Some(ModuleFormat::Cjs));
+        assert_eq!(format_from_extension("./index.mjs"), Some(ModuleFormat::Esm));
+        assert_eq!(format_from_extension("./index.js"), None);
+    }
+
+    #[test]
+    fn test_types_format_from_extension() {
+        assert_eq!(types_format_from_extension("./index.d.cts"), Some(ModuleFormat::Cjs));
+        assert_eq!(types_format_from_extension("./index.d.mts"), Some(ModuleFormat::Esm));
+        assert_eq!(types_format_from_extension("./index.d.ts"), None);
+    }
+
     fn make_pkg(json_str: &str) -> serde_json::Value {
         serde_json::from_str(json_str).unwrap()
     }
