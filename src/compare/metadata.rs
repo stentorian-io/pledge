@@ -302,7 +302,8 @@ fn compare_engines(
 
 /// META-06: detect entry point field changes.
 ///
-/// Checks `main`, `module`, `types` (string fields) and `exports` (structural).
+/// Checks `main`, `module`, `types` (string fields).
+/// Note: `exports` field diffing is handled by exports_diff.rs (D-07).
 fn compare_entry_points(
     old_pkg: &serde_json::Value,
     new_pkg: &serde_json::Value,
@@ -332,27 +333,8 @@ fn compare_entry_points(
             _ => {}
         }
     }
-
-    // `exports` field — structural comparison
-    let old_exports = old_pkg.get("exports");
-    let new_exports = new_pkg.get("exports");
-    match (old_exports, new_exports) {
-        (Some(old_e), Some(new_e)) if old_e != new_e => {
-            findings.push(pkg_json_finding(
-                Severity::Major,
-                RULE_ENTRY_POINT_CHANGED,
-                "package.json `exports` field changed".to_string(),
-            ));
-        }
-        (Some(_), None) => {
-            findings.push(pkg_json_finding(
-                Severity::Major,
-                RULE_ENTRY_POINT_CHANGED,
-                "package.json `exports` field removed".to_string(),
-            ));
-        }
-        _ => {}
-    }
+    // `exports` field is intentionally NOT checked here (D-07):
+    // granular exports diffing is delegated to exports_diff.rs
 }
 
 /// META-07: detect module type field changes.
@@ -500,14 +482,32 @@ mod tests {
     }
 
     #[test]
-    fn test_exports_field_changed() {
+    fn test_exports_field_changed_no_longer_triggers_entry_point_changed() {
+        // D-07: exports changes are handled by exports_diff.rs, not compare_entry_points
         let old = make_pkg(r#"{"exports": {".": "./src/index.js"}}"#);
         let new = make_pkg(r#"{"exports": {".": "./dist/index.js"}}"#);
         let mut findings = Vec::new();
         compare_entry_points(&old, &new, &mut findings);
-        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings.len(),
+            0,
+            "exports changes should NOT produce entry-point-changed after D-07 removal"
+        );
+    }
+
+    #[test]
+    fn test_entry_point_main_still_works_after_d07() {
+        let old = make_pkg(r#"{"main": "./lib/index.js", "exports": {".": "./src/index.js"}}"#);
+        let new = make_pkg(r#"{"main": "./dist/index.js", "exports": {".": "./dist/index.js"}}"#);
+        let mut findings = Vec::new();
+        compare_entry_points(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "should detect main change but NOT exports change"
+        );
         assert_eq!(findings[0].rule, RULE_ENTRY_POINT_CHANGED);
-        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(findings[0].message.contains("main"));
     }
 
     // -------------------------------------------------------------------------
