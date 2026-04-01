@@ -124,6 +124,11 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 compare::metadata::compare_metadata(&previous_root, &current_root);
             findings.extend(metadata_findings);
 
+            // Step 3c: Exports map diff comparison (EXP-01..13) — per D-03, orchestrated via compare/mod.rs
+            let exports_map_findings =
+                compare::compare_exports_map_diff(&previous_root, &current_root);
+            findings.extend(exports_map_findings);
+
             // Re-sort after merging (Major first, then Minor, then Patch — D-01)
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 

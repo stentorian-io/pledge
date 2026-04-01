@@ -5,6 +5,8 @@ pub mod metadata;
 pub mod subtype;
 pub mod type_diff;
 
+use std::path::Path;
+
 use crate::types::{ExportMap, Finding, Severity};
 
 /// Compare two export maps and produce a list of findings.
@@ -70,6 +72,34 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 
     findings
+}
+
+/// Orchestrates exports map diffing (EXP-01..13).
+/// Reads package.json from both roots and delegates to exports_diff::compare_exports_diff.
+/// Per D-03: findings merge in compare/mod.rs, not in main.rs.
+pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding> {
+    let old_pkg_path = old_root.join("package.json");
+    let new_pkg_path = new_root.join("package.json");
+
+    let old_content = match std::fs::read_to_string(&old_pkg_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let new_content = match std::fs::read_to_string(&new_pkg_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    let old_pkg: serde_json::Value = match serde_json::from_str(&old_content) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let new_pkg: serde_json::Value = match serde_json::from_str(&new_content) {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+
+    exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root)
 }
 
 /// Returns true if any finding has Major severity (per CLI-02).
