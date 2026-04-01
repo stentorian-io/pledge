@@ -12,14 +12,16 @@
 // Data model per D-01: ExportsMap preserves exact JSON shape for precise diffing.
 // Parser normalizes all 7 valid exports field shapes to ExportsMap.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use crate::types::{Finding, Severity};
 
 use super::subtype::{
     RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED,
-    RULE_EXPORTS_FIELD_ADDED, RULE_ESM_TO_CJS, RULE_SUBPATH_ADDED, RULE_SUBPATH_PATTERN_CHANGED,
-    RULE_SUBPATH_REMOVED, RULE_TYPES_CONDITION_REMOVED, RULE_TYPES_RUNTIME_MISMATCH,
+    RULE_EXPORTS_FIELD_ADDED, RULE_ESM_TO_CJS, RULE_IMPORTABLE_FILE_REMOVED, RULE_SUBPATH_ADDED,
+    RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED, RULE_TYPES_CONDITION_REMOVED,
+    RULE_TYPES_RUNTIME_MISMATCH,
 };
 
 // ─── Module format detection ──────────────────────────────────────────────────
@@ -398,6 +400,115 @@ fn check_types_runtime_mismatch(
     }
 }
 
+// ─── Packed output fallback scanner ──────────────────────────────────────────
+
+/// Importable file extensions for packed output fallback scanning (D-13).
+const IMPORTABLE_EXTENSIONS: &[&str] = &[
+    ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".d.ts", ".jsx", ".tsx", ".json",
+];
+
+/// Returns true if the given path has an importable extension (per D-13).
+///
+/// Checks `.d.ts` before `.ts` to avoid false positives from the shorter suffix match.
+fn is_importable(path: &Path) -> bool {
+    let name = match path.to_str() {
+        Some(s) => s,
+        None => return false,
+    };
+    // Check compound .d.ts extension first before iterating single-extension entries
+    if name.ends_with(".d.ts") {
+        return true;
+    }
+    IMPORTABLE_EXTENSIONS
+        .iter()
+        .any(|ext| name.ends_with(ext))
+}
+
+/// Recursively collect importable files from a package directory.
+///
+/// Returns relative paths (relative to `base`) as a `BTreeSet<String>` for
+/// deterministic ordering. Skips `node_modules/` directories and dotfiles.
+fn collect_files_recursive(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
+    let entries = match std::fs::read_dir(current) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+
+        // Skip dotfiles (files or dirs starting with '.')
+        if file_name.starts_with('.') {
+            continue;
+        }
+
+        if path.is_dir() {
+            // Skip node_modules
+            if file_name == "node_modules" {
+                continue;
+            }
+            collect_files_recursive(base, &path, files);
+        } else if is_importable(&path) {
+            if let Ok(rel) = path.strip_prefix(base) {
+                if let Some(rel_str) = rel.to_str() {
+                    // Normalize path separators to forward slash for cross-platform consistency
+                    files.insert(rel_str.replace('\\', "/"));
+                }
+            }
+        }
+    }
+}
+
+/// Scan all importable files in a package root directory.
+///
+/// Returns a `BTreeSet<String>` of relative paths (relative to `pkg_root`).
+/// Skips dotfiles, `node_modules/`, and files with non-importable extensions.
+pub(crate) fn scan_importable_files(pkg_root: &Path) -> BTreeSet<String> {
+    let mut files = BTreeSet::new();
+    collect_files_recursive(pkg_root, pkg_root, &mut files);
+    files
+}
+
+/// Compare importable files between old and new package roots (EXP-13).
+///
+/// Used when neither old nor new package has an `exports` field.
+/// Per D-14:
+/// - Removed files → `importable-file-removed` (Major)
+/// - Added files → `subpath-added` (Minor)
+fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Finding> {
+    let old_files = scan_importable_files(old_root);
+    let new_files = scan_importable_files(new_root);
+    let mut findings = Vec::new();
+
+    // Removed files (Major)
+    for file in &old_files {
+        if !new_files.contains(file) {
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_IMPORTABLE_FILE_REMOVED,
+                format!("importable file `{file}` removed from package"),
+            ));
+        }
+    }
+
+    // Added files (Minor)
+    for file in &new_files {
+        if !old_files.contains(file) {
+            findings.push(pkg_json_finding(
+                Severity::Minor,
+                RULE_SUBPATH_ADDED,
+                format!("importable file `{file}` added to package"),
+            ));
+        }
+    }
+
+    findings
+}
+
 /// Compare two parsed ExportsMaps and return findings.
 ///
 /// Handles EXP-01, EXP-06, EXP-07 at the subpath level; delegates to
@@ -451,26 +562,58 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
 
 /// Top-level entry point: compare the `exports` field of two package.json values.
 ///
+/// `old_root` and `new_root` are the package root directories used for fallback
+/// file scanning when neither package has an `exports` field (EXP-13).
+///
 /// Handles 4 cases:
-/// - Both None: no findings (no exports field in either version)
-/// - Old None, New Some: EXP-02 exports-field-added
+/// - Both None: fallback to packed output file diff (EXP-13)
+/// - Old None, New Some: EXP-02 exports-field-added (with file listing from old_root)
 /// - Old Some, New None: EXP-01 for every subpath in old exports
 /// - Both Some: parse and compare full ExportsMaps
-pub fn compare_exports_diff(old_pkg: &serde_json::Value, new_pkg: &serde_json::Value) -> Vec<Finding> {
+pub fn compare_exports_diff(
+    old_pkg: &serde_json::Value,
+    new_pkg: &serde_json::Value,
+    old_root: &Path,
+    new_root: &Path,
+) -> Vec<Finding> {
     let old_exports = old_pkg.get("exports");
     let new_exports = new_pkg.get("exports");
 
     match (old_exports, new_exports) {
-        (None, None) => Vec::new(),
+        (None, None) => {
+            // EXP-13: no exports field in either version — fallback to packed output file diff
+            compare_packed_output_fallback(old_root, new_root)
+        }
 
         (None, Some(_new_val)) => {
             // EXP-02: exports field added — previously importable paths are now encapsulated
-            vec![pkg_json_finding(
-                Severity::Major,
-                RULE_EXPORTS_FIELD_ADDED,
-                "package.json `exports` field added, encapsulating previously importable paths"
-                    .to_string(),
-            )]
+            // Per D-15: enumerate old_root importable files for the message, cap at 10
+            let old_files = scan_importable_files(old_root);
+            let message = if old_files.is_empty() {
+                "package.json `exports` field added, encapsulating deep imports".to_string()
+            } else {
+                let file_list: Vec<&String> = old_files.iter().collect();
+                let (shown, rest) = if file_list.len() > 10 {
+                    (&file_list[..10], file_list.len() - 10)
+                } else {
+                    (&file_list[..], 0)
+                };
+                let listed = shown
+                    .iter()
+                    .map(|f| format!("`{f}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                if rest > 0 {
+                    format!(
+                        "package.json `exports` field added, encapsulating previously importable paths: {listed} and {rest} more"
+                    )
+                } else {
+                    format!(
+                        "package.json `exports` field added, encapsulating previously importable paths: {listed}"
+                    )
+                }
+            };
+            vec![pkg_json_finding(Severity::Major, RULE_EXPORTS_FIELD_ADDED, message)]
         }
 
         (Some(old_val), None) => {
@@ -509,7 +652,7 @@ mod tests {
         // EXP-08: old has require condition, new drops it -> cjs-to-esm finding
         let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         let cjs_to_esm: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CJS_TO_ESM).collect();
         assert_eq!(cjs_to_esm.len(), 1, "expected 1 cjs-to-esm finding, got: {:?}", findings);
         assert_eq!(cjs_to_esm[0].severity, Severity::Major);
@@ -521,7 +664,7 @@ mod tests {
         // EXP-08 negative: both require and import exist in both versions, targets changed -> NO cjs-to-esm
         let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"require": "./dist/index.cjs", "import": "./dist/index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert!(
             findings.iter().all(|f| f.rule != RULE_CJS_TO_ESM),
             "cjs-to-esm should NOT fire when both conditions still present, got: {:?}", findings
@@ -533,7 +676,7 @@ mod tests {
         // EXP-09: old has import condition only, new has only require -> esm-to-cjs finding
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"require": "./index.cjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         let esm_to_cjs: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ESM_TO_CJS).collect();
         assert_eq!(esm_to_cjs.len(), 1, "expected 1 esm-to-cjs finding, got: {:?}", findings);
         assert_eq!(esm_to_cjs[0].severity, Severity::Major);
@@ -544,7 +687,7 @@ mod tests {
         // EXP-10: types -> .d.cts (CJS types) but only import condition (ESM) -> mismatch
         let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
         let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         let mismatch: Vec<_> = findings.iter().filter(|f| f.rule == RULE_TYPES_RUNTIME_MISMATCH).collect();
         assert_eq!(mismatch.len(), 1, "expected 1 types-runtime-mismatch finding, got: {:?}", findings);
         assert_eq!(mismatch[0].severity, Severity::Major);
@@ -556,7 +699,7 @@ mod tests {
         // EXP-10 negative: types -> .d.ts (format-neutral) with import -> NO mismatch
         let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert!(
             findings.iter().all(|f| f.rule != RULE_TYPES_RUNTIME_MISMATCH),
             "types-runtime-mismatch should NOT fire for .d.ts (format-neutral), got: {:?}", findings
@@ -587,6 +730,17 @@ mod tests {
 
     fn make_pkg(json_str: &str) -> serde_json::Value {
         serde_json::from_str(json_str).unwrap()
+    }
+
+    /// Helper: call compare_exports_diff with empty temp directories as pkg roots.
+    /// Used for tests that exercise the exports-field-based diffing (not filesystem scanning).
+    fn diff_with_empty_dirs(
+        old_pkg: &serde_json::Value,
+        new_pkg: &serde_json::Value,
+    ) -> Vec<Finding> {
+        let old_dir = tempfile::tempdir().unwrap();
+        let new_dir = tempfile::tempdir().unwrap();
+        compare_exports_diff(old_pkg, new_pkg, old_dir.path(), new_dir.path())
     }
 
     // ─── Parser tests ─────────────────────────────────────────────────────────
@@ -696,7 +850,7 @@ mod tests {
     fn test_exp01_subpath_removed() {
         let old = make_pkg(r#"{"exports": {"./utils": "./utils.js", ".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {".": "./index.js"}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_SUBPATH_REMOVED);
         assert_eq!(findings[0].severity, Severity::Major);
@@ -707,7 +861,8 @@ mod tests {
     fn test_exp02_exports_field_added() {
         let old = make_pkg(r#"{"name": "my-pkg"}"#);
         let new = make_pkg(r#"{"name": "my-pkg", "exports": {".": "./index.js"}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        // Use empty dirs — no old files, so message uses simpler form
+        let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_EXPORTS_FIELD_ADDED);
         assert_eq!(findings[0].severity, Severity::Major);
@@ -719,7 +874,7 @@ mod tests {
         // EXP-08 (cjs-to-esm migration). Both are correct co-occurrences.
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         // EXP-03: condition-removed must fire
         let condition_removed: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CONDITION_REMOVED).collect();
         assert_eq!(condition_removed.len(), 1, "expected 1 condition-removed finding, got: {:?}", findings);
@@ -734,7 +889,7 @@ mod tests {
     fn test_exp04_condition_target_changed() {
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./dist/index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_CONDITION_TARGET_CHANGED);
         assert_eq!(findings[0].severity, Severity::Major);
@@ -744,7 +899,7 @@ mod tests {
     fn test_exp05_types_condition_removed_no_double_fire() {
         let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         // Should fire EXP-05 (types-condition-removed) but NOT EXP-03 (condition-removed)
         assert_eq!(findings.len(), 1, "expected exactly 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_TYPES_CONDITION_REMOVED);
@@ -760,7 +915,7 @@ mod tests {
     fn test_exp06_wildcard_pattern_changed() {
         let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {".": "./index.js"}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_SUBPATH_PATTERN_CHANGED);
         assert_eq!(findings[0].severity, Severity::Major);
@@ -775,7 +930,7 @@ mod tests {
     fn test_exp07_subpath_added() {
         let old = make_pkg(r#"{"exports": {".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {".": "./index.js", "./newpath": "./newpath.js"}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_SUBPATH_ADDED);
         assert_eq!(findings[0].severity, Severity::Minor);
@@ -786,7 +941,7 @@ mod tests {
     fn test_unchanged_exports_no_findings() {
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
-        let findings = compare_exports_diff(&old, &new);
+        let findings = diff_with_empty_dirs(&old, &new);
         assert!(findings.is_empty(), "expected no findings for unchanged exports, got: {:?}", findings);
     }
 
