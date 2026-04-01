@@ -22,6 +22,7 @@ use crate::types::{Finding, Severity};
 use super::subtype::{
     RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED, RULE_MODULE_TYPE_CHANGED,
     RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
+    RULE_BIN_ENTRY_CHANGED, RULE_PLATFORM_NARROWED,
 };
 
 /// Compare package metadata from both package roots and return a list of findings.
@@ -45,6 +46,8 @@ pub fn compare_metadata(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     compare_engines(&old_pkg, &new_pkg, &mut findings);
     compare_entry_points(&old_pkg, &new_pkg, &mut findings);
     compare_module_type(&old_pkg, &new_pkg, &mut findings);
+    compare_bin_entries(&old_pkg, &new_pkg, &mut findings);
+    compare_platform(&old_pkg, &new_pkg, &mut findings);
     findings
 }
 
@@ -75,6 +78,113 @@ fn extract_string_map(pkg: &serde_json::Value, field: &str) -> HashMap<String, S
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Extract a string array from a JSON array field.
+fn extract_string_array(pkg: &serde_json::Value, field: &str) -> Vec<String> {
+    pkg.get(field)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Normalize the `bin` field to a `{command: path}` map.
+///
+/// Per npm docs: `"bin": "./cli.js"` is shorthand for `{"<name>": "./cli.js"}`.
+fn normalize_bin(pkg: &serde_json::Value) -> HashMap<String, String> {
+    let name = pkg
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    match pkg.get("bin") {
+        Some(serde_json::Value::String(s)) => {
+            let mut map = HashMap::new();
+            map.insert(name.to_string(), s.clone());
+            map
+        }
+        Some(serde_json::Value::Object(_)) => extract_string_map(pkg, "bin"),
+        _ => HashMap::new(),
+    }
+}
+
+/// EXP-11: detect bin entry changes (removed or path-changed commands).
+fn compare_bin_entries(
+    old_pkg: &serde_json::Value,
+    new_pkg: &serde_json::Value,
+    findings: &mut Vec<Finding>,
+) {
+    let old_bin = normalize_bin(old_pkg);
+    let new_bin = normalize_bin(new_pkg);
+
+    for (cmd, old_path) in &old_bin {
+        match new_bin.get(cmd.as_str()) {
+            None => {
+                findings.push(pkg_json_finding(
+                    Severity::Major,
+                    RULE_BIN_ENTRY_CHANGED,
+                    format!("bin entry `{cmd}` removed (was `{old_path}`)"),
+                ));
+            }
+            Some(new_path) if new_path != old_path => {
+                findings.push(pkg_json_finding(
+                    Severity::Major,
+                    RULE_BIN_ENTRY_CHANGED,
+                    format!("bin entry `{cmd}` changed from `{old_path}` to `{new_path}`"),
+                ));
+            }
+            _ => {}
+        }
+    }
+    // Added bin entries are non-breaking (no finding)
+}
+
+/// Check a single platform field (os or cpu) for narrowing.
+fn compare_platform_field(
+    old_pkg: &serde_json::Value,
+    new_pkg: &serde_json::Value,
+    field: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let old_vals = extract_string_array(old_pkg, field);
+    let new_vals = extract_string_array(new_pkg, field);
+
+    // If old was unrestricted (empty) and new restricts: narrowing
+    if old_vals.is_empty() && !new_vals.is_empty() {
+        findings.push(pkg_json_finding(
+            Severity::Major,
+            RULE_PLATFORM_NARROWED,
+            format!(
+                "`{field}` field added, restricting platform support to: {}",
+                new_vals.join(", ")
+            ),
+        ));
+        return;
+    }
+
+    // Check for removed platforms (old had it, new doesn't)
+    for platform in &old_vals {
+        if !new_vals.contains(platform) {
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_PLATFORM_NARROWED,
+                format!("platform `{platform}` removed from `{field}` field"),
+            ));
+        }
+    }
+}
+
+/// EXP-12: detect platform field narrowing (os, cpu).
+fn compare_platform(
+    old_pkg: &serde_json::Value,
+    new_pkg: &serde_json::Value,
+    findings: &mut Vec<Finding>,
+) {
+    compare_platform_field(old_pkg, new_pkg, "os", findings);
+    compare_platform_field(old_pkg, new_pkg, "cpu", findings);
 }
 
 /// Return true if the minimum satisfying version of `new_range` is strictly
@@ -554,6 +664,116 @@ mod tests {
             rules.contains(&RULE_ENTRY_POINT_CHANGED),
             "expected entry-point-changed"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // EXP-11: bin-entry-changed
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_bin_entry_path_changed() {
+        let old = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
+        let new = make_pkg(r#"{"bin": {"cli": "./new-cli.js"}}"#);
+        let mut findings = Vec::new();
+        compare_bin_entries(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(findings[0].message.contains("./cli.js"));
+        assert!(findings[0].message.contains("./new-cli.js"));
+    }
+
+    #[test]
+    fn test_bin_entry_removed() {
+        let old = make_pkg(r#"{"bin": {"cli": "./cli.js", "helper": "./helper.js"}}"#);
+        let new = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
+        let mut findings = Vec::new();
+        compare_bin_entries(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
+        assert!(findings[0].message.contains("helper"));
+    }
+
+    #[test]
+    fn test_bin_string_to_object_same_path_no_finding() {
+        // old: string shorthand, new: equivalent object form — no finding
+        let old = make_pkg(r#"{"name": "my-pkg", "bin": "./cli.js"}"#);
+        let new = make_pkg(r#"{"name": "my-pkg", "bin": {"my-pkg": "./cli.js"}}"#);
+        let mut findings = Vec::new();
+        compare_bin_entries(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            0,
+            "string bin normalized to same object should produce no finding"
+        );
+    }
+
+    #[test]
+    fn test_bin_string_to_string_changed_path() {
+        // old: string form "./cli.js", new: string form "./new-cli.js"
+        let old = make_pkg(r#"{"name": "my-pkg", "bin": "./cli.js"}"#);
+        let new = make_pkg(r#"{"name": "my-pkg", "bin": "./new-cli.js"}"#);
+        let mut findings = Vec::new();
+        compare_bin_entries(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
+    }
+
+    #[test]
+    fn test_bin_added_is_non_breaking() {
+        // new bin entry added — no finding
+        let old = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
+        let new = make_pkg(r#"{"bin": {"cli": "./cli.js", "extra": "./extra.js"}}"#);
+        let mut findings = Vec::new();
+        compare_bin_entries(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 0, "added bin entry is non-breaking");
+    }
+
+    // -------------------------------------------------------------------------
+    // EXP-12: platform-narrowed
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_os_platform_removed() {
+        let old = make_pkg(r#"{"os": ["linux", "darwin", "win32"]}"#);
+        let new = make_pkg(r#"{"os": ["linux", "darwin"]}"#);
+        let mut findings = Vec::new();
+        compare_platform(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_PLATFORM_NARROWED);
+        assert!(findings[0].message.contains("win32"));
+    }
+
+    #[test]
+    fn test_os_field_added_restricts_platforms() {
+        // old: no os field (unrestricted), new: restricted to linux
+        let old = make_pkg(r#"{}"#);
+        let new = make_pkg(r#"{"os": ["linux"]}"#);
+        let mut findings = Vec::new();
+        compare_platform(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_PLATFORM_NARROWED);
+    }
+
+    #[test]
+    fn test_os_expansion_is_non_breaking() {
+        // old: restricted to linux, new: linux + darwin — expansion, no finding
+        let old = make_pkg(r#"{"os": ["linux"]}"#);
+        let new = make_pkg(r#"{"os": ["linux", "darwin"]}"#);
+        let mut findings = Vec::new();
+        compare_platform(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 0, "platform expansion is non-breaking");
+    }
+
+    #[test]
+    fn test_cpu_platform_removed() {
+        let old = make_pkg(r#"{"cpu": ["x64", "arm64"]}"#);
+        let new = make_pkg(r#"{"cpu": ["x64"]}"#);
+        let mut findings = Vec::new();
+        compare_platform(&old, &new, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, RULE_PLATFORM_NARROWED);
+        assert!(findings[0].message.contains("arm64"));
     }
 
     #[test]
