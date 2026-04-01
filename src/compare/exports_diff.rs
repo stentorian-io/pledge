@@ -789,4 +789,152 @@ mod tests {
         let findings = compare_exports_diff(&old, &new);
         assert!(findings.is_empty(), "expected no findings for unchanged exports, got: {:?}", findings);
     }
+
+    // ─── Task 2 TDD: Packed output fallback scanner tests ─────────────────────
+
+    #[test]
+    fn test_exp13_importable_file_removed() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        // Old dir: lib/index.js, lib/utils.js
+        let old_dir = tempdir().unwrap();
+        let lib_dir = old_dir.path().join("lib");
+        fs::create_dir_all(&lib_dir).unwrap();
+        fs::write(lib_dir.join("index.js"), "").unwrap();
+        fs::write(lib_dir.join("utils.js"), "").unwrap();
+
+        // New dir: lib/index.js only
+        let new_dir = tempdir().unwrap();
+        let new_lib_dir = new_dir.path().join("lib");
+        fs::create_dir_all(&new_lib_dir).unwrap();
+        fs::write(new_lib_dir.join("index.js"), "").unwrap();
+
+        let old_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
+
+        let removed: Vec<_> = findings.iter().filter(|f| f.rule == RULE_IMPORTABLE_FILE_REMOVED).collect();
+        assert_eq!(removed.len(), 1, "expected 1 importable-file-removed finding, got: {:?}", findings);
+        assert_eq!(removed[0].severity, Severity::Major);
+        assert!(removed[0].message.contains("utils.js"), "message should contain utils.js, got: {}", removed[0].message);
+    }
+
+    #[test]
+    fn test_exp13_added_file_produces_subpath_added() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        // Old dir: lib/index.js only
+        let old_dir = tempdir().unwrap();
+        let old_lib = old_dir.path().join("lib");
+        fs::create_dir_all(&old_lib).unwrap();
+        fs::write(old_lib.join("index.js"), "").unwrap();
+
+        // New dir: lib/index.js + lib/new-feature.js
+        let new_dir = tempdir().unwrap();
+        let new_lib = new_dir.path().join("lib");
+        fs::create_dir_all(&new_lib).unwrap();
+        fs::write(new_lib.join("index.js"), "").unwrap();
+        fs::write(new_lib.join("new-feature.js"), "").unwrap();
+
+        let old_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
+
+        let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_SUBPATH_ADDED).collect();
+        assert_eq!(added.len(), 1, "expected 1 subpath-added finding, got: {:?}", findings);
+        assert_eq!(added[0].severity, Severity::Minor);
+    }
+
+    #[test]
+    fn test_exp13_dotfiles_skipped() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        let old_dir = tempdir().unwrap();
+        fs::write(old_dir.path().join(".hidden"), "").unwrap();
+        fs::write(old_dir.path().join("index.js"), "").unwrap();
+
+        let new_dir = tempdir().unwrap();
+        fs::write(new_dir.path().join("index.js"), "").unwrap();
+        // .hidden removed from new — should NOT produce finding since dotfiles are skipped
+
+        let old_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
+
+        // No findings because .hidden is skipped
+        assert!(findings.is_empty(), "expected no findings (dotfiles skipped), got: {:?}", findings);
+    }
+
+    #[test]
+    fn test_exp13_only_importable_extensions_included() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        let old_dir = tempdir().unwrap();
+        fs::write(old_dir.path().join("README.md"), "").unwrap();
+        fs::write(old_dir.path().join("notes.txt"), "").unwrap();
+        fs::write(old_dir.path().join("index.js"), "").unwrap();
+
+        let new_dir = tempdir().unwrap();
+        fs::write(new_dir.path().join("index.js"), "").unwrap();
+        // README.md and notes.txt removed from new — should NOT produce findings
+
+        let old_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
+
+        // No findings because .md and .txt are not importable
+        assert!(findings.is_empty(), "expected no findings (.md/.txt not importable), got: {:?}", findings);
+    }
+
+    #[test]
+    fn test_exp02_enhanced_with_file_listing() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        // Old dir: lib/index.js, lib/utils.js, lib/helper.js
+        let old_dir = tempdir().unwrap();
+        let old_lib = old_dir.path().join("lib");
+        fs::create_dir_all(&old_lib).unwrap();
+        fs::write(old_lib.join("index.js"), "").unwrap();
+        fs::write(old_lib.join("utils.js"), "").unwrap();
+        fs::write(old_lib.join("helper.js"), "").unwrap();
+
+        let new_dir = tempdir().unwrap();
+
+        // Old has no exports, new adds exports
+        let old_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
+        let new_pkg = make_pkg(r#"{"name": "my-pkg", "exports": {".": "./index.js"}}"#);
+        let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
+
+        let exp02: Vec<_> = findings.iter().filter(|f| f.rule == RULE_EXPORTS_FIELD_ADDED).collect();
+        assert_eq!(exp02.len(), 1, "expected 1 exports-field-added finding, got: {:?}", findings);
+        // Message should include file listing
+        assert!(
+            exp02[0].message.contains("index.js") || exp02[0].message.contains("encapsulating"),
+            "message should mention files, got: {}",
+            exp02[0].message
+        );
+    }
+
+    #[test]
+    fn test_scan_importable_files_basic() {
+        use tempfile::tempdir;
+        use std::fs;
+
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("index.js"), "").unwrap();
+        fs::write(dir.path().join("types.d.ts"), "").unwrap();
+        fs::write(dir.path().join("module.mjs"), "").unwrap();
+        fs::write(dir.path().join("README.md"), "").unwrap(); // not importable
+
+        let files = scan_importable_files(dir.path());
+        assert!(files.contains("index.js"), "should include index.js");
+        assert!(files.contains("types.d.ts"), "should include types.d.ts");
+        assert!(files.contains("module.mjs"), "should include module.mjs");
+        assert!(!files.contains("README.md"), "should NOT include README.md");
+    }
 }
