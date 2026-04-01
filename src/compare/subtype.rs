@@ -41,6 +41,21 @@ pub const RULE_ENGINE_ADDED: &str = "engine-added";
 pub const RULE_ENTRY_POINT_CHANGED: &str = "entry-point-changed";
 pub const RULE_MODULE_TYPE_CHANGED: &str = "module-type-changed";
 
+// Exports diff rules (EXP-*)
+pub const RULE_SUBPATH_REMOVED: &str = "subpath-removed";
+pub const RULE_EXPORTS_FIELD_ADDED: &str = "exports-field-added";
+pub const RULE_CONDITION_REMOVED: &str = "condition-removed";
+pub const RULE_CONDITION_TARGET_CHANGED: &str = "condition-target-changed";
+pub const RULE_TYPES_CONDITION_REMOVED: &str = "types-condition-removed";
+pub const RULE_SUBPATH_PATTERN_CHANGED: &str = "subpath-pattern-changed";
+pub const RULE_SUBPATH_ADDED: &str = "subpath-added";
+pub const RULE_CJS_TO_ESM: &str = "cjs-to-esm";
+pub const RULE_ESM_TO_CJS: &str = "esm-to-cjs";
+pub const RULE_TYPES_RUNTIME_MISMATCH: &str = "types-runtime-mismatch";
+pub const RULE_BIN_ENTRY_CHANGED: &str = "bin-entry-changed";
+pub const RULE_PLATFORM_NARROWED: &str = "platform-narrowed";
+pub const RULE_IMPORTABLE_FILE_REMOVED: &str = "importable-file-removed";
+
 // ─── Subtype checker ─────────────────────────────────────────────────────────
 
 /// Determine whether `sub` is a structural subtype of `sup` under TypeScript
