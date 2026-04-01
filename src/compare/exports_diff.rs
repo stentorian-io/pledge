@@ -17,10 +17,53 @@ use std::collections::BTreeMap;
 use crate::types::{Finding, Severity};
 
 use super::subtype::{
-    RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED, RULE_EXPORTS_FIELD_ADDED,
-    RULE_SUBPATH_ADDED, RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED,
-    RULE_TYPES_CONDITION_REMOVED,
+    RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED,
+    RULE_EXPORTS_FIELD_ADDED, RULE_ESM_TO_CJS, RULE_SUBPATH_ADDED, RULE_SUBPATH_PATTERN_CHANGED,
+    RULE_SUBPATH_REMOVED, RULE_TYPES_CONDITION_REMOVED, RULE_TYPES_RUNTIME_MISMATCH,
 };
+
+// ─── Module format detection ──────────────────────────────────────────────────
+
+/// Module format for CJS/ESM migration detection (EXP-08, EXP-09, EXP-10).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModuleFormat {
+    Cjs,
+    Esm,
+}
+
+/// Detect module format from a condition key.
+/// Priority: condition key (D-10, signal 1).
+pub(crate) fn format_from_condition_key(key: &str) -> Option<ModuleFormat> {
+    match key {
+        "require" => Some(ModuleFormat::Cjs),
+        "import" => Some(ModuleFormat::Esm),
+        _ => None,
+    }
+}
+
+/// Detect module format from a file path extension.
+/// Priority: file extension (D-10, signal 2).
+pub(crate) fn format_from_extension(path: &str) -> Option<ModuleFormat> {
+    if path.ends_with(".cjs") {
+        return Some(ModuleFormat::Cjs);
+    }
+    if path.ends_with(".mjs") {
+        return Some(ModuleFormat::Esm);
+    }
+    None
+}
+
+/// Detect module format from a types declaration file extension.
+/// `.d.cts` = CJS, `.d.mts` = ESM, `.d.ts` = format-neutral (per D-12).
+pub(crate) fn types_format_from_extension(path: &str) -> Option<ModuleFormat> {
+    if path.ends_with(".d.cts") {
+        return Some(ModuleFormat::Cjs);
+    }
+    if path.ends_with(".d.mts") {
+        return Some(ModuleFormat::Esm);
+    }
+    None // .d.ts is format-neutral per D-12
+}
 
 // ─── Data model ───────────────────────────────────────────────────────────────
 
@@ -253,6 +296,108 @@ fn diff_condition_nodes(
     }
 }
 
+/// Detect CJS-to-ESM and ESM-to-CJS migrations for a shared subpath (EXP-08, EXP-09).
+///
+/// Per D-11:
+/// - EXP-08 `cjs-to-esm`: old Branch has "require" key AND new Branch does NOT have "require"
+/// - EXP-09 `esm-to-cjs`: old Branch has "import" key AND new Branch does NOT have "import"
+///
+/// Not triggered when both conditions still present but targets changed (that's EXP-04).
+fn check_format_migration(
+    subpath: &str,
+    old_entry: &SubpathEntry,
+    new_entry: &SubpathEntry,
+    findings: &mut Vec<Finding>,
+) {
+    let (old_conds, new_conds) = match (&old_entry.node, &new_entry.node) {
+        (ConditionNode::Branch(o), ConditionNode::Branch(n)) => (o, n),
+        _ => return, // Only applies to Branch nodes
+    };
+
+    // EXP-08: require condition removed (CJS-to-ESM migration)
+    if old_conds.contains_key("require") && !new_conds.contains_key("require") {
+        findings.push(pkg_json_finding(
+            Severity::Major,
+            RULE_CJS_TO_ESM,
+            format!(
+                "CJS-to-ESM migration in subpath `{subpath}`: `require` condition removed (consumers using require() will fail)"
+            ),
+        ));
+    }
+
+    // EXP-09: import condition removed (ESM-to-CJS migration)
+    if old_conds.contains_key("import") && !new_conds.contains_key("import") {
+        findings.push(pkg_json_finding(
+            Severity::Major,
+            RULE_ESM_TO_CJS,
+            format!(
+                "ESM-to-CJS migration in subpath `{subpath}`: `import` condition removed"
+            ),
+        ));
+    }
+}
+
+/// Detect types/runtime module format mismatch in a subpath entry (EXP-10).
+///
+/// Per D-12: fires when types condition uses an explicit format-specific extension
+/// (`.d.cts` for CJS, `.d.mts` for ESM) that conflicts with the runtime condition format.
+/// `.d.ts` is format-neutral and never triggers this rule.
+fn check_types_runtime_mismatch(
+    subpath: &str,
+    entry: &SubpathEntry,
+    findings: &mut Vec<Finding>,
+) {
+    let conds = match &entry.node {
+        ConditionNode::Branch(c) => c,
+        _ => return, // Only applies to Branch nodes
+    };
+
+    // Find the types condition leaf value
+    let types_path = match conds.get("types") {
+        Some(ConditionNode::Leaf(Some(path))) => path.as_str(),
+        _ => return, // No types condition or null/branch types
+    };
+
+    // Check if types path uses explicit format extension
+    let types_format = match types_format_from_extension(types_path) {
+        Some(fmt) => fmt,
+        None => return, // .d.ts is format-neutral — no mismatch possible
+    };
+
+    // Find runtime conditions and check for mismatch.
+    // Use condition key as primary signal (D-10, signal 1); file extension as secondary (signal 2).
+    for cond_key in conds.keys() {
+        // Determine runtime format: first try condition key, then extension of its target file
+        let runtime_format = format_from_condition_key(cond_key).or_else(|| {
+            match conds.get(cond_key) {
+                Some(ConditionNode::Leaf(Some(path))) => format_from_extension(path),
+                _ => None,
+            }
+        });
+
+        if let Some(runtime_format) = runtime_format {
+            if runtime_format != types_format {
+                let types_format_str = match types_format {
+                    ModuleFormat::Cjs => "CJS",
+                    ModuleFormat::Esm => "ESM",
+                };
+                let runtime_format_str = match runtime_format {
+                    ModuleFormat::Cjs => "CJS",
+                    ModuleFormat::Esm => "ESM",
+                };
+                findings.push(pkg_json_finding(
+                    Severity::Major,
+                    RULE_TYPES_RUNTIME_MISMATCH,
+                    format!(
+                        "types/runtime module format mismatch in subpath `{subpath}`: types condition points to `{types_path}` ({types_format_str}) but runtime condition is `{cond_key}` ({runtime_format_str})"
+                    ),
+                ));
+                return; // Emit at most one mismatch per subpath
+            }
+        }
+    }
+}
+
 /// Compare two parsed ExportsMaps and return findings.
 ///
 /// Handles EXP-01, EXP-06, EXP-07 at the subpath level; delegates to
@@ -292,10 +437,12 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
         }
     }
 
-    // Shared subpaths: diff condition nodes
+    // Shared subpaths: diff condition nodes, then check migration and mismatch
     for (subpath, old_entry) in old_map {
         if let Some(new_entry) = new_map.get(subpath) {
             diff_condition_nodes(subpath, &old_entry.node, &new_entry.node, &mut findings);
+            check_format_migration(subpath, old_entry, new_entry, &mut findings);
+            check_types_runtime_mismatch(subpath, new_entry, &mut findings);
         }
     }
 
@@ -568,13 +715,19 @@ mod tests {
 
     #[test]
     fn test_exp03_condition_removed() {
+        // Removing the `require` condition fires both EXP-03 (condition-removed) and
+        // EXP-08 (cjs-to-esm migration). Both are correct co-occurrences.
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let findings = compare_exports_diff(&old, &new);
-        assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
-        assert_eq!(findings[0].rule, RULE_CONDITION_REMOVED);
-        assert_eq!(findings[0].severity, Severity::Major);
-        assert!(findings[0].message.contains("require"));
+        // EXP-03: condition-removed must fire
+        let condition_removed: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CONDITION_REMOVED).collect();
+        assert_eq!(condition_removed.len(), 1, "expected 1 condition-removed finding, got: {:?}", findings);
+        assert_eq!(condition_removed[0].severity, Severity::Major);
+        assert!(condition_removed[0].message.contains("require"));
+        // EXP-08: cjs-to-esm migration also fires for this scenario
+        let cjs_to_esm: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CJS_TO_ESM).collect();
+        assert_eq!(cjs_to_esm.len(), 1, "expected 1 cjs-to-esm finding, got: {:?}", findings);
     }
 
     #[test]
