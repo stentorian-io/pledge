@@ -1,0 +1,20 @@
+{
+  "name": "format-migration-pkg",
+  "version": "1.0.0",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.mjs",
+      "types": "./dist/utils.d.ts"
+    },
+    "./api": {
+      "import": "./dist/api.mjs",
+      "types": "./dist/api.d.ts"
+    },
+    "./features/*.js": "./dist/features/*.js"
+  }
+}

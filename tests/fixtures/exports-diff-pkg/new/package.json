@@ -1,0 +1,20 @@
+{
+  "name": "exports-diff-pkg",
+  "version": "2.0.0",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils-new.mjs",
+      "require": "./dist/utils.cjs"
+    },
+    "./new-feature": "./dist/new-feature.js"
+  },
+  "bin": {
+    "exports-diff": "./bin/cli.js"
+  },
+  "os": ["linux", "darwin"],
+  "cpu": ["x64", "arm64"]
+}

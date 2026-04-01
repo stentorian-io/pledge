@@ -1,0 +1,8 @@
+{
+  "name": "no-exports-to-exports-pkg",
+  "version": "2.0.0",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  }
+}

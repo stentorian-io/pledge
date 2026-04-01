@@ -1,0 +1,22 @@
+{
+  "name": "exports-diff-pkg",
+  "version": "1.0.0",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils.mjs",
+      "require": "./dist/utils.cjs"
+    },
+    "./removed": "./dist/removed.js"
+  },
+  "bin": {
+    "exports-diff": "./bin/cli.js",
+    "helper": "./bin/helper.js"
+  },
+  "os": ["linux", "darwin", "win32"],
+  "cpu": ["x64", "arm64"]
+}

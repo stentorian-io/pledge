@@ -1,0 +1,17 @@
+{
+  "name": "format-migration-pkg",
+  "version": "2.0.0",
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.cts"
+    },
+    "./utils": {
+      "import": "./dist/utils.mjs"
+    },
+    "./api": {
+      "import": "./dist/api.mjs",
+      "types": "./dist/api.d.cts"
+    }
+  }
+}
