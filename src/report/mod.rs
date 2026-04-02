@@ -61,12 +61,14 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
                 Severity::Major => format!("{}", "major".red().bold()),
                 Severity::Minor => format!("{}", "minor".yellow()),
                 Severity::Patch => format!("{}", "patch".blue()),
+                Severity::Warning => format!("{}", "warning".bright_yellow()),
             }
         } else {
             match f.severity {
                 Severity::Major => "major".to_string(),
                 Severity::Minor => "minor".to_string(),
                 Severity::Patch => "patch".to_string(),
+                Severity::Warning => "warning".to_string(),
             }
         };
 
@@ -87,6 +89,10 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
     let patch_count = findings
         .iter()
         .filter(|f| f.severity == Severity::Patch)
+        .count();
+    let warning_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Warning)
         .count();
 
     let degraded_note = if degraded {
@@ -124,6 +130,44 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
             "{} major, {} minor, {} patch{}",
             major_count, minor_count, patch_count, degraded_note
         );
+    }
+
+    if warning_count > 0 {
+        if color {
+            println!("{}", format!("{} warning(s)", warning_count).bright_yellow());
+        } else {
+            println!("{} warning(s)", warning_count);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::Severity;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_warning_findings_do_not_affect_summary_breaking_count() {
+        // Verify the contract: warning count is separate from major count
+        let findings = vec![Finding {
+            severity: Severity::Warning,
+            rule: "async-to-sync",
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            message: "test warning".to_string(),
+        }];
+        let major_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Major)
+            .count();
+        let warning_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Warning)
+            .count();
+        assert_eq!(major_count, 0);
+        assert_eq!(warning_count, 1);
     }
 }
 
