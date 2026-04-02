@@ -1,6 +1,7 @@
 // Comparison engine: diff old vs new ExportMaps
 
 pub mod exports_diff;
+pub mod generics_diff;
 pub mod metadata;
 pub mod subtype;
 pub mod type_diff;
