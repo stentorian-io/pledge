@@ -22,8 +22,9 @@ use std::path::Path;
 use crate::types::{EnumShape, EnumValueKind, Finding, Severity};
 
 use super::subtype::{
-    RULE_ENUM_CONST_TO_REGULAR, RULE_ENUM_MEMBER_REMOVED, RULE_ENUM_MEMBER_REORDERED,
-    RULE_ENUM_MEMBER_VALUE_CHANGED, RULE_ENUM_NUMERIC_TO_STRING,
+    RULE_ENUM_CONST_TO_REGULAR, RULE_ENUM_MEMBER_ADDED, RULE_ENUM_MEMBER_REMOVED,
+    RULE_ENUM_MEMBER_REORDERED, RULE_ENUM_MEMBER_VALUE_CHANGED, RULE_ENUM_NUMERIC_TO_STRING,
+    RULE_ENUM_VALUE_SHIFTED,
 };
 
 /// Compare two enum shapes and return a list of findings for breaking changes.
@@ -127,6 +128,26 @@ pub fn compare_enum_shapes(
         }
     }
 
+    // ── BEH-04: enum member added (Warning) ─────────────────────────────────
+    // Per D-05: always Warning, regardless of const/regular.
+    // Any new member may break exhaustive switch statements in consumers.
+    let old_names: HashSet<&str> = old_by_name.keys().copied().collect();
+    for new_member in &new.members {
+        if !old_names.contains(new_member.name.as_str()) {
+            findings.push(Finding {
+                severity: Severity::Warning,
+                rule: RULE_ENUM_MEMBER_ADDED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "enum member `{}` was added to `{}` -- may break exhaustive switch statements",
+                    new_member.name, symbol_name
+                ),
+            });
+        }
+    }
+
     // ── ENUM-02: member value changed ────────────────────────────────────────
     // Track members where ENUM-02 already fired (to avoid ENUM-03 double-fire).
     //
@@ -186,14 +207,42 @@ pub fn compare_enum_shapes(
         }
     }
 
-    // ── ENUM-03: reordered with implicit value shift ──────────────────────────
-    // Only check if ENUM-05 did not fire (numeric-to-string covers the whole enum).
-    // Only fire for members where:
-    //   - Position index changed, AND
-    //   - computed_value changed (both are Some), AND
-    //   - ENUM-02 did not already fire for this member, AND
-    //   - Both old and new had raw_value: None (implicit — the value change came from reordering)
+    // ── ENUM-03 + BEH-03: reordering vs insertion-induced value shift ────────
+    // Mutual exclusion: a member fires EITHER ENUM-03 OR BEH-03, never both.
+    //
+    // ENUM-03 (Major): member was reordered among existing members
+    // BEH-03 (Warning): member's implicit value shifted due to new member insertion
+    //
+    // Detection: compute relative position among members present in BOTH old and new.
+    // If relative position changed -> reordered (ENUM-03).
+    // If relative position same but computed_value changed -> shifted by insertion (BEH-03).
     if !numeric_to_string {
+        // Build ordered list of member names present in both old and new
+        let old_shared_order: Vec<&str> = old
+            .members
+            .iter()
+            .filter(|m| new_by_name.contains_key(m.name.as_str()))
+            .map(|m| m.name.as_str())
+            .collect();
+        let new_shared_order: Vec<&str> = new
+            .members
+            .iter()
+            .filter(|m| old_by_name.contains_key(m.name.as_str()))
+            .map(|m| m.name.as_str())
+            .collect();
+
+        // Build relative position maps (position among shared members only)
+        let old_relative: HashMap<&str, usize> = old_shared_order
+            .iter()
+            .enumerate()
+            .map(|(i, &name)| (name, i))
+            .collect();
+        let new_relative: HashMap<&str, usize> = new_shared_order
+            .iter()
+            .enumerate()
+            .map(|(i, &name)| (name, i))
+            .collect();
+
         for old_member in &old.members {
             let name = old_member.name.as_str();
 
@@ -202,41 +251,56 @@ pub fn compare_enum_shapes(
                 continue;
             }
 
-            let Some(&(old_idx, _)) = old_by_name.get(name) else {
-                continue;
-            };
-            let Some(&(new_idx, new_member)) = new_by_name.get(name) else {
+            let Some(&(_, new_member)) = new_by_name.get(name) else {
                 continue; // Removed — handled by ENUM-01
             };
 
-            // Position must have changed
-            if old_idx == new_idx {
-                continue;
-            }
-
-            // Both must have had implicit values (no explicit raw_value) for this to be
-            // a reordering-induced shift rather than an explicit value change
+            // Both must have implicit values (no explicit raw_value)
             if old_member.raw_value.is_some() || new_member.raw_value.is_some() {
                 continue;
             }
 
             // Computed values must have actually changed
-            if let (Some(old_val), Some(new_val)) =
-                (old_member.computed_value, new_member.computed_value)
-            {
-                if old_val != new_val {
-                    findings.push(Finding {
-                        severity: Severity::Major,
-                        rule: RULE_ENUM_MEMBER_REORDERED,
-                        file: file.to_path_buf(),
-                        line,
-                        col,
-                        message: format!(
-                            "enum member `{}` was reordered causing value change from {} to {} in `{}`",
-                            name, old_val, new_val, symbol_name
-                        ),
-                    });
-                }
+            let (old_val, new_val) = match (old_member.computed_value, new_member.computed_value) {
+                (Some(ov), Some(nv)) if ov != nv => (ov, nv),
+                _ => continue,
+            };
+
+            // Determine if the member was reordered (ENUM-03) or shifted by insertion (BEH-03)
+            let old_rel = old_relative.get(name);
+            let new_rel = new_relative.get(name);
+
+            let relative_position_changed = match (old_rel, new_rel) {
+                (Some(&or), Some(&nr)) => or != nr,
+                _ => false,
+            };
+
+            if relative_position_changed {
+                // ENUM-03: reordered among existing members
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_ENUM_MEMBER_REORDERED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "enum member `{}` was reordered causing value change from {} to {} in `{}`",
+                        name, old_val, new_val, symbol_name
+                    ),
+                });
+            } else {
+                // BEH-03: value shifted by insertion of new member
+                findings.push(Finding {
+                    severity: Severity::Warning,
+                    rule: RULE_ENUM_VALUE_SHIFTED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "enum member `{}` implicit value shifted from {} to {} in `{}` due to member insertion",
+                        name, old_val, new_val, symbol_name
+                    ),
+                });
             }
         }
     }
@@ -542,6 +606,209 @@ mod tests {
         assert!(
             findings.is_empty(),
             "Expected no findings for identical non-evaluable values, got: {:?}",
+            findings
+        );
+    }
+
+    // ── BEH-04: enum member added ────────────────────────────────────────────
+
+    #[test]
+    fn test_beh04_member_added() {
+        let old = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED
+                && f.message.contains("C")
+                && f.severity == Severity::Warning),
+            "Expected enum-member-added Warning for C, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh04_multiple_members_added() {
+        let old = enum_shape(vec![numeric_member("A", 0)], false);
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ENUM_MEMBER_ADDED).collect();
+        assert_eq!(added.len(), 2, "Expected 2 enum-member-added findings, got: {:?}", added);
+    }
+
+    #[test]
+    fn test_beh04_no_finding_when_identical() {
+        let shape = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let findings = run(&shape, &shape);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED),
+            "Expected no enum-member-added findings for identical enum"
+        );
+    }
+
+    #[test]
+    fn test_beh04_const_enum_member_added() {
+        // D-05: Warning regardless of const/regular
+        let old = enum_shape(vec![numeric_member("A", 0)], true);
+        let new = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            true,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED
+                && f.severity == Severity::Warning),
+            "Expected enum-member-added Warning for const enum, got: {:?}",
+            findings
+        );
+    }
+
+    // ── BEH-03: enum value shifted by insertion ──────────────────────────────
+
+    #[test]
+    fn test_beh03_value_shifted_by_insertion() {
+        // old: {A=0, B=1, C=2} (all implicit)
+        // new: {X=0, A=1, B=2, C=3} (X inserted at front)
+        // A, B, C shifted by insertion -> BEH-03 Warning (not ENUM-03)
+        let old = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("X", 0),
+                numeric_member("A", 1),
+                numeric_member("B", 2),
+                numeric_member("C", 3),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        // A, B, C should all fire BEH-03 (shifted by insertion of X)
+        let shifted: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_ENUM_VALUE_SHIFTED)
+            .collect();
+        assert_eq!(shifted.len(), 3, "Expected 3 enum-value-shifted findings, got: {:?}", shifted);
+        assert!(shifted.iter().all(|f| f.severity == Severity::Warning));
+        // ENUM-03 should NOT fire (no reordering)
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED),
+            "ENUM-03 should not fire for insertion-shifted members"
+        );
+    }
+
+    #[test]
+    fn test_beh03_no_double_fire_with_enum03() {
+        // old: {A=0, B=1, C=2} (implicit)
+        // new: {B=0, A=1, C=2} (reordered A and B — not insertion)
+        // A and B should fire ENUM-03 (Major), NOT BEH-03
+        let old = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("B", 0),
+                numeric_member("A", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        // ENUM-03 fires for A and B
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("A")),
+            "Expected ENUM-03 for A"
+        );
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("B")),
+            "Expected ENUM-03 for B"
+        );
+        // BEH-03 should NOT fire
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire when ENUM-03 fires, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh03_explicit_values_not_affected() {
+        // old: {A=10, B=20} (explicit)
+        // new: {X=0, A=10, B=20} (insertion, but A and B have explicit values)
+        // No BEH-03 because values are explicit (unchanged)
+        let old = enum_shape(
+            vec![
+                explicit_numeric_member("A", "10", 10),
+                explicit_numeric_member("B", "20", 20),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("X", 0),
+                explicit_numeric_member("A", "10", 10),
+                explicit_numeric_member("B", "20", 20),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire for explicit-value members, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh03_unshifted_member_no_finding() {
+        // old: {A=0, B=1} (implicit)
+        // new: {A=0, B=1, C=2} (C added at end — A and B not shifted)
+        // A and B values unchanged -> no BEH-03
+        let old = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire when values are unchanged, got: {:?}",
             findings
         );
     }
