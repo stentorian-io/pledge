@@ -22,8 +22,9 @@ use std::path::Path;
 use crate::types::{EnumShape, EnumValueKind, Finding, Severity};
 
 use super::subtype::{
-    RULE_ENUM_CONST_TO_REGULAR, RULE_ENUM_MEMBER_REMOVED, RULE_ENUM_MEMBER_REORDERED,
-    RULE_ENUM_MEMBER_VALUE_CHANGED, RULE_ENUM_NUMERIC_TO_STRING,
+    RULE_ENUM_CONST_TO_REGULAR, RULE_ENUM_MEMBER_ADDED, RULE_ENUM_MEMBER_REMOVED,
+    RULE_ENUM_MEMBER_REORDERED, RULE_ENUM_MEMBER_VALUE_CHANGED, RULE_ENUM_NUMERIC_TO_STRING,
+    RULE_ENUM_VALUE_SHIFTED,
 };
 
 /// Compare two enum shapes and return a list of findings for breaking changes.
@@ -542,6 +543,209 @@ mod tests {
         assert!(
             findings.is_empty(),
             "Expected no findings for identical non-evaluable values, got: {:?}",
+            findings
+        );
+    }
+
+    // ── BEH-04: enum member added ────────────────────────────────────────────
+
+    #[test]
+    fn test_beh04_member_added() {
+        let old = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED
+                && f.message.contains("C")
+                && f.severity == Severity::Warning),
+            "Expected enum-member-added Warning for C, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh04_multiple_members_added() {
+        let old = enum_shape(vec![numeric_member("A", 0)], false);
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ENUM_MEMBER_ADDED).collect();
+        assert_eq!(added.len(), 2, "Expected 2 enum-member-added findings, got: {:?}", added);
+    }
+
+    #[test]
+    fn test_beh04_no_finding_when_identical() {
+        let shape = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let findings = run(&shape, &shape);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED),
+            "Expected no enum-member-added findings for identical enum"
+        );
+    }
+
+    #[test]
+    fn test_beh04_const_enum_member_added() {
+        // D-05: Warning regardless of const/regular
+        let old = enum_shape(vec![numeric_member("A", 0)], true);
+        let new = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            true,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED
+                && f.severity == Severity::Warning),
+            "Expected enum-member-added Warning for const enum, got: {:?}",
+            findings
+        );
+    }
+
+    // ── BEH-03: enum value shifted by insertion ──────────────────────────────
+
+    #[test]
+    fn test_beh03_value_shifted_by_insertion() {
+        // old: {A=0, B=1, C=2} (all implicit)
+        // new: {X=0, A=1, B=2, C=3} (X inserted at front)
+        // A, B, C shifted by insertion -> BEH-03 Warning (not ENUM-03)
+        let old = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("X", 0),
+                numeric_member("A", 1),
+                numeric_member("B", 2),
+                numeric_member("C", 3),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        // A, B, C should all fire BEH-03 (shifted by insertion of X)
+        let shifted: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_ENUM_VALUE_SHIFTED)
+            .collect();
+        assert_eq!(shifted.len(), 3, "Expected 3 enum-value-shifted findings, got: {:?}", shifted);
+        assert!(shifted.iter().all(|f| f.severity == Severity::Warning));
+        // ENUM-03 should NOT fire (no reordering)
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED),
+            "ENUM-03 should not fire for insertion-shifted members"
+        );
+    }
+
+    #[test]
+    fn test_beh03_no_double_fire_with_enum03() {
+        // old: {A=0, B=1, C=2} (implicit)
+        // new: {B=0, A=1, C=2} (reordered A and B — not insertion)
+        // A and B should fire ENUM-03 (Major), NOT BEH-03
+        let old = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("B", 0),
+                numeric_member("A", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        // ENUM-03 fires for A and B
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("A")),
+            "Expected ENUM-03 for A"
+        );
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("B")),
+            "Expected ENUM-03 for B"
+        );
+        // BEH-03 should NOT fire
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire when ENUM-03 fires, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh03_explicit_values_not_affected() {
+        // old: {A=10, B=20} (explicit)
+        // new: {X=0, A=10, B=20} (insertion, but A and B have explicit values)
+        // No BEH-03 because values are explicit (unchanged)
+        let old = enum_shape(
+            vec![
+                explicit_numeric_member("A", "10", 10),
+                explicit_numeric_member("B", "20", 20),
+            ],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("X", 0),
+                explicit_numeric_member("A", "10", 10),
+                explicit_numeric_member("B", "20", 20),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire for explicit-value members, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_beh03_unshifted_member_no_finding() {
+        // old: {A=0, B=1} (implicit)
+        // new: {A=0, B=1, C=2} (C added at end — A and B not shifted)
+        // A and B values unchanged -> no BEH-03
+        let old = enum_shape(
+            vec![numeric_member("A", 0), numeric_member("B", 1)],
+            false,
+        );
+        let new = enum_shape(
+            vec![
+                numeric_member("A", 0),
+                numeric_member("B", 1),
+                numeric_member("C", 2),
+            ],
+            false,
+        );
+        let findings = run(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_VALUE_SHIFTED),
+            "BEH-03 should not fire when values are unchanged, got: {:?}",
             findings
         );
     }
