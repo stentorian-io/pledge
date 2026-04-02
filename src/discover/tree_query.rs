@@ -737,6 +737,50 @@ pub fn is_const_enum(node: tree_sitter::Node, source: &[u8]) -> bool {
     false
 }
 
+/// Check if a function_declaration node has the `async` modifier.
+///
+/// The `async` keyword is an anonymous token that appears BEFORE the `function`
+/// keyword in the AST child order. We stop iterating at the `function` keyword
+/// to avoid false positives. Per Phase 9 RESEARCH Pitfall 2.
+pub fn is_async_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool {
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if child.kind() == "function" {
+            break;
+        }
+        if !child.is_named() {
+            if child.utf8_text(source).ok() == Some("async") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Check if a function_declaration or generator_function_declaration node has
+/// the `*` generator marker.
+///
+/// The `*` token appears between the `function` keyword and the
+/// `formal_parameters` node. We stop at `formal_parameters` to avoid
+/// matching `*` in other contexts. Per Phase 9 RESEARCH Pitfall 3.
+///
+/// Note: tree-sitter-typescript parses `function* foo() {}` as
+/// `generator_function_declaration`, not `function_declaration`.
+pub fn is_generator_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool {
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if child.kind() == "formal_parameters" {
+            break;
+        }
+        if !child.is_named() {
+            if child.utf8_text(source).ok() == Some("*") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Compute auto-incremented numeric values for enum members.
 ///
 /// Per D-04 and RESEARCH.md: maintains running counter starting at 0.
@@ -1687,5 +1731,55 @@ mod tests {
         } else {
             panic!("expected TypeShape::Function");
         }
+    }
+
+    // ── is_async_function / is_generator_function tests (BEH-01, BEH-02) ─────
+
+    #[test]
+    fn test_is_async_function_true() {
+        let source = b"async function foo() {}";
+        let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert!(is_async_function(fn_node, source));
+    }
+
+    #[test]
+    fn test_is_async_function_false() {
+        let source = b"function foo() {}";
+        let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert!(!is_async_function(fn_node, source));
+    }
+
+    #[test]
+    fn test_is_generator_function_true() {
+        let source = b"function* foo() {}";
+        let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert!(is_generator_function(fn_node, source));
+    }
+
+    #[test]
+    fn test_is_generator_function_false() {
+        let source = b"function foo() {}";
+        let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        let mut parser = Parser::new();
+        parser.set_language(&lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        assert!(!is_generator_function(fn_node, source));
     }
 }
