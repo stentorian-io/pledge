@@ -122,6 +122,8 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
         overloads,
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     }
 }
 
@@ -183,6 +185,8 @@ fn test_ref_02_rest_param_narrowed() {
         }],
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = ExportSymbol {
@@ -203,6 +207,8 @@ fn test_ref_02_rest_param_narrowed() {
         }],
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     // Old has rest param, new does not — rest-param-narrowed
@@ -256,6 +262,8 @@ fn test_ref_03_type_guard_widened() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: old_type_guard,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = ExportSymbol {
@@ -268,6 +276,8 @@ fn test_ref_03_type_guard_widened() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: new_type_guard,
+        is_async: false,
+        is_generator: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -298,6 +308,8 @@ fn test_ref_04_declaration_kind_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Interface),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = ExportSymbol {
@@ -310,6 +322,8 @@ fn test_ref_04_declaration_kind_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::TypeAlias),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -347,6 +361,8 @@ fn test_ref_05_namespace_to_other() {
         // Whether tree-sitter finds it or not, test the ref_diff logic directly
         decl_kind: Some(DeclarationKind::Namespace),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     // Log what tree-sitter sees for debugging
@@ -362,6 +378,8 @@ fn test_ref_05_namespace_to_other() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Variable),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -448,6 +466,8 @@ fn test_ref_07_index_signature_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Interface),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = ExportSymbol {
@@ -460,6 +480,8 @@ fn test_ref_07_index_signature_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Interface),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -508,6 +530,8 @@ fn test_ref_07_index_signature_removed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Interface),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = old_sym.clone();
@@ -538,6 +562,8 @@ fn test_ref_08_default_export_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Function),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let new_sym = ExportSymbol {
@@ -550,6 +576,8 @@ fn test_ref_08_default_export_changed() {
         overloads: Vec::new(),
         decl_kind: Some(DeclarationKind::Class),
         type_guard_type: None,
+        is_async: false,
+        is_generator: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
