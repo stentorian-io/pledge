@@ -1083,6 +1083,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Number)),
@@ -1091,6 +1092,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
@@ -1115,6 +1117,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
@@ -1124,11 +1127,13 @@ mod tests {
                     ParamShape {
                         name: "x".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::String),
                     },
                     ParamShape {
                         name: "y".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::Number),
                     },
                 ],
@@ -1199,6 +1204,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Union(vec![
                         TypeShape::Primitive(PrimitiveKind::String),
                         TypeShape::Primitive(PrimitiveKind::Number),
@@ -1210,6 +1216,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
@@ -1252,6 +1259,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
@@ -1260,6 +1268,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Union(vec![
                         TypeShape::Primitive(PrimitiveKind::String),
                         TypeShape::Primitive(PrimitiveKind::Number),
@@ -1342,11 +1351,13 @@ mod tests {
                     ParamShape {
                         name: "a".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::String),
                     },
                     ParamShape {
                         name: "b".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::Number),
                     },
                 ],
@@ -1357,11 +1368,13 @@ mod tests {
                     ParamShape {
                         name: "b".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::Number),
                     },
                     ParamShape {
                         name: "a".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::String),
                     },
                 ],
@@ -1398,6 +1411,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
@@ -1407,11 +1421,13 @@ mod tests {
                     ParamShape {
                         name: "x".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::String),
                     },
                     ParamShape {
                         name: "y".to_string(),
                         optional: true,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::Number),
                     },
                 ],
@@ -1446,11 +1462,13 @@ mod tests {
                     ParamShape {
                         name: "x".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::String),
                     },
                     ParamShape {
                         name: "y".to_string(),
                         optional: false,
+                        rest: false,
                         shape: TypeShape::Primitive(PrimitiveKind::Number),
                     },
                 ],
@@ -1460,6 +1478,7 @@ mod tests {
                 params: vec![ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: TypeShape::Primitive(PrimitiveKind::String),
                 }],
                 return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),

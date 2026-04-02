@@ -102,7 +102,9 @@ pub fn collect_exports(
                     line: export.line,
                     col: export.col,
                     type_signature: None,
-                    type_shape: None,
+                    overloads: Vec::new(),
+                    decl_kind: None,
+                    type_guard_type: None,
                 });
             }
             RawExportKind::Default => {
@@ -113,7 +115,9 @@ pub fn collect_exports(
                     line: export.line,
                     col: export.col,
                     type_signature: None,
-                    type_shape: None,
+                    overloads: Vec::new(),
+                    decl_kind: None,
+                    type_guard_type: None,
                 });
             }
             RawExportKind::StarReexport => {
@@ -156,7 +160,9 @@ pub fn collect_exports(
                                 line: export.line,
                                 col: export.col,
                                 type_signature: None,
-                                type_shape: None,
+                                overloads: Vec::new(),
+                                decl_kind: None,
+                                type_guard_type: None,
                             });
                         }
                         None => {

@@ -134,12 +134,12 @@ pub async fn hover_symbol(
 /// Per D-23: sends `textDocument/didOpen` first, then hover requests sequentially.
 /// Implements retry logic for the first hover (Pitfall 6: tsserver indexing delay).
 ///
-/// Returns a list of (symbol_name, type_signature, type_shape) for all resolved symbols.
+/// Returns a list of (symbol_name, type_signature, overloads) for all resolved symbols.
 pub async fn hover_file_symbols(
     session: &LspSession,
     file_path: &Path,
     inputs: &[SymbolHoverInput],
-) -> Result<Vec<(String, Option<String>, Option<TypeShape>)>, LspError> {
+) -> Result<Vec<(String, Option<String>, Vec<TypeShape>)>, LspError> {
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
@@ -194,9 +194,14 @@ pub async fn hover_file_symbols(
             type_sig
         );
 
-        let type_shape = type_sig.as_deref().map(parse_type_string);
+        // wrap single hover result into a vec (single overload from LSP)
+        let overloads: Vec<TypeShape> = type_sig
+            .as_deref()
+            .map(parse_type_string)
+            .into_iter()
+            .collect();
 
-        results.push((input.name.clone(), type_sig, type_shape));
+        results.push((input.name.clone(), type_sig, overloads));
     }
 
     Ok(results)

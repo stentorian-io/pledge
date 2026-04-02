@@ -629,6 +629,7 @@ mod tests {
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
+                rest: false,
                 shape: string(),
             }],
             return_type: Box::new(p(PrimitiveKind::Void)),
@@ -639,11 +640,13 @@ mod tests {
                 ParamShape {
                     name: "x".to_string(),
                     optional: false,
+                    rest: false,
                     shape: string(),
                 },
                 ParamShape {
                     name: "y".to_string(),
                     optional: false,
+                    rest: false,
                     shape: number(),
                 },
             ],
@@ -667,6 +670,7 @@ mod tests {
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
+                rest: false,
                 shape: TypeShape::Union(vec![string(), number()]),
             }],
             return_type: Box::new(p(PrimitiveKind::Void)),
@@ -675,6 +679,7 @@ mod tests {
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
+                rest: false,
                 shape: string(),
             }],
             return_type: Box::new(p(PrimitiveKind::Void)),
@@ -866,6 +871,7 @@ mod tests {
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
+                rest: false,
                 shape: string(),
             }],
             return_type: Box::new(boolean()),

@@ -110,10 +110,12 @@ pub async fn enrich_exports(
         };
 
         // Apply results back to exports
-        for (name, type_signature, type_shape) in results {
+        for (name, type_signature, overloads) in results {
             if let Some(symbol) = exports.get_mut(&name) {
                 symbol.type_signature = type_signature;
-                symbol.type_shape = type_shape;
+                if !overloads.is_empty() {
+                    symbol.overloads = overloads;
+                }
             }
         }
     }

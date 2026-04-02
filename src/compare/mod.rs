@@ -56,9 +56,12 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     }
 
     // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
+    // Use first overload (primary signature) for type diff
     for (name, old_sym) in old {
         if let Some(new_sym) = new.get(name) {
-            if let (Some(old_shape), Some(new_shape)) = (&old_sym.type_shape, &new_sym.type_shape) {
+            if let (Some(old_shape), Some(new_shape)) =
+                (old_sym.overloads.first(), new_sym.overloads.first())
+            {
                 let type_findings = type_diff::diff_types(
                     old_shape,
                     new_shape,

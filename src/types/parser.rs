@@ -350,7 +350,6 @@ impl<'a> TypeParser<'a> {
             } else {
                 false
             };
-            let _ = rest_param; // future use
 
             let name = self.read_identifier()?.to_string();
             self.skip_whitespace();
@@ -367,6 +366,7 @@ impl<'a> TypeParser<'a> {
             params.push(ParamShape {
                 name,
                 optional,
+                rest: rest_param,
                 shape,
             });
             self.skip_whitespace();
