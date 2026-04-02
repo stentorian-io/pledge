@@ -341,6 +341,13 @@ pub const RULE_PROPERTY_MADE_REQUIRED: &str = "property-made-required";
 pub const RULE_INDEX_SIGNATURE_CHANGED: &str = "index-signature-changed";
 pub const RULE_DEFAULT_EXPORT_CHANGED: &str = "default-export-changed";
 
+// Behavioral rules (BEH-*)
+pub const RULE_ASYNC_TO_SYNC: &str = "async-to-sync";
+pub const RULE_SYNC_TO_ASYNC: &str = "sync-to-async";
+pub const RULE_GENERATOR_REMOVED: &str = "generator-removed";
+pub const RULE_ENUM_VALUE_SHIFTED: &str = "enum-value-shifted";
+pub const RULE_ENUM_MEMBER_ADDED: &str = "enum-member-added";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

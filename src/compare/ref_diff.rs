@@ -274,6 +274,8 @@ mod tests {
             overloads: Vec::new(),
             decl_kind,
             type_guard_type: None,
+            is_async: false,
+            is_generator: false,
         }
     }
 

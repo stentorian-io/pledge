@@ -105,6 +105,8 @@ pub fn collect_exports(
                     overloads: Vec::new(),
                     decl_kind: export.decl_kind,
                     type_guard_type: None,
+                    is_async: false,
+                    is_generator: false,
                 });
             }
             RawExportKind::Default => {
@@ -118,6 +120,8 @@ pub fn collect_exports(
                     overloads: Vec::new(),
                     decl_kind: export.decl_kind,
                     type_guard_type: None,
+                    is_async: false,
+                    is_generator: false,
                 });
             }
             RawExportKind::StarReexport => {
@@ -163,6 +167,8 @@ pub fn collect_exports(
                                 overloads: Vec::new(),
                                 decl_kind: export.decl_kind,
                                 type_guard_type: None,
+                                is_async: false,
+                                is_generator: false,
                             });
                         }
                         None => {

@@ -10,6 +10,7 @@ pub enum Severity {
     Major,
     Minor,
     Patch,
+    Warning,
 }
 
 #[allow(dead_code)]
@@ -73,6 +74,8 @@ pub struct ExportSymbol {
     pub overloads: Vec<shape::TypeShape>,       // replaces type_shape per D-06
     pub decl_kind: Option<DeclarationKind>,      // per D-03
     pub type_guard_type: Option<String>,          // for REF-03 — guarded type name
+    pub is_async: bool,                           // for BEH-01/BEH-02 — async detection
+    pub is_generator: bool,                       // for BEH-03 — generator detection
 }
 
 #[allow(dead_code)]
@@ -282,7 +285,35 @@ mod tests {
             overloads: Vec::new(),
             decl_kind: None,
             type_guard_type: None,
+            is_async: false,
+            is_generator: false,
         };
         assert_eq!(sym.name, "foo");
+    }
+
+    #[test]
+    fn test_severity_warning_sorts_last() {
+        let mut severities = vec![Severity::Warning, Severity::Major, Severity::Patch, Severity::Minor];
+        severities.sort();
+        assert_eq!(severities, vec![Severity::Major, Severity::Minor, Severity::Patch, Severity::Warning]);
+    }
+
+    #[test]
+    fn test_export_symbol_async_generator_fields() {
+        let sym = ExportSymbol {
+            name: "foo".to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kind: Some(DeclarationKind::Function),
+            type_guard_type: None,
+            is_async: true,
+            is_generator: true,
+        };
+        assert!(sym.is_async);
+        assert!(sym.is_generator);
     }
 }

@@ -283,6 +283,8 @@ mod tests {
             overloads: Vec::new(),
             decl_kind: None,
             type_guard_type: None,
+            is_async: false,
+            is_generator: false,
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());
