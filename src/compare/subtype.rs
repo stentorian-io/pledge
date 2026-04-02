@@ -348,6 +348,14 @@ pub const RULE_GENERATOR_REMOVED: &str = "generator-removed";
 pub const RULE_ENUM_VALUE_SHIFTED: &str = "enum-value-shifted";
 pub const RULE_ENUM_MEMBER_ADDED: &str = "enum-member-added";
 
+// Asset & schema rules (AST-*)
+pub const RULE_JSON_FIELD_REMOVED: &str = "json-field-removed";
+pub const RULE_JSON_REQUIRED_FIELD_ADDED: &str = "json-required-field-added";
+pub const RULE_CSS_CUSTOM_PROPERTY_REMOVED: &str = "css-custom-property-removed";
+pub const RULE_CSS_CLASS_REMOVED: &str = "css-class-removed";
+pub const RULE_ASSET_FILE_REMOVED: &str = "asset-file-removed";
+pub const RULE_JSON_FIELD_ADDED: &str = "json-field-added";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

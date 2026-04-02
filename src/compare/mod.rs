@@ -1,10 +1,13 @@
 // Comparison engine: diff old vs new ExportMaps
 
+pub mod asset_diff;
 pub mod behavior_diff;
 pub mod class_diff;
+pub mod css_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
+pub mod json_diff;
 pub mod metadata;
 pub mod ref_diff;
 pub mod subtype;
