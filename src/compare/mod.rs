@@ -1,16 +1,17 @@
 // Comparison engine: diff old vs new ExportMaps
 
+pub mod class_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
 pub mod metadata;
 pub mod subtype;
 pub mod type_diff;
-pub mod class_diff;
 
 use std::path::Path;
 
-use crate::types::{ExportMap, Finding, Severity};
+use crate::discover::tree_query;
+use crate::types::{ClassShape, EnumShape, ExportMap, Finding, Severity, TypeParam};
 
 /// Compare two export maps and produce a list of findings.
 ///
@@ -108,6 +109,262 @@ pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding
 /// Returns true if any finding has Major severity (per CLI-02).
 pub fn has_breaking_changes(findings: &[Finding]) -> bool {
     findings.iter().any(|f| f.severity == Severity::Major)
+}
+
+// ─── Structural diff orchestrator ────────────────────────────────────────────
+
+/// Owned extraction result for a single declaration node.
+///
+/// Created by `extract_declaration` which parses the file and immediately extracts
+/// all needed data into owned types, avoiding lifetime issues with tree-sitter nodes.
+struct ExtractedDecl {
+    is_class: bool,
+    is_enum: bool,
+    class_shape: Option<ClassShape>,
+    enum_shape: Option<EnumShape>,
+    type_params: Vec<TypeParam>,
+}
+
+/// Parse `source` with the given language, find the declaration for `name` at
+/// approximately `hint_line` (1-indexed), extract class/enum/type-param data
+/// into owned structures, and return them.
+///
+/// Returns `None` when the declaration cannot be located (e.g., unsupported
+/// language, parse failure, name not found in tree).
+fn extract_declaration(
+    source: &[u8],
+    lang: &tree_query::SourceLanguage,
+    name: &str,
+    hint_line: u32,
+) -> Option<ExtractedDecl> {
+    let ts_lang: tree_sitter::Language = match lang {
+        tree_query::SourceLanguage::TypeScript => {
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+        }
+        tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+    };
+
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&ts_lang).ok()?;
+    let tree = parser.parse(source, None)?;
+    let root = tree.root_node();
+
+    // Walk top-level children of the program node looking for a declaration
+    // whose name field matches `name` and whose start line is within ±3 of hint_line.
+    //
+    // Supported kinds:
+    //   class_declaration, abstract_class_declaration,
+    //   enum_declaration,
+    //   function_declaration, interface_declaration, type_alias_declaration,
+    //   lexical_declaration (export const/let — the variable_declarator carries the name)
+    let hint = hint_line.saturating_sub(1) as usize; // 0-indexed
+
+    let decl_node = find_decl_in_node(root, source, name, hint)?;
+    let kind = decl_node.kind();
+
+    let is_class = matches!(kind, "class_declaration" | "abstract_class_declaration");
+    let is_enum = kind == "enum_declaration";
+
+    let class_shape = if is_class {
+        Some(tree_query::parse_class_shape(source, decl_node))
+    } else {
+        None
+    };
+
+    let enum_shape = if is_enum {
+        Some(tree_query::parse_enum_shape(source, decl_node))
+    } else {
+        None
+    };
+
+    // Per D-06: extract type params from ALL declaration types.
+    let type_params = tree_query::parse_type_params(source, decl_node);
+
+    Some(ExtractedDecl {
+        is_class,
+        is_enum,
+        class_shape,
+        enum_shape,
+        type_params,
+    })
+}
+
+/// Recursively search `node` and its children for a declaration whose name
+/// matches `name` and whose start row is within ±3 of `hint_row` (0-indexed).
+///
+/// Returns the declaration node (not the name node).
+fn find_decl_in_node<'a>(
+    node: tree_sitter::Node<'a>,
+    source: &[u8],
+    name: &str,
+    hint_row: usize,
+) -> Option<tree_sitter::Node<'a>> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let kind = child.kind();
+
+        let candidate = match kind {
+            "class_declaration" | "abstract_class_declaration" => {
+                // name field is `type_identifier`
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "function_declaration" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "interface_declaration" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "type_alias_declaration" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "enum_declaration" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "export_statement" | "lexical_declaration" | "variable_declaration" => {
+                // Recurse into export/variable wrappers
+                find_decl_in_node(child, source, name, hint_row)
+            }
+            _ => None,
+        };
+
+        if let Some(found) = candidate {
+            // Accept if the row is within ±3 lines of the hint
+            let found_row = found.start_position().row;
+            if found_row.abs_diff(hint_row) <= 3 {
+                return Some(found);
+            }
+        }
+
+        // Recurse one level deeper into export_statement wrappers
+        if matches!(kind, "export_statement") {
+            if let Some(found) = find_decl_in_node(child, source, name, hint_row) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
+/// Orchestrates class, enum, and generic type parameter diff for all exported symbols.
+///
+/// For each exported symbol present in both old and new:
+/// - Reads the source file from both package roots
+/// - Parses with tree-sitter to find the declaration node
+/// - Extracts ClassShape / EnumShape / TypeParams depending on declaration type
+/// - Runs the appropriate diff function
+///
+/// Per D-06: generic params are extracted from ALL declaration types
+/// (class, function, interface, type alias), not just classes.
+pub fn compare_structural_diff(
+    old_root: &Path,
+    new_root: &Path,
+    old_exports: &ExportMap,
+    new_exports: &ExportMap,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for (name, old_sym) in old_exports {
+        let Some(new_sym) = new_exports.get(name) else {
+            continue;
+        };
+
+        // Build absolute paths to the source files
+        let old_path = old_root.join(&old_sym.file);
+        let new_path = new_root.join(&new_sym.file);
+
+        let Ok(old_source) = std::fs::read(&old_path) else {
+            continue;
+        };
+        let Ok(new_source) = std::fs::read(&new_path) else {
+            continue;
+        };
+
+        // Determine language from file extension
+        let Some(old_lang) = tree_query::language_for_file(&old_sym.file) else {
+            continue;
+        };
+        let Some(new_lang) = tree_query::language_for_file(&new_sym.file) else {
+            continue;
+        };
+
+        // Extract all shapes from both versions
+        let Some(old_decl) =
+            extract_declaration(&old_source, &old_lang, name, old_sym.line)
+        else {
+            continue;
+        };
+        let Some(new_decl) =
+            extract_declaration(&new_source, &new_lang, name, new_sym.line)
+        else {
+            continue;
+        };
+
+        // CLS-01..09: class diff
+        if old_decl.is_class && new_decl.is_class {
+            if let (Some(old_shape), Some(new_shape)) =
+                (&old_decl.class_shape, &new_decl.class_shape)
+            {
+                findings.extend(class_diff::compare_class_shapes(
+                    old_shape,
+                    new_shape,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
+            }
+        }
+
+        // ENUM-01..05: enum diff
+        if old_decl.is_enum && new_decl.is_enum {
+            if let (Some(old_shape), Some(new_shape)) =
+                (&old_decl.enum_shape, &new_decl.enum_shape)
+            {
+                findings.extend(enum_diff::compare_enum_shapes(
+                    old_shape,
+                    new_shape,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
+            }
+        }
+
+        // GEN-01..06: generic type param diff — applies to ALL constructs per D-06
+        if !old_decl.type_params.is_empty() || !new_decl.type_params.is_empty() {
+            findings.extend(generics_diff::compare_type_params(
+                &old_decl.type_params,
+                &new_decl.type_params,
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
+        }
+    }
+
+    findings
 }
 
 /// Produce a synthetic list of findings for a first-publish package (PKG-03).

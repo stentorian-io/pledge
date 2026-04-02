@@ -129,6 +129,15 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 compare::compare_exports_map_diff(&previous_root, &current_root);
             findings.extend(exports_map_findings);
 
+            // Step 3d: Structural diff — class/enum/generic comparison (CLS-01..09, ENUM-01..05, GEN-01..06)
+            let structural_findings = compare::compare_structural_diff(
+                &previous_root,
+                &current_root,
+                &old_exports,
+                &new_exports,
+            );
+            findings.extend(structural_findings);
+
             // Re-sort after merging (Major first, then Minor, then Patch — D-01)
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 
