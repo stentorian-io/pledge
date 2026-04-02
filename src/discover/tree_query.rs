@@ -904,6 +904,228 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
 }
 
 // ---------------------------------------------------------------------------
+// Phase 8 extraction functions (REF-02..REF-07)
+// ---------------------------------------------------------------------------
+
+/// Check if a required_parameter node represents a rest parameter.
+/// Per 08-RESEARCH: rest params are `required_parameter` with a `rest_pattern` child.
+/// NOT `rest_parameter` — that node kind does not exist in tree-sitter-typescript 0.23.2.
+pub fn is_rest_param(param_node: tree_sitter::Node) -> bool {
+    let mut cursor = param_node.walk();
+    for child in param_node.children(&mut cursor) {
+        if child.kind() == "rest_pattern" {
+            return true;
+        }
+    }
+    false
+}
+
+/// Extract the type guard type from a function declaration/signature node.
+/// Returns `Some("Foo")` for `function isStr(x: unknown): x is Foo`.
+/// Returns `None` if the function does not have a type predicate return.
+///
+/// Per 08-RESEARCH: type guard returns use `type_predicate_annotation` (not `type_annotation`).
+/// The `type_predicate` child contains the parameter name and guarded type.
+pub fn extract_type_guard(fn_node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if child.kind() == "type_predicate_annotation" {
+            // Find the type_predicate child
+            let mut inner_cursor = child.walk();
+            for inner_child in child.children(&mut inner_cursor) {
+                if inner_child.kind() == "type_predicate" {
+                    // The guarded type is the last named child (type node)
+                    // Structure: identifier "is" type
+                    let type_node = inner_child.child_by_field_name("type").or_else(|| {
+                        // Fallback: last named child that is a type (not the identifier)
+                        let mut tc = inner_child.walk();
+                        inner_child
+                            .children(&mut tc)
+                            .filter(|c| c.is_named() && c.kind() != "identifier")
+                            .last()
+                    });
+                    if let Some(tn) = type_node {
+                        return tn.utf8_text(source).ok().map(|s| s.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// An index signature extracted from an interface or object type.
+/// E.g., `[key: string]: number` has key_type_text="string", value_type_text="number".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexSignature {
+    pub key_type_text: String,
+    pub value_type_text: String,
+}
+
+/// Extract all index signatures from an interface_body or object_type node.
+/// Returns empty Vec if node has no index_signature children.
+pub fn extract_index_signatures(
+    body_node: tree_sitter::Node,
+    source: &[u8],
+) -> Vec<IndexSignature> {
+    let mut sigs = Vec::new();
+    let mut cursor = body_node.walk();
+    for child in body_node.children(&mut cursor) {
+        if child.kind() == "index_signature" {
+            let mut key_type = None;
+            let mut value_type = None;
+            let mut in_brackets = false;
+            let mut ic = child.walk();
+            for c in child.children(&mut ic) {
+                match c.kind() {
+                    "[" => in_brackets = true,
+                    "]" => in_brackets = false,
+                    "type_annotation" if !in_brackets => {
+                        // Value type is the type_annotation after the brackets
+                        // Iterate children with for loop to avoid cursor borrow issues
+                        let mut tc = c.walk();
+                        for type_child in c.children(&mut tc) {
+                            if type_child.is_named() {
+                                value_type =
+                                    type_child.utf8_text(source).ok().map(|s| s.to_string());
+                                break;
+                            }
+                        }
+                    }
+                    _ if in_brackets && c.is_named() && c.kind() != "identifier" => {
+                        // Key type is the named non-identifier child inside brackets
+                        // (predefined_type like "string" or "number")
+                        if key_type.is_none() {
+                            key_type = c.utf8_text(source).ok().map(|s| s.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let (Some(kt), Some(vt)) = (key_type, value_type) {
+                sigs.push(IndexSignature {
+                    key_type_text: kt,
+                    value_type_text: vt,
+                });
+            }
+        }
+    }
+    sigs
+}
+
+/// Find the interface_body child of an interface_declaration node.
+/// Returns None if the declaration has no body (forward declaration).
+pub fn find_interface_body(decl_node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+    let mut cursor = decl_node.walk();
+    // Use a local result variable so the cursor is dropped before function return
+    let result = decl_node
+        .children(&mut cursor)
+        .find(|child| child.kind() == "interface_body" || child.kind() == "object_type");
+    result
+}
+
+/// Extract the text of the first named child of a type_annotation node.
+/// Returns None if no named child is found.
+fn first_named_child_text<'a>(node: tree_sitter::Node<'a>, source: &'a [u8]) -> Option<&'a str> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_named() {
+            return child.utf8_text(source).ok();
+        }
+    }
+    None
+}
+
+/// Find the `rest_pattern` child of a `required_parameter` node, then return the
+/// `identifier` text inside that rest_pattern (the param name).
+fn rest_param_name<'a>(param: tree_sitter::Node<'a>, source: &'a [u8]) -> Option<&'a str> {
+    let mut pc = param.walk();
+    for child in param.children(&mut pc) {
+        if child.kind() == "rest_pattern" {
+            let mut rc = child.walk();
+            for inner in child.children(&mut rc) {
+                if inner.kind() == "identifier" {
+                    return inner.utf8_text(source).ok();
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Build a TypeShape::Function from a function_signature or function_declaration node.
+/// Extracts parameter names, types, optionality, and rest flags.
+/// Used for overload signature extraction.
+pub fn build_function_shape_from_node(
+    fn_node: tree_sitter::Node,
+    source: &[u8],
+) -> Option<crate::types::shape::TypeShape> {
+    use crate::types::shape::{ParamShape, PrimitiveKind, TypeShape};
+
+    // Find formal_parameters child
+    let params_node = fn_node.child_by_field_name("parameters")?;
+    let mut params = Vec::new();
+    let mut cursor = params_node.walk();
+    for param in params_node.children(&mut cursor) {
+        match param.kind() {
+            "required_parameter" => {
+                let rest = is_rest_param(param);
+                let name = if rest {
+                    // For rest params, the identifier is inside rest_pattern
+                    rest_param_name(param, source).unwrap_or("_").to_string()
+                } else {
+                    param
+                        .child_by_field_name("pattern")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .unwrap_or("_")
+                        .to_string()
+                };
+                let type_text = param
+                    .child_by_field_name("type")
+                    .and_then(|ta| first_named_child_text(ta, source))
+                    .unwrap_or("unknown");
+                params.push(ParamShape {
+                    name,
+                    optional: false,
+                    rest,
+                    shape: TypeShape::Opaque(type_text.to_string()),
+                });
+            }
+            "optional_parameter" => {
+                let name = param
+                    .child_by_field_name("pattern")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .unwrap_or("_")
+                    .to_string();
+                let type_text = param
+                    .child_by_field_name("type")
+                    .and_then(|ta| first_named_child_text(ta, source))
+                    .unwrap_or("unknown");
+                params.push(ParamShape {
+                    name,
+                    optional: true,
+                    rest: false,
+                    shape: TypeShape::Opaque(type_text.to_string()),
+                });
+            }
+            _ => {} // skip commas, other tokens
+        }
+    }
+
+    // Extract return type
+    let return_type = fn_node
+        .child_by_field_name("return_type")
+        .and_then(|ta| first_named_child_text(ta, source))
+        .map(|s| TypeShape::Opaque(s.to_string()))
+        .unwrap_or(TypeShape::Primitive(PrimitiveKind::Void));
+
+    Some(TypeShape::Function {
+        params,
+        return_type: Box::new(return_type),
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -1342,5 +1564,128 @@ mod tests {
             "should capture overload signatures and implementation; got {}",
             foos.len()
         );
+    }
+
+    // ── Rest param, type guard, index sig, function shape tests (Task 2) ─────
+
+    #[test]
+    fn test_is_rest_param_detects_spread() {
+        let source = b"function foo(...args: string[]): void {}";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        let params = fn_node.child_by_field_name("parameters").unwrap();
+        let mut cursor = params.walk();
+        let first_param = params
+            .children(&mut cursor)
+            .find(|c| c.kind() == "required_parameter")
+            .unwrap();
+        assert!(is_rest_param(first_param), "...args should be detected as rest param");
+    }
+
+    #[test]
+    fn test_is_rest_param_false_for_normal() {
+        let source = b"function foo(x: string): void {}";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let fn_node = root.child(0).unwrap();
+        let params = fn_node.child_by_field_name("parameters").unwrap();
+        let mut cursor = params.walk();
+        let first_param = params
+            .children(&mut cursor)
+            .find(|c| c.kind() == "required_parameter")
+            .unwrap();
+        assert!(!is_rest_param(first_param), "normal param should not be rest");
+    }
+
+    #[test]
+    fn test_extract_type_guard_returns_guarded_type() {
+        let source = b"function isStr(x: unknown): x is string { return typeof x === 'string'; }";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let fn_node = tree.root_node().child(0).unwrap();
+        let guard = extract_type_guard(fn_node, source);
+        assert_eq!(guard, Some("string".to_string()));
+    }
+
+    #[test]
+    fn test_extract_type_guard_none_for_regular_return() {
+        let source = b"function foo(x: string): boolean { return true; }";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let fn_node = tree.root_node().child(0).unwrap();
+        let guard = extract_type_guard(fn_node, source);
+        assert!(guard.is_none(), "regular boolean return should not be a type guard");
+    }
+
+    #[test]
+    fn test_extract_index_signatures() {
+        let source = b"interface Dict { [key: string]: number; name: string; }";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let iface = root.child(0).unwrap(); // interface_declaration
+        let body = find_interface_body(iface).unwrap();
+        let sigs = extract_index_signatures(body, source);
+        assert_eq!(sigs.len(), 1);
+        assert_eq!(sigs[0].key_type_text, "string");
+        assert_eq!(sigs[0].value_type_text, "number");
+    }
+
+    #[test]
+    fn test_build_function_shape_from_signature_node() {
+        let source =
+            b"export function foo(x: string): number;\nexport function foo(x: any): any { return x; }";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        // First child is export_statement containing function_signature
+        let first_export = root.child(0).unwrap();
+        let mut cursor = first_export.walk();
+        let fn_sig = first_export
+            .children(&mut cursor)
+            .find(|c| c.kind() == "function_signature")
+            .unwrap();
+        let shape = build_function_shape_from_node(fn_sig, source);
+        assert!(shape.is_some(), "should build TypeShape from function_signature");
+        if let Some(crate::types::shape::TypeShape::Function { params, .. }) = shape {
+            assert_eq!(params.len(), 1);
+            assert_eq!(params[0].name, "x");
+            assert!(!params[0].rest);
+        } else {
+            panic!("expected TypeShape::Function");
+        }
+    }
+
+    #[test]
+    fn test_build_function_shape_with_rest_param() {
+        let source = b"function bar(...args: string[]): void {}";
+        let mut parser = Parser::new();
+        let ts_lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+        parser.set_language(&ts_lang).unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let fn_node = tree.root_node().child(0).unwrap();
+        let shape = build_function_shape_from_node(fn_node, source);
+        assert!(shape.is_some());
+        if let Some(crate::types::shape::TypeShape::Function { params, .. }) = shape {
+            assert_eq!(params.len(), 1);
+            assert!(params[0].rest, "rest param should have rest=true");
+        } else {
+            panic!("expected TypeShape::Function");
+        }
     }
 }
