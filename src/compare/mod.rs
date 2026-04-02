@@ -5,6 +5,7 @@ pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
 pub mod metadata;
+pub mod ref_diff;
 pub mod subtype;
 pub mod type_diff;
 
@@ -120,12 +121,19 @@ pub fn has_breaking_changes(findings: &[Finding]) -> bool {
 ///
 /// Created by `extract_declaration` which parses the file and immediately extracts
 /// all needed data into owned types, avoiding lifetime issues with tree-sitter nodes.
+#[allow(dead_code)]
 struct ExtractedDecl {
     is_class: bool,
     is_enum: bool,
+    is_function: bool,
+    is_interface: bool,
     class_shape: Option<ClassShape>,
     enum_shape: Option<EnumShape>,
     type_params: Vec<TypeParam>,
+    // NEW for Phase 8 REF rules:
+    index_signatures: Vec<tree_query::IndexSignature>,
+    type_guard_type: Option<String>,
+    overloads: Vec<crate::types::shape::TypeShape>,
 }
 
 /// Parse `source` with the given language, find the declaration for `name` at
@@ -167,6 +175,8 @@ fn extract_declaration(
 
     let is_class = matches!(kind, "class_declaration" | "abstract_class_declaration");
     let is_enum = kind == "enum_declaration";
+    let is_function = matches!(kind, "function_declaration" | "function_signature");
+    let is_interface = kind == "interface_declaration";
 
     let class_shape = if is_class {
         Some(tree_query::parse_class_shape(source, decl_node))
@@ -183,12 +193,42 @@ fn extract_declaration(
     // Per D-06: extract type params from ALL declaration types.
     let type_params = tree_query::parse_type_params(source, decl_node);
 
+    // Extract index signatures for interfaces (REF-07)
+    let index_signatures = if is_interface {
+        tree_query::find_interface_body(decl_node)
+            .map(|body| tree_query::extract_index_signatures(body, source))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Extract type guard for functions (REF-03)
+    let type_guard_type = if is_function {
+        tree_query::extract_type_guard(decl_node, source)
+    } else {
+        None
+    };
+
+    // Build overload shape for function signatures (REF-01, REF-02)
+    let overloads = if is_function {
+        tree_query::build_function_shape_from_node(decl_node, source)
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     Some(ExtractedDecl {
         is_class,
         is_enum,
+        is_function,
+        is_interface,
         class_shape,
         enum_shape,
         type_params,
+        index_signatures,
+        type_guard_type,
+        overloads,
     })
 }
 
@@ -243,6 +283,20 @@ fn find_decl_in_node<'a>(
                     .filter(|n| *n == name)
                     .map(|_| child)
             }
+            "function_signature" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
+            "internal_module" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .filter(|n| *n == name)
+                    .map(|_| child)
+            }
             "export_statement" | "lexical_declaration" | "variable_declaration" => {
                 // Recurse into export/variable wrappers
                 find_decl_in_node(child, source, name, hint_row)
@@ -266,6 +320,57 @@ fn find_decl_in_node<'a>(
         }
     }
     None
+}
+
+/// Collect all overload signatures for a given function name from source.
+///
+/// Scans for `function_signature` nodes with matching name at the top level
+/// (exported overload declarations). Returns Vec of TypeShape::Function,
+/// one per function_signature node found.
+fn collect_overload_shapes(
+    source: &[u8],
+    lang: &tree_query::SourceLanguage,
+    name: &str,
+) -> Vec<crate::types::shape::TypeShape> {
+    let ts_lang: tree_sitter::Language = match lang {
+        tree_query::SourceLanguage::TypeScript => {
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+        }
+        tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+    };
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let mut overloads = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        // Look for export_statement wrapping function_signature
+        if child.kind() == "export_statement" {
+            let mut ec = child.walk();
+            for export_child in child.children(&mut ec) {
+                if export_child.kind() == "function_signature" {
+                    let matches_name = export_child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(|n| n == name)
+                        .unwrap_or(false);
+                    if matches_name {
+                        if let Some(shape) =
+                            tree_query::build_function_shape_from_node(export_child, source)
+                        {
+                            overloads.push(shape);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    overloads
 }
 
 /// Orchestrates class, enum, and generic type parameter diff for all exported symbols.
@@ -365,6 +470,48 @@ pub fn compare_structural_diff(
                 new_sym.col,
             ));
         }
+
+        // REF-01..05, REF-07, REF-08: signature & type refinement diff
+        // Supplement ExportSymbol data with tree-sitter extraction results
+        // (LSP may not have set these fields)
+        let mut old_sym_augmented = old_sym.clone();
+        let mut new_sym_augmented = new_sym.clone();
+
+        if old_sym_augmented.type_guard_type.is_none() {
+            old_sym_augmented.type_guard_type = old_decl.type_guard_type.clone();
+        }
+        if new_sym_augmented.type_guard_type.is_none() {
+            new_sym_augmented.type_guard_type = new_decl.type_guard_type.clone();
+        }
+
+        // Collect all overload shapes for functions (REF-01)
+        if old_decl.is_function {
+            let collected = collect_overload_shapes(&old_source, &old_lang, name);
+            if !collected.is_empty() {
+                old_sym_augmented.overloads = collected;
+            } else if old_sym_augmented.overloads.is_empty() && !old_decl.overloads.is_empty() {
+                old_sym_augmented.overloads = old_decl.overloads.clone();
+            }
+        }
+        if new_decl.is_function {
+            let collected = collect_overload_shapes(&new_source, &new_lang, name);
+            if !collected.is_empty() {
+                new_sym_augmented.overloads = collected;
+            } else if new_sym_augmented.overloads.is_empty() && !new_decl.overloads.is_empty() {
+                new_sym_augmented.overloads = new_decl.overloads.clone();
+            }
+        }
+
+        findings.extend(ref_diff::compare_ref_changes(
+            &old_sym_augmented,
+            &new_sym_augmented,
+            name,
+            &new_sym.file,
+            new_sym.line,
+            new_sym.col,
+            &old_decl.index_signatures,
+            &new_decl.index_signatures,
+        ));
     }
 
     findings

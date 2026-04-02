@@ -13,7 +13,7 @@ use std::path::Path;
 use super::subtype::{
     format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
     RULE_PARAM_ADDED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED, RULE_PARAM_TYPE_NARROWED,
-    RULE_RETURN_TYPE_WIDENED, RULE_TYPE_INCOMPATIBLE,
+    RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED, RULE_TYPE_INCOMPATIBLE,
 };
 use crate::types::shape::{ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -171,6 +171,21 @@ fn diff_recursive(
             // Fields in both — compare shapes
             for (field_name, old_field) in old_fields {
                 if let Some(new_field) = new_fields.get(field_name) {
+                    // REF-06: optional property made required
+                    if old_field.optional && !new_field.optional {
+                        let path = make_path(field_path, field_name);
+                        findings.push(Finding {
+                            severity: Severity::Major,
+                            rule: RULE_PROPERTY_MADE_REQUIRED,
+                            file: file.to_path_buf(),
+                            line,
+                            col,
+                            message: format!(
+                                "property `{}` was made required in `{}`  (was optional)",
+                                path, symbol_name
+                            ),
+                        });
+                    }
                     let child_path = make_path(field_path, field_name);
                     if old_field.shape != new_field.shape {
                         // Use subtype check to decide: try recursion first for more specific findings.
@@ -1563,6 +1578,34 @@ mod tests {
             f.message.contains("number"),
             "message should contain new type 'number': {}",
             f.message
+        );
+    }
+
+    // REF-06: optional property made required
+    #[test]
+    fn test_optional_to_required_property_emits_ref06() {
+        use crate::compare::subtype::RULE_PROPERTY_MADE_REQUIRED;
+        let mut old_fields = BTreeMap::new();
+        old_fields.insert(
+            "name".to_string(),
+            FieldShape {
+                optional: true,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
+        );
+        let mut new_fields = BTreeMap::new();
+        new_fields.insert(
+            "name".to_string(),
+            FieldShape {
+                optional: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
+        );
+        let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_PROPERTY_MADE_REQUIRED),
+            "should emit property-made-required when optional becomes required; got: {:?}",
+            rule_ids(&findings)
         );
     }
 }
