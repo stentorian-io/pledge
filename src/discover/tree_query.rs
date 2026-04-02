@@ -748,10 +748,8 @@ pub fn is_async_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool {
         if child.kind() == "function" {
             break;
         }
-        if !child.is_named() {
-            if child.utf8_text(source).ok() == Some("async") {
-                return true;
-            }
+        if !child.is_named() && child.utf8_text(source).ok() == Some("async") {
+            return true;
         }
     }
     false
@@ -772,10 +770,8 @@ pub fn is_generator_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool 
         if child.kind() == "formal_parameters" {
             break;
         }
-        if !child.is_named() {
-            if child.utf8_text(source).ok() == Some("*") {
-                return true;
-            }
+        if !child.is_named() && child.utf8_text(source).ok() == Some("*") {
+            return true;
         }
     }
     false

@@ -135,6 +135,9 @@ struct ExtractedDecl {
     index_signatures: Vec<tree_query::IndexSignature>,
     type_guard_type: Option<String>,
     overloads: Vec<crate::types::shape::TypeShape>,
+    // NEW for Phase 9 BEH-01/BEH-02:
+    is_async: bool,
+    is_generator: bool,
 }
 
 /// Parse `source` with the given language, find the declaration for `name` at
@@ -176,7 +179,10 @@ fn extract_declaration(
 
     let is_class = matches!(kind, "class_declaration" | "abstract_class_declaration");
     let is_enum = kind == "enum_declaration";
-    let is_function = matches!(kind, "function_declaration" | "function_signature");
+    let is_function = matches!(
+        kind,
+        "function_declaration" | "function_signature" | "generator_function_declaration"
+    );
     let is_interface = kind == "interface_declaration";
 
     let class_shape = if is_class {
@@ -219,6 +225,18 @@ fn extract_declaration(
         Vec::new()
     };
 
+    // BEH-01/BEH-02: extract async/generator modifiers from tree-sitter node
+    let is_async_fn = if is_function {
+        tree_query::is_async_function(decl_node, source)
+    } else {
+        false
+    };
+    let is_generator_fn = if is_function {
+        tree_query::is_generator_function(decl_node, source)
+    } else {
+        false
+    };
+
     Some(ExtractedDecl {
         is_class,
         is_enum,
@@ -230,6 +248,8 @@ fn extract_declaration(
         index_signatures,
         type_guard_type,
         overloads,
+        is_async: is_async_fn,
+        is_generator: is_generator_fn,
     })
 }
 
@@ -256,7 +276,7 @@ fn find_decl_in_node<'a>(
                     .filter(|n| *n == name)
                     .map(|_| child)
             }
-            "function_declaration" => {
+            "function_declaration" | "generator_function_declaration" => {
                 child
                     .child_by_field_name("name")
                     .and_then(|n| n.utf8_text(source).ok())
@@ -485,6 +505,16 @@ pub fn compare_structural_diff(
             new_sym_augmented.type_guard_type = new_decl.type_guard_type.clone();
         }
 
+        // BEH-01/BEH-02: augment async/generator from tree-sitter extraction
+        if old_decl.is_function {
+            old_sym_augmented.is_async = old_decl.is_async;
+            old_sym_augmented.is_generator = old_decl.is_generator;
+        }
+        if new_decl.is_function {
+            new_sym_augmented.is_async = new_decl.is_async;
+            new_sym_augmented.is_generator = new_decl.is_generator;
+        }
+
         // Collect all overload shapes for functions (REF-01)
         if old_decl.is_function {
             let collected = collect_overload_shapes(&old_source, &old_lang, name);
@@ -513,6 +543,18 @@ pub fn compare_structural_diff(
             &old_decl.index_signatures,
             &new_decl.index_signatures,
         ));
+
+        // BEH-01, BEH-02: behavioral modifier diff (async/generator)
+        if old_decl.is_function && new_decl.is_function {
+            findings.extend(behavior_diff::compare_behavior(
+                &old_sym_augmented,
+                &new_sym_augmented,
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
+        }
     }
 
     findings
