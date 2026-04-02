@@ -4,6 +4,7 @@ pub mod exports_diff;
 pub mod metadata;
 pub mod subtype;
 pub mod type_diff;
+pub mod class_diff;
 
 use std::path::Path;
 
