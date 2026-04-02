@@ -30,6 +30,37 @@ pub enum ExportKind {
     Default,
 }
 
+/// Syntactic form of a declaration — what it IS, not how it's exported.
+/// Orthogonal to ExportKind (Named|Default) which tracks the export mechanism.
+/// Per D-03/D-04.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeclarationKind {
+    Function,
+    Class,
+    Interface,
+    TypeAlias,
+    Enum,
+    Namespace,
+    Variable,
+    Unknown,
+}
+
+impl std::fmt::Display for DeclarationKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DeclarationKind::Function => write!(f, "function"),
+            DeclarationKind::Class => write!(f, "class"),
+            DeclarationKind::Interface => write!(f, "interface"),
+            DeclarationKind::TypeAlias => write!(f, "type alias"),
+            DeclarationKind::Enum => write!(f, "enum"),
+            DeclarationKind::Namespace => write!(f, "namespace"),
+            DeclarationKind::Variable => write!(f, "variable"),
+            DeclarationKind::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ExportSymbol {
@@ -39,7 +70,9 @@ pub struct ExportSymbol {
     pub line: u32,
     pub col: u32,
     pub type_signature: Option<String>,
-    pub type_shape: Option<shape::TypeShape>,
+    pub overloads: Vec<shape::TypeShape>,       // replaces type_shape per D-06
+    pub decl_kind: Option<DeclarationKind>,      // per D-03
+    pub type_guard_type: Option<String>,          // for REF-03 — guarded type name
 }
 
 #[allow(dead_code)]
@@ -246,7 +279,9 @@ mod tests {
             line: 1,
             col: 1,
             type_signature: None,
-            type_shape: None,
+            overloads: Vec::new(),
+            decl_kind: None,
+            type_guard_type: None,
         };
         assert_eq!(sym.name, "foo");
     }

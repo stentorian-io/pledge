@@ -331,6 +331,16 @@ pub const RULE_GENERIC_CONSTRAINT_TIGHTENED: &str = "generic-constraint-tightene
 pub const RULE_GENERIC_DEFAULT_CHANGED: &str = "generic-default-changed";
 pub const RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT: &str = "generic-param-added-with-default";
 
+// ─── Phase 8: Signature & Type Refinement rules ────────────────────────────
+pub const RULE_OVERLOAD_REMOVED: &str = "overload-removed";
+pub const RULE_REST_PARAM_NARROWED: &str = "rest-param-narrowed";
+pub const RULE_TYPE_GUARD_WIDENED: &str = "type-guard-widened";
+pub const RULE_DECLARATION_KIND_CHANGED: &str = "declaration-kind-changed";
+pub const RULE_NAMESPACE_TO_OTHER: &str = "namespace-to-other";
+pub const RULE_PROPERTY_MADE_REQUIRED: &str = "property-made-required";
+pub const RULE_INDEX_SIGNATURE_CHANGED: &str = "index-signature-changed";
+pub const RULE_DEFAULT_EXPORT_CHANGED: &str = "default-export-changed";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

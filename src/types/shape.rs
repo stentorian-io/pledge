@@ -58,6 +58,7 @@ pub struct FieldShape {
 pub struct ParamShape {
     pub name: std::string::String,
     pub optional: bool,
+    pub rest: bool,     // true if this is a ...rest parameter, per REF-02
     pub shape: TypeShape,
 }
 
@@ -168,6 +169,7 @@ impl TypeShape {
                     .map(|p| ParamShape {
                         name: p.name,
                         optional: p.optional,
+                        rest: p.rest,
                         shape: p.shape.normalize(),
                     })
                     .collect(),
@@ -249,6 +251,7 @@ mod tests {
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
+                rest: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             }],
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Boolean)),
@@ -277,10 +280,12 @@ mod tests {
             line: 1,
             col: 1,
             type_signature: None,
-            type_shape: None,
+            overloads: Vec::new(),
+            decl_kind: None,
+            type_guard_type: None,
         };
         assert!(sym.type_signature.is_none());
-        assert!(sym.type_shape.is_none());
+        assert!(sym.overloads.is_empty());
     }
 
     #[test]
