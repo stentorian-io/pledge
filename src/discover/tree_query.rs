@@ -5,6 +5,8 @@ use std::path::Path;
 use anyhow::Context;
 use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
+use crate::types::DeclarationKind;
+
 // ---------------------------------------------------------------------------
 // Language selection
 // ---------------------------------------------------------------------------
@@ -81,6 +83,9 @@ pub struct RawExport {
     /// The module specifier string for re-exports (e.g., `"./utils"`), with
     /// surrounding quotes stripped. `None` for non-re-export forms.
     pub source: Option<String>,
+    /// The syntactic form of the declaration (function, class, interface, etc.).
+    /// `None` for re-exports, default expression-form exports, and plain `export { foo }`.
+    pub decl_kind: Option<DeclarationKind>,
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +135,8 @@ const DECL_EXPORT_QUERY_JS: &str = r#"
 "#;
 
 /// Captures `export const/let/var foo`, `export function foo`, `export class Foo`,
-/// `export abstract class Foo`, `export type Foo`, `export interface Foo`, `export enum Foo`
+/// `export abstract class Foo`, `export type Foo`, `export interface Foo`, `export enum Foo`,
+/// `export namespace Foo`, and overload `export function foo(...)` signatures
 /// for **TypeScript** files. TypeScript uses `type_identifier` for class/type/interface names.
 const DECL_EXPORT_QUERY_TS: &str = r#"
 (export_statement
@@ -138,11 +144,13 @@ const DECL_EXPORT_QUERY_TS: &str = r#"
     (lexical_declaration
       (variable_declarator name: (identifier) @name))
     (function_declaration name: (identifier) @name)
+    (function_signature name: (identifier) @name)
     (class_declaration name: (type_identifier) @name)
     (abstract_class_declaration name: (type_identifier) @name)
     (type_alias_declaration name: (type_identifier) @name)
     (interface_declaration name: (type_identifier) @name)
     (enum_declaration name: (identifier) @name)
+    (internal_module name: (identifier) @name)
   ])
 "#;
 
@@ -175,6 +183,25 @@ const NAMED_REEXPORT_QUERY: &str = r#"
       name: (identifier) @name))
   source: (string) @source)
 "#;
+
+// ---------------------------------------------------------------------------
+// Declaration kind mapping
+// ---------------------------------------------------------------------------
+
+/// Map a tree-sitter node kind string to a DeclarationKind.
+/// Per D-04 and 08-RESEARCH Pattern 1.
+fn decl_kind_from_node_kind(kind: &str) -> DeclarationKind {
+    match kind {
+        "function_declaration" | "function_signature" => DeclarationKind::Function,
+        "class_declaration" | "abstract_class_declaration" => DeclarationKind::Class,
+        "interface_declaration" => DeclarationKind::Interface,
+        "type_alias_declaration" => DeclarationKind::TypeAlias,
+        "enum_declaration" => DeclarationKind::Enum,
+        "internal_module" => DeclarationKind::Namespace,
+        "lexical_declaration" | "variable_declaration" => DeclarationKind::Variable,
+        _ => DeclarationKind::Unknown,
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Public parsing API
@@ -233,6 +260,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         line,
                         col,
                         source: None,
+                        decl_kind: None,
                     });
                 }
             }
@@ -260,6 +288,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     line,
                     col,
                     source: None,
+                    decl_kind: None,
                 });
             }
         }
@@ -290,6 +319,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         line,
                         col,
                         source: None,
+                        decl_kind: None,
                     });
                 }
             }
@@ -340,12 +370,18 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         .utf8_text(source)
                         .context("UTF-8 decode failed on declaration name")?
                         .to_string();
+                    // Get the declaration node kind from the parent of the captured @name node.
+                    // The @name node's parent is the declaration node (function_declaration, etc.).
+                    let decl_kind = node
+                        .parent()
+                        .map(|parent| decl_kind_from_node_kind(parent.kind()));
                     exports.push(RawExport {
                         name,
                         kind: RawExportKind::Named,
                         line: node.start_position().row as u32 + 1,
                         col: node.start_position().column as u32 + 1,
                         source: None,
+                        decl_kind,
                     });
                 }
             }
@@ -388,6 +424,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             line: node.start_position().row as u32 + 1,
                             col: node.start_position().column as u32 + 1,
                             source: Some(spec_str),
+                            decl_kind: None,
                         });
                     }
                 }
@@ -429,6 +466,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     line,
                     col,
                     source: Some(src),
+                    decl_kind: None,
                 });
             }
         }
@@ -1243,6 +1281,66 @@ mod tests {
         assert!(
             params[0].constraint_shape.is_none(),
             "constraint_shape is None (LSP fills in later)"
+        );
+    }
+
+    // ── DeclarationKind propagation tests (Task 1) ────────────────────────────
+
+    #[test]
+    fn test_decl_export_query_captures_namespace() {
+        let source = b"export namespace MyNS { export function helper(): void {} }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "MyNS"),
+            "namespace export should be captured"
+        );
+        let ns = exports.iter().find(|e| e.name == "MyNS").unwrap();
+        assert_eq!(ns.decl_kind, Some(crate::types::DeclarationKind::Namespace));
+    }
+
+    #[test]
+    fn test_decl_kind_propagated_for_function() {
+        let source = b"export function greet(name: string): string { return name; }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let exp = exports.iter().find(|e| e.name == "greet").unwrap();
+        assert_eq!(
+            exp.decl_kind,
+            Some(crate::types::DeclarationKind::Function)
+        );
+    }
+
+    #[test]
+    fn test_decl_kind_propagated_for_interface() {
+        let source = b"export interface Config { timeout: number; }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let exp = exports.iter().find(|e| e.name == "Config").unwrap();
+        assert_eq!(
+            exp.decl_kind,
+            Some(crate::types::DeclarationKind::Interface)
+        );
+    }
+
+    #[test]
+    fn test_decl_kind_propagated_for_type_alias() {
+        let source = b"export type ID = string;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let exp = exports.iter().find(|e| e.name == "ID").unwrap();
+        assert_eq!(
+            exp.decl_kind,
+            Some(crate::types::DeclarationKind::TypeAlias)
+        );
+    }
+
+    #[test]
+    fn test_function_signature_captured_as_overload() {
+        let source = b"export function foo(x: string): string;\nexport function foo(x: number): number;\nexport function foo(x: any): any { return x; }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let foos: Vec<_> = exports.iter().filter(|e| e.name == "foo").collect();
+        // function_signature nodes (overloads) + function_declaration (implementation)
+        assert!(
+            foos.len() >= 3,
+            "should capture overload signatures and implementation; got {}",
+            foos.len()
         );
     }
 }

@@ -103,7 +103,7 @@ pub fn collect_exports(
                     col: export.col,
                     type_signature: None,
                     overloads: Vec::new(),
-                    decl_kind: None,
+                    decl_kind: export.decl_kind,
                     type_guard_type: None,
                 });
             }
@@ -116,7 +116,7 @@ pub fn collect_exports(
                     col: export.col,
                     type_signature: None,
                     overloads: Vec::new(),
-                    decl_kind: None,
+                    decl_kind: export.decl_kind,
                     type_guard_type: None,
                 });
             }
@@ -161,7 +161,7 @@ pub fn collect_exports(
                                 col: export.col,
                                 type_signature: None,
                                 overloads: Vec::new(),
-                                decl_kind: None,
+                                decl_kind: export.decl_kind,
                                 type_guard_type: None,
                             });
                         }
