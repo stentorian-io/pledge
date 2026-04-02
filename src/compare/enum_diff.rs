@@ -207,14 +207,42 @@ pub fn compare_enum_shapes(
         }
     }
 
-    // ── ENUM-03: reordered with implicit value shift ──────────────────────────
-    // Only check if ENUM-05 did not fire (numeric-to-string covers the whole enum).
-    // Only fire for members where:
-    //   - Position index changed, AND
-    //   - computed_value changed (both are Some), AND
-    //   - ENUM-02 did not already fire for this member, AND
-    //   - Both old and new had raw_value: None (implicit — the value change came from reordering)
+    // ── ENUM-03 + BEH-03: reordering vs insertion-induced value shift ────────
+    // Mutual exclusion: a member fires EITHER ENUM-03 OR BEH-03, never both.
+    //
+    // ENUM-03 (Major): member was reordered among existing members
+    // BEH-03 (Warning): member's implicit value shifted due to new member insertion
+    //
+    // Detection: compute relative position among members present in BOTH old and new.
+    // If relative position changed -> reordered (ENUM-03).
+    // If relative position same but computed_value changed -> shifted by insertion (BEH-03).
     if !numeric_to_string {
+        // Build ordered list of member names present in both old and new
+        let old_shared_order: Vec<&str> = old
+            .members
+            .iter()
+            .filter(|m| new_by_name.contains_key(m.name.as_str()))
+            .map(|m| m.name.as_str())
+            .collect();
+        let new_shared_order: Vec<&str> = new
+            .members
+            .iter()
+            .filter(|m| old_by_name.contains_key(m.name.as_str()))
+            .map(|m| m.name.as_str())
+            .collect();
+
+        // Build relative position maps (position among shared members only)
+        let old_relative: HashMap<&str, usize> = old_shared_order
+            .iter()
+            .enumerate()
+            .map(|(i, &name)| (name, i))
+            .collect();
+        let new_relative: HashMap<&str, usize> = new_shared_order
+            .iter()
+            .enumerate()
+            .map(|(i, &name)| (name, i))
+            .collect();
+
         for old_member in &old.members {
             let name = old_member.name.as_str();
 
@@ -223,41 +251,56 @@ pub fn compare_enum_shapes(
                 continue;
             }
 
-            let Some(&(old_idx, _)) = old_by_name.get(name) else {
-                continue;
-            };
-            let Some(&(new_idx, new_member)) = new_by_name.get(name) else {
+            let Some(&(_, new_member)) = new_by_name.get(name) else {
                 continue; // Removed — handled by ENUM-01
             };
 
-            // Position must have changed
-            if old_idx == new_idx {
-                continue;
-            }
-
-            // Both must have had implicit values (no explicit raw_value) for this to be
-            // a reordering-induced shift rather than an explicit value change
+            // Both must have implicit values (no explicit raw_value)
             if old_member.raw_value.is_some() || new_member.raw_value.is_some() {
                 continue;
             }
 
             // Computed values must have actually changed
-            if let (Some(old_val), Some(new_val)) =
-                (old_member.computed_value, new_member.computed_value)
-            {
-                if old_val != new_val {
-                    findings.push(Finding {
-                        severity: Severity::Major,
-                        rule: RULE_ENUM_MEMBER_REORDERED,
-                        file: file.to_path_buf(),
-                        line,
-                        col,
-                        message: format!(
-                            "enum member `{}` was reordered causing value change from {} to {} in `{}`",
-                            name, old_val, new_val, symbol_name
-                        ),
-                    });
-                }
+            let (old_val, new_val) = match (old_member.computed_value, new_member.computed_value) {
+                (Some(ov), Some(nv)) if ov != nv => (ov, nv),
+                _ => continue,
+            };
+
+            // Determine if the member was reordered (ENUM-03) or shifted by insertion (BEH-03)
+            let old_rel = old_relative.get(name);
+            let new_rel = new_relative.get(name);
+
+            let relative_position_changed = match (old_rel, new_rel) {
+                (Some(&or), Some(&nr)) => or != nr,
+                _ => false,
+            };
+
+            if relative_position_changed {
+                // ENUM-03: reordered among existing members
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_ENUM_MEMBER_REORDERED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "enum member `{}` was reordered causing value change from {} to {} in `{}`",
+                        name, old_val, new_val, symbol_name
+                    ),
+                });
+            } else {
+                // BEH-03: value shifted by insertion of new member
+                findings.push(Finding {
+                    severity: Severity::Warning,
+                    rule: RULE_ENUM_VALUE_SHIFTED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "enum member `{}` implicit value shifted from {} to {} in `{}` due to member insertion",
+                        name, old_val, new_val, symbol_name
+                    ),
+                });
             }
         }
     }
