@@ -305,6 +305,32 @@ pub fn format_type(shape: &TypeShape) -> String {
     }
 }
 
+// Class rules (CLS-*)
+pub const RULE_CLASS_CONSTRUCTOR_PARAM_ADDED: &str = "class-constructor-param-added";
+pub const RULE_CLASS_METHOD_VISIBILITY_CHANGED: &str = "class-method-visibility-changed";
+pub const RULE_CLASS_METHOD_REMOVED: &str = "class-method-removed";
+pub const RULE_CLASS_MADE_ABSTRACT: &str = "class-made-abstract";
+pub const RULE_CLASS_ABSTRACT_METHOD_ADDED: &str = "class-abstract-method-added";
+pub const RULE_CLASS_INHERITANCE_CHANGED: &str = "class-inheritance-changed";
+pub const RULE_CLASS_STATIC_TYPE_CHANGED: &str = "class-static-type-changed";
+pub const RULE_CLASS_READONLY_CHANGED: &str = "class-readonly-changed";
+pub const RULE_CLASS_IMPLEMENTS_REMOVED: &str = "class-implements-removed";
+
+// Enum rules (ENUM-*)
+pub const RULE_ENUM_MEMBER_REMOVED: &str = "enum-member-removed";
+pub const RULE_ENUM_MEMBER_VALUE_CHANGED: &str = "enum-member-value-changed";
+pub const RULE_ENUM_MEMBER_REORDERED: &str = "enum-member-reordered";
+pub const RULE_ENUM_CONST_TO_REGULAR: &str = "enum-const-to-regular";
+pub const RULE_ENUM_NUMERIC_TO_STRING: &str = "enum-numeric-to-string";
+
+// Generic rules (GEN-*)
+pub const RULE_GENERIC_PARAM_ADDED: &str = "generic-param-added";
+pub const RULE_GENERIC_PARAM_REMOVED: &str = "generic-param-removed";
+pub const RULE_GENERIC_PARAM_REORDERED: &str = "generic-param-reordered";
+pub const RULE_GENERIC_CONSTRAINT_TIGHTENED: &str = "generic-constraint-tightened";
+pub const RULE_GENERIC_DEFAULT_CHANGED: &str = "generic-default-changed";
+pub const RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT: &str = "generic-param-added-with-default";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
