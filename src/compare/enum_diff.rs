@@ -128,6 +128,26 @@ pub fn compare_enum_shapes(
         }
     }
 
+    // ── BEH-04: enum member added (Warning) ─────────────────────────────────
+    // Per D-05: always Warning, regardless of const/regular.
+    // Any new member may break exhaustive switch statements in consumers.
+    let old_names: HashSet<&str> = old_by_name.keys().copied().collect();
+    for new_member in &new.members {
+        if !old_names.contains(new_member.name.as_str()) {
+            findings.push(Finding {
+                severity: Severity::Warning,
+                rule: RULE_ENUM_MEMBER_ADDED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "enum member `{}` was added to `{}` -- may break exhaustive switch statements",
+                    new_member.name, symbol_name
+                ),
+            });
+        }
+    }
+
     // ── ENUM-02: member value changed ────────────────────────────────────────
     // Track members where ENUM-02 already fired (to avoid ENUM-03 double-fire).
     //
