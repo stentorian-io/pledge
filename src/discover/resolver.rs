@@ -188,6 +188,16 @@ pub fn collect_exports(
     Ok(())
 }
 
+/// Append an extension to a path without replacing existing extensions.
+///
+/// Unlike `PathBuf::with_extension()`, this preserves compound file stems.
+/// Example: `append_extension(Path::new("utils.config"), "ts")` -> "utils.config.ts"
+/// (whereas `with_extension` would produce "utils.ts", dropping ".config")
+fn append_extension(base: &Path, ext: &str) -> PathBuf {
+    let name = base.file_name().unwrap_or_default().to_string_lossy();
+    base.with_file_name(format!("{}.{}", name, ext))
+}
+
 /// Return an ordered list of candidate absolute paths for a module specifier.
 ///
 /// The caller should pick the first candidate that exists on disk.
@@ -203,28 +213,114 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     let clean = specifier.trim_start_matches("./");
     let joined = base_dir.join(clean);
 
-    let mut candidates = Vec::with_capacity(10);
+    let mut candidates = Vec::with_capacity(20);
 
     // 1. Exact path as-is (handles already-extensioned imports).
     candidates.push(joined.clone());
-    // 2. TypeScript source extensions (higher priority than .js for TS projects).
-    candidates.push(joined.with_extension("ts"));
-    candidates.push(joined.with_extension("tsx"));
-    // 3. Declaration files.
-    let d_ts = joined.with_extension("ts");
-    // Build "foo.d.ts" by appending ".d.ts" to the stem.
-    let mut d_ts_name = joined.file_stem().unwrap_or_default().to_os_string();
-    d_ts_name.push(".d.ts");
-    candidates.push(joined.with_file_name(d_ts_name));
-    let _ = d_ts; // suppress unused warning
-                  // 4. JavaScript extensions.
-    candidates.push(joined.with_extension("js"));
-    candidates.push(joined.with_extension("mjs"));
-    candidates.push(joined.with_extension("cjs"));
+
+    // 2. TypeScript source extensions (higher priority for TS projects).
+    candidates.push(append_extension(&joined, "ts"));
+    candidates.push(append_extension(&joined, "tsx"));
+    candidates.push(append_extension(&joined, "mts"));
+    candidates.push(append_extension(&joined, "cts"));
+
+    // 3. Declaration files (.d.ts, .d.mts, .d.cts).
+    let stem = joined.file_name().unwrap_or_default().to_string_lossy();
+    candidates.push(joined.with_file_name(format!("{}.d.ts", stem)));
+    candidates.push(joined.with_file_name(format!("{}.d.mts", stem)));
+    candidates.push(joined.with_file_name(format!("{}.d.cts", stem)));
+
+    // 4. JavaScript extensions.
+    candidates.push(append_extension(&joined, "js"));
+    candidates.push(append_extension(&joined, "jsx"));
+    candidates.push(append_extension(&joined, "mjs"));
+    candidates.push(append_extension(&joined, "cjs"));
+
     // 5. Directory index files.
     candidates.push(joined.join("index.ts"));
+    candidates.push(joined.join("index.tsx"));
+    candidates.push(joined.join("index.mts"));
     candidates.push(joined.join("index.js"));
+    candidates.push(joined.join("index.mjs"));
     candidates.push(joined.join("index.d.ts"));
 
     candidates
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compound_extension_preserved() {
+        let result = append_extension(Path::new("/a/utils.config"), "ts");
+        let name = result.file_name().unwrap().to_string_lossy();
+        assert_eq!(name, "utils.config.ts", "append_extension must preserve compound stem");
+    }
+
+    #[test]
+    fn test_resolve_includes_mts() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo");
+        let has_mts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains("foo.mts"));
+        assert!(has_mts, "candidates must include foo.mts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_cts() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo");
+        let has_cts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains("foo.cts"));
+        assert!(has_cts, "candidates must include foo.cts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_d_mts() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains("foo.d.mts"));
+        assert!(has, "candidates must include foo.d.mts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_d_cts() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains("foo.d.cts"));
+        assert!(has, "candidates must include foo.d.cts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_compound_stem() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./utils.config");
+        let has_compound = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("utils.config.ts"));
+        let has_wrong = candidates
+            .iter()
+            .any(|p| {
+                let s = p.to_string_lossy();
+                // "utils.ts" would mean compound stem was dropped
+                s.ends_with("/utils.ts") || s.ends_with("\\utils.ts")
+            });
+        assert!(has_compound, "must include utils.config.ts; got: {candidates:?}");
+        assert!(!has_wrong, "must NOT include utils.ts (dropped compound stem); got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_mts() {
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.mts"));
+        assert!(has, "candidates must include dir/index.mts; got: {candidates:?}");
+    }
 }
