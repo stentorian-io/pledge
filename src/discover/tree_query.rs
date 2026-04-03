@@ -295,6 +295,43 @@ const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
           key: (property_identifier) @name)))))
 "#;
 
+/// Captures `export = Foo` — CommonJS-style TypeScript module export.
+///
+/// This is a TypeScript-only syntax. The export is treated as a default export
+/// with name "default" in interlint's model (equivalent to `module.exports = Foo`).
+/// See Phase 12 RESEARCH Pattern 3.
+const EXPORT_ASSIGNMENT_QUERY_TS: &str = r#"
+(export_statement
+  "="
+  (_) @value)
+"#;
+
+/// Captures `export declare function/class/interface/...` — ambient declarations.
+///
+/// In `.d.ts` files (and `.ts` files with `declare` blocks), exported declarations
+/// are wrapped in an `ambient_declaration` node. The existing `DECL_EXPORT_QUERY_TS`
+/// does NOT match through this wrapper.
+///
+/// This is critical for packages that ship `.d.ts` type declaration files —
+/// virtually all TypeScript packages. Their public API is expressed as
+/// `declare` statements.
+/// See Phase 12 RESEARCH Pattern 6 (Gap 8).
+const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
+(export_statement
+  declaration: (ambient_declaration
+    [
+      (function_declaration name: (identifier) @name)
+      (function_signature name: (identifier) @name)
+      (class_declaration name: (type_identifier) @name)
+      (abstract_class_declaration name: (type_identifier) @name)
+      (type_alias_declaration name: (type_identifier) @name)
+      (interface_declaration name: (type_identifier) @name)
+      (enum_declaration name: (identifier) @name)
+      (internal_module name: (identifier) @name)
+      (lexical_declaration (variable_declarator name: (identifier) @name))
+    ]))
+"#;
+
 // ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
@@ -668,6 +705,37 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- Export assignment (`export = Foo`, TypeScript only) -----------------
+    // CommonJS-style TypeScript default export. Produces a "default" entry.
+    // Only emit if no default export already exists at this position.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        if let Ok(query) = Query::new(&language, EXPORT_ASSIGNMENT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                if let Some(capture) = m.captures.first() {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    // Only add if no default export has already been emitted
+                    let already_emitted = exports
+                        .iter()
+                        .any(|e| e.kind == RawExportKind::Default && e.line == line);
+                    if !already_emitted {
+                        exports.push(RawExport {
+                            name: "default".to_string(),
+                            kind: RawExportKind::Default,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // --- Declaration exports --------------------------------------------------
     // Use grammar-specific queries: TypeScript uses `type_identifier` for class/
     // interface/type names; JavaScript uses `identifier` for all names.
@@ -725,6 +793,62 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind,
                     });
+                }
+            }
+        }
+    }
+
+    // --- Ambient declaration exports (`export declare ...`, TypeScript only) ---
+    // In .d.ts files and `declare` blocks, declarations are wrapped in
+    // `ambient_declaration`. The existing DECL_EXPORT_QUERY_TS doesn't match
+    // through this wrapper.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        if let Ok(query) = Query::new(&language, AMBIENT_DECL_EXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        let node = capture.node;
+                        let name =
+                            match node.utf8_text(source) {
+                                Ok(n) => n.to_string(),
+                                Err(_) => continue,
+                            };
+
+                        // Skip if already captured (ambient + non-ambient declarations
+                        // on the same symbol would be redundant).
+                        let already = exports.iter().any(|e| e.name == name);
+                        if already {
+                            continue;
+                        }
+
+                        // The captured @name node's parent is the inner declaration
+                        // (e.g., function_declaration) OR variable_declarator (for lexical_declaration).
+                        // For lexical_declaration: @name → variable_declarator → lexical_declaration.
+                        // We need to check the correct level for decl_kind.
+                        let decl_kind = node.parent().map(|immediate_parent| {
+                            let parent_kind = immediate_parent.kind();
+                            if parent_kind == "variable_declarator" {
+                                // Navigate up one more level to lexical_declaration
+                                immediate_parent
+                                    .parent()
+                                    .map(|ld| decl_kind_from_node_kind(ld.kind()))
+                                    .unwrap_or(crate::types::DeclarationKind::Variable)
+                            } else {
+                                decl_kind_from_node_kind(parent_kind)
+                            }
+                        });
+
+                        exports.push(RawExport {
+                            name,
+                            kind: RawExportKind::Named,
+                            line: node.start_position().row as u32 + 1,
+                            col: node.start_position().column as u32 + 1,
+                            source: None,
+                            decl_kind,
+                        });
+                    }
                 }
             }
         }
@@ -2467,6 +2591,102 @@ mod tests {
             !exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
             "local alias 'renamed' should NOT appear as Named export; got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
+
+    #[test]
+    fn test_export_assignment() {
+        // `export = MyClass;` — CJS-style TS default export, becomes name="default"
+        let source = b"export = MyClass;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "default" && e.kind == RawExportKind::Default),
+            "export = MyClass should produce Default export 'default'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ambient_function_declaration() {
+        // `export declare function foo(): void;` — ambient declaration in .d.ts
+        let source = b"export declare function foo(): void;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "foo" && e.kind == RawExportKind::Named);
+        assert!(
+            foo.is_some(),
+            "export declare function foo should produce Named export 'foo'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            foo.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Function),
+            "ambient function should have Function decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_class_declaration() {
+        // `export declare class Bar {}` — ambient class declaration
+        let source = b"export declare class Bar {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let bar = exports
+            .iter()
+            .find(|e| e.name == "Bar" && e.kind == RawExportKind::Named);
+        assert!(
+            bar.is_some(),
+            "export declare class Bar should produce Named export 'Bar'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            bar.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Class),
+            "ambient class should have Class decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_interface_declaration() {
+        // `export declare interface Baz { x: number }` — ambient interface
+        let source = b"export declare interface Baz { x: number }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let baz = exports
+            .iter()
+            .find(|e| e.name == "Baz" && e.kind == RawExportKind::Named);
+        assert!(
+            baz.is_some(),
+            "export declare interface Baz should produce Named export 'Baz'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            baz.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Interface),
+            "ambient interface should have Interface decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_variable_declaration() {
+        // `export declare const VERSION: string;` — ambient variable
+        let source = b"export declare const VERSION: string;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let version = exports
+            .iter()
+            .find(|e| e.name == "VERSION" && e.kind == RawExportKind::Named);
+        assert!(
+            version.is_some(),
+            "export declare const VERSION should produce Named export 'VERSION'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            version.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Variable),
+            "ambient variable should have Variable decl_kind"
         );
     }
 }
