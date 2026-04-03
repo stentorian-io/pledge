@@ -359,6 +359,11 @@ pub const RULE_CSS_CLASS_REMOVED: &str = "css-class-removed";
 pub const RULE_ASSET_FILE_REMOVED: &str = "asset-file-removed";
 pub const RULE_JSON_FIELD_ADDED: &str = "json-field-added";
 
+// Interface structural diff rules (Phase 14 — REQ-14-05)
+pub const RULE_INTERFACE_MEMBER_REMOVED: &str = "interface-member-removed";
+pub const RULE_INTERFACE_MEMBER_ADDED: &str = "interface-member-added";
+pub const RULE_INTERFACE_PARAM_COUNT_CHANGED: &str = "interface-param-count-changed";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

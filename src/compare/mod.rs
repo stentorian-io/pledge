@@ -7,6 +7,7 @@ pub mod css_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
+pub mod interface_diff;
 pub mod json_diff;
 pub mod metadata;
 pub mod ref_diff;
@@ -525,6 +526,74 @@ fn collect_overload_shapes(
     overloads
 }
 
+/// Collect members from ALL interface_declaration nodes with matching name.
+///
+/// Handles declaration merging (REQ-14-04): when two `interface Foo` declarations
+/// exist in the same file, their members are unioned. This matches TypeScript
+/// compiler behavior for merged interfaces.
+fn collect_interface_members(
+    source: &[u8],
+    lang: &tree_query::SourceLanguage,
+    name: &str,
+) -> Vec<crate::types::ClassMember> {
+    let ts_lang: tree_sitter::Language = match lang {
+        tree_query::SourceLanguage::TypeScript => {
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+        }
+        tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+    };
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let mut all_members: Vec<crate::types::ClassMember> = Vec::new();
+    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    // Walk top-level nodes (including through export_statement and ambient_declaration wrappers)
+    fn scan_for_interfaces(
+        node: tree_sitter::Node<'_>,
+        source: &[u8],
+        name: &str,
+        all_members: &mut Vec<crate::types::ClassMember>,
+        seen_names: &mut std::collections::HashSet<String>,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "interface_declaration" => {
+                    let matches = child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(|n| n == name)
+                        .unwrap_or(false);
+                    if matches {
+                        if let Some(body) = tree_query::find_interface_body(child) {
+                            let members = tree_query::parse_interface_members(source, body);
+                            for member in members {
+                                // Dedup by name — first declaration wins for same member
+                                if seen_names.insert(member.name.clone()) {
+                                    all_members.push(member);
+                                }
+                            }
+                        }
+                    }
+                }
+                "export_statement" | "ambient_declaration" => {
+                    scan_for_interfaces(child, source, name, all_members, seen_names);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    scan_for_interfaces(root, source, name, &mut all_members, &mut seen_names);
+    all_members
+}
+
 /// Orchestrates class, enum, and generic type parameter diff for all exported symbols.
 ///
 /// For each exported symbol present in both old and new:
@@ -587,6 +656,23 @@ pub fn compare_structural_diff(
                 findings.extend(class_diff::compare_class_shapes(
                     old_shape,
                     new_shape,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
+            }
+        }
+
+        // REQ-14-05: Interface member structural diff (degraded mode)
+        // REQ-14-04: Declaration merging — collect members from ALL interface declarations
+        if old_decl.is_interface && new_decl.is_interface {
+            let old_members = collect_interface_members(&old_source, &old_lang, name);
+            let new_members = collect_interface_members(&new_source, &new_lang, name);
+            if !old_members.is_empty() || !new_members.is_empty() {
+                findings.extend(interface_diff::compare_interface_members(
+                    &old_members,
+                    &new_members,
                     name,
                     &new_sym.file,
                     new_sym.line,
@@ -844,5 +930,35 @@ mod tests {
         assert!(result.is_some());
         let decl = result.unwrap();
         assert!(!decl.overloads.is_empty(), "arrow function should have overload shape extracted");
+    }
+
+    #[test]
+    fn test_interface_extract_found() {
+        // REQ-14-05: interface should be found and classified
+        let source = b"export interface Foo { bar(): void; baz: string; }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
+        assert!(result.is_some());
+        let decl = result.unwrap();
+        assert!(decl.is_interface);
+    }
+
+    #[test]
+    fn test_collect_interface_members_merged() {
+        // REQ-14-04: two interface declarations with same name should union members
+        let source = b"export interface Foo { a(): void; }\nexport interface Foo { b(): void; }";
+        let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
+        let names: Vec<&str> = members.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"a"), "member 'a' from first declaration should be present");
+        assert!(names.contains(&"b"), "member 'b' from second declaration should be present");
+        assert_eq!(members.len(), 2, "should have exactly 2 members from merged declarations");
+    }
+
+    #[test]
+    fn test_collect_interface_members_dedup() {
+        // Same member name in both declarations — first wins
+        let source = b"export interface Foo { x(): void; }\nexport interface Foo { x(): void; y: number; }";
+        let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
+        let x_count = members.iter().filter(|m| m.name == "x").count();
+        assert_eq!(x_count, 1, "duplicate member 'x' should appear only once");
     }
 }

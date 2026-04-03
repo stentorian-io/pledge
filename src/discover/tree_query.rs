@@ -2192,6 +2192,100 @@ pub fn find_interface_body(decl_node: tree_sitter::Node) -> Option<tree_sitter::
     result
 }
 
+/// Extract members from an `interface_body` node.
+///
+/// Interface members are `method_signature` and `property_signature` nodes
+/// (same node kinds as .d.ts ambient class members, handled in Phase 13).
+/// All interface members are public (no visibility modifiers in interfaces).
+/// Reuses ClassMember type for consistency with class_diff pipeline.
+pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node) -> Vec<ClassMember> {
+    let mut members = Vec::new();
+    let mut cursor = interface_body.walk();
+    for child in interface_body.children(&mut cursor) {
+        match child.kind() {
+            "method_signature" => {
+                let name = child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                let param_count = count_required_params(child);
+                members.push(ClassMember {
+                    name,
+                    kind: ClassMemberKind::Method,
+                    visibility: Visibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_readonly: false,
+                    param_count,
+                    type_signature: None,
+                });
+            }
+            "property_signature" => {
+                let name = child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                // Detect readonly modifier
+                let mut is_readonly = false;
+                for j in 0..child.child_count() as u32 {
+                    if let Some(kw) = child.child(j) {
+                        if kw.kind() == "readonly" {
+                            is_readonly = true;
+                        }
+                    }
+                }
+                // Detect optional (?) — property_signature with "?" anonymous child
+                // Optional properties are non-breaking to add; required are breaking
+                let mut is_optional = false;
+                for j in 0..child.child_count() as u32 {
+                    if let Some(kw) = child.child(j) {
+                        if !kw.is_named() && kw.utf8_text(source).ok() == Some("?") {
+                            is_optional = true;
+                            break;
+                        }
+                    }
+                }
+                members.push(ClassMember {
+                    name,
+                    kind: ClassMemberKind::Property,
+                    visibility: Visibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_readonly,
+                    param_count: 0,
+                    // Use type_signature to signal optional status for interface_diff
+                    type_signature: if is_optional { Some("optional".to_string()) } else { None },
+                });
+            }
+            "call_signature" => {
+                // Call signatures: interface with () callable syntax
+                // Treat as a method with a synthetic name "(call)"
+                let param_count = count_required_params(child);
+                members.push(ClassMember {
+                    name: "(call)".to_string(),
+                    kind: ClassMemberKind::Method,
+                    visibility: Visibility::Public,
+                    is_static: false,
+                    is_abstract: false,
+                    is_readonly: false,
+                    param_count,
+                    type_signature: None,
+                });
+            }
+            _ => {}
+        }
+    }
+    members
+}
+
 /// Extract the text of the first named child of a type_annotation node.
 /// Returns None if no named child is found.
 fn first_named_child_text<'a>(node: tree_sitter::Node<'a>, source: &'a [u8]) -> Option<&'a str> {
