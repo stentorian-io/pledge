@@ -343,7 +343,62 @@ fn find_decl_in_node<'a>(
                     .filter(|n| *n == name)
                     .map(|_| child)
             }
-            "export_statement" | "lexical_declaration" | "variable_declaration" | "ambient_declaration" => {
+            "lexical_declaration" | "variable_declaration" => {
+                // REQ-14-01: Look for variable_declarator whose name matches,
+                // then return the value node (arrow_function, function, etc.)
+                let mut ld_cursor = child.walk();
+                for ld_child in child.children(&mut ld_cursor) {
+                    if ld_child.kind() == "variable_declarator" {
+                        let matches_name = ld_child
+                            .child_by_field_name("name")
+                            .and_then(|n| n.utf8_text(source).ok())
+                            .map(|n| n == name)
+                            .unwrap_or(false);
+                        if matches_name {
+                            // Return the value node (arrow_function, function, etc.)
+                            if let Some(value) = ld_child.child_by_field_name("value") {
+                                let value_kind = value.kind();
+                                if matches!(
+                                    value_kind,
+                                    "arrow_function" | "function" | "generator_function"
+                                ) {
+                                    let found_row = value.start_position().row;
+                                    let dist = found_row.abs_diff(hint_row);
+                                    candidates.push((dist, value));
+                                }
+                            }
+                            // Also recurse for nested declarations
+                            if let Some(found) = find_decl_in_node(ld_child, source, name, hint_row) {
+                                let found_row = found.start_position().row;
+                                let dist = found_row.abs_diff(hint_row);
+                                candidates.push((dist, found));
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            "function" | "generator_function" => {
+                // REQ-14-02: Anonymous function — only matches when name == "default"
+                // (export default function() {})
+                if name == "default" {
+                    let found_row = child.start_position().row;
+                    let dist = found_row.abs_diff(hint_row);
+                    candidates.push((dist, child));
+                }
+                None
+            }
+            "class" => {
+                // REQ-14-02: Anonymous class — only matches when name == "default"
+                // (export default class {})
+                if name == "default" {
+                    let found_row = child.start_position().row;
+                    let dist = found_row.abs_diff(hint_row);
+                    candidates.push((dist, child));
+                }
+                None
+            }
+            "export_statement" | "ambient_declaration" => {
                 // Recurse into wrappers
                 find_decl_in_node(child, source, name, hint_row)
             }
