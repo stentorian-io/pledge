@@ -22,7 +22,7 @@ use crate::types::{Finding, Severity};
 use super::subtype::{
     RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED, RULE_MODULE_TYPE_CHANGED,
     RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
-    RULE_BIN_ENTRY_CHANGED, RULE_PLATFORM_NARROWED,
+    RULE_BIN_ENTRY_CHANGED, RULE_PLATFORM_NARROWED, RULE_TYPES_VERSIONS_CHANGED,
 };
 
 /// Compare package metadata from both package roots and return a list of findings.
@@ -48,6 +48,7 @@ pub fn compare_metadata(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     compare_module_type(&old_pkg, &new_pkg, &mut findings);
     compare_bin_entries(&old_pkg, &new_pkg, &mut findings);
     compare_platform(&old_pkg, &new_pkg, &mut findings);
+    compare_types_versions(&old_pkg, &new_pkg, &mut findings);
     findings
 }
 
@@ -335,6 +336,62 @@ fn compare_entry_points(
     }
     // `exports` field is intentionally NOT checked here (D-07):
     // granular exports diffing is delegated to exports_diff.rs
+}
+
+/// Compare `typesVersions` field between old and new package.json.
+///
+/// Detects:
+/// - Version range removed (e.g., ">=4.0" entry deleted)
+/// - Path mappings changed within a version range
+/// - Version range added (informational — non-breaking)
+fn compare_types_versions(
+    old_pkg: &serde_json::Value,
+    new_pkg: &serde_json::Value,
+    findings: &mut Vec<Finding>,
+) {
+    let old_tv = old_pkg.get("typesVersions").and_then(|v| v.as_object());
+    let new_tv = new_pkg.get("typesVersions").and_then(|v| v.as_object());
+
+    match (old_tv, new_tv) {
+        (None, None) => {} // No typesVersions in either
+        (Some(_old), None) => {
+            // typesVersions field removed entirely
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_TYPES_VERSIONS_CHANGED,
+                "typesVersions field removed — version-conditional type resolution may break"
+                    .to_string(),
+            ));
+        }
+        (None, Some(_)) => {
+            // typesVersions added — informational, not breaking
+            // (No finding emitted — adding type version mappings is non-breaking)
+        }
+        (Some(old), Some(new)) => {
+            // Compare version ranges
+            for (range, old_mappings) in old {
+                match new.get(range) {
+                    None => {
+                        findings.push(pkg_json_finding(
+                            Severity::Major,
+                            RULE_TYPES_VERSIONS_CHANGED,
+                            format!("typesVersions range `{range}` removed"),
+                        ));
+                    }
+                    Some(new_mappings) => {
+                        // Compare the JSON values — if they differ, report
+                        if old_mappings != new_mappings {
+                            findings.push(pkg_json_finding(
+                                Severity::Major,
+                                RULE_TYPES_VERSIONS_CHANGED,
+                                format!("typesVersions mappings changed for range `{range}`"),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// META-07: detect module type field changes.
@@ -783,5 +840,98 @@ mod tests {
         // No package.json written — should return empty
         let findings = compare_metadata(old_dir.path(), new_dir.path());
         assert_eq!(findings.len(), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // GAP-15-03: typesVersions diff
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_types_versions_removed() {
+        // Old has typesVersions, new does not — breaking
+        let old = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
+        );
+        let new = make_pkg(r#"{}"#);
+        let mut findings = Vec::new();
+        compare_types_versions(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "expected 1 finding for removed typesVersions, got: {:?}",
+            findings
+        );
+        assert_eq!(findings[0].rule, RULE_TYPES_VERSIONS_CHANGED);
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(findings[0].message.contains("removed"));
+    }
+
+    #[test]
+    fn test_types_versions_range_removed() {
+        // Old has ">=4.0" range, new removes it
+        let old = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}, ">=3.0": {"*": ["dist/legacy/*"]}}}"#,
+        );
+        let new = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
+        );
+        let mut findings = Vec::new();
+        compare_types_versions(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "expected 1 finding for removed range, got: {:?}",
+            findings
+        );
+        assert_eq!(findings[0].rule, RULE_TYPES_VERSIONS_CHANGED);
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(
+            findings[0].message.contains(">=3.0"),
+            "message should mention removed range; got: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn test_types_versions_mappings_changed() {
+        // Both have ">=4.0" but different path mappings
+        let old = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
+        );
+        let new = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/new-types/*"]}}}"#,
+        );
+        let mut findings = Vec::new();
+        compare_types_versions(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "expected 1 finding for changed mappings, got: {:?}",
+            findings
+        );
+        assert_eq!(findings[0].rule, RULE_TYPES_VERSIONS_CHANGED);
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(
+            findings[0].message.contains(">=4.0"),
+            "message should mention the range; got: {}",
+            findings[0].message
+        );
+    }
+
+    #[test]
+    fn test_types_versions_added_no_finding() {
+        // Old has no typesVersions, new adds it — non-breaking
+        let old = make_pkg(r#"{}"#);
+        let new = make_pkg(
+            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
+        );
+        let mut findings = Vec::new();
+        compare_types_versions(&old, &new, &mut findings);
+        assert_eq!(
+            findings.len(),
+            0,
+            "adding typesVersions should produce no finding (non-breaking); got: {:?}",
+            findings
+        );
     }
 }

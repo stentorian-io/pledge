@@ -60,6 +60,43 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
         }
     }
 
+    // After exports field handling, also check typesVersions for type entry points.
+    //
+    // typesVersions has this shape:
+    // { ">=4.0": { "*": ["dist/types/*"] }, ">=3.0": { "*": ["dist/legacy/*"] } }
+    //
+    // Each version condition maps glob patterns to arrays of path rewrites.
+    // Non-wildcard paths are treated as direct entry points for type analysis.
+    if let Some(tv) = pkg.get("typesVersions") {
+        if let Some(tv_obj) = tv.as_object() {
+            for (_version_range, mappings) in tv_obj {
+                if let Some(map_obj) = mappings.as_object() {
+                    for (_pattern, targets) in map_obj {
+                        if let Some(arr) = targets.as_array() {
+                            for target in arr {
+                                if let Some(path_str) = target.as_str() {
+                                    // typesVersions paths may contain wildcards like "dist/types/*"
+                                    // For entry point discovery, resolve non-wildcard paths directly.
+                                    // Wildcard paths need the wildcard stripped to get the directory.
+                                    if !path_str.contains('*') {
+                                        let abs = pkg_root.join(path_str.trim_start_matches("./"));
+                                        results.push(EntryPoint {
+                                            path: abs,
+                                            condition: Some("typesVersions".to_string()),
+                                        });
+                                    }
+                                    // If path contains *, treat it as a directory hint:
+                                    // e.g., "dist/types/*" -> scan "dist/types/" dir
+                                    // This is best-effort; the main purpose is metadata diff.
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Canonicalize + filter non-existent + deduplicate.
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut filtered: Vec<EntryPoint> = Vec::new();
