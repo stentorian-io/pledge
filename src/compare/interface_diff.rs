@@ -8,11 +8,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::discover::tree_query::IndexSignature;
 use crate::types::{ClassMember, ClassMemberKind, Finding, Severity};
 use super::subtype::{
-    RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED, RULE_INTERFACE_MEMBER_ADDED,
-    RULE_INTERFACE_MEMBER_REMOVED, RULE_INTERFACE_PARAM_COUNT_CHANGED,
-    RULE_INTERFACE_READONLY_CHANGED,
+    RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED, RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
+    RULE_INTERFACE_MEMBER_ADDED, RULE_INTERFACE_MEMBER_REMOVED,
+    RULE_INTERFACE_PARAM_COUNT_CHANGED, RULE_INTERFACE_READONLY_CHANGED,
 };
 
 /// Compare interface members from old and new versions.
@@ -177,10 +178,60 @@ fn has_tighter_generic_constraint(old_sig: &str, new_sig: &str) -> bool {
 fn extract_extends_constraint(sig: &str) -> Option<String> {
     let idx = sig.find(" extends ")?;
     let rest = &sig[idx + 9..];
-    let end = rest
-        .find(|c: char| c == '>' || c == ')' || c == ',')
-        .unwrap_or(rest.len());
+    let end = rest.find(['>', ')', ',']).unwrap_or(rest.len());
     Some(rest[..end].trim().to_string())
+}
+
+/// Compare index signatures on an interface between old and new versions.
+///
+/// GAP-16-04: Detects removal of index signatures and value type changes.
+/// This is the interface-level equivalent of REF-07 (which handles symbol-level).
+pub fn compare_interface_index_signatures(
+    old_sigs: &[IndexSignature],
+    new_sigs: &[IndexSignature],
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for old_sig in old_sigs {
+        let matching_new = new_sigs
+            .iter()
+            .find(|ns| ns.key_type_text == old_sig.key_type_text);
+        match matching_new {
+            None => {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "index signature `[key: {}]: {}` was removed from interface `{}`",
+                        old_sig.key_type_text, old_sig.value_type_text, symbol_name
+                    ),
+                });
+            }
+            Some(new_sig) if new_sig.value_type_text != old_sig.value_type_text => {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "index signature value type changed from `{}` to `{}` in interface `{}`",
+                        old_sig.value_type_text, new_sig.value_type_text, symbol_name
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    findings
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
@@ -454,5 +505,74 @@ mod tests {
             "Unchanged constraint should not fire, got: {:?}",
             rules(&findings)
         );
+    }
+
+    // ── compare_interface_index_signatures ───────────────────────────────────
+
+    fn run_index(
+        old: &[IndexSignature],
+        new: &[IndexSignature],
+    ) -> Vec<Finding> {
+        compare_interface_index_signatures(old, new, "MyInterface", &file(), 1, 0)
+    }
+
+    fn make_sig(key: &str, val: &str) -> IndexSignature {
+        IndexSignature {
+            key_type_text: key.to_string(),
+            value_type_text: val.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_index_signature_removed_fires() {
+        let old = vec![make_sig("string", "number")];
+        let new: Vec<IndexSignature> = vec![];
+        let findings = run_index(&old, &new);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "interface-index-signature-changed");
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(
+            findings[0].message.contains("removed"),
+            "Message should say 'removed'"
+        );
+    }
+
+    #[test]
+    fn test_index_signature_value_type_changed_fires() {
+        let old = vec![make_sig("string", "number")];
+        let new = vec![make_sig("string", "string")];
+        let findings = run_index(&old, &new);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "interface-index-signature-changed");
+        assert_eq!(findings[0].severity, Severity::Major);
+        assert!(
+            findings[0].message.contains("number") && findings[0].message.contains("string"),
+            "Message should show old and new type"
+        );
+    }
+
+    #[test]
+    fn test_index_signature_unchanged_no_finding() {
+        let sigs = vec![make_sig("string", "number")];
+        let findings = run_index(&sigs, &sigs);
+        assert!(
+            findings.is_empty(),
+            "Unchanged index signature should produce no finding, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_multiple_index_signatures_one_removed() {
+        let old = vec![make_sig("string", "number"), make_sig("number", "string")];
+        let new = vec![make_sig("string", "number")];
+        let findings = run_index(&old, &new);
+        assert_eq!(
+            findings.len(),
+            1,
+            "Only the removed signature should fire, got: {:?}",
+            findings
+        );
+        assert!(findings[0].message.contains("number"));
     }
 }
