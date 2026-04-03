@@ -12,8 +12,9 @@ use std::path::Path;
 
 use super::subtype::{
     format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
-    RULE_PARAM_ADDED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED, RULE_PARAM_TYPE_NARROWED,
-    RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED, RULE_TYPE_INCOMPATIBLE,
+    RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
+    RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
+    RULE_TYPE_INCOMPATIBLE,
 };
 use crate::types::shape::{ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -579,6 +580,26 @@ fn diff_functions(
                 message: format!(
                     "parameter `{}` removed from `{symbol_name}`",
                     old_param.name
+                ),
+            });
+        }
+    }
+
+    // GAP-16-01: Optional parameter becoming required at same position.
+    // ParamShape has `optional: bool` (shape.rs:60). When old_param.optional=true
+    // and new_param.optional=false at the same position, this is a breaking change:
+    // callers that omitted the argument will now get a type error.
+    for (i, (old_param, new_param)) in old_params.iter().zip(new_params.iter()).enumerate() {
+        if old_param.optional && !new_param.optional {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_PARAM_MADE_REQUIRED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "parameter `{}` changed from optional to required in `{}` (position {})",
+                    new_param.name, symbol_name, i
                 ),
             });
         }
@@ -1578,6 +1599,124 @@ mod tests {
             f.message.contains("number"),
             "message should contain new type 'number': {}",
             f.message
+        );
+    }
+
+    // GAP-16-01: Optional param made required — fires param-made-required Major
+    #[test]
+    fn test_param_made_required_fires_major() {
+        use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
+        let findings = diff(
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: true, // was optional
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false, // now required
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_PARAM_MADE_REQUIRED && f.severity == Severity::Major),
+            "optional->required param at position 0 should produce param-made-required Major, got: {:?}",
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
+        );
+        let f = findings
+            .iter()
+            .find(|f| f.rule == RULE_PARAM_MADE_REQUIRED)
+            .unwrap();
+        assert!(
+            f.message.contains("x"),
+            "param-made-required message should mention param name 'x': {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("position 0"),
+            "param-made-required message should mention position: {}",
+            f.message
+        );
+    }
+
+    // GAP-16-01: required param stays required — no finding
+    #[test]
+    fn test_required_stays_required_no_finding() {
+        use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
+        let findings = diff(
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_PARAM_MADE_REQUIRED),
+            "required->required should produce no param-made-required, got: {:?}",
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // GAP-16-01: required param becomes optional — no finding (loosening is safe)
+    #[test]
+    fn test_required_to_optional_no_finding() {
+        use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
+        let findings = diff(
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false, // was required
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: true, // now optional
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_PARAM_MADE_REQUIRED),
+            "required->optional should produce no param-made-required (loosening is safe), got: {:?}",
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
         );
     }
 
