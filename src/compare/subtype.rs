@@ -368,6 +368,12 @@ pub const RULE_INTERFACE_PARAM_COUNT_CHANGED: &str = "interface-param-count-chan
 // Generic modifier rules (GAP-15-07)
 pub const RULE_CONST_TYPE_PARAM_CHANGED: &str = "const-type-param-changed";
 
+// Interface hardening rules (GAP-16-03, GAP-16-04, GAP-16-10)
+pub const RULE_INTERFACE_READONLY_CHANGED: &str = "interface-readonly-changed";
+pub const RULE_INTERFACE_INDEX_SIGNATURE_CHANGED: &str = "interface-index-signature-changed";
+pub const RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED: &str =
+    "interface-generic-constraint-tightened";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
