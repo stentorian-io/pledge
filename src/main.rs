@@ -1,7 +1,21 @@
+use std::collections::HashSet;
+
 use clap::Parser;
 use interlint::acquire::{self, AcquireResult};
 use interlint::cli::Cli;
 use interlint::{compare, discover, lsp, report};
+
+/// Remove duplicate findings (same rule + file + line).
+///
+/// When multiple analysis passes detect the same change, keep only the first
+/// occurrence (which is typically from the most specific analysis pass).
+fn dedup_findings(findings: &mut Vec<interlint::types::Finding>) {
+    let mut seen = HashSet::new();
+    findings.retain(|f| {
+        let key = (f.rule, f.file.clone(), f.line);
+        seen.insert(key)
+    });
+}
 
 /// Outcome of the interlint analysis run.
 enum RunOutcome {
@@ -57,6 +71,8 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             let all_warnings: Vec<_> = warnings.into_iter().collect();
 
             let mut findings = compare::first_publish_findings(&exports);
+            // Deduplicate findings from multiple analysis passes (BUG 7)
+            dedup_findings(&mut findings);
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
             report::print_report(&findings, &all_warnings, false);
 
@@ -143,7 +159,10 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 compare::compare_asset_diff(&previous_root, &current_root);
             findings.extend(asset_findings);
 
-            // Re-sort after merging (Major first, then Minor, then Patch — D-01)
+            // Deduplicate findings from multiple analysis passes (BUG 7)
+            dedup_findings(&mut findings);
+
+            // Re-sort after merging and dedup (Major first, then Minor, then Patch — D-01)
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 
             // Step 4: Report
