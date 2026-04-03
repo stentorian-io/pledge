@@ -285,6 +285,7 @@ mod tests {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+            is_reexport: false,
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());

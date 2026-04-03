@@ -232,6 +232,7 @@ pub fn collect_exports(
                     type_guard_type: None,
                     is_async: false,
                     is_generator: false,
+                    is_reexport: false,
                 });
             }
             RawExportKind::Default => {
@@ -247,6 +248,7 @@ pub fn collect_exports(
                     type_guard_type: None,
                     is_async: false,
                     is_generator: false,
+                    is_reexport: false,
                 });
             }
             RawExportKind::StarReexport => {
@@ -306,6 +308,7 @@ pub fn collect_exports(
                                 type_guard_type: None,
                                 is_async: false,
                                 is_generator: false,
+                                is_reexport: false,
                             });
                         }
                         None => {

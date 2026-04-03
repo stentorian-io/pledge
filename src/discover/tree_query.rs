@@ -438,6 +438,54 @@ const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
     right: (identifier) @value))
 "#;
 
+/// Captures `module.exports = class { ... }` — CJS inline class export.
+/// The class may be named (`class Foo { ... }`) or anonymous (`class { ... }`).
+/// GAP-15-01.
+const CJS_MODULE_EXPORTS_CLASS_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: (class) @class_value))
+"#;
+
+/// Captures `module.exports = function(...) { ... }`, including async functions,
+/// generator functions, and arrow functions.
+/// Note: In the JS grammar, generator function expressions use the node type
+/// `generator_function` (not `generator_function_expression`).
+/// GAP-15-01.
+const CJS_MODULE_EXPORTS_FUNCTION_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: [
+      (function_expression) @fn_value
+      (generator_function) @fn_value
+      (arrow_function) @fn_value
+    ]))
+"#;
+
+/// Captures `exports.handler = async (req, res) => { ... }` and
+/// `exports.foo = function() { ... }` — CJS named function property exports.
+/// Note: In the JS grammar, generator function expressions use the node type
+/// `generator_function` (not `generator_function_expression`).
+/// GAP-15-01.
+const CJS_EXPORTS_PROPERTY_FUNCTION_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @name)
+    right: [
+      (function_expression) @fn_value
+      (generator_function) @fn_value
+      (arrow_function) @fn_value
+    ]))
+"#;
+
 // ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
@@ -1350,6 +1398,61 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- TS 5.2 `using`/`await using` export declarations (GAP-15-02) ----------
+    // The tree-sitter-typescript grammar (v0.23.2) may not have native support for
+    // `export using handle = getResource()` or `export await using h = getResource()`.
+    // If parsing produces ERROR nodes, we apply a heuristic: walk top-level children
+    // looking for export_statement nodes containing ERROR children whose text starts
+    // with "using " or "await using ". If found, extract the identifier after the keyword.
+    // If the grammar parses them correctly (future grammar version), the existing
+    // DECL_EXPORT_QUERY_TS will catch them as lexical_declaration/variable_declarator.
+    // This is graceful degradation — if neither heuristic fires, it's a silent no-op.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        let mut walk_cursor = root.walk();
+        for top_child in root.children(&mut walk_cursor) {
+            if top_child.kind() == "export_statement" || top_child.kind() == "ERROR" {
+                let mut ec = top_child.walk();
+                for export_child in top_child.children(&mut ec) {
+                    if export_child.kind() == "ERROR" || export_child.kind() == "expression_statement" {
+                        if let Ok(text) = export_child.utf8_text(source) {
+                            let trimmed = text.trim();
+                            let (keyword_len, is_using) = if trimmed.starts_with("await using ") {
+                                (12usize, true)
+                            } else if trimmed.starts_with("using ") {
+                                (6usize, true)
+                            } else {
+                                (0, false)
+                            };
+                            if is_using {
+                                // Extract identifier: take chars until '=' or whitespace after keyword
+                                let rest = &trimmed[keyword_len..];
+                                let ident: String = rest
+                                    .chars()
+                                    .take_while(|c| c.is_alphanumeric() || *c == '_')
+                                    .collect();
+                                if !ident.is_empty() {
+                                    let already = exports.iter().any(|e| e.name == ident);
+                                    if !already {
+                                        let line = export_child.start_position().row as u32 + 1;
+                                        let col = export_child.start_position().column as u32 + 1;
+                                        exports.push(RawExport {
+                                            name: ident,
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind: Some(DeclarationKind::Variable),
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // --- CJS module.exports / exports.foo detection (GAP-13-01) ---------------
     // Only for JavaScript files — TypeScript uses `export =` instead.
     // Validation (checking "module"/"exports" text) is done in Rust after capture
@@ -1463,6 +1566,124 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         decl_kind: Some(DeclarationKind::Variable),
                                     });
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4a. module.exports = class { ... } — CJS inline class export (GAP-15-01)
+        // Run BEFORE query #4 (module.exports = Identifier) so the dedup check on "default"
+        // skips the identifier-form query when an inline class was already emitted.
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_CLASS_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if obj_ok && prop_ok {
+                    if let Some(class_capture) = m.captures.iter().find(|c| c.index == 2) {
+                        let node = class_capture.node;
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        let already = exports.iter().any(|e| e.name == "default");
+                        if !already {
+                            exports.push(RawExport {
+                                name: "default".to_string(),
+                                kind: RawExportKind::Default,
+                                line,
+                                col,
+                                source: None,
+                                decl_kind: Some(DeclarationKind::Class),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4b. module.exports = function/arrow — CJS inline function export (GAP-15-01)
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_FUNCTION_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if obj_ok && prop_ok {
+                    if let Some(fn_capture) = m.captures.iter().find(|c| c.index == 2) {
+                        let node = fn_capture.node;
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        let already = exports.iter().any(|e| e.name == "default");
+                        if !already {
+                            exports.push(RawExport {
+                                name: "default".to_string(),
+                                kind: RawExportKind::Default,
+                                line,
+                                col,
+                                source: None,
+                                decl_kind: Some(DeclarationKind::Function),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4c. exports.NAME = function/arrow — CJS named function property export (GAP-15-01)
+        // Only when @obj is "exports" (NOT "module"). The existing CJS_EXPORTS_PROPERTY_QUERY
+        // already emits these as Variable; we emit a more specific Function decl_kind version.
+        // Use a dedup check on name to avoid double-emitting with the existing query (#3).
+        if let Ok(query) = Query::new(&language, CJS_EXPORTS_PROPERTY_FUNCTION_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // @obj must be exactly "exports" (not "module")
+                let obj_text = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                if obj_text != Some("exports") {
+                    continue;
+                }
+                // Extract @name (index 1) from the member expression property
+                let name_capture = m.captures.iter().find(|c| c.index == 1);
+                if let Some(nc) = name_capture {
+                    let name_node = nc.node;
+                    if let Ok(export_name) = name_node.utf8_text(source) {
+                        let line = name_node.start_position().row as u32 + 1;
+                        let col = name_node.start_position().column as u32 + 1;
+                        // Update existing entry's decl_kind if already emitted as Variable by query #3
+                        if let Some(existing) = exports
+                            .iter_mut()
+                            .find(|e| e.name == export_name && e.decl_kind == Some(DeclarationKind::Variable))
+                        {
+                            existing.decl_kind = Some(DeclarationKind::Function);
+                        } else {
+                            let already = exports.iter().any(|e| e.name == export_name);
+                            if !already {
+                                exports.push(RawExport {
+                                    name: export_name.to_string(),
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: Some(DeclarationKind::Function),
+                                });
                             }
                         }
                     }
@@ -3698,4 +3919,97 @@ mod tests {
         let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
         assert_eq!(count, 1, "Foo.bar should appear exactly once; got count={}", count);
     }
+
+    // ── GAP-15-01: CJS inline class/function exports ─────────────────────────
+
+    #[test]
+    fn test_cjs_module_exports_class_inline() {
+        // GAP-15-01: module.exports = class Foo { method() {} }
+        // Should produce a "default" export with decl_kind Class
+        let source = b"module.exports = class Foo { method() {} }";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let default_export = exports.iter().find(|e| e.name == "default");
+        assert!(
+            default_export.is_some(),
+            "module.exports = class should emit 'default' export; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            default_export.unwrap().decl_kind,
+            Some(DeclarationKind::Class),
+            "inline class export should have decl_kind Class"
+        );
+    }
+
+    #[test]
+    fn test_cjs_module_exports_function_inline() {
+        // GAP-15-01: module.exports = function(a, b) { return a + b; }
+        // Should produce a "default" export with decl_kind Function
+        let source = b"module.exports = function(a, b) { return a + b; }";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let default_export = exports.iter().find(|e| e.name == "default");
+        assert!(
+            default_export.is_some(),
+            "module.exports = function should emit 'default' export; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            default_export.unwrap().decl_kind,
+            Some(DeclarationKind::Function),
+            "inline function export should have decl_kind Function"
+        );
+    }
+
+    #[test]
+    fn test_cjs_module_exports_async_arrow() {
+        // GAP-15-01: module.exports = async (req, res) => { ... }
+        // Should produce a "default" export with decl_kind Function
+        let source = b"module.exports = async (req, res) => { res.send('ok'); }";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let default_export = exports.iter().find(|e| e.name == "default");
+        assert!(
+            default_export.is_some(),
+            "module.exports = async arrow should emit 'default' export; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            default_export.unwrap().decl_kind,
+            Some(DeclarationKind::Function),
+            "async arrow export should have decl_kind Function"
+        );
+    }
+
+    #[test]
+    fn test_cjs_exports_property_function() {
+        // GAP-15-01: exports.handler = async (req, res) => { }
+        // Should produce a "handler" Named export with decl_kind Function
+        let source = b"exports.handler = async (req, res) => { res.send('ok'); }";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let handler_export = exports.iter().find(|e| e.name == "handler");
+        assert!(
+            handler_export.is_some(),
+            "exports.handler = async arrow should emit 'handler' export; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            handler_export.unwrap().decl_kind,
+            Some(DeclarationKind::Function),
+            "exports.handler = async arrow should have decl_kind Function"
+        );
+    }
+
+    #[test]
+    fn test_using_declaration_graceful() {
+        // GAP-15-02: export using handle = getResource() should not panic
+        // Either detect it or silently skip it — no panics allowed.
+        let source = b"export using handle = getResource();";
+        let result = parse_exports(source, SourceLanguage::TypeScript);
+        assert!(
+            result.is_ok(),
+            "parse_exports should not error on 'export using' syntax; got: {:?}",
+            result.err()
+        );
+        // The parse completing without panic/error is sufficient — detection is best-effort.
+    }
 }
+

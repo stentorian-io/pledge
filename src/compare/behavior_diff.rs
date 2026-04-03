@@ -98,6 +98,7 @@ mod tests {
             type_guard_type: None,
             is_async,
             is_generator,
+            is_reexport: false,
         }
     }
 
