@@ -274,22 +274,27 @@ fn extract_declaration(
 }
 
 /// Recursively search `node` and its children for a declaration whose name
-/// matches `name` and whose start row is within ±3 of `hint_row` (0-indexed).
+/// matches `name`. Returns the declaration node closest to `hint_row`
+/// (0-indexed).
 ///
-/// Returns the declaration node (not the name node).
+/// Uses a closest-match strategy: collects all candidates matching by name,
+/// then returns the one nearest to `hint_row`. This handles file moves
+/// between versions (GAP-13-05) and ambient declarations in .d.ts files
+/// (BUG-13-01).
 fn find_decl_in_node<'a>(
     node: tree_sitter::Node<'a>,
     source: &[u8],
     name: &str,
     hint_row: usize,
 ) -> Option<tree_sitter::Node<'a>> {
+    let mut candidates: Vec<(usize, tree_sitter::Node<'a>)> = Vec::new(); // (distance, node)
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let kind = child.kind();
 
         let candidate = match kind {
             "class_declaration" | "abstract_class_declaration" => {
-                // name field is `type_identifier`
                 child
                     .child_by_field_name("name")
                     .and_then(|n| n.utf8_text(source).ok())
@@ -338,29 +343,33 @@ fn find_decl_in_node<'a>(
                     .filter(|n| *n == name)
                     .map(|_| child)
             }
-            "export_statement" | "lexical_declaration" | "variable_declaration" => {
-                // Recurse into export/variable wrappers
+            "export_statement" | "lexical_declaration" | "variable_declaration" | "ambient_declaration" => {
+                // Recurse into wrappers
                 find_decl_in_node(child, source, name, hint_row)
             }
             _ => None,
         };
 
         if let Some(found) = candidate {
-            // Accept if the row is within ±3 lines of the hint
             let found_row = found.start_position().row;
-            if found_row.abs_diff(hint_row) <= 3 {
-                return Some(found);
-            }
+            let dist = found_row.abs_diff(hint_row);
+            candidates.push((dist, found));
         }
 
-        // Recurse one level deeper into export_statement wrappers
-        if matches!(kind, "export_statement") {
+        // Also recurse into export_statement and ambient_declaration wrappers
+        // for deeper nesting
+        if matches!(kind, "export_statement" | "ambient_declaration") {
             if let Some(found) = find_decl_in_node(child, source, name, hint_row) {
-                return Some(found);
+                let found_row = found.start_position().row;
+                let dist = found_row.abs_diff(hint_row);
+                candidates.push((dist, found));
             }
         }
     }
-    None
+
+    // Return the candidate closest to hint_row
+    candidates.sort_by_key(|(dist, _)| *dist);
+    candidates.into_iter().next().map(|(_, n)| n)
 }
 
 /// Collect all overload signatures for a given function name from source.
