@@ -36,7 +36,7 @@ pub fn compare_interface_members(
         new_members.iter().map(|m| (m.name.as_str(), m)).collect();
 
     // interface-member-removed: member in old but not in new
-    for (name, _old_member) in &old_map {
+    for name in old_map.keys() {
         if !new_map.contains_key(name) {
             findings.push(Finding {
                 severity: Severity::Major,
