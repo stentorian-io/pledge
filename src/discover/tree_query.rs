@@ -1714,6 +1714,70 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     type_signature: None,
                 });
             }
+            // BUG-13-01: .d.ts ambient class members use method_signature /
+            // property_signature instead of method_definition / public_field_definition.
+            "method_signature" => {
+                let name_node = child.child_by_field_name("name");
+                let name = name_node
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                let visibility = extract_visibility(child, source);
+                let param_count = count_required_params(child);
+                let mut is_static = false;
+                for j in 0..child.child_count() as u32 {
+                    if let Some(kw) = child.child(j) {
+                        if kw.kind() == "static" {
+                            is_static = true;
+                        }
+                    }
+                }
+                members.push(ClassMember {
+                    name,
+                    kind: ClassMemberKind::Method,
+                    visibility,
+                    is_static,
+                    is_abstract: false,
+                    is_readonly: false,
+                    param_count,
+                    type_signature: None,
+                });
+            }
+            "property_signature" => {
+                let name_node = child.child_by_field_name("name");
+                let name = name_node
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                if name.is_empty() || name.starts_with('#') {
+                    continue;
+                }
+                let visibility = extract_visibility(child, source);
+                let mut is_static = false;
+                let mut is_readonly = false;
+                for j in 0..child.child_count() as u32 {
+                    if let Some(kw) = child.child(j) {
+                        match kw.kind() {
+                            "static" => is_static = true,
+                            "readonly" => is_readonly = true,
+                            _ => {}
+                        }
+                    }
+                }
+                members.push(ClassMember {
+                    name,
+                    kind: ClassMemberKind::Property,
+                    visibility,
+                    is_static,
+                    is_abstract: false,
+                    is_readonly,
+                    param_count: 0,
+                    type_signature: None,
+                });
+            }
             _ => {}
         }
     }
