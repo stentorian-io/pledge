@@ -218,6 +218,120 @@ const NAMED_REEXPORT_ALIAS_QUERY: &str = r#"
   source: (string) @source)
 "#;
 
+/// Captures `export type { Foo }` (TS 3.8+ type-only named exports, no `from` clause).
+///
+/// The `"type"` keyword is an anonymous token child of `export_statement`.
+/// Type-only exports are public API surface and must be tracked in the export map.
+/// See Phase 12 RESEARCH Pattern 1.
+const TYPE_ONLY_NAMED_EXPORT_QUERY_TS: &str = r#"
+(export_statement
+  "type"
+  (export_clause
+    (export_specifier
+      name: (identifier) @name)))
+"#;
+
+/// Captures `export type { Foo } from './bar'` (TS 3.8+ type-only named re-exports).
+///
+/// Capture index 0 = `@name`, capture index 1 = `@source`.
+const TYPE_ONLY_NAMED_REEXPORT_QUERY_TS: &str = r#"
+(export_statement
+  "type"
+  (export_clause
+    (export_specifier
+      name: (identifier) @name))
+  source: (string) @source)
+"#;
+
+/// Captures `export type { Foo as Bar }` (type-only with alias, no `from` clause).
+///
+/// Capture index 0 = `@local_name`, capture index 1 = `@alias_name`.
+/// The alias_name is the public exported name.
+const TYPE_ONLY_ALIAS_EXPORT_QUERY_TS: &str = r#"
+(export_statement
+  "type"
+  (export_clause
+    (export_specifier
+      name: (identifier) @local_name
+      alias: (identifier) @alias_name)))
+"#;
+
+/// Captures `export type { Foo as Bar } from './bar'` (type-only with alias and re-export).
+///
+/// Capture index 0 = `@local_name`, capture index 1 = `@alias_name`, capture index 2 = `@source`.
+const TYPE_ONLY_ALIAS_REEXPORT_QUERY_TS: &str = r#"
+(export_statement
+  "type"
+  (export_clause
+    (export_specifier
+      name: (identifier) @local_name
+      alias: (identifier) @alias_name))
+  source: (string) @source)
+"#;
+
+/// Captures `export const { foo, bar } = obj` — shorthand destructuring patterns.
+///
+/// Each `shorthand_property_identifier_pattern` is a separately exported name.
+/// See Phase 12 RESEARCH Pattern 2.
+const DESTRUCTURED_EXPORT_QUERY: &str = r#"
+(export_statement
+  declaration: (lexical_declaration
+    (variable_declarator
+      name: (object_pattern
+        (shorthand_property_identifier_pattern) @name))))
+"#;
+
+/// Captures `export const { foo: renamed } = obj` — pair-pattern destructuring.
+///
+/// The `key` (property_identifier) is the PUBLIC exported name. The `value`
+/// (identifier) is the local alias used inside the module.
+/// See Phase 12 RESEARCH Pattern 2.
+const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
+(export_statement
+  declaration: (lexical_declaration
+    (variable_declarator
+      name: (object_pattern
+        (pair_pattern
+          key: (property_identifier) @name)))))
+"#;
+
+/// Captures `export = Foo` — CommonJS-style TypeScript module export.
+///
+/// This is a TypeScript-only syntax. The export is treated as a default export
+/// with name "default" in interlint's model (equivalent to `module.exports = Foo`).
+/// See Phase 12 RESEARCH Pattern 3.
+const EXPORT_ASSIGNMENT_QUERY_TS: &str = r#"
+(export_statement
+  "="
+  (_) @value)
+"#;
+
+/// Captures `export declare function/class/interface/...` — ambient declarations.
+///
+/// In `.d.ts` files (and `.ts` files with `declare` blocks), exported declarations
+/// are wrapped in an `ambient_declaration` node. The existing `DECL_EXPORT_QUERY_TS`
+/// does NOT match through this wrapper.
+///
+/// This is critical for packages that ship `.d.ts` type declaration files —
+/// virtually all TypeScript packages. Their public API is expressed as
+/// `declare` statements.
+/// See Phase 12 RESEARCH Pattern 6 (Gap 8).
+const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
+(export_statement
+  declaration: (ambient_declaration
+    [
+      (function_declaration name: (identifier) @name)
+      (function_signature name: (identifier) @name)
+      (class_declaration name: (type_identifier) @name)
+      (abstract_class_declaration name: (type_identifier) @name)
+      (type_alias_declaration name: (type_identifier) @name)
+      (interface_declaration name: (type_identifier) @name)
+      (enum_declaration name: (identifier) @name)
+      (internal_module name: (identifier) @name)
+      (lexical_declaration (variable_declarator name: (identifier) @name))
+    ]))
+"#;
+
 // ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
@@ -351,6 +465,187 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- Type-only exports (TypeScript only: `export type { Foo }`) ------------
+    // TS 3.8+ type-only export forms. The `"type"` keyword is an anonymous token.
+    // These are tracked as Named/NamedReexport — same kind as regular named exports.
+    // Processing order: alias forms first (to set type_only_alias_local_positions),
+    // then non-alias forms (skipping positions handled by alias queries).
+    // We also skip positions already in reexport_positions to avoid double-counting.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        let mut type_only_alias_local_positions: std::collections::HashSet<(u32, u32)> =
+            std::collections::HashSet::new();
+
+        // Process `export type { Foo as Bar }` (no from clause)
+        if let Ok(query) = Query::new(&language, TYPE_ONLY_ALIAS_EXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                let mut local_pos: Option<(u32, u32)> = None;
+                let mut alias_name_opt: Option<(String, u32, u32)> = None;
+                for capture in m.captures {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if capture.index == 0 {
+                        // @local_name
+                        local_pos = Some((line, col));
+                    } else if capture.index == 1 {
+                        // @alias_name — public exported name; skip if it's a re-export
+                        if !reexport_positions.contains(&(line, col)) {
+                            if let Ok(name) = node.utf8_text(source) {
+                                alias_name_opt = Some((name.to_string(), line, col));
+                            }
+                        }
+                    }
+                }
+                if let (Some(lp), Some((name, line, col))) = (local_pos, alias_name_opt) {
+                    type_only_alias_local_positions.insert(lp);
+                    // Skip if already captured by the non-type-only alias query
+                    if !alias_local_positions.contains(&lp) {
+                        exports.push(RawExport {
+                            name,
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: None,
+                        });
+                    }
+                }
+            }
+        }
+
+        // Process `export type { Foo as Bar } from './bar'` (with source)
+        if let Ok(query) = Query::new(&language, TYPE_ONLY_ALIAS_REEXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                let mut local_pos: Option<(u32, u32)> = None;
+                let mut alias_name_opt: Option<(String, u32, u32)> = None;
+                let mut src_opt: Option<String> = None;
+                for capture in m.captures {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if capture.index == 0 {
+                        local_pos = Some((line, col));
+                    } else if capture.index == 1 {
+                        if let Ok(name) = node.utf8_text(source) {
+                            alias_name_opt = Some((name.to_string(), line, col));
+                        }
+                    } else if capture.index == 2 {
+                        if let Ok(text) = node.utf8_text(source) {
+                            src_opt = Some(strip_quotes(text).to_string());
+                        }
+                    }
+                }
+                if let (Some(lp), Some((name, line, col)), Some(src)) =
+                    (local_pos, alias_name_opt, src_opt)
+                {
+                    type_only_alias_local_positions.insert(lp);
+                    exports.push(RawExport {
+                        name,
+                        kind: RawExportKind::NamedReexport,
+                        line,
+                        col,
+                        source: Some(src),
+                        decl_kind: None,
+                    });
+                }
+            }
+        }
+
+        // Process `export type { Foo }` (no alias, no from clause)
+        if let Ok(query) = Query::new(&language, TYPE_ONLY_NAMED_EXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        let node = capture.node;
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        // Skip if already a re-export position
+                        if reexport_positions.contains(&(line, col)) {
+                            continue;
+                        }
+                        // Skip if handled by alias query above
+                        if type_only_alias_local_positions.contains(&(line, col)) {
+                            continue;
+                        }
+                        // Skip if already handled by the non-type-only alias query
+                        if alias_local_positions.contains(&(line, col)) {
+                            continue;
+                        }
+                        // Skip if already captured by the non-type-only named export query
+                        // (the existing NAMED_EXPORT_QUERY also matches these nodes)
+                        let already = exports.iter().any(|e| {
+                            e.kind == RawExportKind::Named && e.line == line && e.col == col
+                        });
+                        if !already {
+                            if let Ok(name) = node.utf8_text(source) {
+                                exports.push(RawExport {
+                                    name: name.to_string(),
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Process `export type { Foo } from './bar'` (no alias, with source)
+        if let Ok(query) = Query::new(&language, TYPE_ONLY_NAMED_REEXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                let mut name_opt: Option<(String, u32, u32)> = None;
+                let mut src_opt: Option<String> = None;
+                for capture in m.captures {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if capture.index == 0 {
+                        // @name
+                        if type_only_alias_local_positions.contains(&(line, col)) {
+                            break; // alias variant already handled
+                        }
+                        if let Ok(name) = node.utf8_text(source) {
+                            name_opt = Some((name.to_string(), line, col));
+                        }
+                    } else if capture.index == 1 {
+                        if let Ok(text) = node.utf8_text(source) {
+                            src_opt = Some(strip_quotes(text).to_string());
+                        }
+                    }
+                }
+                if let (Some((name, line, col)), Some(src)) = (name_opt, src_opt) {
+                    // Skip if already captured by non-type-only named re-export query
+                    let already = exports.iter().any(|e| {
+                        e.kind == RawExportKind::NamedReexport
+                            && e.line == line
+                            && e.col == col
+                    });
+                    if !already {
+                        exports.push(RawExport {
+                            name,
+                            kind: RawExportKind::NamedReexport,
+                            line,
+                            col,
+                            source: Some(src),
+                            decl_kind: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // --- Default exports (expression form) ------------------------------------
     // Captures `export default <expr>` where the default value is an expression
     // (e.g. `export default 42`, `export default obj`, `export default function() {}`).
@@ -405,6 +700,37 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind: None,
                     });
+                }
+            }
+        }
+    }
+
+    // --- Export assignment (`export = Foo`, TypeScript only) -----------------
+    // CommonJS-style TypeScript default export. Produces a "default" entry.
+    // Only emit if no default export already exists at this position.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        if let Ok(query) = Query::new(&language, EXPORT_ASSIGNMENT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                if let Some(capture) = m.captures.first() {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    // Only add if no default export has already been emitted
+                    let already_emitted = exports
+                        .iter()
+                        .any(|e| e.kind == RawExportKind::Default && e.line == line);
+                    if !already_emitted {
+                        exports.push(RawExport {
+                            name: "default".to_string(),
+                            kind: RawExportKind::Default,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: None,
+                        });
+                    }
                 }
             }
         }
@@ -467,6 +793,118 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind,
                     });
+                }
+            }
+        }
+    }
+
+    // --- Ambient declaration exports (`export declare ...`, TypeScript only) ---
+    // In .d.ts files and `declare` blocks, declarations are wrapped in
+    // `ambient_declaration`. The existing DECL_EXPORT_QUERY_TS doesn't match
+    // through this wrapper.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        if let Ok(query) = Query::new(&language, AMBIENT_DECL_EXPORT_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        let node = capture.node;
+                        let name =
+                            match node.utf8_text(source) {
+                                Ok(n) => n.to_string(),
+                                Err(_) => continue,
+                            };
+
+                        // Skip if already captured (ambient + non-ambient declarations
+                        // on the same symbol would be redundant).
+                        let already = exports.iter().any(|e| e.name == name);
+                        if already {
+                            continue;
+                        }
+
+                        // The captured @name node's parent is the inner declaration
+                        // (e.g., function_declaration) OR variable_declarator (for lexical_declaration).
+                        // For lexical_declaration: @name → variable_declarator → lexical_declaration.
+                        // We need to check the correct level for decl_kind.
+                        let decl_kind = node.parent().map(|immediate_parent| {
+                            let parent_kind = immediate_parent.kind();
+                            if parent_kind == "variable_declarator" {
+                                // Navigate up one more level to lexical_declaration
+                                immediate_parent
+                                    .parent()
+                                    .map(|ld| decl_kind_from_node_kind(ld.kind()))
+                                    .unwrap_or(crate::types::DeclarationKind::Variable)
+                            } else {
+                                decl_kind_from_node_kind(parent_kind)
+                            }
+                        });
+
+                        exports.push(RawExport {
+                            name,
+                            kind: RawExportKind::Named,
+                            line: node.start_position().row as u32 + 1,
+                            col: node.start_position().column as u32 + 1,
+                            source: None,
+                            decl_kind,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Destructured variable exports (`export const { foo, bar } = obj`) ---
+    // These are variable exports where the name field is an object_pattern instead of
+    // an identifier. The existing DECL_EXPORT_QUERY misses these because it only
+    // handles `variable_declarator name: (identifier)`.
+    // Works for both JS and TS.
+
+    // Shorthand patterns: `export const { foo, bar } = obj`
+    if let Ok(query) = Query::new(&language, DESTRUCTURED_EXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if let Ok(name) = node.utf8_text(source) {
+                        exports.push(RawExport {
+                            name: name.to_string(),
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: Some(crate::types::DeclarationKind::Variable),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Pair patterns: `export const { foo: renamed } = obj` — key is the public name
+    if let Ok(query) = Query::new(&language, DESTRUCTURED_PAIR_EXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if let Ok(name) = node.utf8_text(source) {
+                        exports.push(RawExport {
+                            name: name.to_string(),
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: Some(crate::types::DeclarationKind::Variable),
+                        });
+                    }
                 }
             }
         }
@@ -2125,6 +2563,200 @@ mod tests {
                 .any(|e| e.name == "*" && e.kind == RawExportKind::StarReexport),
             "plain star re-export should still produce name='*'; got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // ── Type-only export tests (Task 1 — Phase 12) ────────────────────────────
+
+    #[test]
+    fn test_type_only_named_export() {
+        // `export type { Foo }` — Foo is a Named export with no source
+        let source = b"export type { Foo };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
+            "export type {{ Foo }} should produce Named export 'Foo'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        let foo = exports.iter().find(|e| e.name == "Foo").unwrap();
+        assert!(foo.decl_kind.is_none(), "type-only export should have no decl_kind");
+    }
+
+    #[test]
+    fn test_type_only_reexport() {
+        // `export type { Foo } from './bar'` — NamedReexport with source
+        let source = b"export type { Foo } from './bar';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::NamedReexport),
+            "export type {{ Foo }} from './bar' should produce NamedReexport 'Foo'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "Foo" && e.kind == RawExportKind::NamedReexport)
+            .unwrap();
+        assert_eq!(
+            foo.source.as_deref(),
+            Some("./bar"),
+            "source should be './bar'"
+        );
+    }
+
+    #[test]
+    fn test_type_only_alias_export() {
+        // `export type { Foo as Bar }` — exported public name is "Bar"
+        let source = b"export type { Foo as Bar };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "Bar" && e.kind == RawExportKind::Named),
+            "export type {{ Foo as Bar }} should produce Named export 'Bar'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            !exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
+            "local name 'Foo' should NOT appear as Named; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_destructured_export() {
+        // `export const { foo, bar } = obj` — two Named exports
+        let source = b"export const { foo, bar } = obj;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "destructured export 'foo' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            "destructured export 'bar' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        // Both should have Variable decl_kind
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "foo" && e.kind == RawExportKind::Named)
+            .unwrap();
+        assert_eq!(
+            foo.decl_kind,
+            Some(crate::types::DeclarationKind::Variable),
+            "destructured export should have Variable decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_destructured_pair_export() {
+        // `export const { foo: renamed } = obj` — public name is "foo" (the key)
+        let source = b"export const { foo: renamed } = obj;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "pair-pattern destructured export key 'foo' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            !exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
+            "local alias 'renamed' should NOT appear as Named export; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
+
+    #[test]
+    fn test_export_assignment() {
+        // `export = MyClass;` — CJS-style TS default export, becomes name="default"
+        let source = b"export = MyClass;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "default" && e.kind == RawExportKind::Default),
+            "export = MyClass should produce Default export 'default'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ambient_function_declaration() {
+        // `export declare function foo(): void;` — ambient declaration in .d.ts
+        let source = b"export declare function foo(): void;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "foo" && e.kind == RawExportKind::Named);
+        assert!(
+            foo.is_some(),
+            "export declare function foo should produce Named export 'foo'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            foo.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Function),
+            "ambient function should have Function decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_class_declaration() {
+        // `export declare class Bar {}` — ambient class declaration
+        let source = b"export declare class Bar {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let bar = exports
+            .iter()
+            .find(|e| e.name == "Bar" && e.kind == RawExportKind::Named);
+        assert!(
+            bar.is_some(),
+            "export declare class Bar should produce Named export 'Bar'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            bar.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Class),
+            "ambient class should have Class decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_interface_declaration() {
+        // `export declare interface Baz { x: number }` — ambient interface
+        let source = b"export declare interface Baz { x: number }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let baz = exports
+            .iter()
+            .find(|e| e.name == "Baz" && e.kind == RawExportKind::Named);
+        assert!(
+            baz.is_some(),
+            "export declare interface Baz should produce Named export 'Baz'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            baz.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Interface),
+            "ambient interface should have Interface decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_ambient_variable_declaration() {
+        // `export declare const VERSION: string;` — ambient variable
+        let source = b"export declare const VERSION: string;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let version = exports
+            .iter()
+            .find(|e| e.name == "VERSION" && e.kind == RawExportKind::Named);
+        assert!(
+            version.is_some(),
+            "export declare const VERSION should produce Named export 'VERSION'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            version.unwrap().decl_kind,
+            Some(crate::types::DeclarationKind::Variable),
+            "ambient variable should have Variable decl_kind"
         );
     }
 }
