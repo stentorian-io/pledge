@@ -337,6 +337,38 @@ const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
     ]))
 "#;
 
+/// Captures `declare module 'express' { ... }` — module augmentation in .d.ts files.
+///
+/// Module augmentations extend external package types. The module name (string literal)
+/// identifies which module is being augmented. These are captured as named exports
+/// with a synthetic `augment:<module>` key so their removal is detected.
+///
+/// Grammar: `(ambient_declaration (module name: (string) body: (statement_block)))`.
+/// The `string` node has a `string_fragment` child; `node.utf8_text` returns the
+/// full quoted string (e.g., `"'express'"`). We strip quotes after capture.
+/// GAP-15-06.
+const DECLARE_MODULE_AUGMENTATION_QUERY_TS: &str = r#"
+(ambient_declaration
+  (module
+    name: (string) @module_name
+    body: (statement_block)))
+"#;
+
+/// Captures `declare global { ... }` — global augmentation in .d.ts files.
+///
+/// Global augmentations add declarations to the global scope. Captured with a
+/// synthetic `augment:global` key.
+///
+/// Grammar: `declare global { ... }` parses as `(ambient_declaration (statement_block ...))`
+/// — no `module` wrapper, no identifier. We detect it by matching `ambient_declaration`
+/// nodes whose only named child is a `statement_block` (with no preceding module name node).
+/// The query captures the `statement_block` so we can filter on node position.
+/// GAP-15-06.
+const DECLARE_GLOBAL_AUGMENTATION_QUERY_TS: &str = r#"
+(ambient_declaration
+  (statement_block) @global_body)
+"#;
+
 /// Captures `export { default as Named }` — keyword `default` as source with alias.
 /// The `default` keyword is an unnamed node, not `identifier`, so existing queries miss it.
 /// GAP-13-02.
@@ -1721,6 +1753,90 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: None,
                                 });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Module augmentation capture (GAP-15-06, TypeScript only) ---
+    // Captures `declare module 'express' { ... }` and `declare global { ... }`.
+    // Module augmentations extend external package types — their removal breaks consumers.
+    // Emitted with synthetic `augment:<module>` key (or `augment:global`) so the existing
+    // export-removed detection handles their removal without extra code.
+    if matches!(lang, SourceLanguage::TypeScript) {
+        // declare module 'express' { ... }
+        if let Ok(query) = Query::new(&language, DECLARE_MODULE_AUGMENTATION_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        // @module_name — the string literal (e.g., "'express'")
+                        let node = capture.node;
+                        if let Ok(text) = node.utf8_text(source) {
+                            let module_name = strip_quotes(text);
+                            let augment_key = format!("augment:{}", module_name);
+                            let line = node.start_position().row as u32 + 1;
+                            let col = node.start_position().column as u32 + 1;
+                            let already = exports.iter().any(|e| e.name == augment_key);
+                            if !already {
+                                exports.push(RawExport {
+                                    name: augment_key,
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: Some(DeclarationKind::Namespace),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // declare global { ... }
+        // Grammar: `declare global { ... }` parses as `(ambient_declaration (statement_block ...))`.
+        // The `statement_block` is the first (and only) named child of `ambient_declaration`.
+        // We match ambient_declaration nodes whose first named child is statement_block and
+        // have no preceding module-name node — that distinguishes `declare global` from
+        // `declare module 'foo' { }` (which has a module child with a string name).
+        if let Ok(query) = Query::new(&language, DECLARE_GLOBAL_AUGMENTATION_QUERY_TS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        // @global_body — the statement_block inside ambient_declaration.
+                        // Verify the parent is ambient_declaration with no module-name child
+                        // to exclude false positives from `declare module 'foo' { }` body blocks
+                        // (those are nested inside a `module` node, not directly in ambient_declaration).
+                        let body_node = capture.node;
+                        // Check parent is ambient_declaration
+                        if let Some(parent) = body_node.parent() {
+                            if parent.kind() == "ambient_declaration" {
+                                // Ensure no `module` child — that would be `declare module 'foo'`
+                                let has_module_child = (0..parent.child_count() as u32)
+                                    .filter_map(|i| parent.child(i))
+                                    .any(|c| c.kind() == "module");
+                                if !has_module_child {
+                                    let line = body_node.start_position().row as u32 + 1;
+                                    let col = body_node.start_position().column as u32 + 1;
+                                    let already = exports.iter().any(|e| e.name == "augment:global");
+                                    if !already {
+                                        exports.push(RawExport {
+                                            name: "augment:global".to_string(),
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind: Some(DeclarationKind::Namespace),
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -4010,6 +4126,52 @@ mod tests {
             result.err()
         );
         // The parse completing without panic/error is sufficient — detection is best-effort.
+    }
+
+    // ── GAP-15-06: Module augmentation capture ────────────────────────────────
+
+    #[test]
+    fn test_declare_module_augmentation_captured() {
+        let source = br#"
+declare module 'express' {
+    interface Request {
+        user?: { id: string };
+    }
+}
+"#;
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let augment = exports.iter().find(|e| e.name == "augment:express");
+        assert!(
+            augment.is_some(),
+            "declare module 'express' should be captured; got: {:?}",
+            exports
+        );
+    }
+
+    #[test]
+    fn test_declare_global_augmentation_captured() {
+        let source = br#"
+declare global {
+    interface Window {
+        myApp: any;
+    }
+}
+"#;
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let augment = exports.iter().find(|e| e.name == "augment:global");
+        assert!(
+            augment.is_some(),
+            "declare global should be captured; got: {:?}",
+            exports
+        );
+    }
+
+    #[test]
+    fn test_declare_module_not_captured_in_js() {
+        // declare module is TypeScript-only syntax
+        let source = b"// no declare module in JS";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        assert!(exports.iter().all(|e| !e.name.starts_with("augment:")));
     }
 }
 
