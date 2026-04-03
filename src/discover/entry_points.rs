@@ -38,7 +38,11 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
         // Fall back to main / module / types / typings in priority order.
         // Note: `typings` is the legacy TypeScript alias for `types`; we check
         // `types` first so that when both are present `types` wins (D-11).
-        for field in &["main", "module", "types", "typings"] {
+        // GAP-16-12: Include "browser" as a fallback entry point.
+        // The browser field is commonly used by bundlers (webpack, Rollup) to specify
+        // a browser-specific entry point. We handle the string case (common) here;
+        // the object case (field remapping) is out of scope for entry-point discovery.
+        for field in &["main", "module", "types", "typings", "browser"] {
             if let Some(serde_json::Value::String(rel)) = pkg.get(*field) {
                 let abs = pkg_root.join(rel.trim_start_matches("./"));
                 results.push(EntryPoint {
@@ -157,11 +161,13 @@ fn resolve_exports_value(
             }
         }
         serde_json::Value::Array(items) => {
-            // Per Node.js resolution: take the first item that resolves successfully.
-            // We collect all candidates and let the path-existence filter below prune them;
-            // in practice we only process the first string we encounter.
-            if let Some(first) = items.first() {
-                resolve_exports_value(first, base_path, condition, results);
+            // GAP-16-07: Per Node.js spec, try each candidate in order and use the first
+            // one whose file exists on disk. We add all candidates here; the
+            // canonicalize+filter step in resolve_entry_points already filters out
+            // non-existent paths, so the first existing entry in the array wins naturally.
+            // Deduplication via HashSet<PathBuf> prevents any duplicates.
+            for item in items {
+                resolve_exports_value(item, base_path, condition, results);
             }
         }
         serde_json::Value::Null => {
@@ -286,6 +292,61 @@ mod tests {
             entries[0].path.to_string_lossy().ends_with("index.d.ts"),
             "entry point path should end with index.d.ts; got: {:?}",
             entries[0].path
+        );
+    }
+
+    // GAP-16-12: browser field test
+    #[test]
+    fn test_browser_field_parsed_as_entry_point() {
+        // Package uses the "browser" field as a bundler entry point.
+        let pkg_json = r#"{"name":"mypkg","main":"./dist/index.js","browser":"./dist/browser.js"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.js", "dist/browser.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("browser.js")),
+            "browser field should be discovered as an entry point; got: {paths:?}"
+        );
+    }
+
+    // GAP-16-07: exports array fallback tests
+    #[test]
+    fn test_exports_array_first_existing_wins() {
+        // Array with 3 candidates; only the 2nd exists on disk.
+        // Should discover the 2nd entry (the first existing one).
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "exports": ["./dist/missing1.js", "./dist/real.js", "./dist/missing2.js"]
+        }"#;
+        let dir = make_pkg(pkg_json, &["dist/real.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "only the existing candidate should be returned; got: {entries:?}"
+        );
+        assert!(
+            entries[0].path.to_string_lossy().ends_with("real.js"),
+            "should pick the first existing file; got: {:?}",
+            entries[0].path
+        );
+    }
+
+    #[test]
+    fn test_exports_array_all_missing_returns_empty() {
+        // All candidates in the array are non-existent — should return empty.
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "exports": ["./dist/a.js", "./dist/b.js"]
+        }"#;
+        let dir = make_pkg(pkg_json, &[]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert!(
+            entries.is_empty(),
+            "no existing candidates should produce empty entry points; got: {entries:?}"
         );
     }
 }
