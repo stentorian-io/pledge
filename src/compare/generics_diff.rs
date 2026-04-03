@@ -13,6 +13,7 @@ use std::path::Path;
 use crate::types::{Finding, Severity, TypeParam};
 use super::subtype::{
     format_type, is_subtype_of,
+    RULE_CONST_TYPE_PARAM_CHANGED,
     RULE_GENERIC_CONSTRAINT_TIGHTENED, RULE_GENERIC_DEFAULT_CHANGED,
     RULE_GENERIC_PARAM_ADDED, RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
     RULE_GENERIC_PARAM_REMOVED, RULE_GENERIC_PARAM_REORDERED,
@@ -159,6 +160,26 @@ pub fn compare_type_params(
             col,
             &mut findings,
         );
+
+        // GAP-15-07: const type parameter modifier changed
+        if old_param.is_const != new_param.is_const {
+            let action = if old_param.is_const {
+                "removed from"
+            } else {
+                "added to"
+            };
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_CONST_TYPE_PARAM_CHANGED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "`const` modifier {} type parameter `{}` of `{}` — inference behavior changed",
+                    action, old_param.name, symbol_name
+                ),
+            });
+        }
     }
 
     findings
@@ -364,6 +385,7 @@ mod tests {
             constraint_text: None,
             default_text: None,
             constraint_shape: None,
+            is_const: false,
         }
     }
 
@@ -373,6 +395,7 @@ mod tests {
             constraint_text: None,
             default_text: Some(default.to_string()),
             constraint_shape: None,
+            is_const: false,
         }
     }
 
@@ -382,6 +405,7 @@ mod tests {
             constraint_text: Some(constraint.to_string()),
             default_text: None,
             constraint_shape: None,
+            is_const: false,
         }
     }
 
@@ -391,6 +415,7 @@ mod tests {
             constraint_text: None,
             default_text: None,
             constraint_shape: Some(shape),
+            is_const: false,
         }
     }
 
@@ -572,6 +597,80 @@ mod tests {
         assert!(added_with_default[0].message.contains("U"));
         assert!(added_with_default[0].message.contains("string"));
         assert!(added_with_default[0].message.contains("MyFn"));
+    }
+
+    // ── GAP-15-07: const type parameter modifier ──────────────────────────────
+
+    #[test]
+    fn test_const_type_param_removed() {
+        let old = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: true,
+        }];
+        let new = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: false,
+        }];
+        let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            "should detect const removal; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_const_type_param_added() {
+        let old = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: false,
+        }];
+        let new = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: true,
+        }];
+        let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            "should detect const addition; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_const_type_param_unchanged() {
+        let old = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: true,
+        }];
+        let new = vec![TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: true,
+        }];
+        let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
+        assert!(
+            !findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            "should not fire for unchanged const; got: {:?}",
+            findings
+        );
     }
 
     // ── GEN-01 + GEN-06 combined ──────────────────────────────────────────────

@@ -160,6 +160,7 @@ pub struct TypeParam {
     pub constraint_text: Option<String>,
     pub default_text: Option<String>,
     pub constraint_shape: Option<shape::TypeShape>,
+    pub is_const: bool, // GAP-15-07 — const type parameter modifier (TS 4.9+)
 }
 
 // ─── Tests for new data model types ─────────────────────────────────────────
@@ -241,6 +242,7 @@ mod tests {
             constraint_text: Some("string".to_string()),
             default_text: Some("never".to_string()),
             constraint_shape: None,
+            is_const: false,
         };
         assert_eq!(param.name, "T");
         assert_eq!(param.constraint_text.as_deref(), Some("string"));

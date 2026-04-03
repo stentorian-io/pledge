@@ -365,6 +365,9 @@ pub const RULE_INTERFACE_MEMBER_REMOVED: &str = "interface-member-removed";
 pub const RULE_INTERFACE_MEMBER_ADDED: &str = "interface-member-added";
 pub const RULE_INTERFACE_PARAM_COUNT_CHANGED: &str = "interface-param-count-changed";
 
+// Generic modifier rules (GAP-15-07)
+pub const RULE_CONST_TYPE_PARAM_CHANGED: &str = "const-type-param-changed";
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
