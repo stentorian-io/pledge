@@ -1,0 +1,6 @@
+:root {
+  --color-primary: blue;
+  --spacing: 8px;
+}
+.btn { color: red; }
+.card { padding: var(--spacing); }

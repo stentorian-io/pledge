@@ -138,6 +138,11 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             );
             findings.extend(structural_findings);
 
+            // Step 3e: Asset & schema comparison (AST-01..06)
+            let asset_findings =
+                compare::compare_asset_diff(&previous_root, &current_root);
+            findings.extend(asset_findings);
+
             // Re-sort after merging (Major first, then Minor, then Patch — D-01)
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
 

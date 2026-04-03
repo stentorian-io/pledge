@@ -114,6 +114,23 @@ pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding
     exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root)
 }
 
+/// Orchestrates asset & schema comparison (AST-01..06).
+/// Runs JSON diff, CSS diff, and asset file diff, merging all findings.
+pub fn compare_asset_diff(old_root: &Path, new_root: &Path) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    // AST-01, AST-02, AST-06: JSON field diff
+    findings.extend(json_diff::compare_json_files(old_root, new_root));
+
+    // AST-03, AST-04: CSS custom property and class name diff
+    findings.extend(css_diff::compare_css_files(old_root, new_root));
+
+    // AST-05: Asset file presence diff
+    findings.extend(asset_diff::compare_asset_files(old_root, new_root));
+
+    findings
+}
+
 /// Returns true if any finding has Major severity (per CLI-02).
 pub fn has_breaking_changes(findings: &[Finding]) -> bool {
     findings.iter().any(|f| f.severity == Severity::Major)
