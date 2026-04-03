@@ -218,6 +218,42 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     // 1. Exact path as-is (handles already-extensioned imports).
     candidates.push(joined.clone());
 
+    // GAP-13-06: TypeScript moduleResolution node16/bundler — .js → .ts probing.
+    // When specifier ends with .js/.mjs/.cjs, probe TypeScript equivalents.
+    // Must come BEFORE generic extension probing to get correct priority:
+    // foo.js (exact) → foo.ts → foo.tsx → foo.d.ts → (then generic extensions)
+    if let Some(ext) = joined.extension() {
+        let ext_str = ext.to_string_lossy();
+        match ext_str.as_ref() {
+            "js" => {
+                let stem = joined.with_extension("");
+                candidates.push(append_extension(&stem, "ts"));
+                candidates.push(append_extension(&stem, "tsx"));
+                candidates.push(stem.with_file_name(format!(
+                    "{}.d.ts",
+                    stem.file_name().unwrap_or_default().to_string_lossy()
+                )));
+            }
+            "mjs" => {
+                let stem = joined.with_extension("");
+                candidates.push(append_extension(&stem, "mts"));
+                candidates.push(stem.with_file_name(format!(
+                    "{}.d.mts",
+                    stem.file_name().unwrap_or_default().to_string_lossy()
+                )));
+            }
+            "cjs" => {
+                let stem = joined.with_extension("");
+                candidates.push(append_extension(&stem, "cts"));
+                candidates.push(stem.with_file_name(format!(
+                    "{}.d.cts",
+                    stem.file_name().unwrap_or_default().to_string_lossy()
+                )));
+            }
+            _ => {}
+        }
+    }
+
     // 2. TypeScript source extensions (higher priority for TS projects).
     candidates.push(append_extension(&joined, "ts"));
     candidates.push(append_extension(&joined, "tsx"));
