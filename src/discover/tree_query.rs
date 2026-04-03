@@ -1508,6 +1508,96 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- Namespace member expansion (REQ-14-03) --------------------------------
+    // For `export namespace Foo { export function bar() {} }`, emit "Foo.bar" as
+    // a separate Named export. This enables export-removed detection for namespace
+    // members and structural diff on individual members.
+    // Only expands direct members (1 level deep), not nested namespaces.
+    {
+        let ns_query_str = "(export_statement (internal_module name: (identifier) @ns_name body: (statement_block) @ns_body))";
+        if let Ok(query) = Query::new(&language, ns_query_str) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let mut ns_name_opt: Option<String> = None;
+                let mut ns_body_opt: Option<tree_sitter::Node> = None;
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        // @ns_name
+                        if let Ok(name) = capture.node.utf8_text(source) {
+                            ns_name_opt = Some(name.to_string());
+                        }
+                    } else if capture.index == 1 {
+                        // @ns_body
+                        ns_body_opt = Some(capture.node);
+                    }
+                }
+                if let (Some(ns_name), Some(ns_body)) = (ns_name_opt, ns_body_opt) {
+                    // Scan namespace body for nested export_statement nodes
+                    let mut body_cursor = ns_body.walk();
+                    for stmt in ns_body.children(&mut body_cursor) {
+                        if stmt.kind() == "export_statement" {
+                            let mut stmt_cursor = stmt.walk();
+                            for decl_child in stmt.children(&mut stmt_cursor) {
+                                let decl_kind_str = decl_child.kind();
+                                // Extract name from the inner declaration
+                                let inner_name = match decl_kind_str {
+                                    "function_declaration"
+                                    | "generator_function_declaration"
+                                    | "class_declaration"
+                                    | "abstract_class_declaration"
+                                    | "interface_declaration"
+                                    | "type_alias_declaration"
+                                    | "enum_declaration"
+                                    | "function_signature" => {
+                                        decl_child
+                                            .child_by_field_name("name")
+                                            .and_then(|n| n.utf8_text(source).ok())
+                                            .map(|s| s.to_string())
+                                    }
+                                    "lexical_declaration" => {
+                                        // export const baz = ... inside namespace
+                                        let mut found = None;
+                                        let mut ldc = decl_child.walk();
+                                        for ld_child in decl_child.children(&mut ldc) {
+                                            if ld_child.kind() == "variable_declarator" {
+                                                found = ld_child
+                                                    .child_by_field_name("name")
+                                                    .and_then(|n| n.utf8_text(source).ok())
+                                                    .map(|s| s.to_string());
+                                                break;
+                                            }
+                                        }
+                                        found
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(member_name) = inner_name {
+                                    let dotted = format!("{}.{}", ns_name, member_name);
+                                    let line = decl_child.start_position().row as u32 + 1;
+                                    let col = decl_child.start_position().column as u32 + 1;
+                                    let decl_kind = Some(decl_kind_from_node_kind(decl_kind_str));
+                                    // Don't emit duplicates
+                                    let already = exports.iter().any(|e| e.name == dotted);
+                                    if !already {
+                                        exports.push(RawExport {
+                                            name: dotted,
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(exports)
 }
 
@@ -3555,5 +3645,57 @@ mod tests {
             "holes should not produce Named exports; got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
+    }
+
+    // ─── REQ-14-03: Namespace member expansion ───────────────────────────────
+
+    #[test]
+    fn test_namespace_member_expansion() {
+        // REQ-14-03: namespace members should produce dotted-name entries
+        let source =
+            b"export namespace Foo { export function bar(): void {} export const baz = 1; }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"Foo"),
+            "namespace itself should be present; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Foo.bar"),
+            "namespace member 'Foo.bar' should be present; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Foo.baz"),
+            "namespace member 'Foo.baz' should be present; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_namespace_member_decl_kind() {
+        let source = b"export namespace NS { export class MyClass {} }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let member = exports.iter().find(|e| e.name == "NS.MyClass");
+        assert!(
+            member.is_some(),
+            "NS.MyClass should be exported; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            member.unwrap().decl_kind,
+            Some(DeclarationKind::Class),
+            "NS.MyClass should have Class decl_kind"
+        );
+    }
+
+    #[test]
+    fn test_namespace_member_no_duplicates() {
+        // REQ-14-03: same dotted name should not appear twice
+        let source = b"export namespace Foo { export function bar(): void {} }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
+        assert_eq!(count, 1, "Foo.bar should appear exactly once; got count={}", count);
     }
 }

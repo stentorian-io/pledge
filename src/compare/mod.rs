@@ -330,6 +330,40 @@ fn find_decl_in_node<'a>(
     name: &str,
     hint_row: usize,
 ) -> Option<tree_sitter::Node<'a>> {
+    // REQ-14-03: Handle dotted names (namespace members) by finding the namespace
+    // first, then searching inside its body for the member.
+    if name.contains('.') {
+        let parts: Vec<&str> = name.splitn(2, '.').collect();
+        let ns_name = parts[0];
+        let member_name = parts[1];
+        // Find the internal_module node for the namespace by scanning children
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "internal_module" => {
+                    let matches_ns = child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(|n| n == ns_name)
+                        .unwrap_or(false);
+                    if matches_ns {
+                        if let Some(body) = child.child_by_field_name("body") {
+                            return find_decl_in_node(body, source, member_name, hint_row);
+                        }
+                    }
+                }
+                "export_statement" | "ambient_declaration" => {
+                    // Recurse into wrappers to find internal_module
+                    if let Some(found) = find_decl_in_node(child, source, name, hint_row) {
+                        return Some(found);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return None;
+    }
+
     let mut candidates: Vec<(usize, tree_sitter::Node<'a>)> = Vec::new(); // (distance, node)
 
     let mut cursor = node.walk();
@@ -960,5 +994,33 @@ mod tests {
         let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
         let x_count = members.iter().filter(|m| m.name == "x").count();
         assert_eq!(x_count, 1, "duplicate member 'x' should appear only once");
+    }
+
+    // ─── REQ-14-03: find_decl_in_node dotted name (namespace member) ─────────
+
+    #[test]
+    fn test_find_decl_dotted_name_in_namespace() {
+        // REQ-14-03: find_decl_in_node should find member inside namespace body
+        let source = b"export namespace Foo { export function bar(x: number): void {} }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo.bar", 1);
+        assert!(
+            result.is_some(),
+            "extract_declaration should find 'Foo.bar' inside namespace"
+        );
+        let decl = result.unwrap();
+        assert!(decl.is_function, "Foo.bar should be identified as a function");
+    }
+
+    #[test]
+    fn test_find_decl_dotted_name_class_in_namespace() {
+        // REQ-14-03: class member inside namespace
+        let source = b"export namespace NS { export class MyClass { foo(): void {} } }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "NS.MyClass", 1);
+        assert!(
+            result.is_some(),
+            "extract_declaration should find 'NS.MyClass' inside namespace"
+        );
+        let decl = result.unwrap();
+        assert!(decl.is_class, "NS.MyClass should be identified as a class");
     }
 }
