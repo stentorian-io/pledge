@@ -19,6 +19,9 @@ pub fn discover_exports(
 ) -> anyhow::Result<(ExportMap, Vec<resolver::ResolveWarning>)> {
     let entry_points = entry_points::resolve_entry_points(pkg_root)?;
 
+    // GAP-15-04: Parse tsconfig.json for path alias resolution
+    let tsconfig = resolver::parse_tsconfig_paths(pkg_root);
+
     let mut map = ExportMap::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut warnings: Vec<resolver::ResolveWarning> = Vec::new();
@@ -31,6 +34,7 @@ pub fn discover_exports(
             &mut visited,
             &mut warnings,
             0,
+            tsconfig.as_ref(),
         )?;
     }
 

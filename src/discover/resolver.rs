@@ -6,6 +6,130 @@ use anyhow::Context;
 use super::tree_query::{language_for_file, parse_exports, RawExportKind};
 use crate::types::{ExportKind, ExportMap, ExportSymbol};
 
+// ---------------------------------------------------------------------------
+// Tsconfig path alias resolution (GAP-15-04)
+// ---------------------------------------------------------------------------
+
+/// Parsed tsconfig.json path aliases.
+#[derive(Debug, Clone, Default)]
+pub struct TsconfigPaths {
+    /// Base URL for non-relative module resolution.
+    pub base_url: Option<String>,
+    /// Path alias mappings: key is the alias pattern (e.g., "@/*"),
+    /// value is the list of replacement paths (e.g., ["./src/*"]).
+    pub paths: std::collections::HashMap<String, Vec<String>>,
+}
+
+/// Parse `tsconfig.json` from `pkg_root` and extract `compilerOptions.paths` and `compilerOptions.baseUrl`.
+///
+/// Returns `None` if tsconfig.json doesn't exist or is unparseable.
+/// This is best-effort — missing fields are silently ignored.
+pub fn parse_tsconfig_paths(pkg_root: &Path) -> Option<TsconfigPaths> {
+    let tsconfig_path = pkg_root.join("tsconfig.json");
+    let content = std::fs::read_to_string(&tsconfig_path).ok()?;
+    // tsconfig.json may have comments — strip // line comments before parsing
+    let stripped: String = content
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") {
+                ""
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let json: serde_json::Value = serde_json::from_str(&stripped).ok()?;
+
+    let compiler_opts = json.get("compilerOptions")?;
+
+    let base_url = compiler_opts
+        .get("baseUrl")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let mut paths_map = std::collections::HashMap::new();
+    if let Some(paths_obj) = compiler_opts.get("paths").and_then(|v| v.as_object()) {
+        for (key, value) in paths_obj {
+            if let Some(arr) = value.as_array() {
+                let replacements: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                if !replacements.is_empty() {
+                    paths_map.insert(key.clone(), replacements);
+                }
+            }
+        }
+    }
+
+    Some(TsconfigPaths {
+        base_url,
+        paths: paths_map,
+    })
+}
+
+/// Attempt to resolve a module specifier using tsconfig path aliases.
+///
+/// Given a specifier like `@/utils` and paths like `{"@/*": ["./src/*"]}`,
+/// returns a list of candidate absolute paths to try.
+///
+/// Returns empty Vec if no alias matches.
+pub fn resolve_tsconfig_alias(
+    specifier: &str,
+    tsconfig: &TsconfigPaths,
+    pkg_root: &Path,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    // Determine the base directory for resolution
+    let base_dir = if let Some(ref base_url) = tsconfig.base_url {
+        pkg_root.join(base_url)
+    } else {
+        pkg_root.to_path_buf()
+    };
+
+    for (pattern, replacements) in &tsconfig.paths {
+        // Pattern can be exact match or wildcard match (e.g., "@/*")
+        if pattern.contains('*') {
+            // Wildcard pattern: "@/*" matches "@/utils", "@/components/Button", etc.
+            let prefix = pattern.strip_suffix('*').unwrap_or(pattern);
+            if let Some(remainder) = specifier.strip_prefix(prefix) {
+                for replacement in replacements {
+                    if replacement.contains('*') {
+                        let replaced = replacement.replace('*', remainder);
+                        let resolved = base_dir.join(replaced.trim_start_matches("./"));
+                        // Add with standard extension probing
+                        candidates.push(resolved.clone());
+                        candidates.push(resolved.with_extension("ts"));
+                        candidates.push(resolved.with_extension("tsx"));
+                        candidates.push(resolved.with_extension("js"));
+                        candidates.push(resolved.with_extension("jsx"));
+                        // Directory index fallback
+                        candidates.push(resolved.join("index.ts"));
+                        candidates.push(resolved.join("index.tsx"));
+                        candidates.push(resolved.join("index.js"));
+                    } else {
+                        let resolved = base_dir.join(replacement.trim_start_matches("./"));
+                        candidates.push(resolved);
+                    }
+                }
+            }
+        } else {
+            // Exact pattern match
+            if specifier == pattern {
+                for replacement in replacements {
+                    let resolved = base_dir.join(replacement.trim_start_matches("./"));
+                    candidates.push(resolved);
+                }
+            }
+        }
+    }
+
+    candidates
+}
+
 /// Maximum number of re-export hops before aborting a resolution chain (D-12).
 #[allow(dead_code)]
 const MAX_RESOLVE_DEPTH: usize = 20;
@@ -41,6 +165,7 @@ pub fn collect_exports(
     visited: &mut HashSet<PathBuf>,
     warnings: &mut Vec<ResolveWarning>,
     depth: usize,
+    tsconfig: Option<&TsconfigPaths>,
 ) -> anyhow::Result<()> {
     if depth > MAX_RESOLVE_DEPTH {
         warnings.push(ResolveWarning::new(format!(
@@ -126,11 +251,17 @@ pub fn collect_exports(
             }
             RawExportKind::StarReexport => {
                 if let Some(specifier) = &export.source {
-                    let candidates = resolve_module_path(&canonical, specifier);
+                    let mut candidates = resolve_module_path(&canonical, specifier);
+                    // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                    if let Some(tc) = tsconfig {
+                        if !candidates.iter().any(|p| p.exists()) {
+                            candidates.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
+                        }
+                    }
                     let resolved = candidates.into_iter().find(|p| p.exists());
                     match resolved {
                         Some(target) => {
-                            collect_exports(&target, pkg_root, map, visited, warnings, depth + 1)?;
+                            collect_exports(&target, pkg_root, map, visited, warnings, depth + 1, tsconfig)?;
                         }
                         None => {
                             warnings.push(ResolveWarning::new(format!(
@@ -144,7 +275,13 @@ pub fn collect_exports(
             }
             RawExportKind::NamedReexport => {
                 if let Some(specifier) = &export.source {
-                    let candidates = resolve_module_path(&canonical, specifier);
+                    let mut candidates = resolve_module_path(&canonical, specifier);
+                    // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                    if let Some(tc) = tsconfig {
+                        if !candidates.iter().any(|p| p.exists()) {
+                            candidates.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
+                        }
+                    }
                     let resolved = candidates.into_iter().find(|p| p.exists());
                     match resolved {
                         Some(target) => {
@@ -458,5 +595,95 @@ mod tests {
             s.ends_with("/foo.d.ts")
         });
         assert!(has_dts, "candidates must include foo.d.ts; got: {candidates:?}");
+    }
+
+    // -------------------------------------------------------------------------
+    // GAP-15-04: tsconfig path alias resolution tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_resolve_tsconfig_alias_wildcard() {
+        // Pattern "@/*" with replacement "./src/*", specifier "@/utils" → {root}/src/utils.ts
+        let mut paths = std::collections::HashMap::new();
+        paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
+        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let pkg_root = Path::new("/project");
+        let candidates = resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
+        let has_utils_ts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("src/utils.ts"));
+        assert!(has_utils_ts, "wildcard alias must produce src/utils.ts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_tsconfig_alias_exact() {
+        // Exact pattern "@app" with replacement "./src/app.ts", specifier "@app" resolves
+        let mut paths = std::collections::HashMap::new();
+        paths.insert("@app".to_string(), vec!["./src/app.ts".to_string()]);
+        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let pkg_root = Path::new("/project");
+        let candidates = resolve_tsconfig_alias("@app", &tsconfig, pkg_root);
+        assert!(!candidates.is_empty(), "exact alias must produce candidates; got: {candidates:?}");
+        let has_app_ts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("src/app.ts"));
+        assert!(has_app_ts, "exact alias must produce src/app.ts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_tsconfig_alias_no_match() {
+        // Specifier "lodash" with no matching alias returns empty candidates
+        let mut paths = std::collections::HashMap::new();
+        paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
+        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let pkg_root = Path::new("/project");
+        let candidates = resolve_tsconfig_alias("lodash", &tsconfig, pkg_root);
+        assert!(candidates.is_empty(), "non-aliased specifier must return empty; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_parse_tsconfig_paths_basic() {
+        // Create a temp dir with a tsconfig.json and verify parsing
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tsconfig_content = r#"{
+            "compilerOptions": {
+                "baseUrl": ".",
+                "paths": {
+                    "@/*": ["./src/*"],
+                    "@app": ["./src/app.ts"]
+                }
+            }
+        }"#;
+        std::fs::write(dir.path().join("tsconfig.json"), tsconfig_content).unwrap();
+
+        let result = parse_tsconfig_paths(dir.path());
+        assert!(result.is_some(), "must parse tsconfig.json");
+        let tc = result.unwrap();
+        assert_eq!(tc.base_url.as_deref(), Some("."), "base_url should be '.'");
+        assert!(tc.paths.contains_key("@/*"), "paths must contain @/*");
+        assert!(tc.paths.contains_key("@app"), "paths must contain @app");
+        let wildcard_replacements = &tc.paths["@/*"];
+        assert_eq!(wildcard_replacements, &["./src/*"], "replacement for @/* should be ./src/*");
+    }
+
+    #[test]
+    fn test_parse_tsconfig_paths_missing_file() {
+        // Non-existent tsconfig.json returns None
+        let result = parse_tsconfig_paths(Path::new("/nonexistent/path"));
+        assert!(result.is_none(), "missing tsconfig should return None");
+    }
+
+    #[test]
+    fn test_resolve_tsconfig_alias_with_base_url() {
+        // baseUrl affects resolution path
+        let mut paths = std::collections::HashMap::new();
+        paths.insert("@/*".to_string(), vec!["src/*".to_string()]);
+        let tsconfig = TsconfigPaths { base_url: Some(".".to_string()), paths };
+        let pkg_root = Path::new("/project");
+        let candidates = resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
+        let has_ts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().contains("src/utils"));
+        assert!(has_ts, "alias with baseUrl must produce src/utils candidates; got: {candidates:?}");
     }
 }
