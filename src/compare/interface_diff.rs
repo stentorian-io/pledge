@@ -10,8 +10,9 @@ use std::path::Path;
 
 use crate::types::{ClassMember, ClassMemberKind, Finding, Severity};
 use super::subtype::{
-    RULE_INTERFACE_MEMBER_ADDED, RULE_INTERFACE_MEMBER_REMOVED,
-    RULE_INTERFACE_PARAM_COUNT_CHANGED,
+    RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED, RULE_INTERFACE_MEMBER_ADDED,
+    RULE_INTERFACE_MEMBER_REMOVED, RULE_INTERFACE_PARAM_COUNT_CHANGED,
+    RULE_INTERFACE_READONLY_CHANGED,
 };
 
 /// Compare interface members from old and new versions.
@@ -75,6 +76,8 @@ pub fn compare_interface_members(
     }
 
     // interface-param-count-changed: method param count changed
+    // GAP-16-03: interface-readonly-changed
+    // GAP-16-10: interface-generic-constraint-tightened
     for (name, old_member) in &old_map {
         if let Some(new_member) = new_map.get(name) {
             if matches!(old_member.kind, ClassMemberKind::Method)
@@ -93,10 +96,91 @@ pub fn compare_interface_members(
                     ),
                 });
             }
+
+            // GAP-16-03: interface property readonly changed
+            if matches!(old_member.kind, ClassMemberKind::Property)
+                && old_member.is_readonly != new_member.is_readonly
+            {
+                let direction = if !old_member.is_readonly && new_member.is_readonly {
+                    "added"
+                } else {
+                    "removed"
+                };
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INTERFACE_READONLY_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "property `{}` readonly modifier {} in interface `{}`",
+                        name, direction, symbol_name
+                    ),
+                });
+            }
+
+            // GAP-16-10: interface method generic constraint tightening
+            // Heuristic: if method type signatures both exist and differ, and the new
+            // signature has a tighter `extends` bound, flag it.
+            if matches!(old_member.kind, ClassMemberKind::Method)
+                && matches!(new_member.kind, ClassMemberKind::Method)
+            {
+                if let (Some(old_sig), Some(new_sig)) =
+                    (&old_member.type_signature, &new_member.type_signature)
+                {
+                    if old_sig != new_sig && has_tighter_generic_constraint(old_sig, new_sig) {
+                        findings.push(Finding {
+                            severity: Severity::Major,
+                            rule: RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED,
+                            file: file.to_path_buf(),
+                            line,
+                            col,
+                            message: format!(
+                                "method `{}` generic constraint tightened in interface `{}`",
+                                name, symbol_name
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
 
     findings
+}
+
+/// Heuristic check for generic constraint tightening.
+///
+/// Compares extends clauses in type signatures. A constraint is considered
+/// tightened if: (a) old had no extends but new does, or (b) both have extends
+/// but the new constraint text is different (conservative: any change is flagged).
+fn has_tighter_generic_constraint(old_sig: &str, new_sig: &str) -> bool {
+    let old_has_extends = old_sig.contains(" extends ");
+    let new_has_extends = new_sig.contains(" extends ");
+    if !old_has_extends && new_has_extends {
+        // Constraint added where none existed
+        return true;
+    }
+    if old_has_extends && new_has_extends {
+        // Both have extends — extract and compare the constraint text
+        if let (Some(old_c), Some(new_c)) =
+            (extract_extends_constraint(old_sig), extract_extends_constraint(new_sig))
+        {
+            return old_c != new_c;
+        }
+    }
+    false
+}
+
+/// Extract the constraint text following " extends " in a type signature string.
+/// Returns the text up to the first `>`, `)`, or `,` delimiter (trimmed).
+fn extract_extends_constraint(sig: &str) -> Option<String> {
+    let idx = sig.find(" extends ")?;
+    let rest = &sig[idx + 9..];
+    let end = rest
+        .find(|c: char| c == '>' || c == ')' || c == ',')
+        .unwrap_or(rest.len());
+    Some(rest[..end].trim().to_string())
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
@@ -263,6 +347,111 @@ mod tests {
         assert!(
             findings.is_empty(),
             "Identical interface members should produce no findings, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    // ── interface-readonly-changed ────────────────────────────────────────────
+
+    fn make_readonly_prop(name: &str) -> ClassMember {
+        ClassMember {
+            name: name.to_string(),
+            kind: ClassMemberKind::Property,
+            visibility: Visibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_readonly: true,
+            param_count: 0,
+            type_signature: None,
+        }
+    }
+
+    #[test]
+    fn test_readonly_added_to_property_is_major() {
+        let old = vec![make_required_prop("count")];
+        let new = vec![make_readonly_prop("count")];
+        let findings = run(&old, &new);
+        assert!(
+            rules(&findings).contains(&"interface-readonly-changed"),
+            "Adding readonly should fire interface-readonly-changed, got: {:?}",
+            rules(&findings)
+        );
+        let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
+        assert_eq!(f.severity, Severity::Major);
+        assert!(f.message.contains("added"), "Message should say 'added'");
+        assert!(f.message.contains("`count`"), "Message should include property name");
+    }
+
+    #[test]
+    fn test_readonly_removed_from_property_is_major() {
+        let old = vec![make_readonly_prop("count")];
+        let new = vec![make_required_prop("count")];
+        let findings = run(&old, &new);
+        assert!(
+            rules(&findings).contains(&"interface-readonly-changed"),
+            "Removing readonly should fire interface-readonly-changed, got: {:?}",
+            rules(&findings)
+        );
+        let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
+        assert_eq!(f.severity, Severity::Major);
+        assert!(f.message.contains("removed"), "Message should say 'removed'");
+    }
+
+    #[test]
+    fn test_readonly_unchanged_no_finding() {
+        let old = vec![make_readonly_prop("x")];
+        let new = vec![make_readonly_prop("x")];
+        let findings = run(&old, &new);
+        assert!(
+            !rules(&findings).contains(&"interface-readonly-changed"),
+            "Unchanged readonly should not fire, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    // ── interface-generic-constraint-tightened ────────────────────────────────
+
+    fn make_method_with_sig(name: &str, sig: &str) -> ClassMember {
+        ClassMember {
+            name: name.to_string(),
+            kind: ClassMemberKind::Method,
+            visibility: Visibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_readonly: false,
+            param_count: 1,
+            type_signature: Some(sig.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_generic_constraint_tightened_fires() {
+        // Old: no extends, new: adds extends constraint
+        let old = vec![make_method_with_sig("process", "<T>(item: T) => void")];
+        let new = vec![make_method_with_sig("process", "<T extends object>(item: T) => void")];
+        let findings = run(&old, &new);
+        assert!(
+            rules(&findings).contains(&"interface-generic-constraint-tightened"),
+            "Tightened generic constraint should fire, got: {:?}",
+            rules(&findings)
+        );
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "interface-generic-constraint-tightened")
+            .unwrap();
+        assert_eq!(f.severity, Severity::Major);
+        assert!(f.message.contains("`process`"));
+    }
+
+    #[test]
+    fn test_generic_constraint_unchanged_no_finding() {
+        let sig = "<T extends object>(item: T) => void";
+        let old = vec![make_method_with_sig("process", sig)];
+        let new = vec![make_method_with_sig("process", sig)];
+        let findings = run(&old, &new);
+        assert!(
+            !rules(&findings).contains(&"interface-generic-constraint-tightened"),
+            "Unchanged constraint should not fire, got: {:?}",
             rules(&findings)
         );
     }
