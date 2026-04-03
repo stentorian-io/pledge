@@ -92,15 +92,29 @@ pub struct RawExport {
 // Tree-sitter query strings
 // ---------------------------------------------------------------------------
 
-/// Captures `export { foo }` and `export { foo as bar }` (no `from` clause).
+/// Captures `export { foo }` (no alias, no `from` clause).
 ///
 /// We match `export_statement` nodes that contain an `export_clause` but no
 /// `source` child — that distinguishes plain named exports from named re-exports.
+/// For `export { foo as bar }` see `NAMED_EXPORT_ALIAS_QUERY`.
 const NAMED_EXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
     (export_specifier
       name: (identifier) @name)))
+"#;
+
+/// Captures `export { foo as bar }` (with alias, no `from` clause).
+///
+/// Capture index 0 = `@local_name` (the local binding, e.g. "foo").
+/// Capture index 1 = `@alias_name` (the public export name, e.g. "bar").
+/// We process this query first so the alias name is used instead of the local name.
+const NAMED_EXPORT_ALIAS_QUERY: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: (identifier) @local_name
+      alias: (identifier) @alias_name)))
 "#;
 
 /// Captures `export default <expr>` — the `value:` field covers expressions and
@@ -169,18 +183,38 @@ const STAR_EXPORT_QUERY: &str = r#"
 "#;
 
 /// Captures `export * as name from './module'` (namespace re-export).
+///
+/// Capture index 0 = `@ns_name` (the namespace identifier, e.g. "utils").
+/// Capture index 1 = `@source` (the module specifier string).
 const NAMESPACE_EXPORT_QUERY: &str = r#"
 (export_statement
-  (namespace_export)
+  (namespace_export
+    (identifier) @ns_name)
   source: (string) @source)
 "#;
 
-/// Captures `export { foo } from './module'` and `export { foo as bar } from './module'`.
+/// Captures `export { foo } from './module'` (no alias).
+/// For `export { foo as bar } from './module'` see `NAMED_REEXPORT_ALIAS_QUERY`.
 const NAMED_REEXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
     (export_specifier
       name: (identifier) @name))
+  source: (string) @source)
+"#;
+
+/// Captures `export { foo as bar } from './module'` (with alias).
+///
+/// Capture index 0 = `@local_name` (the local name in the source module, e.g. "foo").
+/// Capture index 1 = `@alias_name` (the public re-export name, e.g. "bar").
+/// Capture index 2 = `@source` (the module specifier string).
+/// We process this query first so the alias name is used as the exported name.
+const NAMED_REEXPORT_ALIAS_QUERY: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: (identifier) @local_name
+      alias: (identifier) @alias_name))
   source: (string) @source)
 "#;
 
@@ -232,6 +266,52 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // then use that set to exclude them from the plain named export results.
     let reexport_positions = collect_reexport_positions(source, &language)?;
 
+    // Process aliased named exports first: `export { foo as bar }`.
+    // We track their local-name positions so the plain query below skips them.
+    let mut alias_local_positions: std::collections::HashSet<(u32, u32)> =
+        std::collections::HashSet::new();
+    {
+        let query = Query::new(&language, NAMED_EXPORT_ALIAS_QUERY)
+            .context("failed to compile NAMED_EXPORT_ALIAS_QUERY")?;
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            // index 0 = @local_name, index 1 = @alias_name
+            let mut local_pos: Option<(u32, u32)> = None;
+            let mut alias_name_opt: Option<(String, u32, u32)> = None;
+            for capture in m.captures {
+                let node = capture.node;
+                let line = node.start_position().row as u32 + 1;
+                let col = node.start_position().column as u32 + 1;
+                if capture.index == 0 {
+                    local_pos = Some((line, col));
+                } else if capture.index == 1 {
+                    // alias_name is the PUBLIC exported name
+                    if !reexport_positions.contains(&(line, col)) {
+                        let name = node
+                            .utf8_text(source)
+                            .context("UTF-8 decode failed on alias name")?
+                            .to_string();
+                        alias_name_opt = Some((name, line, col));
+                    }
+                }
+            }
+            if let (Some(lp), Some((name, line, col))) = (local_pos, alias_name_opt) {
+                alias_local_positions.insert(lp);
+                exports.push(RawExport {
+                    name,
+                    kind: RawExportKind::Named,
+                    line,
+                    col,
+                    source: None,
+                    decl_kind: None,
+                });
+            }
+        }
+    }
+
+    // Process non-aliased named exports: `export { foo }`.
+    // Skip positions already handled by the alias query or re-export query.
     {
         let query = Query::new(&language, NAMED_EXPORT_QUERY)
             .context("failed to compile NAMED_EXPORT_QUERY")?;
@@ -247,6 +327,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
 
                     // Skip if this position belongs to a named re-export.
                     if reexport_positions.contains(&(line, col)) {
+                        continue;
+                    }
+                    // Skip if already handled by the alias query above.
+                    if alias_local_positions.contains(&(line, col)) {
                         continue;
                     }
 
@@ -391,13 +475,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // --- Star re-exports (plain `export * from '...'`) ------------------------
     // The JS/TS grammar represents `export * from '...'` with a bare `*` token
     // directly inside the export_statement (no namespace_export child node).
-    for star_query_str in &[STAR_EXPORT_QUERY, NAMESPACE_EXPORT_QUERY] {
-        // NAMESPACE_EXPORT_QUERY may not compile for some grammar versions if
-        // the namespace_export node is absent — skip gracefully.
-        let query = match Query::new(&language, star_query_str) {
-            Ok(q) => q,
-            Err(_) => continue,
-        };
+    if let Ok(query) = Query::new(&language, STAR_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -410,9 +488,6 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         .context("UTF-8 decode failed on star re-export source")?;
                     let module_spec = strip_quotes(raw_source);
                     let spec_str = module_spec.to_string();
-                    // Deduplicate: avoid adding the same source twice if both
-                    // queries match (shouldn't happen with correct grammar but
-                    // prevents accidental double recursion).
                     let already = exports.iter().any(|e| {
                         e.kind == RawExportKind::StarReexport
                             && e.source.as_deref() == Some(&spec_str)
@@ -432,7 +507,98 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- Namespace re-exports (`export * as name from '...'`) -----------------
+    // NAMESPACE_EXPORT_QUERY captures: index 0 = @ns_name, index 1 = @source.
+    {
+        if let Ok(query) = Query::new(&language, NAMESPACE_EXPORT_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches = cursor.matches(&query, root, source);
+            while let Some(m) = matches.next() {
+                let mut ns_name_opt: Option<(String, u32, u32)> = None;
+                let mut src_opt: Option<String> = None;
+                for capture in m.captures {
+                    let node = capture.node;
+                    let text = node
+                        .utf8_text(source)
+                        .context("UTF-8 decode failed on namespace re-export")?;
+                    if capture.index == 0 {
+                        // @ns_name — the public namespace identifier
+                        ns_name_opt = Some((
+                            text.to_string(),
+                            node.start_position().row as u32 + 1,
+                            node.start_position().column as u32 + 1,
+                        ));
+                    } else if capture.index == 1 {
+                        // @source — the module specifier
+                        src_opt = Some(strip_quotes(text).to_string());
+                    }
+                }
+                if let (Some((ns_name, line, col)), Some(src)) = (ns_name_opt, src_opt) {
+                    let already = exports.iter().any(|e| {
+                        e.kind == RawExportKind::StarReexport
+                            && e.source.as_deref() == Some(src.as_str())
+                    });
+                    if !already {
+                        exports.push(RawExport {
+                            name: ns_name,
+                            kind: RawExportKind::StarReexport,
+                            line,
+                            col,
+                            source: Some(src),
+                            decl_kind: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     // --- Named re-exports -----------------------------------------------------
+    // Process aliased re-exports first (`export { foo as bar } from './mod'`),
+    // then non-aliased re-exports (`export { foo } from './mod'`).
+    // Track local-name positions from the alias query to skip them in the plain query.
+    let mut reexport_alias_local_positions: std::collections::HashSet<(u32, u32)> =
+        std::collections::HashSet::new();
+    {
+        let query = Query::new(&language, NAMED_REEXPORT_ALIAS_QUERY)
+            .context("failed to compile NAMED_REEXPORT_ALIAS_QUERY")?;
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            // index 0 = @local_name, index 1 = @alias_name, index 2 = @source
+            let mut local_pos: Option<(u32, u32)> = None;
+            let mut alias_name_opt: Option<(String, u32, u32)> = None;
+            let mut src_opt: Option<String> = None;
+            for capture in m.captures {
+                let node = capture.node;
+                let text = node
+                    .utf8_text(source)
+                    .context("UTF-8 decode failed on named re-export alias")?;
+                let line = node.start_position().row as u32 + 1;
+                let col = node.start_position().column as u32 + 1;
+                if capture.index == 0 {
+                    local_pos = Some((line, col));
+                } else if capture.index == 1 {
+                    alias_name_opt = Some((text.to_string(), line, col));
+                } else if capture.index == 2 {
+                    src_opt = Some(strip_quotes(text).to_string());
+                }
+            }
+            if let (Some(lp), Some((name, line, col)), Some(src)) =
+                (local_pos, alias_name_opt, src_opt)
+            {
+                reexport_alias_local_positions.insert(lp);
+                exports.push(RawExport {
+                    name,
+                    kind: RawExportKind::NamedReexport,
+                    line,
+                    col,
+                    source: Some(src),
+                    decl_kind: None,
+                });
+            }
+        }
+    }
     {
         let query = Query::new(&language, NAMED_REEXPORT_QUERY)
             .context("failed to compile NAMED_REEXPORT_QUERY")?;
@@ -448,18 +614,20 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 let text = node
                     .utf8_text(source)
                     .context("UTF-8 decode failed on named re-export")?;
+                let line = node.start_position().row as u32 + 1;
+                let col = node.start_position().column as u32 + 1;
                 if capture.index == 0 {
-                    name_opt = Some((
-                        text.to_string(),
-                        node.start_position().row as u32 + 1,
-                        node.start_position().column as u32 + 1,
-                    ));
+                    name_opt = Some((text.to_string(), line, col));
                 } else if capture.index == 1 {
                     source_opt = Some(strip_quotes(text).to_string());
                 }
             }
 
             if let (Some((name, line, col)), Some(src)) = (name_opt, source_opt) {
+                // Skip if already handled by the alias query above.
+                if reexport_alias_local_positions.contains(&(line, col)) {
+                    continue;
+                }
                 exports.push(RawExport {
                     name,
                     kind: RawExportKind::NamedReexport,
@@ -1169,16 +1337,18 @@ pub fn build_function_shape_from_node(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Collect (line, col) positions of names captured by the named re-export query.
+/// Collect (line, col) positions of local names captured by re-export queries.
 /// Used to exclude those positions from the plain named export results.
+///
+/// Handles both `export { foo } from '...'` and `export { foo as bar } from '...'`.
+/// For the alias form, the local-name (`foo`) position is collected so the plain
+/// export query doesn't double-count it.
 fn collect_reexport_positions(
     source: &[u8],
     language: &tree_sitter::Language,
 ) -> anyhow::Result<std::collections::HashSet<(u32, u32)>> {
     let mut positions = std::collections::HashSet::new();
 
-    let query = Query::new(language, NAMED_REEXPORT_QUERY)
-        .context("failed to compile NAMED_REEXPORT_QUERY for dedup")?;
     let mut parser = Parser::new();
     parser
         .set_language(language)
@@ -1188,16 +1358,38 @@ fn collect_reexport_positions(
         .context("parse failed in dedup")?;
     let root = tree.root_node();
 
-    let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(&query, root, source);
-    while let Some(m) = matches.next() {
-        for capture in m.captures {
-            if capture.index == 0 {
-                // @name
-                let node = capture.node;
-                let line = node.start_position().row as u32 + 1;
-                let col = node.start_position().column as u32 + 1;
-                positions.insert((line, col));
+    // Collect positions from the plain re-export query (@name = index 0).
+    let query = Query::new(language, NAMED_REEXPORT_QUERY)
+        .context("failed to compile NAMED_REEXPORT_QUERY for dedup")?;
+    {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    // @name — the local name node
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    positions.insert((line, col));
+                }
+            }
+        }
+    }
+
+    // Also collect local-name positions from the alias re-export query (@local_name = index 0).
+    if let Ok(alias_query) = Query::new(language, NAMED_REEXPORT_ALIAS_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&alias_query, root, source);
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    // @local_name
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    positions.insert((line, col));
+                }
             }
         }
     }
@@ -1777,5 +1969,92 @@ mod tests {
         let root = tree.root_node();
         let fn_node = root.child(0).unwrap();
         assert!(!is_generator_function(fn_node, source));
+    }
+
+    // ── Export alias and namespace re-export tests (Phase 11 bug fixes) ────────
+
+    #[test]
+    fn test_export_alias_uses_alias_name() {
+        // `export { foo as bar }` — public API name is "bar", not "foo".
+        let source = b"const foo = 1;\nexport { foo as bar };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "bar"),
+            "exported alias name 'bar' should appear in exports; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert!(
+            !exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "local name 'foo' should NOT appear as a Named export; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_export_no_alias_uses_local_name() {
+        // Regression guard: `export { foo }` with no alias should still use "foo".
+        let source = b"const foo = 1;\nexport { foo };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "non-aliased export should use local name 'foo'; got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_reexport_alias_uses_alias_name() {
+        // `export { foo as bar } from './mod'` — public re-export name is "bar".
+        let source = b"export { foo as bar } from './mod';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "bar" && e.kind == RawExportKind::NamedReexport),
+            "aliased re-export 'bar' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            !exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::NamedReexport),
+            "local name 'foo' should NOT appear as a NamedReexport; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_namespace_reexport_captures_name() {
+        // `export * as utils from './mod'` — exported name is "utils", not "*".
+        let source = b"export * as utils from './mod';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "utils" && e.kind == RawExportKind::StarReexport),
+            "namespace re-export should use name 'utils'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            !exports
+                .iter()
+                .any(|e| e.name == "*" && e.source.as_deref() == Some("./mod")),
+            "name '*' should not appear for a named namespace re-export; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_plain_star_reexport_still_works() {
+        // Regression guard: `export * from './mod'` should still produce name="*".
+        let source = b"export * from './mod';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "*" && e.kind == RawExportKind::StarReexport),
+            "plain star re-export should still produce name='*'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
     }
 }
