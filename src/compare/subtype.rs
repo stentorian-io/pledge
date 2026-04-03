@@ -321,6 +321,7 @@ pub const RULE_ENUM_MEMBER_REMOVED: &str = "enum-member-removed";
 pub const RULE_ENUM_MEMBER_VALUE_CHANGED: &str = "enum-member-value-changed";
 pub const RULE_ENUM_MEMBER_REORDERED: &str = "enum-member-reordered";
 pub const RULE_ENUM_CONST_TO_REGULAR: &str = "enum-const-to-regular";
+pub const RULE_ENUM_REGULAR_TO_CONST: &str = "enum-regular-to-const";
 pub const RULE_ENUM_NUMERIC_TO_STRING: &str = "enum-numeric-to-string";
 
 // Generic rules (GEN-*)

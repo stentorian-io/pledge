@@ -24,7 +24,7 @@ use crate::types::{EnumShape, EnumValueKind, Finding, Severity};
 use super::subtype::{
     RULE_ENUM_CONST_TO_REGULAR, RULE_ENUM_MEMBER_ADDED, RULE_ENUM_MEMBER_REMOVED,
     RULE_ENUM_MEMBER_REORDERED, RULE_ENUM_MEMBER_VALUE_CHANGED, RULE_ENUM_NUMERIC_TO_STRING,
-    RULE_ENUM_VALUE_SHIFTED,
+    RULE_ENUM_REGULAR_TO_CONST, RULE_ENUM_VALUE_SHIFTED,
 };
 
 /// Compare two enum shapes and return a list of findings for breaking changes.
@@ -56,6 +56,23 @@ pub fn compare_enum_shapes(
             col,
             message: format!(
                 "enum `{}` changed from const enum to regular enum",
+                symbol_name
+            ),
+        });
+    }
+
+    // ── ENUM-04b: regular enum -> const enum ──────────────────────────────────
+    // Const enums are inlined at compile time — no runtime object exists.
+    // Code using reverse mapping (MyEnum[0]) or typeof MyEnum breaks.
+    if !old.is_const && new.is_const {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_ENUM_REGULAR_TO_CONST,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "enum `{}` changed from regular enum to const enum",
                 symbol_name
             ),
         });
@@ -508,6 +525,34 @@ mod tests {
             findings.is_empty(),
             "Expected no findings for explicit value reorder, got: {:?}",
             findings
+        );
+    }
+
+    // ── ENUM-04b: regular to const ───────────────────────────────────────────
+
+    #[test]
+    fn test_enum04b_regular_to_const() {
+        // old is_const=false, new is_const=true -> Finding with rule "enum-regular-to-const"
+        let old = enum_shape(vec![numeric_member("A", 0)], false);
+        let new = enum_shape(vec![numeric_member("A", 0)], true);
+        let findings = run(&old, &new);
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_REGULAR_TO_CONST && f.severity == Severity::Major),
+            "Expected enum-regular-to-const finding, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_enum04b_no_finding_when_both_regular() {
+        let old = enum_shape(vec![numeric_member("A", 0)], false);
+        let new = enum_shape(vec![numeric_member("A", 0)], false);
+        let findings = run(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENUM_REGULAR_TO_CONST),
+            "Expected no enum-regular-to-const finding when both regular"
         );
     }
 
