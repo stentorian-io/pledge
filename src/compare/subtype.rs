@@ -55,6 +55,7 @@ pub const RULE_TYPES_RUNTIME_MISMATCH: &str = "types-runtime-mismatch";
 pub const RULE_BIN_ENTRY_CHANGED: &str = "bin-entry-changed";
 pub const RULE_PLATFORM_NARROWED: &str = "platform-narrowed";
 pub const RULE_IMPORTABLE_FILE_REMOVED: &str = "importable-file-removed";
+pub const RULE_TYPES_VERSIONS_CHANGED: &str = "types-versions-changed";
 
 // ─── Subtype checker ─────────────────────────────────────────────────────────
 

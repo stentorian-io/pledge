@@ -509,6 +509,23 @@ fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Findi
     findings
 }
 
+/// Strip the wildcard `*` and any trailing extension to extract the base path prefix.
+///
+/// Examples:
+/// - "./*" -> "./"
+/// - "./*.js" -> "./"
+/// - "./utils/*" -> "./utils/"
+/// - "./utils/*.js" -> "./utils/"
+///
+/// Used for GAP-15-08 semantic matching of wildcard pattern refinements.
+fn strip_wildcard_to_base(pattern: &str) -> &str {
+    // Find the position of '*' and return everything before it
+    match pattern.find('*') {
+        Some(pos) => &pattern[..pos],
+        None => pattern,
+    }
+}
+
 /// Compare two parsed ExportsMaps and return findings.
 ///
 /// Handles EXP-01, EXP-06, EXP-07 at the subpath level; delegates to
@@ -516,36 +533,82 @@ fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Findi
 fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    // Removed subpaths (EXP-01, EXP-06)
-    for subpath in old_map.keys() {
-        if !new_map.contains_key(subpath) {
-            if subpath.contains('*') {
-                // EXP-06: wildcard pattern removed — subpath-pattern-changed
+    // Collect wildcard patterns for semantic matching
+    let old_wildcards: Vec<&String> = old_map.keys().filter(|k| k.contains('*')).collect();
+    let new_wildcards: Vec<&String> = new_map.keys().filter(|k| k.contains('*')).collect();
+    let mut matched_old_wildcards: std::collections::HashSet<&str> =
+        std::collections::HashSet::new();
+    let mut matched_new_wildcards: std::collections::HashSet<&str> =
+        std::collections::HashSet::new();
+
+    // GAP-15-08: Check for wildcard pattern refinements
+    // e.g., "./*" removed and "./*.js" added = pattern-changed, not removed+added
+    for old_wc in &old_wildcards {
+        if new_map.contains_key(old_wc.as_str()) {
+            continue; // Pattern exists in both — will be diffed below
+        }
+        // Check if there's a related new wildcard pattern
+        let old_base = strip_wildcard_to_base(old_wc);
+        for new_wc in &new_wildcards {
+            if old_map.contains_key(new_wc.as_str()) {
+                continue; // This new pattern also exists in old — not a replacement
+            }
+            let new_base = strip_wildcard_to_base(new_wc);
+            if old_base == new_base {
+                // Related refinement detected
+                matched_old_wildcards.insert(old_wc.as_str());
+                matched_new_wildcards.insert(new_wc.as_str());
                 findings.push(pkg_json_finding(
                     Severity::Major,
                     RULE_SUBPATH_PATTERN_CHANGED,
-                    format!("subpath pattern `{subpath}` removed from exports"),
+                    format!(
+                        "subpath pattern `{}` changed to `{}` — consumers using the old pattern may break",
+                        old_wc, new_wc
+                    ),
                 ));
-            } else {
-                // EXP-01: regular subpath removed
-                findings.push(pkg_json_finding(
-                    Severity::Major,
-                    RULE_SUBPATH_REMOVED,
-                    format!("subpath `{subpath}` removed from exports"),
-                ));
+                break; // Only match one new pattern per old pattern
             }
+        }
+    }
+
+    // Removed subpaths (EXP-01, EXP-06)
+    for subpath in old_map.keys() {
+        if new_map.contains_key(subpath) {
+            continue;
+        }
+        if matched_old_wildcards.contains(subpath.as_str()) {
+            continue; // Already reported as pattern-changed
+        }
+        if subpath.contains('*') {
+            // EXP-06: wildcard pattern removed with no related replacement
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_SUBPATH_PATTERN_CHANGED,
+                format!("subpath pattern `{subpath}` removed from exports"),
+            ));
+        } else {
+            // EXP-01: regular subpath removed
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_SUBPATH_REMOVED,
+                format!("subpath `{subpath}` removed from exports"),
+            ));
         }
     }
 
     // Added subpaths (EXP-07)
     for subpath in new_map.keys() {
-        if !old_map.contains_key(subpath) {
-            findings.push(pkg_json_finding(
-                Severity::Minor,
-                RULE_SUBPATH_ADDED,
-                format!("subpath `{subpath}` added to exports"),
-            ));
+        if old_map.contains_key(subpath) {
+            continue;
         }
+        if matched_new_wildcards.contains(subpath.as_str()) {
+            continue; // Already reported as part of pattern-changed
+        }
+        findings.push(pkg_json_finding(
+            Severity::Minor,
+            RULE_SUBPATH_ADDED,
+            format!("subpath `{subpath}` added to exports"),
+        ));
     }
 
     // Shared subpaths: diff condition nodes, then check migration and mismatch
@@ -943,6 +1006,106 @@ mod tests {
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(findings.is_empty(), "expected no findings for unchanged exports, got: {:?}", findings);
+    }
+
+    // ─── GAP-15-08: Wildcard pattern semantic matching ────────────────────────
+
+    #[test]
+    fn test_gap15_08_wildcard_refinement() {
+        // Old has "./*", new has "./*.js" — pattern refinement, single finding
+        let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
+        let new = make_pkg(r#"{"exports": {"./*.js": "./features/*.js", ".": "./index.js"}}"#);
+        let findings = diff_with_empty_dirs(&old, &new);
+        // Verify single subpath-pattern-changed with "changed to"
+        let pattern_changed: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_SUBPATH_PATTERN_CHANGED)
+            .collect();
+        assert_eq!(
+            pattern_changed.len(),
+            1,
+            "expected 1 subpath-pattern-changed finding, got: {:?}",
+            findings
+        );
+        assert!(
+            pattern_changed[0].message.contains("changed to"),
+            "message should contain 'changed to'; got: {}",
+            pattern_changed[0].message
+        );
+        assert!(
+            pattern_changed[0].message.contains("./*"),
+            "message should mention old pattern; got: {}",
+            pattern_changed[0].message
+        );
+        assert!(
+            pattern_changed[0].message.contains("./*.js"),
+            "message should mention new pattern; got: {}",
+            pattern_changed[0].message
+        );
+        // Verify NO subpath-removed or subpath-added findings
+        assert!(
+            findings.iter().all(|f| f.rule != RULE_SUBPATH_REMOVED),
+            "subpath-removed should NOT fire for wildcard refinement, got: {:?}",
+            findings
+        );
+        assert!(
+            findings.iter().all(|f| f.rule != RULE_SUBPATH_ADDED),
+            "subpath-added should NOT fire for wildcard refinement, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_gap15_08_wildcard_unrelated() {
+        // Old has "./*", new has "./utils/*.js" — different base paths, separate removed+added
+        let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
+        let new = make_pkg(r#"{"exports": {"./utils/*.js": "./utils/*.js", ".": "./index.js"}}"#);
+        let findings = diff_with_empty_dirs(&old, &new);
+        let pattern_changed: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_SUBPATH_PATTERN_CHANGED)
+            .collect();
+        let subpath_added: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_SUBPATH_ADDED)
+            .collect();
+        // ./* removed -> subpath-pattern-changed (no replacement found)
+        assert_eq!(
+            pattern_changed.len(),
+            1,
+            "expected 1 subpath-pattern-changed for unrelated wildcard removal, got: {:?}",
+            findings
+        );
+        assert!(
+            pattern_changed[0].message.contains("removed"),
+            "removal message should say 'removed'; got: {}",
+            pattern_changed[0].message
+        );
+        // ./utils/*.js added -> subpath-added
+        assert_eq!(
+            subpath_added.len(),
+            1,
+            "expected 1 subpath-added for new unrelated wildcard, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_gap15_08_wildcard_both_present() {
+        // Old and new both have "./*" — no pattern-changed finding (just normal condition diffing)
+        let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
+        let new = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
+        let findings = diff_with_empty_dirs(&old, &new);
+        assert!(
+            findings.iter().all(|f| f.rule != RULE_SUBPATH_PATTERN_CHANGED),
+            "subpath-pattern-changed should NOT fire when pattern exists in both, got: {:?}",
+            findings
+        );
+        assert!(
+            findings.is_empty(),
+            "expected no findings when wildcard unchanged, got: {:?}",
+            findings
+        );
     }
 
     // ─── Task 2 TDD: Packed output fallback scanner tests ─────────────────────
