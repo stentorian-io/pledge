@@ -97,6 +97,11 @@ pub struct RawExport {
 /// We match `export_statement` nodes that contain an `export_clause` but no
 /// `source` child — that distinguishes plain named exports from named re-exports.
 /// For `export { foo as bar }` see `NAMED_EXPORT_ALIAS_QUERY`.
+///
+/// GAP-13-03 (inline type modifiers): `export { type Foo, Bar }` is handled
+/// transparently by this query because the grammar's `export_specifier` matches
+/// the `identifier` @name node regardless of a preceding per-specifier `"type"` token.
+/// Both `Foo` and `Bar` appear exactly once as Named exports.
 const NAMED_EXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
@@ -283,16 +288,16 @@ const DESTRUCTURED_EXPORT_QUERY: &str = r#"
 
 /// Captures `export const { foo: renamed } = obj` — pair-pattern destructuring.
 ///
-/// The `key` (property_identifier) is the PUBLIC exported name. The `value`
-/// (identifier) is the local alias used inside the module.
-/// See Phase 12 RESEARCH Pattern 2.
+/// The `value` (identifier) is the PUBLIC exported name (the local binding).
+/// The `key` is the source property.
+/// See Phase 12 RESEARCH Pattern 2 and BUG-13-03 fix.
 const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
     (variable_declarator
       name: (object_pattern
         (pair_pattern
-          key: (property_identifier) @name)))))
+          value: (identifier) @name)))))
 "#;
 
 /// Captures `export = Foo` — CommonJS-style TypeScript module export.
@@ -330,6 +335,107 @@ const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
       (internal_module name: (identifier) @name)
       (lexical_declaration (variable_declarator name: (identifier) @name))
     ]))
+"#;
+
+/// Captures `export { default as Named }` — keyword `default` as source with alias.
+/// The `default` keyword is an unnamed node, not `identifier`, so existing queries miss it.
+/// GAP-13-02.
+const DEFAULT_SPECIFIER_ALIAS_QUERY: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: "default"
+      alias: (identifier) @alias_name)))
+"#;
+
+/// Captures `export { default } from './foo'` — re-export of default.
+/// GAP-13-02.
+const DEFAULT_SPECIFIER_REEXPORT_QUERY: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: "default"))
+  source: (string) @source)
+"#;
+
+/// Captures `export { default as Named } from './foo'` — re-export default with alias.
+/// GAP-13-02.
+const DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: "default"
+      alias: (identifier) @alias_name))
+  source: (string) @source)
+"#;
+
+/// Captures `export const [a, b] = arr` — array destructuring with named identifiers.
+/// GAP-13-04.
+const ARRAY_DESTRUCTURED_EXPORT_QUERY: &str = r#"
+(export_statement
+  declaration: (lexical_declaration
+    (variable_declarator
+      name: (array_pattern
+        (identifier) @name))))
+"#;
+
+/// Captures rest patterns in array destructuring: `export const [a, ...rest] = arr`.
+/// GAP-13-04.
+const ARRAY_DESTRUCTURED_REST_EXPORT_QUERY: &str = r#"
+(export_statement
+  declaration: (lexical_declaration
+    (variable_declarator
+      name: (array_pattern
+        (rest_pattern (identifier) @name)))))
+"#;
+
+/// Captures `module.exports = { foo, bar }` — CJS bulk export with shorthand properties.
+/// JavaScript/CJS only. Each shorthand_property_identifier is a named export.
+/// GAP-13-01.
+const CJS_MODULE_EXPORTS_SHORTHAND_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: (object
+      (shorthand_property_identifier) @name)))
+"#;
+
+/// Captures `module.exports = { key: value }` — CJS bulk export with explicit pairs.
+/// The key (property_identifier) is the exported name.
+/// GAP-13-01.
+const CJS_MODULE_EXPORTS_PAIR_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: (object
+      (pair
+        key: (property_identifier) @name))))
+"#;
+
+/// Captures `exports.foo = bar` — CJS property-by-property export.
+/// The property identifier is the exported name.
+/// GAP-13-01.
+const CJS_EXPORTS_PROPERTY_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @name)))
+"#;
+
+/// Captures `module.exports = SomeIdentifier` — CJS single default-like export.
+/// GAP-13-01.
+const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: (identifier) @value))
 "#;
 
 // ---------------------------------------------------------------------------
@@ -384,6 +490,105 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // so the later NAMED_REEXPORT_QUERY section can skip them (avoiding double-emit).
     let mut type_only_reexport_positions: std::collections::HashSet<(u32, u32)> =
         std::collections::HashSet::new();
+
+    // --- `export { default as Named }` forms (GAP-13-02) ----------------------
+    // Process BEFORE regular named export queries to set positions for dedup.
+    // The `default` keyword is an unnamed node in the grammar, so existing
+    // identifier-based queries miss it.
+
+    // 1. `export { default as Named } from './foo'` — re-export with alias
+    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&query, root, source);
+        while let Some(m) = matches_iter.next() {
+            let mut alias_opt: Option<(String, u32, u32)> = None;
+            let mut src_opt: Option<String> = None;
+            for capture in m.captures {
+                let node = capture.node;
+                if capture.index == 0 {
+                    // @alias_name
+                    if let Ok(text) = node.utf8_text(source) {
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        alias_opt = Some((text.to_string(), line, col));
+                    }
+                } else if capture.index == 1 {
+                    // @source
+                    if let Ok(text) = node.utf8_text(source) {
+                        src_opt = Some(strip_quotes(text).to_string());
+                    }
+                }
+            }
+            if let (Some((name, line, col)), Some(src)) = (alias_opt, src_opt) {
+                exports.push(RawExport {
+                    name,
+                    kind: RawExportKind::NamedReexport,
+                    line,
+                    col,
+                    source: Some(src),
+                    decl_kind: None,
+                });
+            }
+        }
+    }
+
+    // 2. `export { default } from './foo'` — re-export default (no alias)
+    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_REEXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&query, root, source);
+        while let Some(m) = matches_iter.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    // @source
+                    let node = capture.node;
+                    if let Ok(text) = node.utf8_text(source) {
+                        let src = strip_quotes(text).to_string();
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        let already = exports
+                            .iter()
+                            .any(|e| e.name == "default" && e.source.as_deref() == Some(&src));
+                        if !already {
+                            exports.push(RawExport {
+                                name: "default".to_string(),
+                                kind: RawExportKind::NamedReexport,
+                                line,
+                                col,
+                                source: Some(src),
+                                decl_kind: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. `export { default as Named }` — local default aliased to Named (no from clause)
+    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_ALIAS_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&query, root, source);
+        while let Some(m) = matches_iter.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    // @alias_name
+                    let node = capture.node;
+                    if let Ok(text) = node.utf8_text(source) {
+                        let line = node.start_position().row as u32 + 1;
+                        let col = node.start_position().column as u32 + 1;
+                        exports.push(RawExport {
+                            name: text.to_string(),
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
 
     // Process aliased named exports first: `export { foo as bar }`.
     // We track their local-name positions so the plain query below skips them.
@@ -980,9 +1185,13 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                 }
                 if let (Some((ns_name, line, col)), Some(src)) = (ns_name_opt, src_opt) {
+                    // BUG-13-02: Include the name in the dedup check so that a plain star
+                    // re-export (name="*") and a namespace re-export (name="utils") from the
+                    // same source are NOT considered duplicates and can coexist.
                     let already = exports.iter().any(|e| {
                         e.kind == RawExportKind::StarReexport
                             && e.source.as_deref() == Some(src.as_str())
+                            && e.name == ns_name
                     });
                     if !already {
                         exports.push(RawExport {
@@ -1087,6 +1296,214 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: Some(src),
                     decl_kind: None,
                 });
+            }
+        }
+    }
+
+    // --- Array destructuring: `export const [a, b] = arr` (GAP-13-04) ----------
+    if let Ok(query) = Query::new(&language, ARRAY_DESTRUCTURED_EXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&query, root, source);
+        while let Some(m) = matches_iter.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if let Ok(name) = node.utf8_text(source) {
+                        exports.push(RawExport {
+                            name: name.to_string(),
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: Some(DeclarationKind::Variable),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Rest patterns: `export const [a, ...rest] = arr`
+    if let Ok(query) = Query::new(&language, ARRAY_DESTRUCTURED_REST_EXPORT_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&query, root, source);
+        while let Some(m) = matches_iter.next() {
+            for capture in m.captures {
+                if capture.index == 0 {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if let Ok(name) = node.utf8_text(source) {
+                        exports.push(RawExport {
+                            name: name.to_string(),
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: Some(DeclarationKind::Variable),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // --- CJS module.exports / exports.foo detection (GAP-13-01) ---------------
+    // Only for JavaScript files — TypeScript uses `export =` instead.
+    // Validation (checking "module"/"exports" text) is done in Rust after capture
+    // since #eq? predicates are not automatically applied by cursor.matches().
+    if matches!(lang, SourceLanguage::JavaScript) {
+        // 1. module.exports = { foo, bar } — shorthand properties
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_SHORTHAND_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // Validate: capture 0 (@obj) must be "module", capture 1 (@prop) must be "exports"
+                let obj_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if obj_ok && prop_ok {
+                    for capture in m.captures {
+                        if capture.index == 2 {
+                            // @name — shorthand property identifier
+                            let node = capture.node;
+                            if let Ok(name) = node.utf8_text(source) {
+                                let line = node.start_position().row as u32 + 1;
+                                let col = node.start_position().column as u32 + 1;
+                                let already = exports.iter().any(|e| e.name == name);
+                                if !already {
+                                    exports.push(RawExport {
+                                        name: name.to_string(),
+                                        kind: RawExportKind::Named,
+                                        line,
+                                        col,
+                                        source: None,
+                                        decl_kind: Some(DeclarationKind::Variable),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. module.exports = { key: value } — explicit pair properties
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_PAIR_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if obj_ok && prop_ok {
+                    for capture in m.captures {
+                        if capture.index == 2 {
+                            let node = capture.node;
+                            if let Ok(name) = node.utf8_text(source) {
+                                let line = node.start_position().row as u32 + 1;
+                                let col = node.start_position().column as u32 + 1;
+                                let already = exports.iter().any(|e| e.name == name);
+                                if !already {
+                                    exports.push(RawExport {
+                                        name: name.to_string(),
+                                        kind: RawExportKind::Named,
+                                        line,
+                                        col,
+                                        source: None,
+                                        decl_kind: Some(DeclarationKind::Variable),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. exports.foo = bar — property-by-property
+        if let Ok(query) = Query::new(&language, CJS_EXPORTS_PROPERTY_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // Validate: capture 0 (@obj) must be "exports" (not "module" or anything else)
+                let obj_text = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                if obj_text == Some("exports") {
+                    for capture in m.captures {
+                        if capture.index == 1 {
+                            // @name — the property being assigned
+                            let node = capture.node;
+                            if let Ok(name) = node.utf8_text(source) {
+                                let line = node.start_position().row as u32 + 1;
+                                let col = node.start_position().column as u32 + 1;
+                                let already = exports.iter().any(|e| e.name == name);
+                                if !already {
+                                    exports.push(RawExport {
+                                        name: name.to_string(),
+                                        kind: RawExportKind::Named,
+                                        line,
+                                        col,
+                                        source: None,
+                                        decl_kind: Some(DeclarationKind::Variable),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. module.exports = SomeIdentifier — default-like export
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_DEFAULT_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if obj_ok && prop_ok {
+                    for capture in m.captures {
+                        if capture.index == 2 {
+                            // @value — the identifier being assigned as default
+                            let node = capture.node;
+                            let line = node.start_position().row as u32 + 1;
+                            let col = node.start_position().column as u32 + 1;
+                            let already = exports.iter().any(|e| e.name == "default");
+                            if !already {
+                                exports.push(RawExport {
+                                    name: "default".to_string(),
+                                    kind: RawExportKind::Default,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: None,
+                                });
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -2662,19 +3079,51 @@ mod tests {
 
     #[test]
     fn test_destructured_pair_export() {
-        // `export const { foo: renamed } = obj` — public name is "foo" (the key)
+        // `export const { foo: renamed } = obj` — public name is "renamed" (the value/local binding)
         let source = b"export const { foo: renamed } = obj;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
-            "pair-pattern destructured export key 'foo' should appear; got: {:?}",
+            exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
+            "pair-pattern destructured export should export 'renamed' (local binding); got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
         assert!(
-            !exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
-            "local alias 'renamed' should NOT appear as Named export; got: {:?}",
+            !exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "source property key 'foo' should NOT appear as Named export; got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
+    }
+
+    // ── BUG-13-02: Namespace/star dedup fix ──────────────────────────────────
+
+    #[test]
+    fn test_namespace_and_star_from_same_source() {
+        let source = b"export * from './mod';\nexport * as utils from './mod';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let star = exports
+            .iter()
+            .filter(|e| e.name == "*" && e.source.as_deref() == Some("./mod"))
+            .count();
+        let ns = exports
+            .iter()
+            .filter(|e| e.name == "utils" && e.source.as_deref() == Some("./mod"))
+            .count();
+        assert_eq!(star, 1, "plain star should appear once; got {star}");
+        assert_eq!(ns, 1, "namespace 'utils' should appear once; got {ns}");
+    }
+
+    // ── GAP-13-03: Inline type modifier exports ───────────────────────────────
+
+    #[test]
+    fn test_inline_type_modifier_exports() {
+        // TS 4.5: per-specifier `type` prefix — `export { type Foo, Bar }`
+        // Both should appear exactly once as Named exports
+        let source = b"export { type Foo, Bar };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let foo_count = exports.iter().filter(|e| e.name == "Foo").count();
+        let bar_count = exports.iter().filter(|e| e.name == "Bar").count();
+        assert_eq!(foo_count, 1, "Foo should appear exactly once; got {foo_count}");
+        assert_eq!(bar_count, 1, "Bar should appear exactly once; got {bar_count}");
     }
 
     // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
@@ -2770,6 +3219,183 @@ mod tests {
             version.unwrap().decl_kind,
             Some(crate::types::DeclarationKind::Variable),
             "ambient variable should have Variable decl_kind"
+        );
+    }
+
+    // ── GAP-13-01: CJS module.exports detection ───────────────────────────────
+
+    #[test]
+    fn test_cjs_module_exports_shorthand() {
+        let source = b"module.exports = { foo, bar };";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "CJS shorthand export 'foo' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            "CJS shorthand export 'bar' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_module_exports_pair() {
+        let source = b"module.exports = { foo: myFoo, bar: myBar };";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "CJS pair export 'foo' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            "CJS pair export 'bar' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_exports_property() {
+        let source = b"exports.foo = function() {};\nexports.bar = 42;";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "CJS exports.foo should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            "CJS exports.bar should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_module_exports_default() {
+        let source = b"module.exports = MyClass;";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "default" && e.kind == RawExportKind::Default),
+            "CJS module.exports = MyClass should produce Default 'default'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_not_triggered_in_typescript() {
+        // CJS patterns should NOT be detected in TypeScript files
+        let source = b"module.exports = { foo };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            !exports.iter().any(|e| e.name == "foo"),
+            "CJS should not match in TS; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // ── GAP-13-02: export { default as Named } detection ─────────────────────
+
+    #[test]
+    fn test_export_default_as_named() {
+        let source = b"export { default as Named };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "Named" && e.kind == RawExportKind::Named),
+            "export {{ default as Named }} should export 'Named'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_export_default_reexport() {
+        let source = b"export { default } from './foo';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "default" && e.kind == RawExportKind::NamedReexport),
+            "export {{ default }} from './foo' should produce NamedReexport 'default'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_export_default_as_named_reexport() {
+        let source = b"export { default as Named } from './foo';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "Named" && e.kind == RawExportKind::NamedReexport),
+            "export {{ default as Named }} from './foo' should export 'Named'; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // ── GAP-13-04: Array destructuring exports ────────────────────────────────
+
+    #[test]
+    fn test_array_destructured_export() {
+        let source = b"export const [a, b] = arr;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "a" && e.kind == RawExportKind::Named),
+            "array destructured export 'a' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "b" && e.kind == RawExportKind::Named),
+            "array destructured export 'b' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_array_destructured_rest_export() {
+        let source = b"export const [first, ...rest] = arr;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "first" && e.kind == RawExportKind::Named),
+            "array destructured 'first' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "rest" && e.kind == RawExportKind::Named),
+            "array destructured rest 'rest' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_array_destructured_with_holes() {
+        let source = b"export const [a, , c] = arr;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "a" && e.kind == RawExportKind::Named),
+            "array destructured 'a' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "c" && e.kind == RawExportKind::Named),
+            "array destructured 'c' should appear; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            exports
+                .iter()
+                .filter(|e| e.kind == RawExportKind::Named)
+                .count(),
+            2,
+            "holes should not produce Named exports; got: {:?}",
+            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
     }
 }
