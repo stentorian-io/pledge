@@ -35,8 +35,10 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
     if let Some(exports) = pkg.get("exports") {
         resolve_exports_value(exports, pkg_root, None, &mut results);
     } else {
-        // Fall back to main / module / types in priority order.
-        for field in &["main", "module", "types"] {
+        // Fall back to main / module / types / typings in priority order.
+        // Note: `typings` is the legacy TypeScript alias for `types`; we check
+        // `types` first so that when both are present `types` wins (D-11).
+        for field in &["main", "module", "types", "typings"] {
             if let Some(serde_json::Value::String(rel)) = pkg.get(*field) {
                 let abs = pkg_root.join(rel.trim_start_matches("./"));
                 results.push(EntryPoint {
@@ -130,5 +132,71 @@ fn resolve_exports_value(
         _ => {
             // Boolean or number in exports field — ignore.
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// Create a temporary directory with a package.json and return both.
+    fn make_pkg(pkg_json: &str, files: &[&str]) -> TempDir {
+        let dir = TempDir::new().expect("tempdir");
+        fs::write(dir.path().join("package.json"), pkg_json).unwrap();
+        for f in files {
+            // Create any required parent directories.
+            let full = dir.path().join(f.trim_start_matches("./"));
+            if let Some(parent) = full.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&full, "// stub").unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn test_typings_field_recognized_when_types_absent() {
+        // Package has `typings` only — no `main`, `module`, or `types` field.
+        let pkg_json = r#"{"name":"mypkg","typings":"./dist/index.d.ts"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.d.ts"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "should discover exactly one entry point from typings field"
+        );
+        assert!(
+            entries[0].path.to_string_lossy().ends_with("index.d.ts"),
+            "entry point should be the typings path"
+        );
+    }
+
+    #[test]
+    fn test_types_takes_precedence_over_typings() {
+        // Package has BOTH `types` and `typings` — `types` should win.
+        let pkg_json = r#"{"name":"mypkg","types":"./dist/types.d.ts","typings":"./dist/typings.d.ts"}"#;
+        let dir = make_pkg(pkg_json, &["dist/types.d.ts", "dist/typings.d.ts"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(entries.len(), 1, "should use only the first hit");
+        assert!(
+            entries[0].path.to_string_lossy().ends_with("types.d.ts"),
+            "`types` field should take precedence over `typings`; got: {:?}",
+            entries[0].path
+        );
+    }
+
+    #[test]
+    fn test_main_field_still_works() {
+        let pkg_json = r#"{"name":"mypkg","main":"./dist/index.js"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].path.to_string_lossy().ends_with("index.js"));
     }
 }

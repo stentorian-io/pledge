@@ -11,6 +11,19 @@ pub struct PackageMetadata {
     pub tarball_url: String,
 }
 
+/// Encode a package name for use in an npm registry URL.
+///
+/// Scoped packages (e.g. `@scope/package`) require the `/` separator
+/// to be percent-encoded as `%2f` so the URL path is not ambiguous.
+/// Unscoped packages are passed through unchanged.
+fn encode_package_name(name: &str) -> String {
+    if name.starts_with('@') {
+        name.replacen("/", "%2f", 1)
+    } else {
+        name.to_string()
+    }
+}
+
 /// Fetch packument metadata for a package from the npm registry.
 ///
 /// Returns `Ok(None)` when the package has never been published (HTTP 404),
@@ -18,7 +31,8 @@ pub struct PackageMetadata {
 /// are treated as errors with a prescriptive network error message per D-09.
 #[allow(dead_code)]
 pub async fn fetch_package_metadata(name: &str) -> anyhow::Result<Option<PackageMetadata>> {
-    let url = format!("{}/{}", REGISTRY_URL, name);
+    let encoded_name = encode_package_name(name);
+    let url = format!("{}/{}", REGISTRY_URL, encoded_name);
     let client = reqwest::Client::new();
 
     let resp = client
@@ -87,4 +101,54 @@ pub async fn download_tarball(url: &str) -> anyhow::Result<Vec<u8>> {
         .await
         .context("Failed to read tarball bytes")?
         .to_vec())
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build the URL that would be used by fetch_package_metadata without making HTTP calls.
+    fn registry_url_for(name: &str) -> String {
+        let encoded = encode_package_name(name);
+        format!("{}/{}", REGISTRY_URL, encoded)
+    }
+
+    #[test]
+    fn test_scoped_package_encodes_slash() {
+        let url = registry_url_for("@scope/pkg");
+        assert!(
+            url.contains("@scope%2fpkg"),
+            "scoped package should have / encoded as %2f; got: {url}"
+        );
+        assert!(
+            !url.contains("@scope/pkg"),
+            "raw / should not appear after the scope separator; got: {url}"
+        );
+    }
+
+    #[test]
+    fn test_unscoped_package_no_encoding() {
+        let url = registry_url_for("lodash");
+        assert!(
+            url.ends_with("/lodash"),
+            "unscoped package should not be encoded; got: {url}"
+        );
+        assert!(
+            !url.contains("%2f"),
+            "unscoped package should contain no percent-encoding; got: {url}"
+        );
+    }
+
+    #[test]
+    fn test_scoped_package_with_hyphen() {
+        let url = registry_url_for("@babel/core");
+        assert!(
+            url.contains("@babel%2fcore"),
+            "scoped package with hyphen should be encoded; got: {url}"
+        );
+    }
 }
