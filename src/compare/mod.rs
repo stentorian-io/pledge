@@ -7,6 +7,7 @@ pub mod css_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
+pub mod interface_diff;
 pub mod json_diff;
 pub mod metadata;
 pub mod ref_diff;
