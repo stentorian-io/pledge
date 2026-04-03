@@ -45,8 +45,9 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
                     path: abs,
                     condition: None,
                 });
-                // Use first hit only — they share the same role.
-                break;
+                // No break — all valid fields contribute entry points.
+                // The deduplication step below handles cases where multiple
+                // fields resolve to the same physical file.
             }
         }
 
@@ -178,16 +179,21 @@ mod tests {
     }
 
     #[test]
-    fn test_types_takes_precedence_over_typings() {
-        // Package has BOTH `types` and `typings` — `types` should win.
+    fn test_types_and_typings_both_collected() {
+        // Package has BOTH `types` and `typings` pointing to DIFFERENT files.
+        // Both should be collected (no break); deduplication only removes same-file duplicates.
         let pkg_json = r#"{"name":"mypkg","types":"./dist/types.d.ts","typings":"./dist/typings.d.ts"}"#;
         let dir = make_pkg(pkg_json, &["dist/types.d.ts", "dist/typings.d.ts"]);
         let entries = resolve_entry_points(dir.path()).unwrap();
-        assert_eq!(entries.len(), 1, "should use only the first hit");
+        assert_eq!(entries.len(), 2, "both types and typings fields should contribute entry points; got: {entries:?}");
+        let paths: Vec<String> = entries.iter().map(|e| e.path.to_string_lossy().to_string()).collect();
         assert!(
-            entries[0].path.to_string_lossy().ends_with("types.d.ts"),
-            "`types` field should take precedence over `typings`; got: {:?}",
-            entries[0].path
+            paths.iter().any(|p| p.ends_with("types.d.ts")),
+            "entry points should include types.d.ts; got: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("typings.d.ts")),
+            "entry points should include typings.d.ts; got: {paths:?}"
         );
     }
 
@@ -198,5 +204,51 @@ mod tests {
         let entries = resolve_entry_points(dir.path()).unwrap();
         assert_eq!(entries.len(), 1);
         assert!(entries[0].path.to_string_lossy().ends_with("index.js"));
+    }
+
+    #[test]
+    fn test_multi_entry_main_and_types() {
+        // Package has both `main` (runtime) and `types` (declaration) fields.
+        // Both should be collected as separate entry points.
+        let pkg_json = r#"{"name":"mypkg","main":"./dist/index.js","types":"./dist/index.d.ts"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.js", "dist/index.d.ts"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(
+            entries.len(),
+            2,
+            "both main and types should produce entry points; got: {entries:?}"
+        );
+    }
+
+    #[test]
+    fn test_multi_entry_dedup_same_file() {
+        // Package has `main` and `module` pointing at the same file.
+        // After deduplication, only one entry point should be returned.
+        let pkg_json = r#"{"name":"mypkg","main":"./dist/index.js","module":"./dist/index.js"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "duplicate paths should be deduplicated; got: {entries:?}"
+        );
+    }
+
+    #[test]
+    fn test_types_only_entry() {
+        // Package has only `types` field (no `main`). Should return one entry point.
+        let pkg_json = r#"{"name":"mypkg","types":"./dist/index.d.ts"}"#;
+        let dir = make_pkg(pkg_json, &["dist/index.d.ts"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        assert_eq!(
+            entries.len(),
+            1,
+            "types-only package should return one entry point; got: {entries:?}"
+        );
+        assert!(
+            entries[0].path.to_string_lossy().ends_with("index.d.ts"),
+            "entry point path should end with index.d.ts; got: {:?}",
+            entries[0].path
+        );
     }
 }
