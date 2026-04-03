@@ -380,6 +380,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // then use that set to exclude them from the plain named export results.
     let reexport_positions = collect_reexport_positions(source, &language)?;
 
+    // Tracks (line, col) positions of names captured by type-only re-export queries
+    // so the later NAMED_REEXPORT_QUERY section can skip them (avoiding double-emit).
+    let mut type_only_reexport_positions: std::collections::HashSet<(u32, u32)> =
+        std::collections::HashSet::new();
+
     // Process aliased named exports first: `export { foo as bar }`.
     // We track their local-name positions so the plain query below skips them.
     let mut alias_local_positions: std::collections::HashSet<(u32, u32)> =
@@ -625,6 +630,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                 }
                 if let (Some((name, line, col)), Some(src)) = (name_opt, src_opt) {
+                    // Track this position so the later NAMED_REEXPORT_QUERY section
+                    // skips it and avoids emitting a duplicate NamedReexport entry.
+                    type_only_reexport_positions.insert((line, col));
                     // Skip if already captured by non-type-only named re-export query
                     let already = exports.iter().any(|e| {
                         e.kind == RawExportKind::NamedReexport
@@ -1064,6 +1072,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             if let (Some((name, line, col)), Some(src)) = (name_opt, source_opt) {
                 // Skip if already handled by the alias query above.
                 if reexport_alias_local_positions.contains(&(line, col)) {
+                    continue;
+                }
+                // Skip if already handled by the type-only re-export query
+                // (TypeScript `export type { Foo } from '...'` — avoids double-emit).
+                if type_only_reexport_positions.contains(&(line, col)) {
                     continue;
                 }
                 exports.push(RawExport {
