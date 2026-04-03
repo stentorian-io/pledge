@@ -10,9 +10,9 @@ use crate::types::shape::TypeShape;
 use crate::types::{DeclarationKind, ExportKind, ExportSymbol, Finding, Severity};
 
 use super::subtype::{
-    RULE_DECLARATION_KIND_CHANGED, RULE_DEFAULT_EXPORT_CHANGED, RULE_INDEX_SIGNATURE_CHANGED,
-    RULE_NAMESPACE_TO_OTHER, RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED,
-    RULE_TYPE_GUARD_WIDENED,
+    is_subtype_of, RULE_DECLARATION_KIND_CHANGED, RULE_DEFAULT_EXPORT_CHANGED,
+    RULE_INDEX_SIGNATURE_CHANGED, RULE_NAMESPACE_TO_OTHER, RULE_OVERLOAD_REMOVED,
+    RULE_REST_PARAM_NARROWED, RULE_TYPE_GUARD_WIDENED,
 };
 
 /// Compare two ExportSymbols for Phase 8 REF rules.
@@ -37,18 +37,22 @@ pub fn compare_ref_changes(
     let mut findings = Vec::new();
 
     // REF-01: overload-removed
-    // Per D-08: match overloads by parameter arity first.
-    // For each old overload, check if any new overload has the same arity (count of required params).
+    // Per D-08: match overloads by parameter arity first, then check parameter type compatibility.
+    // For each old overload, check if any new overload has the same arity AND compatible param types.
     // If no match, emit overload-removed.
     if old_sym.overloads.len() > 1 {
         // Only check overloads when old had multiple signatures
         for old_overload in &old_sym.overloads {
             let old_arity = count_required_arity(old_overload);
-            let has_match = new_sym
+            // First check: any new overload with same arity?
+            let arity_matches: Vec<_> = new_sym
                 .overloads
                 .iter()
-                .any(|new_ol| count_required_arity(new_ol) == old_arity);
-            if !has_match {
+                .filter(|new_ol| count_required_arity(new_ol) == old_arity)
+                .collect();
+
+            if arity_matches.is_empty() {
+                // No arity match at all -> overload removed
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_OVERLOAD_REMOVED,
@@ -60,6 +64,24 @@ pub fn compare_ref_changes(
                         old_arity, name
                     ),
                 });
+            } else {
+                // Arity matches exist — check if any has compatible param types
+                let has_type_match = arity_matches
+                    .iter()
+                    .any(|new_ol| overload_params_compatible(old_overload, new_ol));
+                if !has_type_match {
+                    findings.push(Finding {
+                        severity: Severity::Major,
+                        rule: RULE_OVERLOAD_REMOVED,
+                        file: file.to_path_buf(),
+                        line,
+                        col,
+                        message: format!(
+                            "overload signature with arity {} had incompatible parameter type changes in `{}`",
+                            old_arity, name
+                        ),
+                    });
+                }
             }
         }
     }
@@ -93,22 +115,39 @@ pub fn compare_ref_changes(
         });
     }
 
-    // REF-04: declaration-kind-changed (interface -> type alias)
-    // Per D-05: compare old.decl_kind vs new.decl_kind
-    if let (Some(DeclarationKind::Interface), Some(DeclarationKind::TypeAlias)) =
-        (&old_sym.decl_kind, &new_sym.decl_kind)
-    {
-        findings.push(Finding {
-            severity: Severity::Major,
-            rule: RULE_DECLARATION_KIND_CHANGED,
-            file: file.to_path_buf(),
-            line,
-            col,
-            message: format!(
-                "interface `{}` converted to type alias -- breaks declaration merging",
-                name
-            ),
-        });
+    // REF-04: declaration-kind-changed
+    // Any declaration kind change is potentially breaking (not just interface->type alias).
+    // Specific sub-cases:
+    // - interface -> type alias: breaks declaration merging
+    // - class -> function: breaks `new` and `extends`
+    // - enum -> other: breaks member access pattern
+    // - function -> variable: breaks call signatures if shape differs
+    // REF-05 (namespace-to-other) is handled separately below.
+    if let (Some(old_kind), Some(new_kind)) = (&old_sym.decl_kind, &new_sym.decl_kind) {
+        if old_kind != new_kind
+            && *old_kind != DeclarationKind::Unknown
+            && *new_kind != DeclarationKind::Unknown
+            && *old_kind != DeclarationKind::Namespace
+        {
+            let detail = if *old_kind == DeclarationKind::Interface
+                && *new_kind == DeclarationKind::TypeAlias
+            {
+                " -- breaks declaration merging"
+            } else {
+                ""
+            };
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_DECLARATION_KIND_CHANGED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "`{}` changed from {} to {}{}",
+                    name, old_kind, new_kind, detail
+                ),
+            });
+        }
     }
 
     // REF-05: namespace-to-other
@@ -232,18 +271,62 @@ fn check_rest_param_narrowed(
                 message: format!("rest parameter was removed from `{}`", name),
             });
         }
-        (Some(old_shape), Some(new_shape)) if old_shape != new_shape => {
-            // Rest param type changed
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_REST_PARAM_NARROWED,
-                file: file.to_path_buf(),
-                line,
-                col,
-                message: format!("rest parameter type was narrowed in `{}`", name),
-            });
+        (Some(old_shape), Some(new_shape)) => {
+            // Widening rest param type is safe (e.g., string[] -> any[]).
+            // Only flag when new type is not a supertype of old type (i.e., it narrowed).
+            if old_shape != new_shape && !is_subtype_of(old_shape, new_shape, 0) {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_REST_PARAM_NARROWED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!("rest parameter type was narrowed in `{}`", name),
+                });
+            }
         }
         _ => {} // no rest in old, or same type — not breaking
+    }
+}
+
+/// Check if two overloads have compatible parameter types.
+///
+/// Returns true if each old required param type has a subtype relationship with the
+/// corresponding new required param type (either direction — we accept any overlap as
+/// "compatible" to avoid false-positive overload-removed findings).
+fn overload_params_compatible(old: &TypeShape, new: &TypeShape) -> bool {
+    match (old, new) {
+        (
+            TypeShape::Function {
+                params: old_params, ..
+            },
+            TypeShape::Function {
+                params: new_params, ..
+            },
+        ) => {
+            // Compare non-rest required params pairwise
+            let old_required: Vec<_> = old_params
+                .iter()
+                .filter(|p| !p.optional && !p.rest)
+                .collect();
+            let new_required: Vec<_> = new_params
+                .iter()
+                .filter(|p| !p.optional && !p.rest)
+                .collect();
+            if old_required.len() != new_required.len() {
+                return false;
+            }
+            old_required
+                .iter()
+                .zip(new_required.iter())
+                .all(|(o, n)| {
+                    // Exact match or subtype relationship in either direction
+                    o.shape == n.shape
+                        || is_subtype_of(&o.shape, &n.shape, 0)
+                        || is_subtype_of(&n.shape, &o.shape, 0)
+                })
+        }
+        _ => false,
     }
 }
 
@@ -447,5 +530,123 @@ mod tests {
         let findings =
             compare_ref_changes(&old, &new, "bar", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
         assert!(findings.iter().any(|f| f.rule == RULE_REST_PARAM_NARROWED));
+    }
+
+    #[test]
+    fn test_ref01_overload_same_arity_different_types() {
+        // Old has two arity-1 overloads: fn(string) and fn(number).
+        // New only has fn(string). The fn(number) overload should be detected as removed.
+        let mut old = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
+        old.overloads = vec![
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Number),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        ];
+        let mut new = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
+        new.overloads = vec![TypeShape::Function {
+            params: vec![ParamShape {
+                name: "x".into(),
+                optional: false,
+                rest: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            }],
+            return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+        }];
+        // fn(number) overload is gone — must fire overload-removed
+        let findings =
+            compare_ref_changes(&old, &new, "foo", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_OVERLOAD_REMOVED),
+            "Expected overload-removed for fn(number) removal, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_ref04_class_to_function() {
+        let old = make_sym("Foo", ExportKind::Named, Some(DeclarationKind::Class));
+        let new = make_sym("Foo", ExportKind::Named, Some(DeclarationKind::Function));
+        let findings =
+            compare_ref_changes(&old, &new, "Foo", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            "Expected declaration-kind-changed for class->function, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_ref04_enum_to_interface() {
+        let old = make_sym("MyEnum", ExportKind::Named, Some(DeclarationKind::Enum));
+        let new = make_sym("MyEnum", ExportKind::Named, Some(DeclarationKind::Interface));
+        let findings =
+            compare_ref_changes(&old, &new, "MyEnum", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            "Expected declaration-kind-changed for enum->interface, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_ref04_function_to_function_no_finding() {
+        // Same kind -> no declaration-kind-changed finding
+        let old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        let new = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        let findings =
+            compare_ref_changes(&old, &new, "fn", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            "Expected no declaration-kind-changed for function->function, got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_ref02_rest_param_widened_no_finding() {
+        // Old has rest param Opaque("string[]"), new has rest param Primitive(Any).
+        // Widening to any[] is safe — should NOT fire rest-param-narrowed.
+        let mut old = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
+        old.overloads = vec![TypeShape::Function {
+            params: vec![ParamShape {
+                name: "args".into(),
+                optional: false,
+                rest: true,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            }],
+            return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+        }];
+        let mut new = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
+        new.overloads = vec![TypeShape::Function {
+            params: vec![ParamShape {
+                name: "args".into(),
+                optional: false,
+                rest: true,
+                shape: TypeShape::Primitive(PrimitiveKind::Any),
+            }],
+            return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+        }];
+        let findings =
+            compare_ref_changes(&old, &new, "bar", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_REST_PARAM_NARROWED),
+            "Expected no rest-param-narrowed when widening to any, got: {:?}",
+            findings
+        );
     }
 }
