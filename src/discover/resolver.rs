@@ -272,13 +272,19 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     candidates.push(append_extension(&joined, "mjs"));
     candidates.push(append_extension(&joined, "cjs"));
 
-    // 5. Directory index files.
+    // 5. Directory index files (GAP-13-07: complete candidate list).
+    // Order: TypeScript source → JavaScript source → Declaration files.
     candidates.push(joined.join("index.ts"));
     candidates.push(joined.join("index.tsx"));
     candidates.push(joined.join("index.mts"));
+    candidates.push(joined.join("index.cts"));
     candidates.push(joined.join("index.js"));
+    candidates.push(joined.join("index.jsx"));
     candidates.push(joined.join("index.mjs"));
+    candidates.push(joined.join("index.cjs"));
     candidates.push(joined.join("index.d.ts"));
+    candidates.push(joined.join("index.d.mts"));
+    candidates.push(joined.join("index.d.cts"));
 
     candidates
 }
@@ -358,5 +364,99 @@ mod tests {
             .iter()
             .any(|p| p.to_string_lossy().ends_with("dir/index.mts"));
         assert!(has, "candidates must include dir/index.mts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_js_to_ts_probing() {
+        // GAP-13-06: ./foo.js should probe foo.ts before foo.js.ts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo.js");
+        let ts_idx = candidates.iter().position(|p| p.to_string_lossy().ends_with("/foo.ts"));
+        let js_ts_idx = candidates.iter().position(|p| p.to_string_lossy().ends_with("/foo.js.ts"));
+        assert!(ts_idx.is_some(), "candidates must include foo.ts; got: {candidates:?}");
+        // foo.ts should appear before foo.js.ts in the list
+        if let (Some(ts), Some(js_ts)) = (ts_idx, js_ts_idx) {
+            assert!(ts < js_ts, "foo.ts (idx {ts}) should appear before foo.js.ts (idx {js_ts})");
+        }
+    }
+
+    #[test]
+    fn test_mjs_to_mts_probing() {
+        // GAP-13-06: ./bar.mjs should probe bar.mts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./bar.mjs");
+        let has_mts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/bar.mts"));
+        assert!(has_mts, "candidates must include bar.mts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_cjs_to_cts_probing() {
+        // GAP-13-06: ./baz.cjs should probe baz.cts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./baz.cjs");
+        let has_cts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/baz.cts"));
+        assert!(has_cts, "candidates must include baz.cts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_js_to_ts_compound_stem() {
+        // GAP-13-06 + ECF-06: ./utils.config.js should probe utils.config.ts (not utils.ts)
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./utils.config.js");
+        let has_config_ts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/utils.config.ts"));
+        assert!(has_config_ts, "candidates must include utils.config.ts; got: {candidates:?}");
+        // Should NOT produce just utils.ts (dropping .config)
+        let has_bare_utils = candidates.iter().any(|p| {
+            let s = p.to_string_lossy();
+            s.ends_with("/utils.ts") && !s.contains("config")
+        });
+        assert!(!has_bare_utils, "must NOT drop compound stem; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_cts() {
+        // GAP-13-07: directory index should include index.cts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.cts"));
+        assert!(has, "candidates must include dir/index.cts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_jsx() {
+        // GAP-13-07: directory index should include index.jsx
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.jsx"));
+        assert!(has, "candidates must include dir/index.jsx; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_cjs() {
+        // GAP-13-07: directory index should include index.cjs
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.cjs"));
+        assert!(has, "candidates must include dir/index.cjs; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_d_mts() {
+        // GAP-13-07: directory index should include index.d.mts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.d.mts"));
+        assert!(has, "candidates must include dir/index.d.mts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_resolve_includes_index_d_cts() {
+        // GAP-13-07: directory index should include index.d.cts
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
+        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.d.cts"));
+        assert!(has, "candidates must include dir/index.d.cts; got: {candidates:?}");
+    }
+
+    #[test]
+    fn test_js_to_dts_probing() {
+        // GAP-13-06: ./foo.js should also probe foo.d.ts for pre-built packages
+        let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo.js");
+        let has_dts = candidates.iter().any(|p| {
+            let s = p.to_string_lossy();
+            s.ends_with("/foo.d.ts")
+        });
+        assert!(has_dts, "candidates must include foo.d.ts; got: {candidates:?}");
     }
 }
