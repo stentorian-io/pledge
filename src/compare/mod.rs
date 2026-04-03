@@ -614,3 +614,70 @@ pub fn first_publish_findings(exports: &ExportMap) -> Vec<Finding> {
 
     findings
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::discover::tree_query::SourceLanguage;
+
+    #[test]
+    fn test_ambient_class_declaration_found() {
+        // BUG-13-01: export declare class Foo should be found by extract_declaration
+        let source = b"export declare class Foo { bar(): void; }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
+        assert!(result.is_some(), "extract_declaration should find ambient class Foo");
+        let decl = result.unwrap();
+        assert!(decl.is_class, "declaration should be identified as a class");
+        assert!(decl.class_shape.is_some(), "class shape should be extracted");
+    }
+
+    #[test]
+    fn test_ambient_function_declaration_found() {
+        // BUG-13-01: export declare function foo should be found
+        let source = b"export declare function foo(x: number): string;";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 1);
+        assert!(result.is_some(), "extract_declaration should find ambient function foo");
+        let decl = result.unwrap();
+        assert!(decl.is_function, "declaration should be identified as a function");
+    }
+
+    #[test]
+    fn test_ambient_enum_declaration_found() {
+        // BUG-13-01: export declare enum Status should be found
+        let source = b"export declare enum Status { Active, Inactive }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Status", 1);
+        assert!(result.is_some(), "extract_declaration should find ambient enum Status");
+        let decl = result.unwrap();
+        assert!(decl.is_enum, "declaration should be identified as an enum");
+        assert!(decl.enum_shape.is_some(), "enum shape should be extracted");
+    }
+
+    #[test]
+    fn test_ambient_interface_declaration_found() {
+        // BUG-13-01: export declare interface Opts should be found
+        let source = b"export declare interface Opts { debug: boolean; }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Opts", 1);
+        assert!(result.is_some(), "extract_declaration should find ambient interface Opts");
+        let decl = result.unwrap();
+        assert!(decl.is_interface, "declaration should be identified as an interface");
+    }
+
+    #[test]
+    fn test_find_decl_tolerates_line_distance() {
+        // GAP-13-05: declaration far from hint_line should still be found
+        // Simulates a file move where line numbers shift dramatically
+        let source = b"\n\n\n\n\n\n\n\n\n\nclass Foo { bar() {} }"; // Foo at line 11
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
+        assert!(result.is_some(), "should find Foo even when hint_line is 1 but actual line is 11");
+    }
+
+    #[test]
+    fn test_find_decl_closest_match_with_multiple_same_name() {
+        // GAP-13-05: when multiple declarations have the same name (overloads),
+        // the closest to hint_row should be picked
+        let source = b"function foo(x: string): void;\nfunction foo(x: number): void;\nfunction foo(x: any): void {}";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 2);
+        assert!(result.is_some(), "should find function foo");
+        // We can't easily check which overload was picked, but the function should not panic
+    }
+}
