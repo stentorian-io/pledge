@@ -81,17 +81,52 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
                                 if let Some(path_str) = target.as_str() {
                                     // typesVersions paths may contain wildcards like "dist/types/*"
                                     // For entry point discovery, resolve non-wildcard paths directly.
-                                    // Wildcard paths need the wildcard stripped to get the directory.
+                                    // GAP-16-11: Wildcard paths are expanded by scanning the target directory.
                                     if !path_str.contains('*') {
                                         let abs = pkg_root.join(path_str.trim_start_matches("./"));
                                         results.push(EntryPoint {
                                             path: abs,
                                             condition: Some("typesVersions".to_string()),
                                         });
+                                    } else {
+                                        // GAP-16-11: Wildcard path expansion.
+                                        // Pattern like "dist/types/*" — strip the `*` to get the directory,
+                                        // then list all .ts/.d.ts files within it.
+                                        let dir_pattern = path_str.trim_start_matches("./");
+                                        let dir_path = dir_pattern.replace('*', "");
+                                        let dir_abs = pkg_root.join(&dir_path);
+                                        if dir_abs.is_dir() {
+                                            if let Ok(entries_iter) = std::fs::read_dir(&dir_abs) {
+                                                for entry in entries_iter.flatten() {
+                                                    let file_path = entry.path();
+                                                    if file_path.is_file() {
+                                                        let ext = file_path
+                                                            .extension()
+                                                            .and_then(|e| e.to_str())
+                                                            .unwrap_or("");
+                                                        let file_name = file_path
+                                                            .file_name()
+                                                            .and_then(|n| n.to_str())
+                                                            .unwrap_or("");
+                                                        if ext == "ts"
+                                                            || ext == "mts"
+                                                            || ext == "cts"
+                                                            || file_name.ends_with(".d.ts")
+                                                            || file_name.ends_with(".d.mts")
+                                                            || file_name.ends_with(".d.cts")
+                                                        {
+                                                            results.push(EntryPoint {
+                                                                path: file_path,
+                                                                condition: Some(
+                                                                    "typesVersions".to_string(),
+                                                                ),
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                    // If path contains *, treat it as a directory hint:
-                                    // e.g., "dist/types/*" -> scan "dist/types/" dir
-                                    // This is best-effort; the main purpose is metadata diff.
                                 }
                             }
                         }
@@ -152,8 +187,14 @@ fn resolve_exports_value(
         serde_json::Value::Object(map) => {
             for (key, child) in map {
                 if key.starts_with('.') {
-                    // Subpath export like "./utils" — recurse without inheriting the key as condition.
-                    resolve_exports_value(child, base_path, None, results);
+                    if key.contains('*') {
+                        // GAP-16-06: Subpath wildcard key like "./*" or "./features/*".
+                        // Expand to actual files matching the pattern in the target directory.
+                        expand_subpath_wildcard(key, child, base_path, results);
+                    } else {
+                        // Subpath export like "./utils" — recurse without inheriting the key as condition.
+                        resolve_exports_value(child, base_path, None, results);
+                    }
                 } else {
                     // Condition key like "import", "require", "types", "default".
                     resolve_exports_value(child, base_path, Some(key.as_str()), results);
@@ -177,6 +218,84 @@ fn resolve_exports_value(
             // Boolean or number in exports field — ignore.
         }
     }
+}
+
+/// Expand a subpath wildcard pattern like `"./*": "./dist/*.js"` to actual files on disk.
+///
+/// Scans the target directory for files matching the suffix and creates an EntryPoint for each.
+/// GAP-16-06.
+fn expand_subpath_wildcard(
+    _key: &str,
+    value: &serde_json::Value,
+    base_path: &Path,
+    results: &mut Vec<EntryPoint>,
+) {
+    let target_strings = collect_string_leaves(value);
+    for target in target_strings {
+        if !target.contains('*') {
+            // No wildcard in target value — treat as a literal path.
+            let path = base_path.join(target.trim_start_matches("./"));
+            results.push(EntryPoint {
+                path,
+                condition: None,
+            });
+            continue;
+        }
+        // Split target on `*` to get the directory prefix and file suffix.
+        // e.g., "./dist/*.js" -> dir_part="dist/", suffix=".js"
+        let clean_target = target.trim_start_matches("./");
+        let star_pos = match clean_target.find('*') {
+            Some(p) => p,
+            None => continue,
+        };
+        let dir_part = &clean_target[..star_pos];
+        let suffix = &clean_target[star_pos + 1..];
+        let scan_dir = base_path.join(dir_part);
+
+        if scan_dir.is_dir() {
+            if let Ok(entries_iter) = std::fs::read_dir(&scan_dir) {
+                for entry in entries_iter.flatten() {
+                    let file_path = entry.path();
+                    if file_path.is_file() {
+                        let file_name = file_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("");
+                        // Check that the file matches the suffix pattern.
+                        if suffix.is_empty() || file_name.ends_with(suffix) {
+                            results.push(EntryPoint {
+                                path: file_path,
+                                condition: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Collect all string leaf values from a JSON value tree (traversing objects and arrays).
+///
+/// Used to extract concrete file path strings from nested condition objects within
+/// a wildcard export value.
+fn collect_string_leaves(value: &serde_json::Value) -> Vec<&str> {
+    let mut leaves = Vec::new();
+    match value {
+        serde_json::Value::String(s) => leaves.push(s.as_str()),
+        serde_json::Value::Object(map) => {
+            for (_k, v) in map {
+                leaves.extend(collect_string_leaves(v));
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                leaves.extend(collect_string_leaves(v));
+            }
+        }
+        _ => {}
+    }
+    leaves
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +466,114 @@ mod tests {
         assert!(
             entries.is_empty(),
             "no existing candidates should produce empty entry points; got: {entries:?}"
+        );
+    }
+
+    // GAP-16-11: typesVersions wildcard expansion tests
+    #[test]
+    fn test_typesversions_wildcard_expands_to_d_ts_files() {
+        // typesVersions: { ">=4.0": { "*": ["dist/types/*"] } }
+        // dist/types/ contains two .d.ts files — both should be discovered.
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "typesVersions": {
+                ">=4.0": {
+                    "*": ["dist/types/*"]
+                }
+            }
+        }"#;
+        let dir = make_pkg(
+            pkg_json,
+            &["dist/types/foo.d.ts", "dist/types/bar.d.ts"],
+        );
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("foo.d.ts")),
+            "should discover foo.d.ts from typesVersions wildcard; got: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("bar.d.ts")),
+            "should discover bar.d.ts from typesVersions wildcard; got: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn test_typesversions_non_wildcard_path_still_works() {
+        // Non-wildcard typesVersions path should still be resolved directly.
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "typesVersions": {
+                ">=4.0": {
+                    "*": ["dist/index.d.ts"]
+                }
+            }
+        }"#;
+        let dir = make_pkg(pkg_json, &["dist/index.d.ts"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("index.d.ts")),
+            "non-wildcard typesVersions path should be resolved; got: {paths:?}"
+        );
+    }
+
+    // GAP-16-06: subpath wildcard expansion tests
+    #[test]
+    fn test_subpath_wildcard_expands_to_matching_files() {
+        // exports: { "./*": "./dist/*.js" }
+        // dist/ contains a.js and b.js — both should be discovered.
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "exports": {
+                "./*": "./dist/*.js"
+            }
+        }"#;
+        let dir = make_pkg(pkg_json, &["dist/a.js", "dist/b.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("a.js")),
+            "subpath wildcard should discover a.js; got: {paths:?}"
+        );
+        assert!(
+            paths.iter().any(|p| p.ends_with("b.js")),
+            "subpath wildcard should discover b.js; got: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn test_subpath_wildcard_with_suffix_filter() {
+        // exports: { "./*": "./dist/*.cjs" }
+        // dist/ contains a.cjs and b.js — only a.cjs should match.
+        let pkg_json = r#"{
+            "name": "mypkg",
+            "exports": {
+                "./*": "./dist/*.cjs"
+            }
+        }"#;
+        let dir = make_pkg(pkg_json, &["dist/a.cjs", "dist/b.js"]);
+        let entries = resolve_entry_points(dir.path()).unwrap();
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
+        assert!(
+            paths.iter().any(|p| p.ends_with("a.cjs")),
+            "subpath wildcard should discover a.cjs; got: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.ends_with("b.js")),
+            "b.js should NOT match a .cjs pattern; got: {paths:?}"
         );
     }
 }
