@@ -155,8 +155,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             findings.extend(structural_findings);
 
             // Step 3e: Asset & schema comparison (AST-01..06)
-            let asset_findings =
-                compare::compare_asset_diff(&previous_root, &current_root);
+            let asset_findings = compare::compare_asset_diff(&previous_root, &current_root);
             findings.extend(asset_findings);
 
             // Deduplicate findings from multiple analysis passes (BUG 7)
