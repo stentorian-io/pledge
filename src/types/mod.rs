@@ -76,6 +76,7 @@ pub struct ExportSymbol {
     pub type_guard_type: Option<String>,          // for REF-03 — guarded type name
     pub is_async: bool,                           // for BEH-01/BEH-02 — async detection
     pub is_generator: bool,                       // for BEH-03 — generator detection
+    pub is_reexport: bool,                        // for GAP-15-05 — tracks external re-export entries
 }
 
 #[allow(dead_code)]
@@ -293,6 +294,7 @@ mod tests {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+            is_reexport: false,
         };
         assert_eq!(sym.name, "foo");
     }
@@ -318,6 +320,7 @@ mod tests {
             type_guard_type: None,
             is_async: true,
             is_generator: true,
+            is_reexport: false,
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);

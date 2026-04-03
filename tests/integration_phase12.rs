@@ -61,6 +61,7 @@ fn make_export_sym(name: &str) -> ExportSymbol {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
+        is_reexport: false,
     }
 }
 

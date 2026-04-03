@@ -266,11 +266,31 @@ pub fn collect_exports(
                             collect_exports(&target, pkg_root, map, visited, warnings, depth + 1, tsconfig)?;
                         }
                         None => {
-                            warnings.push(ResolveWarning::new(format!(
-                                "could not resolve star re-export '{}' from {}",
-                                specifier,
-                                file.display()
-                            )));
+                            // GAP-15-05: If specifier looks like an external package (not relative),
+                            // track it as an external re-export entry rather than just warning.
+                            if !specifier.starts_with('.') && !specifier.starts_with('/') {
+                                let reexport_key = format!("*<{}>", specifier);
+                                map.entry(reexport_key.clone()).or_insert(ExportSymbol {
+                                    name: reexport_key,
+                                    kind: ExportKind::Named,
+                                    file: rel_path.clone(),
+                                    line: export.line,
+                                    col: export.col,
+                                    type_signature: None,
+                                    overloads: Vec::new(),
+                                    decl_kind: None,
+                                    type_guard_type: None,
+                                    is_async: false,
+                                    is_generator: false,
+                                    is_reexport: true,
+                                });
+                            } else {
+                                warnings.push(ResolveWarning::new(format!(
+                                    "could not resolve star re-export '{}' from {}",
+                                    specifier,
+                                    file.display()
+                                )));
+                            }
                         }
                     }
                 }
@@ -312,12 +332,31 @@ pub fn collect_exports(
                             });
                         }
                         None => {
-                            warnings.push(ResolveWarning::new(format!(
-                                "could not resolve named re-export '{}' from {} (specifier '{}')",
-                                export.name,
-                                file.display(),
-                                specifier,
-                            )));
+                            // GAP-15-05: If specifier looks like an external package (not relative),
+                            // track it as an external named re-export entry.
+                            if !specifier.starts_with('.') && !specifier.starts_with('/') {
+                                map.entry(export.name.clone()).or_insert(ExportSymbol {
+                                    name: export.name.clone(),
+                                    kind: ExportKind::Named,
+                                    file: rel_path.clone(),
+                                    line: export.line,
+                                    col: export.col,
+                                    type_signature: None,
+                                    overloads: Vec::new(),
+                                    decl_kind: None,
+                                    type_guard_type: None,
+                                    is_async: false,
+                                    is_generator: false,
+                                    is_reexport: true,
+                                });
+                            } else {
+                                warnings.push(ResolveWarning::new(format!(
+                                    "could not resolve named re-export '{}' from {} (specifier '{}')",
+                                    export.name,
+                                    file.display(),
+                                    specifier,
+                                )));
+                            }
                         }
                     }
                 }
@@ -688,5 +727,87 @@ mod tests {
             .iter()
             .any(|p| p.to_string_lossy().contains("src/utils"));
         assert!(has_ts, "alias with baseUrl must produce src/utils candidates; got: {candidates:?}");
+    }
+
+    // -------------------------------------------------------------------------
+    // GAP-15-05: External re-export tracking tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_external_reexport_tracked() {
+        // A JS file with `export * from 'lodash'` should produce *<lodash> in export map
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("index.js");
+        std::fs::write(&index_path, b"export * from 'lodash';\n").unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(&index_path, dir.path(), &mut map, &mut visited, &mut warnings, 0, None)
+            .expect("collect_exports should succeed");
+
+        assert!(
+            map.contains_key("*<lodash>"),
+            "external star re-export must produce *<lodash> key; got keys: {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
+        let sym = &map["*<lodash>"];
+        assert!(sym.is_reexport, "*<lodash> entry must have is_reexport=true");
+    }
+
+    #[test]
+    fn test_external_reexport_removal_detected() {
+        // Old export map with *<lodash> entry, new without → export-removed finding
+        use crate::types::{ExportKind, ExportSymbol};
+        use std::path::PathBuf;
+
+        let mut old_map = crate::types::ExportMap::new();
+        old_map.insert(
+            "*<lodash>".to_string(),
+            ExportSymbol {
+                name: "*<lodash>".to_string(),
+                kind: ExportKind::Named,
+                file: PathBuf::from("index.js"),
+                line: 1,
+                col: 1,
+                type_signature: None,
+                overloads: Vec::new(),
+                decl_kind: None,
+                type_guard_type: None,
+                is_async: false,
+                is_generator: false,
+                is_reexport: true,
+            },
+        );
+        let new_map = crate::types::ExportMap::new();
+
+        let findings = crate::compare::compare_exports(&old_map, &new_map);
+        assert!(
+            findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("*<lodash>")),
+            "removal of *<lodash> must fire export-removed; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_relative_reexport_not_tracked_as_external() {
+        // `export * from './utils'` where utils doesn't exist → warning, not external entry
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("index.js");
+        std::fs::write(&index_path, b"export * from './nonexistent';\n").unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(&index_path, dir.path(), &mut map, &mut visited, &mut warnings, 0, None)
+            .expect("collect_exports should succeed");
+
+        // No external key should be created for relative specifiers
+        let has_external = map.keys().any(|k| k.starts_with("*<"));
+        assert!(!has_external, "relative re-export failure must NOT produce external key; got: {:?}", map.keys().collect::<Vec<_>>());
+        // Should have produced a warning instead
+        assert!(!warnings.is_empty(), "failed relative re-export must produce a warning");
     }
 }

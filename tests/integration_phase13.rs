@@ -41,6 +41,7 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32) -> ExportSymbol {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
+    is_reexport: false,
     }
 }
 
@@ -74,6 +75,7 @@ fn test_ambient_class_removal_detected() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+        is_reexport: false,
         },
     );
 
@@ -92,6 +94,7 @@ fn test_ambient_class_removal_detected() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+        is_reexport: false,
         },
     );
 
@@ -423,6 +426,7 @@ fn test_structural_diff_with_file_move() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+        is_reexport: false,
         },
     );
 
@@ -441,6 +445,7 @@ fn test_structural_diff_with_file_move() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
+        is_reexport: false,
         },
     );
 
