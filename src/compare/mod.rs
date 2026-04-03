@@ -484,6 +484,60 @@ fn find_decl_in_node<'a>(
                 // Recurse into wrappers
                 find_decl_in_node(child, source, name, hint_row)
             }
+            "expression_statement" => {
+                // REQ-15-01: CJS assignment patterns — module.exports = class/fn or exports.NAME = fn
+                let mut es_cursor = child.walk();
+                for es_child in child.children(&mut es_cursor) {
+                    if es_child.kind() == "assignment_expression" {
+                        let left = es_child.child_by_field_name("left");
+                        let right = es_child.child_by_field_name("right");
+                        if let (Some(left_node), Some(right_node)) = (left, right) {
+                            if left_node.kind() == "member_expression" {
+                                let obj = left_node
+                                    .child_by_field_name("object")
+                                    .and_then(|n| n.utf8_text(source).ok());
+                                let prop = left_node
+                                    .child_by_field_name("property")
+                                    .and_then(|n| n.utf8_text(source).ok());
+
+                                match (obj, prop) {
+                                    (Some("module"), Some("exports")) if name == "default" => {
+                                        // module.exports = class/function/arrow
+                                        let rhs_kind = right_node.kind();
+                                        if matches!(
+                                            rhs_kind,
+                                            "class"
+                                                | "function_expression"
+                                                | "generator_function"
+                                                | "arrow_function"
+                                        ) {
+                                            let found_row = right_node.start_position().row;
+                                            let dist = found_row.abs_diff(hint_row);
+                                            candidates.push((dist, right_node));
+                                        }
+                                    }
+                                    (Some("exports"), Some(prop_name)) if prop_name == name => {
+                                        // exports.NAME = function/arrow
+                                        let rhs_kind = right_node.kind();
+                                        if matches!(
+                                            rhs_kind,
+                                            "function_expression"
+                                                | "generator_function"
+                                                | "arrow_function"
+                                        ) {
+                                            let found_row = right_node.start_position().row;
+                                            let dist = found_row.abs_diff(hint_row);
+                                            candidates.push((dist, right_node));
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                None
+            }
             _ => None,
         };
 
@@ -1022,5 +1076,161 @@ mod tests {
         );
         let decl = result.unwrap();
         assert!(decl.is_class, "NS.MyClass should be identified as a class");
+    }
+
+    // ─── REQ-15-01: CJS inline structural diff ──────────────────────────────
+
+    #[test]
+    fn test_cjs_module_exports_class_extract() {
+        // REQ-15-01: module.exports = class Foo { method() {} } should be found as class
+        let source = b"module.exports = class Foo { method() {} }";
+        let result = extract_declaration(source, &SourceLanguage::JavaScript, "default", 1);
+        assert!(
+            result.is_some(),
+            "extract_declaration should find CJS inline class as 'default'"
+        );
+        let decl = result.unwrap();
+        assert!(decl.is_class, "CJS inline class should be identified as class");
+        let shape = decl.class_shape.as_ref().expect("class_shape should be extracted");
+        assert!(
+            shape.members.iter().any(|m| m.name == "method"),
+            "class shape should contain 'method'; got: {:?}",
+            shape.members.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_module_exports_function_extract() {
+        // REQ-15-01: module.exports = function(a, b) {} should be found as function
+        let source = b"module.exports = function(a, b) { return a + b; }";
+        let result = extract_declaration(source, &SourceLanguage::JavaScript, "default", 1);
+        assert!(
+            result.is_some(),
+            "extract_declaration should find CJS inline function as 'default'"
+        );
+        let decl = result.unwrap();
+        assert!(decl.is_function, "CJS inline function should be identified as function");
+    }
+
+    #[test]
+    fn test_cjs_exports_property_function_extract() {
+        // REQ-15-01: exports.handler = async (req, res) => {} should be found
+        let source = b"exports.handler = async (req, res) => { return 'ok'; }";
+        let result = extract_declaration(source, &SourceLanguage::JavaScript, "handler", 1);
+        assert!(
+            result.is_some(),
+            "extract_declaration should find CJS exports.handler arrow function"
+        );
+        let decl = result.unwrap();
+        assert!(decl.is_function, "CJS exports.handler arrow should be identified as function");
+        assert!(decl.is_async, "async arrow should have is_async=true");
+    }
+
+    #[test]
+    fn test_cjs_inline_class_structural_diff() {
+        // REQ-15-01: module.exports = class { method() {} } with method removed
+        // should produce class-method-removed finding via compare_structural_diff
+        use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
+        use std::collections::HashMap;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old_dir = tmp.path().join("old");
+        let new_dir = tmp.path().join("new");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::create_dir_all(&new_dir).unwrap();
+
+        std::fs::write(
+            old_dir.join("index.js"),
+            b"module.exports = class Foo { method() {} }",
+        )
+        .unwrap();
+        std::fs::write(
+            new_dir.join("index.js"),
+            b"module.exports = class Foo { }",
+        )
+        .unwrap();
+
+        let file = std::path::PathBuf::from("index.js");
+        let sym = ExportSymbol {
+            name: "default".to_string(),
+            kind: ExportKind::Default,
+            file: file.clone(),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kind: Some(DeclarationKind::Class),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+        };
+
+        let mut old_exports: ExportMap = HashMap::new();
+        old_exports.insert("default".to_string(), sym.clone());
+        let mut new_exports: ExportMap = HashMap::new();
+        new_exports.insert("default".to_string(), sym);
+
+        let findings =
+            compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports);
+        assert!(
+            findings.iter().any(|f| f.rule == "class-method-removed"),
+            "removing a method from CJS inline class should produce class-method-removed; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_cjs_inline_function_async_diff() {
+        // REQ-15-01: module.exports = function(a, b) {} changing to async function
+        // should produce async-to-sync / sync-to-async finding
+        use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
+        use std::collections::HashMap;
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let old_dir = tmp.path().join("old");
+        let new_dir = tmp.path().join("new");
+        std::fs::create_dir_all(&old_dir).unwrap();
+        std::fs::create_dir_all(&new_dir).unwrap();
+
+        std::fs::write(
+            old_dir.join("index.js"),
+            b"module.exports = function(a, b) { return a + b; }",
+        )
+        .unwrap();
+        std::fs::write(
+            new_dir.join("index.js"),
+            b"module.exports = async function(a, b) { return a + b; }",
+        )
+        .unwrap();
+
+        let file = std::path::PathBuf::from("index.js");
+        let sym = ExportSymbol {
+            name: "default".to_string(),
+            kind: ExportKind::Default,
+            file: file.clone(),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kind: Some(DeclarationKind::Function),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+        };
+
+        let mut old_exports: ExportMap = HashMap::new();
+        old_exports.insert("default".to_string(), sym.clone());
+        let mut new_exports_map: ExportMap = HashMap::new();
+        new_exports_map.insert("default".to_string(), sym);
+
+        let findings =
+            compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports_map);
+        assert!(
+            findings.iter().any(|f| f.rule == "sync-to-async"),
+            "changing CJS function from sync to async should produce sync-to-async; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
     }
 }
