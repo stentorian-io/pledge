@@ -316,6 +316,8 @@ pub const RULE_CLASS_STATIC_TYPE_CHANGED: &str = "class-static-type-changed";
 pub const RULE_CLASS_READONLY_CHANGED: &str = "class-readonly-changed";
 pub const RULE_CLASS_IMPLEMENTS_REMOVED: &str = "class-implements-removed";
 
+pub const RULE_CLASS_METHOD_KIND_CHANGED: &str = "class-method-kind-changed";
+
 // Enum rules (ENUM-*)
 pub const RULE_ENUM_MEMBER_REMOVED: &str = "enum-member-removed";
 pub const RULE_ENUM_MEMBER_VALUE_CHANGED: &str = "enum-member-value-changed";

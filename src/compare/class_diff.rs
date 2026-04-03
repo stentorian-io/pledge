@@ -18,8 +18,8 @@ use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, 
 use super::subtype::{
     RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
     RULE_CLASS_IMPLEMENTS_REMOVED, RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT,
-    RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
-    RULE_CLASS_STATIC_TYPE_CHANGED,
+    RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED,
+    RULE_CLASS_READONLY_CHANGED, RULE_CLASS_STATIC_TYPE_CHANGED,
 };
 
 /// Returns true if visibility was narrowed (a breaking change for consumers).
@@ -118,12 +118,15 @@ pub fn compare_class_shapes(
     let new_members: HashMap<&str, &ClassMember> =
         new.members.iter().map(|m| (m.name.as_str(), m)).collect();
 
-    // CLS-03: Method or constructor removed
-    // Breaking: call sites that invoke the method will fail to compile.
+    // CLS-03: Method or constructor removed (also covers getters and setters)
+    // Breaking: call sites that invoke the method/getter/setter will fail to compile.
     for (name, old_member) in &old_members {
         if matches!(
             old_member.kind,
-            ClassMemberKind::Method | ClassMemberKind::Constructor
+            ClassMemberKind::Method
+                | ClassMemberKind::Constructor
+                | ClassMemberKind::Getter
+                | ClassMemberKind::Setter
         ) && !new_members.contains_key(name)
         {
             findings.push(Finding {
@@ -201,6 +204,35 @@ pub fn compare_class_shapes(
                         vis_str(&old_member.visibility),
                         vis_str(&new_member.visibility),
                         symbol_name
+                    ),
+                });
+            }
+
+            // ECF-10: Method kind changed (method->getter, getter->method, etc.)
+            // Breaking: call site syntax changes — `obj.foo()` vs `obj.foo`
+            if old_member.kind != new_member.kind
+                && !matches!(old_member.kind, ClassMemberKind::Constructor)
+                && !matches!(new_member.kind, ClassMemberKind::Constructor)
+            {
+                let kind_str = |k: &ClassMemberKind| match k {
+                    ClassMemberKind::Constructor => "constructor",
+                    ClassMemberKind::Method => "method",
+                    ClassMemberKind::Property => "property",
+                    ClassMemberKind::Getter => "getter",
+                    ClassMemberKind::Setter => "setter",
+                };
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_CLASS_METHOD_KIND_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "`{}` in class `{}` changed from {} to {}",
+                        name,
+                        symbol_name,
+                        kind_str(&old_member.kind),
+                        kind_str(&new_member.kind)
                     ),
                 });
             }
@@ -601,6 +633,86 @@ mod tests {
         assert!(
             !findings.iter().any(|f| f.rule == "class-implements-removed" && f.message.contains("Serializable")),
             "Retained interface should NOT produce a finding"
+        );
+    }
+
+    // ── ECF-10: Method kind changed (getter/setter/method) ────────────────────
+
+    #[test]
+    fn test_method_to_getter_detected() {
+        let old_m = make_member("foo", ClassMemberKind::Method, Visibility::Public);
+        let new_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+
+        assert!(
+            rules(&findings).contains(&"class-method-kind-changed"),
+            "method->getter should fire class-method-kind-changed, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    #[test]
+    fn test_getter_to_method_detected() {
+        let old_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+        let new_m = make_member("foo", ClassMemberKind::Method, Visibility::Public);
+
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+
+        assert!(
+            rules(&findings).contains(&"class-method-kind-changed"),
+            "getter->method should fire class-method-kind-changed, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    #[test]
+    fn test_getter_to_setter_detected() {
+        let old_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+        let new_m = make_member("foo", ClassMemberKind::Setter, Visibility::Public);
+
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+
+        assert!(
+            rules(&findings).contains(&"class-method-kind-changed"),
+            "getter->setter should fire class-method-kind-changed, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    #[test]
+    fn test_same_getter_no_kind_changed_finding() {
+        let old_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+        let new_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+
+        assert!(
+            !rules(&findings).contains(&"class-method-kind-changed"),
+            "same getter kind should NOT fire class-method-kind-changed"
+        );
+    }
+
+    #[test]
+    fn test_getter_removed_detected() {
+        let old_m = make_member("foo", ClassMemberKind::Getter, Visibility::Public);
+
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![]);
+        let findings = run(&old, &new);
+
+        assert!(
+            rules(&findings).contains(&"class-method-removed"),
+            "removed getter should fire class-method-removed (CLS-03), got: {:?}",
+            rules(&findings)
         );
     }
 
