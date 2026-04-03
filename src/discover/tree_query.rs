@@ -283,16 +283,16 @@ const DESTRUCTURED_EXPORT_QUERY: &str = r#"
 
 /// Captures `export const { foo: renamed } = obj` — pair-pattern destructuring.
 ///
-/// The `key` (property_identifier) is the PUBLIC exported name. The `value`
-/// (identifier) is the local alias used inside the module.
-/// See Phase 12 RESEARCH Pattern 2.
+/// The `value` (identifier) is the PUBLIC exported name (the local binding).
+/// The `key` is the source property.
+/// See Phase 12 RESEARCH Pattern 2 and BUG-13-03 fix.
 const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
     (variable_declarator
       name: (object_pattern
         (pair_pattern
-          key: (property_identifier) @name)))))
+          value: (identifier) @name)))))
 "#;
 
 /// Captures `export = Foo` — CommonJS-style TypeScript module export.
@@ -980,9 +980,13 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                 }
                 if let (Some((ns_name, line, col)), Some(src)) = (ns_name_opt, src_opt) {
+                    // BUG-13-02: Include the name in the dedup check so that a plain star
+                    // re-export (name="*") and a namespace re-export (name="utils") from the
+                    // same source are NOT considered duplicates and can coexist.
                     let already = exports.iter().any(|e| {
                         e.kind == RawExportKind::StarReexport
                             && e.source.as_deref() == Some(src.as_str())
+                            && e.name == ns_name
                     });
                     if !already {
                         exports.push(RawExport {
@@ -2662,19 +2666,51 @@ mod tests {
 
     #[test]
     fn test_destructured_pair_export() {
-        // `export const { foo: renamed } = obj` — public name is "foo" (the key)
+        // `export const { foo: renamed } = obj` — public name is "renamed" (the value/local binding)
         let source = b"export const { foo: renamed } = obj;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
-            "pair-pattern destructured export key 'foo' should appear; got: {:?}",
+            exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
+            "pair-pattern destructured export should export 'renamed' (local binding); got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
         assert!(
-            !exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
-            "local alias 'renamed' should NOT appear as Named export; got: {:?}",
+            !exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            "source property key 'foo' should NOT appear as Named export; got: {:?}",
             exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
         );
+    }
+
+    // ── BUG-13-02: Namespace/star dedup fix ──────────────────────────────────
+
+    #[test]
+    fn test_namespace_and_star_from_same_source() {
+        let source = b"export * from './mod';\nexport * as utils from './mod';";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let star = exports
+            .iter()
+            .filter(|e| e.name == "*" && e.source.as_deref() == Some("./mod"))
+            .count();
+        let ns = exports
+            .iter()
+            .filter(|e| e.name == "utils" && e.source.as_deref() == Some("./mod"))
+            .count();
+        assert_eq!(star, 1, "plain star should appear once; got {star}");
+        assert_eq!(ns, 1, "namespace 'utils' should appear once; got {ns}");
+    }
+
+    // ── GAP-13-03: Inline type modifier exports ───────────────────────────────
+
+    #[test]
+    fn test_inline_type_modifier_exports() {
+        // TS 4.5: per-specifier `type` prefix — `export { type Foo, Bar }`
+        // Both should appear exactly once as Named exports
+        let source = b"export { type Foo, Bar };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let foo_count = exports.iter().filter(|e| e.name == "Foo").count();
+        let bar_count = exports.iter().filter(|e| e.name == "Bar").count();
+        assert_eq!(foo_count, 1, "Foo should appear exactly once; got {foo_count}");
+        assert_eq!(bar_count, 1, "Bar should appear exactly once; got {bar_count}");
     }
 
     // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
