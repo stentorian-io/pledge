@@ -160,6 +160,24 @@ struct ExtractedDecl {
     is_generator: bool,
 }
 
+/// Check if an arrow_function node has the `async` keyword.
+///
+/// Arrow functions have no `"function"` keyword — instead, `"async"` appears
+/// before the `"parameters"` or `"identifier"` children. Per Phase 14 Research Pitfall 7.
+fn is_async_arrow(arrow_node: tree_sitter::Node, source: &[u8]) -> bool {
+    let mut cursor = arrow_node.walk();
+    for child in arrow_node.children(&mut cursor) {
+        // Past the point where "async" would appear
+        if child.kind() == "formal_parameters" || child.kind() == "identifier" {
+            break;
+        }
+        if !child.is_named() && child.utf8_text(source).ok() == Some("async") {
+            return true;
+        }
+    }
+    false
+}
+
 /// Parse `source` with the given language, find the declaration for `name` at
 /// approximately `hint_line` (1-indexed), extract class/enum/type-param data
 /// into owned structures, and return them.
@@ -197,14 +215,29 @@ fn extract_declaration(
     let decl_node = find_decl_in_node(root, source, name, hint)?;
     let kind = decl_node.kind();
 
-    let is_class = matches!(kind, "class_declaration" | "abstract_class_declaration");
-    let is_enum = kind == "enum_declaration";
+    // REQ-14-01: arrow_function and function_expression in variables
+    // REQ-14-02: function_expression and generator_function_expression as anonymous defaults
+    // Note: tree-sitter uses "function_expression" for `function() {}` values (not "function").
+    let is_arrow_function = kind == "arrow_function";
+    let is_anonymous_function =
+        matches!(kind, "function_expression" | "generator_function_expression");
+    let is_anonymous_class = kind == "class";
+
+    // Treat arrow functions and anonymous functions as function declarations
     let is_function = matches!(
         kind,
         "function_declaration" | "function_signature" | "generator_function_declaration"
-    );
+    ) || is_arrow_function
+        || is_anonymous_function;
+
+    // REQ-14-02: anonymous class nodes (export default class {}) treated as classes
+    let is_class =
+        matches!(kind, "class_declaration" | "abstract_class_declaration") || is_anonymous_class;
+    let is_enum = kind == "enum_declaration";
     let is_interface = kind == "interface_declaration";
 
+    // parse_class_shape handles both class_declaration and class (anonymous) nodes
+    // since both have a class_body child
     let class_shape = if is_class {
         Some(tree_query::parse_class_shape(source, decl_node))
     } else {
@@ -230,6 +263,7 @@ fn extract_declaration(
     };
 
     // Extract type guard for functions (REF-03)
+    // is_function now includes arrow functions, so extract_type_guard works automatically
     let type_guard_type = if is_function {
         tree_query::extract_type_guard(decl_node, source)
     } else {
@@ -237,6 +271,8 @@ fn extract_declaration(
     };
 
     // Build overload shape for function signatures (REF-01, REF-02)
+    // build_function_shape_from_node uses child_by_field_name("parameters") which
+    // works on arrow_function nodes (field name is also "parameters")
     let overloads = if is_function {
         tree_query::build_function_shape_from_node(decl_node, source)
             .into_iter()
@@ -246,12 +282,18 @@ fn extract_declaration(
     };
 
     // BEH-01/BEH-02: extract async/generator modifiers from tree-sitter node
-    let is_async_fn = if is_function {
+    // Arrow functions use is_async_arrow because they lack the "function" keyword
+    let is_async_fn = if is_arrow_function {
+        is_async_arrow(decl_node, source)
+    } else if is_function {
         tree_query::is_async_function(decl_node, source)
     } else {
         false
     };
-    let is_generator_fn = if is_function {
+    // Arrow functions cannot be generators (JS/TS spec)
+    let is_generator_fn = if is_arrow_function {
+        false
+    } else if is_function {
         tree_query::is_generator_function(decl_node, source)
     } else {
         false
@@ -345,7 +387,9 @@ fn find_decl_in_node<'a>(
             }
             "lexical_declaration" | "variable_declaration" => {
                 // REQ-14-01: Look for variable_declarator whose name matches,
-                // then return the value node (arrow_function, function, etc.)
+                // then return the value node (arrow_function, function_expression, etc.)
+                // Note: tree-sitter uses "function_expression" for `function(){}` values,
+                // and "arrow_function" for `() => {}` values.
                 let mut ld_cursor = child.walk();
                 for ld_child in child.children(&mut ld_cursor) {
                     if ld_child.kind() == "variable_declarator" {
@@ -355,12 +399,14 @@ fn find_decl_in_node<'a>(
                             .map(|n| n == name)
                             .unwrap_or(false);
                         if matches_name {
-                            // Return the value node (arrow_function, function, etc.)
+                            // Return the value node (arrow_function, function_expression, etc.)
                             if let Some(value) = ld_child.child_by_field_name("value") {
                                 let value_kind = value.kind();
                                 if matches!(
                                     value_kind,
-                                    "arrow_function" | "function" | "generator_function"
+                                    "arrow_function"
+                                        | "function_expression"
+                                        | "generator_function_expression"
                                 ) {
                                     let found_row = value.start_position().row;
                                     let dist = found_row.abs_diff(hint_row);
@@ -378,9 +424,10 @@ fn find_decl_in_node<'a>(
                 }
                 None
             }
-            "function" | "generator_function" => {
-                // REQ-14-02: Anonymous function — only matches when name == "default"
+            "function_expression" | "generator_function_expression" => {
+                // REQ-14-02: Anonymous function expression — only matches when name == "default"
                 // (export default function() {})
+                // Note: tree-sitter uses "function_expression" (not "function") for anonymous functions.
                 if name == "default" {
                     let found_row = child.start_position().row;
                     let dist = found_row.abs_diff(hint_row);
@@ -734,5 +781,68 @@ mod tests {
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 2);
         assert!(result.is_some(), "should find function foo");
         // We can't easily check which overload was picked, but the function should not panic
+    }
+
+    #[test]
+    fn test_arrow_function_extract() {
+        // REQ-14-01: arrow function exports should be found by extract_declaration
+        let source = b"export const add = (x: number, y: number): number => x + y;";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "add", 1);
+        assert!(result.is_some(), "extract_declaration should find arrow function 'add'");
+        let decl = result.unwrap();
+        assert!(decl.is_function, "arrow function should be identified as a function");
+        assert!(!decl.is_async, "non-async arrow should not be async");
+    }
+
+    #[test]
+    fn test_async_arrow_function_extract() {
+        // REQ-14-01: async arrow function export
+        let source = b"export const fetchData = async (url: string): Promise<string> => { return ''; };";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "fetchData", 1);
+        assert!(result.is_some(), "should find async arrow function");
+        let decl = result.unwrap();
+        assert!(decl.is_function, "async arrow should be a function");
+        assert!(decl.is_async, "async arrow should have is_async=true");
+    }
+
+    #[test]
+    fn test_anonymous_default_function_extract() {
+        // REQ-14-02: anonymous default function should be found
+        let source = b"export default function(x: number): string { return ''; }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
+        assert!(result.is_some(), "should find anonymous default function");
+        let decl = result.unwrap();
+        assert!(decl.is_function, "anonymous function should be identified as function");
+    }
+
+    #[test]
+    fn test_anonymous_default_class_extract() {
+        // REQ-14-02: anonymous default class should be found
+        let source = b"export default class { foo(): void {} }";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
+        assert!(result.is_some(), "should find anonymous default class");
+        let decl = result.unwrap();
+        assert!(decl.is_class, "anonymous class should be identified as class");
+        assert!(decl.class_shape.is_some(), "class shape should be extracted");
+    }
+
+    #[test]
+    fn test_function_expression_extract() {
+        // REQ-14-01: function expression in variable should be found
+        let source = b"export const handler = function(req: Request): Response { return new Response(); };";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "handler", 1);
+        assert!(result.is_some(), "should find function expression 'handler'");
+        let decl = result.unwrap();
+        assert!(decl.is_function, "function expression should be identified as function");
+    }
+
+    #[test]
+    fn test_arrow_function_overloads_extracted() {
+        // REQ-14-01: Arrow functions should have overloads extracted via build_function_shape_from_node
+        let source = b"export const greet = (name: string): string => `Hello ${name}`;";
+        let result = extract_declaration(source, &SourceLanguage::TypeScript, "greet", 1);
+        assert!(result.is_some());
+        let decl = result.unwrap();
+        assert!(!decl.overloads.is_empty(), "arrow function should have overload shape extracted");
     }
 }
