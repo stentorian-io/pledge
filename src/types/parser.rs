@@ -3,7 +3,7 @@
 //! Converts raw type strings (from LSP hover responses) into `TypeShape` trees.
 //! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
 
-use crate::types::shape::{FieldShape, LiteralKind, ParamShape, PrimitiveKind, TypeShape};
+use crate::types::shape::{FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TypeShape};
 use std::collections::BTreeMap;
 
 /// Parse a TypeScript type string (from LSP hover output) into a `TypeShape`.
@@ -114,7 +114,37 @@ impl<'a> TypeParser<'a> {
     // -----------------------------------------------------------------------
 
     fn parse_type(&mut self) -> Option<TypeShape> {
-        self.parse_union()
+        let base = self.parse_union()?;
+        self.skip_whitespace();
+        // Check for conditional type: `T extends U ? Then : Else`
+        if self.peek_str("extends ") || self.peek_str("extends\t") {
+            return self.parse_conditional(base);
+        }
+        Some(base)
+    }
+
+    /// Parse the `extends <U> ? <Then> : <Else>` tail of a conditional type.
+    /// `check` is the type already parsed before the `extends` keyword.
+    fn parse_conditional(&mut self, check: TypeShape) -> Option<TypeShape> {
+        // consume "extends"
+        self.pos += 7; // "extends".len()
+        self.skip_whitespace();
+        // Parse the extends constraint — use parse_primary to avoid consuming `?`
+        let extends = self.parse_primary()?;
+        self.skip_whitespace();
+        self.expect_char('?')?;
+        self.skip_whitespace();
+        let then_type = self.parse_type()?;
+        self.skip_whitespace();
+        self.expect_char(':')?;
+        self.skip_whitespace();
+        let else_type = self.parse_type()?;
+        Some(TypeShape::Conditional {
+            check: Box::new(check),
+            extends: Box::new(extends),
+            then_type: Box::new(then_type),
+            else_type: Box::new(else_type),
+        })
     }
 
     fn parse_union(&mut self) -> Option<TypeShape> {
@@ -182,6 +212,24 @@ impl<'a> TypeParser<'a> {
                     "bigint" => TypeShape::Primitive(PrimitiveKind::Bigint),
                     "true" => TypeShape::Literal(LiteralKind::Boolean(true)),
                     "false" => TypeShape::Literal(LiteralKind::Boolean(false)),
+                    "keyof" => {
+                        self.skip_whitespace();
+                        let inner = self.parse_primary()?;
+                        TypeShape::Generic {
+                            name: "keyof".to_string(),
+                            args: vec![inner],
+                        }
+                    }
+                    "infer" => {
+                        self.skip_whitespace();
+                        let name = self.read_identifier()?;
+                        TypeShape::TypeParam(format!("infer {}", name))
+                    }
+                    "typeof" => {
+                        self.skip_whitespace();
+                        let name = self.read_identifier()?;
+                        TypeShape::TypeParam(format!("typeof {}", name))
+                    }
                     name => {
                         // Check for generic args
                         if self.peek_char() == Some('<') {
@@ -208,6 +256,24 @@ impl<'a> TypeParser<'a> {
     fn parse_object(&mut self) -> Option<TypeShape> {
         self.expect_char('{')?;
         self.skip_whitespace();
+
+        // Check for mapped type: `{ [K in ...]: V }` or `{ readonly [K in ...]: V }`
+        let saved = self.pos;
+        let has_readonly = if self.peek_str("readonly") {
+            self.pos += 8; // "readonly".len()
+            self.skip_whitespace();
+            true
+        } else {
+            false
+        };
+        if self.peek_char() == Some('[') {
+            if let Some(mapped) = self.try_parse_mapped_type(has_readonly) {
+                return Some(mapped);
+            }
+        }
+        // Not a mapped type — backtrack and proceed with normal object parsing
+        self.pos = saved;
+
         let mut fields = BTreeMap::new();
 
         while self.peek_char() != Some('}') {
@@ -249,6 +315,74 @@ impl<'a> TypeParser<'a> {
         }
         self.expect_char('}')?;
         Some(TypeShape::Object(fields))
+    }
+
+    // -----------------------------------------------------------------------
+    // Mapped type: `{ [K in keyof T]: V }` or with readonly/optional modifiers
+    // -----------------------------------------------------------------------
+
+    /// Try to parse a mapped type starting at `[` (after optional `readonly` prefix).
+    /// Returns None and backtracks on failure so parse_object can fall through.
+    fn try_parse_mapped_type(&mut self, has_readonly: bool) -> Option<TypeShape> {
+        let saved = self.pos;
+        self.expect_char('[')?;
+        self.skip_whitespace();
+        // Read the key variable name (e.g., `K`)
+        let _key_name = self.read_identifier()?;
+        self.skip_whitespace();
+        // Must see `in` keyword followed by whitespace to be a mapped type
+        if !self.peek_str("in ") && !self.peek_str("in\t") {
+            self.pos = saved;
+            return None;
+        }
+        self.pos += 2; // consume "in"
+        self.skip_whitespace();
+        // Parse key constraint type (e.g., `keyof T`, `string`, etc.)
+        let key_type = self.parse_type()?;
+        self.skip_whitespace();
+        // Expect closing `]`
+        if self.expect_char(']').is_none() {
+            self.pos = saved;
+            return None;
+        }
+        self.skip_whitespace();
+        // Check for `?` (optional modifier on the mapped property)
+        let has_optional = if self.peek_char() == Some('?') {
+            self.advance();
+            true
+        } else {
+            false
+        };
+        self.skip_whitespace();
+        // Expect `:`
+        if self.expect_char(':').is_none() {
+            self.pos = saved;
+            return None;
+        }
+        self.skip_whitespace();
+        let value_type = self.parse_type()?;
+        self.skip_whitespace();
+        // Allow optional trailing `;`
+        if self.peek_char() == Some(';') {
+            self.advance();
+        }
+        self.skip_whitespace();
+        // Expect closing `}`
+        if self.expect_char('}').is_none() {
+            self.pos = saved;
+            return None;
+        }
+        let modifier = match (has_readonly, has_optional) {
+            (true, true) => Some(MappedModifier::ReadonlyOptional),
+            (true, false) => Some(MappedModifier::Readonly),
+            (false, true) => Some(MappedModifier::Optional),
+            (false, false) => None,
+        };
+        Some(TypeShape::Mapped {
+            key_type: Box::new(key_type),
+            value_type: Box::new(value_type),
+            modifier,
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -417,6 +551,26 @@ impl<'a> TypeParser<'a> {
             if self.peek_str("[]") {
                 self.pos += 2;
                 current = TypeShape::Array(Box::new(current));
+            } else if self.peek_char() == Some('[') {
+                // Could be indexed access: T[K], T["key"]
+                // Check it's not `[]` (handled above) — it could be `[K]` or `["bar"]`
+                let saved = self.pos;
+                self.advance(); // consume '['
+                self.skip_whitespace();
+                // Empty bracket would have been caught by `[]` check above
+                if let Some(index) = self.parse_type() {
+                    self.skip_whitespace();
+                    if self.expect_char(']').is_some() {
+                        current = TypeShape::Indexed {
+                            base: Box::new(current),
+                            index: Box::new(index),
+                        };
+                        continue;
+                    }
+                }
+                // Failed — backtrack
+                self.pos = saved;
+                break;
             } else {
                 break;
             }
@@ -876,5 +1030,209 @@ mod tests {
     #[test]
     fn test_type_param_reference() {
         assert_shape("T", TypeShape::TypeParam("T".to_string()));
+    }
+
+    // ─── GAP-16-02: Conditional, mapped, indexed type parsing ─────────────────
+
+    // Test: basic conditional type
+    #[test]
+    fn test_conditional_basic() {
+        use crate::types::shape::PrimitiveKind;
+        let result = parse_type_string("T extends string ? number : boolean");
+        assert!(
+            matches!(result, TypeShape::Conditional { .. }),
+            "expected Conditional, got {:?}",
+            result
+        );
+        if let TypeShape::Conditional {
+            check,
+            extends,
+            then_type,
+            else_type,
+        } = result
+        {
+            assert_eq!(*check, TypeShape::TypeParam("T".to_string()));
+            assert_eq!(*extends, TypeShape::Primitive(PrimitiveKind::String));
+            assert_eq!(*then_type, TypeShape::Primitive(PrimitiveKind::Number));
+            assert_eq!(*else_type, TypeShape::Primitive(PrimitiveKind::Boolean));
+        }
+    }
+
+    // Test: conditional with union in else branch
+    #[test]
+    fn test_conditional_union_in_else() {
+        let result = parse_type_string("T extends U ? A : B | C");
+        assert!(
+            matches!(result, TypeShape::Conditional { .. }),
+            "expected Conditional, got {:?}",
+            result
+        );
+        if let TypeShape::Conditional { else_type, .. } = result {
+            assert!(
+                matches!(*else_type, TypeShape::Union(_) | TypeShape::TypeParam(_)),
+                "else branch should parse B | C, got {:?}",
+                else_type
+            );
+        }
+    }
+
+    // Test: nested conditional T extends A ? B extends C ? D : E : F
+    #[test]
+    fn test_conditional_nested() {
+        let result = parse_type_string("T extends A ? B extends C ? D : E : F");
+        assert!(
+            matches!(result, TypeShape::Conditional { .. }),
+            "expected outer Conditional, got {:?}",
+            result
+        );
+        if let TypeShape::Conditional { then_type, .. } = result {
+            assert!(
+                matches!(*then_type, TypeShape::Conditional { .. }),
+                "then_type should be inner Conditional, got {:?}",
+                then_type
+            );
+        }
+    }
+
+    // Test: mapped type basic (no modifiers)
+    #[test]
+    fn test_mapped_basic() {
+        use crate::types::shape::PrimitiveKind;
+        let result = parse_type_string("{ [K in keyof T]: string }");
+        assert!(
+            matches!(result, TypeShape::Mapped { .. }),
+            "expected Mapped, got {:?}",
+            result
+        );
+        if let TypeShape::Mapped {
+            value_type,
+            modifier,
+            ..
+        } = result
+        {
+            assert_eq!(*value_type, TypeShape::Primitive(PrimitiveKind::String));
+            assert_eq!(modifier, None);
+        }
+    }
+
+    // Test: mapped type with readonly modifier
+    #[test]
+    fn test_mapped_readonly() {
+        use crate::types::shape::MappedModifier;
+        let result = parse_type_string("{ readonly [K in keyof T]: string }");
+        assert!(
+            matches!(result, TypeShape::Mapped { .. }),
+            "expected Mapped, got {:?}",
+            result
+        );
+        if let TypeShape::Mapped { modifier, .. } = result {
+            assert_eq!(modifier, Some(MappedModifier::Readonly));
+        }
+    }
+
+    // Test: mapped type with optional modifier
+    #[test]
+    fn test_mapped_optional() {
+        use crate::types::shape::MappedModifier;
+        let result = parse_type_string("{ [K in keyof T]?: string }");
+        assert!(
+            matches!(result, TypeShape::Mapped { .. }),
+            "expected Mapped, got {:?}",
+            result
+        );
+        if let TypeShape::Mapped { modifier, .. } = result {
+            assert_eq!(modifier, Some(MappedModifier::Optional));
+        }
+    }
+
+    // Test: mapped type with readonly + optional modifier
+    #[test]
+    fn test_mapped_readonly_optional() {
+        use crate::types::shape::MappedModifier;
+        let result = parse_type_string("{ readonly [K in keyof T]?: string }");
+        assert!(
+            matches!(result, TypeShape::Mapped { .. }),
+            "expected Mapped, got {:?}",
+            result
+        );
+        if let TypeShape::Mapped { modifier, .. } = result {
+            assert_eq!(modifier, Some(MappedModifier::ReadonlyOptional));
+        }
+    }
+
+    // Test: indexed access T[K]
+    #[test]
+    fn test_indexed_access_typeparam() {
+        let result = parse_type_string("T[K]");
+        assert!(
+            matches!(result, TypeShape::Indexed { .. }),
+            "expected Indexed, got {:?}",
+            result
+        );
+        if let TypeShape::Indexed { base, index } = result {
+            assert_eq!(*base, TypeShape::TypeParam("T".to_string()));
+            assert_eq!(*index, TypeShape::TypeParam("K".to_string()));
+        }
+    }
+
+    // Test: indexed access with string literal key
+    #[test]
+    fn test_indexed_access_string_literal() {
+        let result = parse_type_string("Foo[\"bar\"]");
+        assert!(
+            matches!(result, TypeShape::Indexed { .. }),
+            "expected Indexed, got {:?}",
+            result
+        );
+        if let TypeShape::Indexed { base, index } = result {
+            assert_eq!(*base, TypeShape::TypeParam("Foo".to_string()));
+            assert_eq!(
+                *index,
+                TypeShape::Literal(LiteralKind::String("bar".to_string()))
+            );
+        }
+    }
+
+    // Test: chained indexed access T[K][J]
+    #[test]
+    fn test_indexed_access_chained() {
+        let result = parse_type_string("T[K][J]");
+        // T[K][J] = (T[K])[J]
+        assert!(
+            matches!(result, TypeShape::Indexed { .. }),
+            "expected outer Indexed, got {:?}",
+            result
+        );
+        if let TypeShape::Indexed { base, index } = result {
+            // base should be T[K] (inner Indexed)
+            assert!(
+                matches!(*base, TypeShape::Indexed { .. }),
+                "base of outer indexed should be inner Indexed T[K], got {:?}",
+                base
+            );
+            assert_eq!(*index, TypeShape::TypeParam("J".to_string()));
+        }
+    }
+
+    // Test: keyof T
+    #[test]
+    fn test_keyof() {
+        let result = parse_type_string("keyof T");
+        assert!(
+            matches!(result, TypeShape::Generic { ref name, .. } if name == "keyof"),
+            "expected Generic {{ name: 'keyof', .. }}, got {:?}",
+            result
+        );
+    }
+
+    // Test: typeof x
+    #[test]
+    fn test_typeof() {
+        let result = parse_type_string("typeof x");
+        assert!(
+            matches!(result, TypeShape::TypeParam(ref s) if s == "typeof x"),
+            "expected TypeParam('typeof x'), got {:?}",
+            result
+        );
     }
 }

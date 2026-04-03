@@ -23,6 +23,7 @@ pub const RULE_PARAM_REMOVED: &str = "param-removed";
 pub const RULE_PARAM_TYPE_NARROWED: &str = "param-type-narrowed";
 pub const RULE_RETURN_TYPE_WIDENED: &str = "return-type-widened";
 pub const RULE_PARAM_REORDERED: &str = "param-reordered";
+pub const RULE_PARAM_MADE_REQUIRED: &str = "param-made-required";
 
 // Type/interface field rules (TYPE-*)
 pub const RULE_FIELD_REMOVED: &str = "field-removed";
