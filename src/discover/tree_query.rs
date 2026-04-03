@@ -1845,11 +1845,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Namespace member expansion (REQ-14-03) --------------------------------
-    // For `export namespace Foo { export function bar() {} }`, emit "Foo.bar" as
-    // a separate Named export. This enables export-removed detection for namespace
-    // members and structural diff on individual members.
-    // Only expands direct members (1 level deep), not nested namespaces.
+    // --- Namespace member expansion (REQ-14-03, GAP-16-05) ---------------------
+    // Recursively expands namespace members at all nesting levels.
+    // For `export namespace A { export namespace B { export function baz() {} } }`,
+    // emits "A.B" and "A.B.baz" as separate Named exports.
+    // GAP-16-05: supports 2+ levels of nesting.
     {
         let ns_query_str = "(export_statement (internal_module name: (identifier) @ns_name body: (statement_block) @ns_body))";
         if let Ok(query) = Query::new(&language, ns_query_str) {
@@ -1870,72 +1870,113 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                 }
                 if let (Some(ns_name), Some(ns_body)) = (ns_name_opt, ns_body_opt) {
-                    // Scan namespace body for nested export_statement nodes
-                    let mut body_cursor = ns_body.walk();
-                    for stmt in ns_body.children(&mut body_cursor) {
-                        if stmt.kind() == "export_statement" {
-                            let mut stmt_cursor = stmt.walk();
-                            for decl_child in stmt.children(&mut stmt_cursor) {
-                                let decl_kind_str = decl_child.kind();
-                                // Extract name from the inner declaration
-                                let inner_name = match decl_kind_str {
-                                    "function_declaration"
-                                    | "generator_function_declaration"
-                                    | "class_declaration"
-                                    | "abstract_class_declaration"
-                                    | "interface_declaration"
-                                    | "type_alias_declaration"
-                                    | "enum_declaration"
-                                    | "function_signature" => {
-                                        decl_child
-                                            .child_by_field_name("name")
-                                            .and_then(|n| n.utf8_text(source).ok())
-                                            .map(|s| s.to_string())
-                                    }
-                                    "lexical_declaration" => {
-                                        // export const baz = ... inside namespace
-                                        let mut found = None;
-                                        let mut ldc = decl_child.walk();
-                                        for ld_child in decl_child.children(&mut ldc) {
-                                            if ld_child.kind() == "variable_declarator" {
-                                                found = ld_child
-                                                    .child_by_field_name("name")
-                                                    .and_then(|n| n.utf8_text(source).ok())
-                                                    .map(|s| s.to_string());
-                                                break;
-                                            }
-                                        }
-                                        found
-                                    }
-                                    _ => None,
-                                };
-                                if let Some(member_name) = inner_name {
-                                    let dotted = format!("{}.{}", ns_name, member_name);
-                                    let line = decl_child.start_position().row as u32 + 1;
-                                    let col = decl_child.start_position().column as u32 + 1;
-                                    let decl_kind = Some(decl_kind_from_node_kind(decl_kind_str));
-                                    // Don't emit duplicates
-                                    let already = exports.iter().any(|e| e.name == dotted);
-                                    if !already {
-                                        exports.push(RawExport {
-                                            name: dotted,
-                                            kind: RawExportKind::Named,
-                                            line,
-                                            col,
-                                            source: None,
-                                            decl_kind,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    expand_namespace_members(ns_body, &ns_name, source, &mut exports, &language);
                 }
             }
         }
     }
 
     Ok(exports)
+}
+
+/// Recursively expand namespace members, producing dotted names like A.B.baz.
+/// `prefix` is the dotted name so far (e.g., "A" or "A.B").
+/// GAP-16-05: supports 2+ levels of nesting.
+fn expand_namespace_members(
+    ns_body: tree_sitter::Node,
+    prefix: &str,
+    source: &[u8],
+    exports: &mut Vec<RawExport>,
+    language: &tree_sitter::Language,
+) {
+    let mut body_cursor = ns_body.walk();
+    for stmt in ns_body.children(&mut body_cursor) {
+        if stmt.kind() == "export_statement" {
+            let mut stmt_cursor = stmt.walk();
+            for decl_child in stmt.children(&mut stmt_cursor) {
+                let decl_kind_str = decl_child.kind();
+
+                // Check for nested namespace: `export namespace B { ... }`
+                if decl_kind_str == "internal_module" {
+                    if let Some(nested_name_node) = decl_child.child_by_field_name("name") {
+                        if let Ok(nested_name) = nested_name_node.utf8_text(source) {
+                            let nested_prefix = format!("{}.{}", prefix, nested_name);
+                            // Emit the namespace itself as a Named export
+                            let line = decl_child.start_position().row as u32 + 1;
+                            let col = decl_child.start_position().column as u32 + 1;
+                            let already = exports.iter().any(|e| e.name == nested_prefix);
+                            if !already {
+                                exports.push(RawExport {
+                                    name: nested_prefix.clone(),
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: Some(DeclarationKind::Namespace),
+                                });
+                            }
+                            // Recurse into the nested namespace body
+                            if let Some(body) = decl_child.child_by_field_name("body") {
+                                expand_namespace_members(body, &nested_prefix, source, exports, language);
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                // Extract name from the inner declaration (same logic as before)
+                let inner_name = match decl_kind_str {
+                    "function_declaration"
+                    | "generator_function_declaration"
+                    | "class_declaration"
+                    | "abstract_class_declaration"
+                    | "interface_declaration"
+                    | "type_alias_declaration"
+                    | "enum_declaration"
+                    | "function_signature" => {
+                        decl_child
+                            .child_by_field_name("name")
+                            .and_then(|n| n.utf8_text(source).ok())
+                            .map(|s| s.to_string())
+                    }
+                    "lexical_declaration" => {
+                        // export const baz = ... inside namespace
+                        let mut found = None;
+                        let mut ldc = decl_child.walk();
+                        for ld_child in decl_child.children(&mut ldc) {
+                            if ld_child.kind() == "variable_declarator" {
+                                found = ld_child
+                                    .child_by_field_name("name")
+                                    .and_then(|n| n.utf8_text(source).ok())
+                                    .map(|s| s.to_string());
+                                break;
+                            }
+                        }
+                        found
+                    }
+                    _ => None,
+                };
+                if let Some(member_name) = inner_name {
+                    let dotted = format!("{}.{}", prefix, member_name);
+                    let line = decl_child.start_position().row as u32 + 1;
+                    let col = decl_child.start_position().column as u32 + 1;
+                    let decl_kind = Some(decl_kind_from_node_kind(decl_kind_str));
+                    // Don't emit duplicates
+                    let already = exports.iter().any(|e| e.name == dotted);
+                    if !already {
+                        exports.push(RawExport {
+                            name: dotted,
+                            kind: RawExportKind::Named,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind,
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -4055,6 +4096,69 @@ mod tests {
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
         assert_eq!(count, 1, "Foo.bar should appear exactly once; got count={}", count);
+    }
+
+    // ── GAP-16-05: Nested namespace expansion ────────────────────────────────
+
+    #[test]
+    fn test_namespace_nested_2_levels() {
+        // GAP-16-05: 2-level nested namespace should produce A.B and A.B.baz
+        let source =
+            b"export namespace A { export namespace B { export function baz() {} } }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"A"),
+            "top-level namespace 'A' should be present; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"A.B"),
+            "nested namespace 'A.B' should be present; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"A.B.baz"),
+            "doubly-nested member 'A.B.baz' should be present; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_namespace_nested_3_levels() {
+        // GAP-16-05: 3-level nested namespace should produce A.B.C and A.B.C.fn
+        let source = b"export namespace A { export namespace B { export namespace C { export function fn_deep() {} } } }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"A.B.C"),
+            "3-level nested namespace 'A.B.C' should be present; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"A.B.C.fn_deep"),
+            "3-level nested member 'A.B.C.fn_deep' should be present; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_namespace_1_level_still_works_after_refactor() {
+        // Regression: 1-level expansion must still work after recursive refactor
+        let source =
+            b"export namespace Outer { export function method(): void {} export const VAL = 42; }";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"Outer.method"),
+            "1-level expansion 'Outer.method' should still work; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"Outer.VAL"),
+            "1-level expansion 'Outer.VAL' should still work; got: {:?}",
+            names
+        );
     }
 
     // ── GAP-15-01: CJS inline class/function exports ─────────────────────────
