@@ -518,6 +518,21 @@ const CJS_EXPORTS_PROPERTY_FUNCTION_QUERY: &str = r#"
     ]))
 "#;
 
+/// Captures `exports = module.exports = { ... }` — CJS aliasing pattern.
+/// Some packages use this pattern where the RHS is a chained assignment.
+/// We capture the object properties from the final object literal.
+/// GAP-16-09.
+const CJS_EXPORTS_ALIASING_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (identifier) @lhs
+    right: (assignment_expression
+      left: (member_expression
+        object: (identifier) @mod_obj
+        property: (property_identifier) @mod_prop)
+      right: (object) @obj)))
+"#;
+
 // ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
@@ -1430,6 +1445,46 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- Nested destructuring: `export const { a: { b } } = obj` (GAP-16-08) ---
+    // Tree-sitter queries only match 1-level deep. Walk export statements with
+    // object_pattern or array_pattern and recursively extract nested identifiers.
+    // Runs AFTER flat destructuring queries so the dedup check correctly skips
+    // names already captured by the flat queries (only adds the nested-level names).
+    {
+        let nested_query_str = r#"
+        (export_statement
+          declaration: (lexical_declaration
+            (variable_declarator
+              name: [(object_pattern) (array_pattern)] @pattern)))
+        "#;
+        if let Ok(query) = Query::new(&language, nested_query_str) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                for capture in m.captures {
+                    if capture.index == 0 {
+                        let mut names = Vec::new();
+                        extract_nested_destructuring_names(capture.node, source, &mut names);
+                        for (name, line, col) in names {
+                            // Dedup: only add if not already captured by flat queries
+                            let already = exports.iter().any(|e| e.name == name);
+                            if !already {
+                                exports.push(RawExport {
+                                    name,
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: Some(DeclarationKind::Variable),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // --- TS 5.2 `using`/`await using` export declarations (GAP-15-02) ----------
     // The tree-sitter-typescript grammar (v0.23.2) may not have native support for
     // `export using handle = getResource()` or `export await using h = getResource()`.
@@ -1761,6 +1816,75 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    // --- CJS aliasing: `exports = module.exports = { ... }` (GAP-16-09) --------
+    // Some packages use a chained assignment pattern to alias exports and module.exports.
+    // GAP-16-09.
+    if matches!(lang, SourceLanguage::JavaScript) {
+        if let Ok(query) = Query::new(&language, CJS_EXPORTS_ALIASING_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // Verify: @lhs is "exports", @mod_obj is "module", @mod_prop is "exports"
+                let lhs = m.captures.iter().find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                let mod_obj = m.captures.iter().find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                let mod_prop = m.captures.iter().find(|c| c.index == 2)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                let obj_node = m.captures.iter().find(|c| c.index == 3)
+                    .map(|c| c.node);
+
+                if lhs == Some("exports") && mod_obj == Some("module") && mod_prop == Some("exports") {
+                    if let Some(obj) = obj_node {
+                        // Extract properties from the object literal
+                        let mut obj_cursor = obj.walk();
+                        for child in obj.children(&mut obj_cursor) {
+                            match child.kind() {
+                                "shorthand_property_identifier" => {
+                                    if let Ok(name) = child.utf8_text(source) {
+                                        let line = child.start_position().row as u32 + 1;
+                                        let col = child.start_position().column as u32 + 1;
+                                        let already = exports.iter().any(|e| e.name == name);
+                                        if !already {
+                                            exports.push(RawExport {
+                                                name: name.to_string(),
+                                                kind: RawExportKind::Named,
+                                                line,
+                                                col,
+                                                source: None,
+                                                decl_kind: None,
+                                            });
+                                        }
+                                    }
+                                }
+                                "pair" => {
+                                    if let Some(key_node) = child.child_by_field_name("key") {
+                                        if let Ok(name) = key_node.utf8_text(source) {
+                                            let line = key_node.start_position().row as u32 + 1;
+                                            let col = key_node.start_position().column as u32 + 1;
+                                            let already = exports.iter().any(|e| e.name == name);
+                                            if !already {
+                                                exports.push(RawExport {
+                                                    name: name.to_string(),
+                                                    kind: RawExportKind::Named,
+                                                    line,
+                                                    col,
+                                                    source: None,
+                                                    decl_kind: None,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // --- Module augmentation capture (GAP-15-06, TypeScript only) ---
     // Captures `declare module 'express' { ... }` and `declare global { ... }`.
     // Module augmentations extend external package types — their removal breaks consumers.
@@ -1882,6 +2006,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
 /// Recursively expand namespace members, producing dotted names like A.B.baz.
 /// `prefix` is the dotted name so far (e.g., "A" or "A.B").
 /// GAP-16-05: supports 2+ levels of nesting.
+#[allow(clippy::only_used_in_recursion)]
 fn expand_namespace_members(
     ns_body: tree_sitter::Node,
     prefix: &str,
@@ -1975,6 +2100,73 @@ fn expand_namespace_members(
                     }
                 }
             }
+        }
+    }
+}
+
+/// Recursively extract exported names from nested destructuring patterns.
+/// Handles `{ a: { b } }`, `[a, [b, c]]`, `{ a: [b, c] }`, etc.
+/// GAP-16-08.
+fn extract_nested_destructuring_names(
+    pattern_node: tree_sitter::Node,
+    source: &[u8],
+    names: &mut Vec<(String, u32, u32)>,
+) {
+    let mut cursor = pattern_node.walk();
+    for child in pattern_node.children(&mut cursor) {
+        match child.kind() {
+            "shorthand_property_identifier_pattern" => {
+                // `{ foo }` — foo is both key and value
+                if let Ok(name) = child.utf8_text(source) {
+                    let line = child.start_position().row as u32 + 1;
+                    let col = child.start_position().column as u32 + 1;
+                    names.push((name.to_string(), line, col));
+                }
+            }
+            "pair_pattern" => {
+                // `{ key: value }` — value is what we export
+                if let Some(value_node) = child.child_by_field_name("value") {
+                    match value_node.kind() {
+                        "identifier" => {
+                            if let Ok(name) = value_node.utf8_text(source) {
+                                let line = value_node.start_position().row as u32 + 1;
+                                let col = value_node.start_position().column as u32 + 1;
+                                names.push((name.to_string(), line, col));
+                            }
+                        }
+                        "object_pattern" | "array_pattern" => {
+                            // Nested: `{ a: { b } }` or `{ a: [b, c] }`
+                            extract_nested_destructuring_names(value_node, source, names);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "identifier" => {
+                // Direct identifier in array pattern: `[a, b]`
+                if let Ok(name) = child.utf8_text(source) {
+                    let line = child.start_position().row as u32 + 1;
+                    let col = child.start_position().column as u32 + 1;
+                    names.push((name.to_string(), line, col));
+                }
+            }
+            "rest_pattern" => {
+                // `...rest` in array pattern
+                if let Some(inner) = child.child(1) {
+                    if inner.kind() == "identifier" {
+                        if let Ok(name) = inner.utf8_text(source) {
+                            let line = inner.start_position().row as u32 + 1;
+                            let col = inner.start_position().column as u32 + 1;
+                            names.push((name.to_string(), line, col));
+                        }
+                    }
+                }
+            }
+            "object_pattern" | "array_pattern" => {
+                // Nested pattern: `[a, [b, c]]`
+                extract_nested_destructuring_names(child, source, names);
+            }
+            _ => {}
         }
     }
 }
@@ -4096,6 +4288,86 @@ mod tests {
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
         assert_eq!(count, 1, "Foo.bar should appear exactly once; got count={}", count);
+    }
+
+    // ── GAP-16-08: Nested destructuring exports ───────────────────────────────
+
+    #[test]
+    fn test_nested_destructuring_object_in_object() {
+        // GAP-16-08: `export const { a: { b } } = obj` captures both "a" (flat query) and "b" (nested)
+        let source = b"export const { a: { b } } = obj;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"b"),
+            "nested destructuring 'b' from {{ a: {{ b }} }} should be captured; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_nested_destructuring_array_in_array() {
+        // GAP-16-08: `export const [a, [b, c]] = arr` captures "a", "b", "c"
+        let source = b"export const [a, [b, c]] = arr;";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"a"),
+            "top-level 'a' from [a, [b, c]] should be captured; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"b"),
+            "nested 'b' from [a, [b, c]] should be captured; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"c"),
+            "nested 'c' from [a, [b, c]] should be captured; got: {:?}",
+            names
+        );
+    }
+
+    // ── GAP-16-09: CJS exports aliasing pattern ───────────────────────────────
+
+    #[test]
+    fn test_cjs_aliasing_shorthand_properties() {
+        // GAP-16-09: `exports = module.exports = { foo, bar }` captures "foo" and "bar"
+        let source = b"exports = module.exports = { foo, bar };";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"foo"),
+            "CJS aliasing 'foo' should be captured; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"bar"),
+            "CJS aliasing 'bar' should be captured; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_cjs_aliasing_pair_properties() {
+        // GAP-16-09: `exports = module.exports = { key: value }` captures "key"
+        let source = b"exports = module.exports = { key: value };";
+        let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.contains(&"key"),
+            "CJS aliasing pair 'key' should be captured; got: {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn test_cjs_aliasing_not_triggered_in_typescript() {
+        // CJS aliasing is JavaScript-only
+        let source = b"exports = module.exports = { foo };";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        // Should not crash and we don't assert contents since TS doesn't recognize CJS
+        let _ = exports;
     }
 
     // ── GAP-16-05: Nested namespace expansion ────────────────────────────────
