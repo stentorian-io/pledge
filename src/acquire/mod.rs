@@ -9,7 +9,7 @@ pub mod registry;
 pub use extract::{extract_tgz, extract_tgz_from_bytes};
 pub use pack::pack_current;
 #[allow(unused_imports)]
-pub use registry::{download_tarball, fetch_package_metadata, PackageMetadata};
+pub use registry::{download_tarball, fetch_package_metadata, NpmClient, PackageMetadata};
 
 /// The result of package acquisition, representing either a first-publish or a
 /// comparison between the current (packed) version and the previous published version.
@@ -59,8 +59,9 @@ pub async fn acquire_packages(dir: &std::path::Path) -> anyhow::Result<AcquireRe
     // Clean up the local .tgz created by npm pack
     std::fs::remove_file(&tarball_path).ok();
 
-    // Fetch previous version metadata from registry
-    match fetch_package_metadata(name).await? {
+    // Fetch previous version metadata from registry and download tarball using a shared client
+    let npm_client = registry::NpmClient::new()?;
+    match npm_client.fetch_package_metadata(name).await? {
         None => {
             // First publish — no previous version to compare
             Ok(AcquireResult::FirstPublish {
@@ -69,8 +70,8 @@ pub async fn acquire_packages(dir: &std::path::Path) -> anyhow::Result<AcquireRe
             })
         }
         Some(meta) => {
-            // Download and extract previous version
-            let bytes = download_tarball(&meta.tarball_url).await?;
+            // Download and extract previous version (reuses same TCP/TLS session)
+            let bytes = npm_client.download_tarball(&meta.tarball_url).await?;
             let (previous_dir, previous_root) = extract_tgz_from_bytes(&bytes)?;
 
             Ok(AcquireResult::BothVersions {
