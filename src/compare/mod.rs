@@ -767,6 +767,16 @@ pub fn compare_structural_diff(
                     new_sym.col,
                 ));
             }
+
+            // GAP-16-04: Interface index signature diff (interface-level)
+            findings.extend(interface_diff::compare_interface_index_signatures(
+                &old_decl.index_signatures,
+                &new_decl.index_signatures,
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
         }
 
         // ENUM-01..05: enum diff
