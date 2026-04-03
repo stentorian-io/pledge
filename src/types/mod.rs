@@ -89,6 +89,8 @@ pub enum ClassMemberKind {
     Constructor,
     Method,
     Property,
+    Getter,
+    Setter,
 }
 
 #[allow(dead_code)]
@@ -270,6 +272,10 @@ mod tests {
         assert_eq!(ClassMemberKind::Method, ClassMemberKind::Method);
         assert_eq!(ClassMemberKind::Property, ClassMemberKind::Property);
         assert_ne!(ClassMemberKind::Constructor, ClassMemberKind::Method);
+        assert_eq!(ClassMemberKind::Getter, ClassMemberKind::Getter);
+        assert_eq!(ClassMemberKind::Setter, ClassMemberKind::Setter);
+        assert_ne!(ClassMemberKind::Getter, ClassMemberKind::Method);
+        assert_ne!(ClassMemberKind::Setter, ClassMemberKind::Getter);
     }
 
     #[test]

@@ -729,8 +729,30 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     .unwrap_or("")
                     .to_string();
 
+                // Detect getter/setter by scanning anonymous children for "get"/"set" keywords.
+                // Modifiers appear before the name field; stop at named nodes other than
+                // accessibility_modifier to avoid false positives.
+                let mut is_getter = false;
+                let mut is_setter = false;
+                for j in 0..child.child_count() as u32 {
+                    if let Some(kw) = child.child(j) {
+                        if kw.is_named() && kw.kind() != "accessibility_modifier" {
+                            break;
+                        }
+                        match kw.kind() {
+                            "get" => is_getter = true,
+                            "set" => is_setter = true,
+                            _ => {}
+                        }
+                    }
+                }
+
                 let kind = if name == "constructor" {
                     ClassMemberKind::Constructor
+                } else if is_getter {
+                    ClassMemberKind::Getter
+                } else if is_setter {
+                    ClassMemberKind::Setter
                 } else {
                     ClassMemberKind::Method
                 };
@@ -771,6 +793,12 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     .and_then(|n| n.utf8_text(source).ok())
                     .unwrap_or("")
                     .to_string();
+
+                // ES private fields (#field) are truly runtime-private — not public API.
+                // Exclude them to avoid false positives when they are added/removed.
+                if name.starts_with('#') {
+                    continue;
+                }
 
                 let visibility = extract_visibility(child, source);
 
@@ -1517,6 +1545,48 @@ mod tests {
         let members = parse_class_members(&bytes, class_node);
         let prop = members.iter().find(|m| m.name == "name").unwrap();
         assert_eq!(prop.kind, ClassMemberKind::Property);
+    }
+
+    #[test]
+    fn test_parse_class_members_getter() {
+        let src = "class A { get foo(): number { return 1; } }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        let getter = members.iter().find(|m| m.name == "foo").unwrap();
+        assert_eq!(getter.kind, ClassMemberKind::Getter, "getter should have kind Getter");
+    }
+
+    #[test]
+    fn test_parse_class_members_setter() {
+        let src = "class A { set foo(v: number) {} }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        let setter = members.iter().find(|m| m.name == "foo").unwrap();
+        assert_eq!(setter.kind, ClassMemberKind::Setter, "setter should have kind Setter");
+    }
+
+    #[test]
+    fn test_parse_class_members_private_field_excluded() {
+        let src = "class A { #secret: string; visible: string; }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        assert_eq!(members.len(), 1, "only 'visible' should be present, not '#secret'");
+        assert_eq!(members[0].name, "visible");
+    }
+
+    #[test]
+    fn test_parse_class_members_getter_setter_pair() {
+        let src = "class A { get x(): number { return 0; } set x(v: number) {} }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        let getter = members.iter().find(|m| m.name == "x" && m.kind == ClassMemberKind::Getter);
+        let setter = members.iter().find(|m| m.name == "x" && m.kind == ClassMemberKind::Setter);
+        assert!(getter.is_some(), "should have a Getter for x");
+        assert!(setter.is_some(), "should have a Setter for x");
     }
 
     // ── abstract class tests ──────────────────────────────────────────────────
