@@ -19,8 +19,9 @@ use std::path::Path;
 
 use crate::discover::tree_query;
 use crate::types::{
-    ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, Severity, TypeParam,
+    ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, ReleaseTag, Severity, TypeParam,
 };
+use subtype::{RULE_AUGMENT_GLOBAL_CHANGED, RULE_AUGMENT_MODULE_CHANGED, RULE_EXPORT_DEPRECATED};
 
 /// SEM-08: Normalize rollup-plugin-dts / api-extractor-style internal
 /// disambiguation suffixes (`T$1`, `T$2`, `T$10`) back to the base name `T`,
@@ -99,9 +100,54 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
 pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
+    // META-04: Filter symbols marked as non-public release tags before comparison.
+    // Symbols tagged @internal, @alpha, or @experimental are considered non-public
+    // and must not fire export-removed/export-added findings.
+    let mut filtered_old = old.clone();
+    filtered_old.retain(|_name, sym| {
+        !matches!(
+            sym.release_tag,
+            Some(ReleaseTag::Internal)
+                | Some(ReleaseTag::Alpha)
+                | Some(ReleaseTag::Experimental)
+        )
+    });
+    let mut filtered_new = new.clone();
+    filtered_new.retain(|_name, sym| {
+        !matches!(
+            sym.release_tag,
+            Some(ReleaseTag::Internal)
+                | Some(ReleaseTag::Alpha)
+                | Some(ReleaseTag::Experimental)
+        )
+    });
+
     // Removed exports (DET-01, DET-02)
-    for (name, sym) in old {
-        if !new.contains_key(name) {
+    for (name, sym) in &filtered_old {
+        if !filtered_new.contains_key(name) {
+            // META-03: route augmentation member keys to specific rules
+            if name.starts_with("augment:global:") {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_AUGMENT_GLOBAL_CHANGED,
+                    file: sym.file.clone(),
+                    line: sym.line,
+                    col: sym.col,
+                    message: format!("global augmentation member removed: {}", name),
+                });
+                continue;
+            }
+            if name.starts_with("augment:") && name.contains(":*") {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_AUGMENT_MODULE_CHANGED,
+                    file: sym.file.clone(),
+                    line: sym.line,
+                    col: sym.col,
+                    message: format!("module augmentation member removed: {}", name),
+                });
+                continue;
+            }
             let message = if name == "default" {
                 "default export was removed".to_string()
             } else {
@@ -119,8 +165,31 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     }
 
     // New exports (DET-03, DET-04, OUT-05): compatible additions reported as Minor
-    for (name, sym) in new {
-        if !old.contains_key(name) {
+    for (name, sym) in &filtered_new {
+        if !filtered_old.contains_key(name) {
+            // META-03: augmentation member additions also use specific rules
+            if name.starts_with("augment:global:") {
+                findings.push(Finding {
+                    severity: Severity::Minor,
+                    rule: RULE_AUGMENT_GLOBAL_CHANGED,
+                    file: sym.file.clone(),
+                    line: sym.line,
+                    col: sym.col,
+                    message: format!("global augmentation member added: {}", name),
+                });
+                continue;
+            }
+            if name.starts_with("augment:") && name.contains(":*") {
+                findings.push(Finding {
+                    severity: Severity::Minor,
+                    rule: RULE_AUGMENT_MODULE_CHANGED,
+                    file: sym.file.clone(),
+                    line: sym.line,
+                    col: sym.col,
+                    message: format!("module augmentation member added: {}", name),
+                });
+                continue;
+            }
             findings.push(Finding {
                 severity: Severity::Minor,
                 rule: "export-added",
@@ -132,10 +201,26 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         }
     }
 
+    // META-04: Surface @deprecated symbols that exist in both old and new as Warning.
+    for (name, sym) in &filtered_new {
+        if matches!(sym.release_tag, Some(ReleaseTag::Deprecated))
+            && filtered_old.contains_key(name)
+        {
+            findings.push(Finding {
+                severity: Severity::Warning,
+                rule: RULE_EXPORT_DEPRECATED,
+                file: sym.file.clone(),
+                line: sym.line,
+                col: sym.col,
+                message: format!("export `{}` is marked @deprecated", name),
+            });
+        }
+    }
+
     // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
     // Use first overload (primary signature) for type diff
-    for (name, old_sym) in old {
-        if let Some(new_sym) = new.get(name) {
+    for (name, old_sym) in &filtered_old {
+        if let Some(new_sym) = filtered_new.get(name) {
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {

@@ -88,6 +88,9 @@ pub struct RawExport {
     pub decl_kind: Option<DeclarationKind>,
     /// TLF-07: true for `export type * from './mod'` (type-only star re-export).
     pub is_type_only: bool,
+    /// META-04: TSDoc release tag extracted from adjacent block comment.
+    /// Populated during parse_exports for named declaration exports.
+    pub release_tag: Option<crate::types::ReleaseTag>,
 }
 
 // ---------------------------------------------------------------------------
@@ -353,7 +356,7 @@ const DECLARE_MODULE_AUGMENTATION_QUERY_TS: &str = r#"
 (ambient_declaration
   (module
     name: (string) @module_name
-    body: (statement_block)))
+    body: (statement_block) @module_body))
 "#;
 
 /// Captures `declare global { ... }` — global augmentation in .d.ts files.
@@ -710,6 +713,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: Some(src),
                     decl_kind: None,
                     is_type_only: false,
+                    release_tag: None,
                 });
             }
         }
@@ -740,6 +744,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 source: Some(src),
                                 decl_kind: None,
                                 is_type_only: false,
+                                release_tag: None,
                             });
                         }
                     }
@@ -768,6 +773,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -815,6 +821,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: None,
                     decl_kind: None,
                     is_type_only: false,
+                    release_tag: None,
                 });
             }
         }
@@ -856,6 +863,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind: None,
                         is_type_only: false,
+                        release_tag: None,
                     });
                 }
             }
@@ -907,6 +915,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -949,6 +958,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: Some(src),
                         decl_kind: None,
                         is_type_only: false,
+                        release_tag: None,
                     });
                 }
             }
@@ -991,6 +1001,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: None,
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                         }
@@ -1041,6 +1052,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: Some(src),
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1071,6 +1083,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: None,
                     decl_kind: None,
                     is_type_only: false,
+                    release_tag: None,
                 });
             }
         }
@@ -1103,6 +1116,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind: None,
                         is_type_only: false,
+                        release_tag: None,
                     });
                 }
             }
@@ -1134,6 +1148,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1187,9 +1202,14 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         .to_string();
                     // Get the declaration node kind from the parent of the captured @name node.
                     // The @name node's parent is the declaration node (function_declaration, etc.).
-                    let decl_kind = node
-                        .parent()
+                    let decl_node = node.parent();
+                    let decl_kind = decl_node
+                        .as_ref()
                         .map(|parent| decl_kind_from_node_kind(parent.kind()));
+                    // META-04: extract TSDoc release tag from preceding block comment.
+                    let release_tag = decl_node
+                        .as_ref()
+                        .and_then(|decl| extract_release_tag(*decl, source));
                     exports.push(RawExport {
                         name,
                         kind: RawExportKind::Named,
@@ -1198,6 +1218,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         source: None,
                         decl_kind,
                         is_type_only: false,
+                        release_tag,
                     });
                 }
             }
@@ -1232,18 +1253,25 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         // (e.g., function_declaration) OR variable_declarator (for lexical_declaration).
                         // For lexical_declaration: @name → variable_declarator → lexical_declaration.
                         // We need to check the correct level for decl_kind.
-                        let decl_kind = node.parent().map(|immediate_parent| {
-                            let parent_kind = immediate_parent.kind();
+                        let immediate_parent = node.parent();
+                        let decl_kind = immediate_parent.map(|ip| {
+                            let parent_kind = ip.kind();
                             if parent_kind == "variable_declarator" {
                                 // Navigate up one more level to lexical_declaration
-                                immediate_parent
-                                    .parent()
+                                ip.parent()
                                     .map(|ld| decl_kind_from_node_kind(ld.kind()))
                                     .unwrap_or(crate::types::DeclarationKind::Variable)
                             } else {
                                 decl_kind_from_node_kind(parent_kind)
                             }
                         });
+
+                        // META-04: extract TSDoc release tag from preceding block comment.
+                        // For ambient declarations, the relevant node to check is the
+                        // inner declaration (parent of @name).
+                        let release_tag = node
+                            .parent()
+                            .and_then(|decl| extract_release_tag(decl, source));
 
                         exports.push(RawExport {
                             name,
@@ -1253,6 +1281,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind,
                             is_type_only: false,
+                            release_tag,
                         });
                     }
                 }
@@ -1285,6 +1314,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1311,6 +1341,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1379,6 +1410,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: Some(spec_str),
                             decl_kind: None,
                             is_type_only,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1430,6 +1462,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: Some(src),
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1480,6 +1513,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: Some(src),
                     decl_kind: None,
                     is_type_only: false,
+                    release_tag: None,
                 });
             }
         }
@@ -1526,6 +1560,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     source: Some(src),
                     decl_kind: None,
                     is_type_only: false,
+                    release_tag: None,
                 });
             }
         }
@@ -1550,6 +1585,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: Some(DeclarationKind::Variable),
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1576,6 +1612,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: None,
                             decl_kind: Some(DeclarationKind::Variable),
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -1615,6 +1652,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Variable),
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                         }
@@ -1671,6 +1709,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             source: None,
                                             decl_kind: Some(DeclarationKind::Variable),
                                             is_type_only: false,
+                                            release_tag: None,
                                         });
                                     }
                                 }
@@ -1719,6 +1758,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
+                                        release_tag: None,
                                     });
                                 }
                             }
@@ -1758,6 +1798,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
+                                        release_tag: None,
                                     });
                                 }
                             }
@@ -1796,6 +1837,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
+                                        release_tag: None,
                                     });
                                 }
                             }
@@ -1835,6 +1877,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 source: None,
                                 decl_kind: Some(DeclarationKind::Class),
                                 is_type_only: false,
+                                release_tag: None,
                             });
                         }
                     }
@@ -1870,6 +1913,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 source: None,
                                 decl_kind: Some(DeclarationKind::Function),
                                 is_type_only: false,
+                                release_tag: None,
                             });
                         }
                     }
@@ -1917,6 +1961,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Function),
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                         }
@@ -1955,6 +2000,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: None,
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                         }
@@ -2013,6 +2059,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 source: None,
                                                 decl_kind: None,
                                                 is_type_only: false,
+                                                release_tag: None,
                                             });
                                         }
                                     }
@@ -2032,6 +2079,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     source: None,
                                                     decl_kind: None,
                                                     is_type_only: false,
+                                                    release_tag: None,
                                                 });
                                             }
                                         }
@@ -2057,28 +2105,48 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                // Extract both captures: index 0 = @module_name, index 1 = @module_body
+                let mut module_name_opt: Option<String> = None;
+                let mut body_node_opt: Option<tree_sitter::Node> = None;
+                let mut name_line = 1u32;
+                let mut name_col = 1u32;
                 for capture in m.captures {
                     if capture.index == 0 {
                         // @module_name — the string literal (e.g., "'express'")
-                        let node = capture.node;
-                        if let Ok(text) = node.utf8_text(source) {
-                            let module_name = strip_quotes(text);
-                            let augment_key = format!("augment:{}", module_name);
-                            let line = node.start_position().row as u32 + 1;
-                            let col = node.start_position().column as u32 + 1;
-                            let already = exports.iter().any(|e| e.name == augment_key);
-                            if !already {
-                                exports.push(RawExport {
-                                    name: augment_key,
-                                    kind: RawExportKind::Named,
-                                    line,
-                                    col,
-                                    source: None,
-                                    decl_kind: Some(DeclarationKind::Namespace),
-                                    is_type_only: false,
-                                });
-                            }
+                        if let Ok(text) = capture.node.utf8_text(source) {
+                            module_name_opt = Some(strip_quotes(text).to_string());
+                            name_line = capture.node.start_position().row as u32 + 1;
+                            name_col = capture.node.start_position().column as u32 + 1;
                         }
+                    } else if capture.index == 1 {
+                        // @module_body — the statement_block
+                        body_node_opt = Some(capture.node);
+                    }
+                }
+                if let Some(module_name) = module_name_opt {
+                    let augment_key = format!("augment:{}", module_name);
+                    let already = exports.iter().any(|e| e.name == augment_key);
+                    if !already {
+                        exports.push(RawExport {
+                            name: augment_key,
+                            kind: RawExportKind::Named,
+                            line: name_line,
+                            col: name_col,
+                            source: None,
+                            decl_kind: Some(DeclarationKind::Namespace),
+                            is_type_only: false,
+                            release_tag: None,
+                        });
+                    }
+                    // META-03: emit synthetic keys for each top-level member in the body.
+                    // Naming convention: `augment:<module>:*<member>`.
+                    if let Some(body) = body_node_opt {
+                        emit_augmentation_members(
+                            body,
+                            &module_name,
+                            source,
+                            &mut exports,
+                        );
                     }
                 }
             }
@@ -2122,8 +2190,16 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             source: None,
                                             decl_kind: Some(DeclarationKind::Namespace),
                                             is_type_only: false,
+                                            release_tag: None,
                                         });
                                     }
+                                    // META-03: emit synthetic keys for top-level members.
+                                    emit_augmentation_members(
+                                        body_node,
+                                        "global",
+                                        source,
+                                        &mut exports,
+                                    );
                                 }
                             }
                         }
@@ -2243,6 +2319,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 source: None,
                                                 decl_kind: None,
                                                 is_type_only: false,
+                                                release_tag: None,
                                             });
                                         }
                                     }
@@ -2264,6 +2341,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             source: None,
                                             decl_kind: None,
                                             is_type_only: false,
+                                            release_tag: None,
                                         });
                                     }
                                 }
@@ -2325,6 +2403,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 source: None,
                                                 decl_kind: None,
                                                 is_type_only: false,
+                                                release_tag: None,
                                             });
                                         }
                                     }
@@ -2379,6 +2458,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     source: None,
                                     decl_kind: None,
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                         }
@@ -2484,6 +2564,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             source: Some(require_target.clone()),
                             decl_kind: None,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
@@ -2559,6 +2640,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             source: None,
                                             decl_kind: None,
                                             is_type_only: false,
+                                            release_tag: None,
                                         });
                                     }
                                 }
@@ -2600,6 +2682,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         source: None,
                                                         decl_kind: None,
                                                         is_type_only: false,
+                                                        release_tag: None,
                                                     });
                                                 }
                                             }
@@ -2645,6 +2728,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         source: None,
                                                         decl_kind: None,
                                                         is_type_only: false,
+                                                        release_tag: None,
                                                     });
                                                 }
                                             }
@@ -2666,6 +2750,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     source: None,
                                                     decl_kind: None,
                                                     is_type_only: false,
+                                                    release_tag: None,
                                                 });
                                             }
                                         }
@@ -2714,6 +2799,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 source: None,
                                 decl_kind: None,
                                 is_type_only: false,
+                                release_tag: None,
                             });
                         }
                     }
@@ -2767,6 +2853,7 @@ fn expand_namespace_members(
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Namespace),
                                     is_type_only: false,
+                                    release_tag: None,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -2830,11 +2917,139 @@ fn expand_namespace_members(
                             source: None,
                             decl_kind,
                             is_type_only: false,
+                            release_tag: None,
                         });
                     }
                 }
             }
         }
+    }
+}
+
+/// META-03: Emit synthetic keys for top-level declaration members inside an
+/// augmentation body (`declare module 'X' { ... }` or `declare global { ... }`).
+///
+/// Naming convention: `augment:<scope>:*<member>` where scope is either the
+/// module name (e.g., `"express"`) or `"global"`.
+///
+/// Each top-level declaration kind that is commonly augmented — interface,
+/// type alias, class, function, const/let/var — is detected by node kind.
+/// Other kinds (comments, punctuation) are skipped.
+fn emit_augmentation_members(
+    body: tree_sitter::Node,
+    augment_scope: &str,
+    source: &[u8],
+    exports: &mut Vec<RawExport>,
+) {
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        let kind = child.kind();
+        let member_name = match kind {
+            "interface_declaration" | "type_alias_declaration" | "class_declaration"
+            | "abstract_class_declaration" | "function_declaration" | "function_signature" => {
+                child
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .map(String::from)
+            }
+            "variable_declaration" | "lexical_declaration" => {
+                // Find first variable_declarator name — collect to avoid borrow issue
+                let mut vc = child.walk();
+                let children_vec: Vec<_> = child.children(&mut vc).collect();
+                children_vec
+                    .into_iter()
+                    .find(|n| n.kind() == "variable_declarator")
+                    .and_then(|decl| decl.child_by_field_name("name"))
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .map(String::from)
+            }
+            _ => None,
+        };
+        if let Some(name) = member_name {
+            let synthetic_key = format!("augment:{}:*{}", augment_scope, name);
+            if !exports.iter().any(|e| e.name == synthetic_key) {
+                exports.push(RawExport {
+                    name: synthetic_key,
+                    kind: RawExportKind::Named,
+                    line: child.start_position().row as u32 + 1,
+                    col: child.start_position().column as u32 + 1,
+                    source: Some(augment_scope.to_string()),
+                    decl_kind: None,
+                    is_type_only: false,
+                    release_tag: None,
+                });
+            }
+        }
+    }
+}
+
+/// META-04: Extract TSDoc release tag from the block comment immediately
+/// preceding a declaration node.
+///
+/// The block comment preceding an exported declaration lives as a sibling of
+/// the `export_statement` wrapper at the program-level, not as a sibling of the
+/// inner declaration node. This function walks up to the export_statement (or
+/// ambient_declaration) level and checks its preceding named sibling for a
+/// `/** ... */` doc comment.
+///
+/// Returns the first recognized release tag found: @internal, @alpha,
+/// @experimental, @deprecated, or @public. Order defines priority.
+pub fn extract_release_tag(
+    decl_node: tree_sitter::Node,
+    source: &[u8],
+) -> Option<crate::types::ReleaseTag> {
+    // The comment is a sibling of the wrapping export_statement/ambient_declaration,
+    // not of the inner declaration node. Walk up to find the correct ancestor.
+    let search_node = find_statement_ancestor(decl_node);
+
+    // Now look at the preceding named sibling for a doc comment.
+    let prev = search_node.prev_named_sibling()?;
+    if prev.kind() != "comment" {
+        return None;
+    }
+    let text = prev.utf8_text(source).ok()?;
+    if !text.starts_with("/**") {
+        return None;
+    }
+    // Simple tag scan — match on word-boundary @tag patterns.
+    if text.contains("@internal") {
+        return Some(crate::types::ReleaseTag::Internal);
+    }
+    if text.contains("@alpha") {
+        return Some(crate::types::ReleaseTag::Alpha);
+    }
+    if text.contains("@experimental") {
+        return Some(crate::types::ReleaseTag::Experimental);
+    }
+    if text.contains("@deprecated") {
+        return Some(crate::types::ReleaseTag::Deprecated);
+    }
+    if text.contains("@public") {
+        return Some(crate::types::ReleaseTag::Public);
+    }
+    None
+}
+
+/// Walk up the tree from a declaration node to the nearest program-level
+/// statement wrapper (`export_statement` or `ambient_declaration`), returning
+/// that node. If no such ancestor is found (the node itself is at program level),
+/// return the original node unchanged.
+fn find_statement_ancestor(mut node: tree_sitter::Node) -> tree_sitter::Node {
+    loop {
+        let parent = match node.parent() {
+            Some(p) => p,
+            None => return node, // reached root
+        };
+        let parent_kind = parent.kind();
+        if parent_kind == "program" {
+            // `node` is directly under the root — it is the statement we want
+            return node;
+        }
+        if parent_kind == "export_statement" || parent_kind == "ambient_declaration" {
+            // The export_statement or ambient_declaration is the relevant statement
+            return parent;
+        }
+        node = parent;
     }
 }
 
@@ -5878,6 +6093,71 @@ declare global {
         let source = b"// no declare module in JS";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         assert!(exports.iter().all(|e| !e.name.starts_with("augment:")));
+    }
+
+    // ── Phase 17 META-03 augmentation body capture ───────────────────────────
+
+    #[test]
+    fn meta_03_declare_module_body_member_captured() {
+        let source = br#"declare module 'express' { interface Session { uid: string; } }"#;
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name == "augment:express:*Session"),
+            "META-03: declare module member not captured. Got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn meta_03_declare_global_body_captured() {
+        let source = br#"declare global { interface Window { foo: string; } }"#;
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports.iter().any(|e| e.name.starts_with("augment:global:*Window")),
+            "META-03: declare global member not captured. Got: {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+    }
+
+    // ── Phase 17 META-04 TSDoc release tag extraction ────────────────────────
+
+    #[test]
+    fn meta_04_internal_tag_extracted() {
+        let source = b"/** @internal */\nexport function privateHelper() {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let e = exports.iter().find(|e| e.name == "privateHelper").unwrap();
+        assert_eq!(
+            e.release_tag,
+            Some(crate::types::ReleaseTag::Internal),
+            "META-04: @internal tag should be extracted; got: {:?}",
+            e.release_tag
+        );
+    }
+
+    #[test]
+    fn meta_04_deprecated_tag_extracted() {
+        let source = b"/** @deprecated use newFoo */\nexport function oldFoo() {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let e = exports.iter().find(|e| e.name == "oldFoo").unwrap();
+        assert_eq!(
+            e.release_tag,
+            Some(crate::types::ReleaseTag::Deprecated),
+            "META-04: @deprecated tag should be extracted; got: {:?}",
+            e.release_tag
+        );
+    }
+
+    #[test]
+    fn meta_04_no_tag_is_none() {
+        let source = b"export function plainFn() {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let e = exports.iter().find(|e| e.name == "plainFn").unwrap();
+        assert_eq!(
+            e.release_tag,
+            None,
+            "META-04: no tag should yield None; got: {:?}",
+            e.release_tag
+        );
     }
 
     // ── Phase 17 TLF extraction tests ────────────────────────────────────────

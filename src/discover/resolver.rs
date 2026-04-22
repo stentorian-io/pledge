@@ -269,7 +269,7 @@ pub fn collect_exports(
                     is_generator: false,
                     is_reexport: false,
                     is_type_only: false,
-                    release_tag: None,
+                    release_tag: export.release_tag, // META-04: propagate TSDoc release tag
                 });
             }
             RawExportKind::Default => {
