@@ -9,7 +9,8 @@
 // Per D-03: JSON Schema `required` array detection for AST-02.
 
 use super::subtype::{
-    RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED, RULE_JSON_REQUIRED_FIELD_ADDED,
+    RULE_JSON_COMPARISON_TRUNCATED, RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED,
+    RULE_JSON_REQUIRED_FIELD_ADDED,
 };
 use crate::types::{Finding, Severity};
 use serde_json::Value;
@@ -116,6 +117,15 @@ fn diff_json_values(
     depth: usize,
 ) {
     if depth >= MAX_DEPTH {
+        // WR-02 (Phase 17 review): mirror type_diff.rs and emit a Patch-severity
+        // finding so consumers see a clear signal that analysis was incomplete at
+        // MAX_DEPTH rather than a silent return.
+        findings.push(json_finding(
+            Severity::Patch,
+            RULE_JSON_COMPARISON_TRUNCATED,
+            file_path,
+            format!("JSON comparison truncated at depth {MAX_DEPTH} for `{file_path}`"),
+        ));
         return;
     }
 
@@ -370,7 +380,47 @@ mod tests {
         let mut findings = Vec::new();
         // This should complete without stack overflow
         diff_json_values(&old, &old, "", "deep.json", &mut findings, 0);
-        // No panic = pass
+        // Per WR-02, a truncation finding is expected when recursion crosses MAX_DEPTH.
+        // Identical subtrees still trigger it because the cap fires before per-key
+        // comparison decides whether there are real differences.
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_JSON_COMPARISON_TRUNCATED),
+            "WR-02: depth cap should produce a truncation finding"
+        );
+    }
+
+    #[test]
+    fn wr_02_truncation_finding_emitted_for_deep_tree() {
+        // WR-02 (Phase 17 review): pathologically deep JSON schemas must produce
+        // a Patch-severity truncation finding, matching type_diff.rs. Silent depth
+        // capping meant users never saw that analysis was incomplete.
+        let mut old = serde_json::json!({"leaf": "old"});
+        for _ in 0..25 {
+            old = serde_json::json!({"nested": old});
+        }
+        let mut new = serde_json::json!({"leaf": "new"});
+        for _ in 0..25 {
+            new = serde_json::json!({"nested": new});
+        }
+        let mut findings = Vec::new();
+        diff_json_values(&old, &new, "", "deep.json", &mut findings, 0);
+        let truncation: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_JSON_COMPARISON_TRUNCATED)
+            .collect();
+        assert!(
+            !truncation.is_empty(),
+            "WR-02: expected at least one truncation finding; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            truncation[0].severity,
+            Severity::Patch,
+            "WR-02: truncation should be Patch severity"
+        );
+        assert!(truncation[0]
+            .message
+            .contains("truncated at depth"));
     }
 
     #[test]

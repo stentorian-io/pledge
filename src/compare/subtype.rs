@@ -360,6 +360,9 @@ pub const RULE_CSS_CUSTOM_PROPERTY_REMOVED: &str = "css-custom-property-removed"
 pub const RULE_CSS_CLASS_REMOVED: &str = "css-class-removed";
 pub const RULE_ASSET_FILE_REMOVED: &str = "asset-file-removed";
 pub const RULE_JSON_FIELD_ADDED: &str = "json-field-added";
+/// Emitted (Patch severity) when JSON diff recursion hits the depth cap and
+/// further nested differences are not reported — mirrors `type-comparison-truncated`.
+pub const RULE_JSON_COMPARISON_TRUNCATED: &str = "json-comparison-truncated";
 
 // Interface structural diff rules (Phase 14 — REQ-14-05)
 pub const RULE_INTERFACE_MEMBER_REMOVED: &str = "interface-member-removed";
