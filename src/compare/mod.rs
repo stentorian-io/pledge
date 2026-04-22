@@ -14,12 +14,81 @@ pub mod ref_diff;
 pub mod subtype;
 pub mod type_diff;
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::discover::tree_query;
 use crate::types::{
     ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, Severity, TypeParam,
 };
+
+/// SEM-08: Normalize rollup-plugin-dts / api-extractor-style internal
+/// disambiguation suffixes (`T$1`, `T$2`, `T$10`) back to the base name `T`,
+/// but ONLY when the base name `T` is in the provided exported-names set.
+///
+/// If `T$1` is mentioned in a type signature but the base `T` is not exported,
+/// leave it as-is because it represents a genuinely distinct internal type
+/// (Pitfall 10 in Phase 17 research — prevent false normalization of unrelated
+/// internal identifiers that happen to use `$` convention).
+///
+/// Fast path: if the input contains no `$` character, returns a clone immediately.
+fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> String {
+    // Quick check: if no "$" in the input, skip all work.
+    if !input.contains('$') {
+        return input.to_string();
+    }
+
+    let mut out = String::with_capacity(input.len());
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        let c = chars[i];
+        // Accumulate an identifier candidate (alphabetic or underscore start)
+        if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let ident: String = chars[start..i].iter().collect();
+
+            // Check for $<digits> suffix immediately following the identifier
+            if i < chars.len() && chars[i] == '$' {
+                let dollar_pos = i;
+                i += 1; // consume '$'
+                let digits_start = i;
+                while i < chars.len() && chars[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i > digits_start {
+                    // Consumed $<digits>. Decide whether to normalize.
+                    if exported_names.contains(&ident) {
+                        // Base is exported: emit just `ident` (strip $digits)
+                        out.push_str(&ident);
+                    } else {
+                        // Base NOT exported: preserve full `ident$digits` form
+                        out.push_str(&ident);
+                        out.extend(chars[dollar_pos..i].iter());
+                    }
+                    continue;
+                } else {
+                    // `$` not followed by digits — emit identifier and `$` literally
+                    out.push_str(&ident);
+                    out.push('$');
+                    continue;
+                }
+            } else {
+                // No `$` suffix — emit identifier as-is
+                out.push_str(&ident);
+            }
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+
+    out
+}
 
 /// Compare two export maps and produce a list of findings.
 ///
@@ -726,6 +795,16 @@ pub fn compare_structural_diff(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
+    // SEM-08: Build exported-names set ONCE per comparison for rollup suffix normalization.
+    // The union of old and new exported names ensures any symbol visible in either version
+    // can be used as a normalization anchor. This set is passed to normalize_rollup_suffix
+    // to gate $N stripping on names that are actually exported (Pitfall 10).
+    let exported_names: HashSet<String> = old_exports
+        .keys()
+        .chain(new_exports.keys())
+        .cloned()
+        .collect();
+
     for (name, old_sym) in old_exports {
         let Some(new_sym) = new_exports.get(name) else {
             continue;
@@ -867,6 +946,16 @@ pub fn compare_structural_diff(
             } else if new_sym_augmented.overloads.is_empty() && !new_decl.overloads.is_empty() {
                 new_sym_augmented.overloads = new_decl.overloads.clone();
             }
+        }
+
+        // SEM-08: Normalize rollup-plugin-dts $N suffixes on type_signature fields
+        // before they flow into ref_diff and type_diff comparisons. We use local
+        // normalized copies to avoid mutating the ExportMap.
+        if let Some(sig) = &old_sym_augmented.type_signature {
+            old_sym_augmented.type_signature = Some(normalize_rollup_suffix(sig, &exported_names));
+        }
+        if let Some(sig) = &new_sym_augmented.type_signature {
+            new_sym_augmented.type_signature = Some(normalize_rollup_suffix(sig, &exported_names));
         }
 
         findings.extend(ref_diff::compare_ref_changes(
@@ -1471,9 +1560,6 @@ mod sem_08_tests {
     #[test]
     fn sem_08_dollar_without_digits_passthrough() {
         let exp = set(&["Foo"]);
-        assert_eq!(
-            normalize_rollup_suffix("Foo$ | Bar", &exp),
-            "Foo$ | Bar"
-        );
+        assert_eq!(normalize_rollup_suffix("Foo$ | Bar", &exp), "Foo$ | Bar");
     }
 }

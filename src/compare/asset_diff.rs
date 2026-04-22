@@ -10,15 +10,15 @@
 // IMPORTABLE_EXTENSIONS. Duplication across rules is acceptable by design
 // (D-07) — consumers can suppress one rule without affecting the other.
 
+use super::subtype::RULE_ASSET_FILE_REMOVED;
+use crate::types::{Finding, Severity};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use crate::types::{Finding, Severity};
-use super::subtype::RULE_ASSET_FILE_REMOVED;
 
 /// Asset file extensions tracked for removal detection (D-08).
 const ASSET_EXTENSIONS: &[&str] = &[
-    ".json", ".css", ".wasm", ".png", ".jpg", ".svg", ".gif", ".ico",
-    ".woff", ".woff2", ".ttf", ".eot",
+    ".json", ".css", ".wasm", ".png", ".jpg", ".svg", ".gif", ".ico", ".woff", ".woff2", ".ttf",
+    ".eot",
 ];
 
 /// Returns true if the given path has an asset extension.
@@ -113,8 +113,8 @@ pub fn compare_asset_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     fn touch(dir: &TempDir, name: &str) {
         let path = dir.path().join(name);
@@ -144,7 +144,11 @@ mod tests {
         touch(&old_dir, "icon.png");
         touch(&new_dir, "icon.png");
         let findings = compare_asset_files(old_dir.path(), new_dir.path());
-        assert_eq!(findings.len(), 0, "file present in both — no finding expected");
+        assert_eq!(
+            findings.len(),
+            0,
+            "file present in both — no finding expected"
+        );
     }
 
     #[test]
@@ -165,7 +169,11 @@ mod tests {
         touch(&new_dir, "package.json");
         // Even if package.json differs in content, asset_diff should not touch it
         let findings = compare_asset_files(old_dir.path(), new_dir.path());
-        assert_eq!(findings.len(), 0, "package.json should be excluded from asset diff");
+        assert_eq!(
+            findings.len(),
+            0,
+            "package.json should be excluded from asset diff"
+        );
     }
 
     #[test]
@@ -175,7 +183,11 @@ mod tests {
         touch(&old_dir, "package.json");
         // package.json only in old — still excluded
         let findings = compare_asset_files(old_dir.path(), new_dir.path());
-        assert_eq!(findings.len(), 0, "package.json removal should not produce asset finding");
+        assert_eq!(
+            findings.len(),
+            0,
+            "package.json removal should not produce asset finding"
+        );
     }
 
     #[test]
@@ -184,15 +196,28 @@ mod tests {
         let new_dir = TempDir::new().unwrap();
         // Create a file for each of the 12 asset extensions in old_dir only
         let extensions = [
-            "schema.json", "styles.css", "module.wasm",
-            "image.png", "photo.jpg", "icon.svg", "animation.gif", "favicon.ico",
-            "font.woff", "font.woff2", "font.ttf", "font.eot",
+            "schema.json",
+            "styles.css",
+            "module.wasm",
+            "image.png",
+            "photo.jpg",
+            "icon.svg",
+            "animation.gif",
+            "favicon.ico",
+            "font.woff",
+            "font.woff2",
+            "font.ttf",
+            "font.eot",
         ];
         for name in &extensions {
             touch(&old_dir, name);
         }
         let findings = compare_asset_files(old_dir.path(), new_dir.path());
-        assert_eq!(findings.len(), 12, "All 12 asset extension types should produce findings");
+        assert_eq!(
+            findings.len(),
+            12,
+            "All 12 asset extension types should produce findings"
+        );
     }
 
     #[test]

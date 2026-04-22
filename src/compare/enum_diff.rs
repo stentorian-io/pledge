@@ -103,10 +103,7 @@ pub fn compare_enum_shapes(
             file: file.to_path_buf(),
             line,
             col,
-            message: format!(
-                "enum `{}` changed from numeric to string enum",
-                symbol_name
-            ),
+            message: format!("enum `{}` changed from numeric to string enum", symbol_name),
         });
     }
 
@@ -394,10 +391,7 @@ mod tests {
             ],
             false,
         );
-        let new = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("C", 1)],
-            false,
-        );
+        let new = enum_shape(vec![numeric_member("A", 0), numeric_member("C", 1)], false);
         let findings = run(&old, &new);
         assert!(
             findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REMOVED
@@ -417,9 +411,11 @@ mod tests {
         let new = enum_shape(vec![string_member("A", "\"world\"")], false);
         let findings = run(&old, &new);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_VALUE_CHANGED
-                && f.message.contains("A")
-                && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_MEMBER_VALUE_CHANGED
+                    && f.message.contains("A")
+                    && f.severity == Severity::Major),
             "Expected enum-member-value-changed for string change, got: {:?}",
             findings
         );
@@ -551,7 +547,9 @@ mod tests {
         let new = enum_shape(vec![numeric_member("A", 0)], false);
         let findings = run(&old, &new);
         assert!(
-            !findings.iter().any(|f| f.rule == RULE_ENUM_REGULAR_TO_CONST),
+            !findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_REGULAR_TO_CONST),
             "Expected no enum-regular-to-const finding when both regular"
         );
     }
@@ -565,8 +563,9 @@ mod tests {
         let new = enum_shape(vec![numeric_member("A", 0)], false);
         let findings = run(&old, &new);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_CONST_TO_REGULAR
-                && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_CONST_TO_REGULAR && f.severity == Severity::Major),
             "Expected enum-const-to-regular finding, got: {:?}",
             findings
         );
@@ -577,18 +576,16 @@ mod tests {
     #[test]
     fn test_enum05_numeric_to_string() {
         // old members all Numeric kind, new members all StringLiteral kind
-        let old = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("B", 1)],
-            false,
-        );
+        let old = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], false);
         let new = enum_shape(
             vec![string_member("A", "\"foo\""), string_member("B", "\"bar\"")],
             false,
         );
         let findings = run(&old, &new);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_NUMERIC_TO_STRING
-                && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_NUMERIC_TO_STRING && f.severity == Severity::Major),
             "Expected enum-numeric-to-string finding, got: {:?}",
             findings
         );
@@ -659,10 +656,7 @@ mod tests {
 
     #[test]
     fn test_beh04_member_added() {
-        let old = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("B", 1)],
-            false,
-        );
+        let old = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], false);
         let new = enum_shape(
             vec![
                 numeric_member("A", 0),
@@ -693,16 +687,21 @@ mod tests {
             false,
         );
         let findings = run(&old, &new);
-        let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ENUM_MEMBER_ADDED).collect();
-        assert_eq!(added.len(), 2, "Expected 2 enum-member-added findings, got: {:?}", added);
+        let added: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_ENUM_MEMBER_ADDED)
+            .collect();
+        assert_eq!(
+            added.len(),
+            2,
+            "Expected 2 enum-member-added findings, got: {:?}",
+            added
+        );
     }
 
     #[test]
     fn test_beh04_no_finding_when_identical() {
-        let shape = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("B", 1)],
-            false,
-        );
+        let shape = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], false);
         let findings = run(&shape, &shape);
         assert!(
             !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED),
@@ -714,14 +713,12 @@ mod tests {
     fn test_beh04_const_enum_member_added() {
         // D-05: Warning regardless of const/regular
         let old = enum_shape(vec![numeric_member("A", 0)], true);
-        let new = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("B", 1)],
-            true,
-        );
+        let new = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], true);
         let findings = run(&old, &new);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_ADDED
-                && f.severity == Severity::Warning),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_MEMBER_ADDED && f.severity == Severity::Warning),
             "Expected enum-member-added Warning for const enum, got: {:?}",
             findings
         );
@@ -757,11 +754,18 @@ mod tests {
             .iter()
             .filter(|f| f.rule == RULE_ENUM_VALUE_SHIFTED)
             .collect();
-        assert_eq!(shifted.len(), 3, "Expected 3 enum-value-shifted findings, got: {:?}", shifted);
+        assert_eq!(
+            shifted.len(),
+            3,
+            "Expected 3 enum-value-shifted findings, got: {:?}",
+            shifted
+        );
         assert!(shifted.iter().all(|f| f.severity == Severity::Warning));
         // ENUM-03 should NOT fire (no reordering)
         assert!(
-            !findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED),
+            !findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED),
             "ENUM-03 should not fire for insertion-shifted members"
         );
     }
@@ -790,11 +794,15 @@ mod tests {
         let findings = run(&old, &new);
         // ENUM-03 fires for A and B
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("A")),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("A")),
             "Expected ENUM-03 for A"
         );
         assert!(
-            findings.iter().any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("B")),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_ENUM_MEMBER_REORDERED && f.message.contains("B")),
             "Expected ENUM-03 for B"
         );
         // BEH-03 should NOT fire
@@ -838,10 +846,7 @@ mod tests {
         // old: {A=0, B=1} (implicit)
         // new: {A=0, B=1, C=2} (C added at end — A and B not shifted)
         // A and B values unchanged -> no BEH-03
-        let old = enum_shape(
-            vec![numeric_member("A", 0), numeric_member("B", 1)],
-            false,
-        );
+        let old = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], false);
         let new = enum_shape(
             vec![
                 numeric_member("A", 0),

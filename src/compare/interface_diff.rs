@@ -810,10 +810,7 @@ mod tests {
     #[test]
     fn sem_01_loosening_string_to_string_or_number_no_tightening() {
         assert!(
-            !has_tighter_generic_constraint(
-                "<T extends string>",
-                "<T extends string | number>"
-            ),
+            !has_tighter_generic_constraint("<T extends string>", "<T extends string | number>"),
             "string → string|number is LOOSENING — must return false"
         );
     }
@@ -821,10 +818,7 @@ mod tests {
     #[test]
     fn sem_01_tightening_string_or_number_to_string() {
         assert!(
-            has_tighter_generic_constraint(
-                "<T extends string | number>",
-                "<T extends string>"
-            ),
+            has_tighter_generic_constraint("<T extends string | number>", "<T extends string>"),
             "string|number → string is TIGHTENING — must return true"
         );
     }

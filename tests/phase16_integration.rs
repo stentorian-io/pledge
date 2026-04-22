@@ -17,7 +17,9 @@
 //! All tests exercise the public API at the same level as existing integration
 //! tests in phase14_integration.rs and phase15_integration.rs.
 
-use interlint::compare::interface_diff::{compare_interface_index_signatures, compare_interface_members};
+use interlint::compare::interface_diff::{
+    compare_interface_index_signatures, compare_interface_members,
+};
 use interlint::compare::type_diff::diff_types;
 use interlint::discover::entry_points::resolve_entry_points;
 use interlint::discover::tree_query::{parse_exports, IndexSignature, SourceLanguage};
@@ -88,11 +90,19 @@ fn gap_16_01_optional_to_required_param_fires_rule() {
     // New: (x: string) => void   (required param)
     // Expected: param-made-required Major finding
     let old_shape = TypeShape::Function {
-        params: vec![make_param("x", true, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            true,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
-        params: vec![make_param("x", false, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            false,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
 
@@ -101,10 +111,16 @@ fn gap_16_01_optional_to_required_param_fires_rule() {
     assert!(
         findings.iter().any(|f| f.rule == "param-made-required"),
         "optional->required param should fire param-made-required; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 
-    let f = findings.iter().find(|f| f.rule == "param-made-required").unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "param-made-required")
+        .unwrap();
     assert_eq!(
         f.severity,
         interlint::types::Severity::Major,
@@ -121,11 +137,19 @@ fn gap_16_01_optional_to_required_param_fires_rule() {
 fn gap_16_01_required_to_optional_does_not_fire() {
     // Removing the required constraint is safe (callers can still pass the arg)
     let old_shape = TypeShape::Function {
-        params: vec![make_param("x", false, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            false,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
-        params: vec![make_param("x", true, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            true,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
 
@@ -134,7 +158,10 @@ fn gap_16_01_required_to_optional_does_not_fire() {
     assert!(
         !findings.iter().any(|f| f.rule == "param-made-required"),
         "required->optional change should NOT fire param-made-required; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -216,7 +243,10 @@ fn gap_16_02_keyof_type_parsing() {
     let shape = parse_type_string("keyof T");
     match &shape {
         TypeShape::Generic { name, args } => {
-            assert_eq!(name, "keyof", "keyof should be parsed as Generic with name 'keyof'");
+            assert_eq!(
+                name, "keyof",
+                "keyof should be parsed as Generic with name 'keyof'"
+            );
             assert_eq!(args.len(), 1, "keyof T should have 1 arg");
         }
         _ => panic!("Should parse keyof as Generic, got {:?}", shape),
@@ -246,14 +276,34 @@ fn gap_16_03_readonly_added_fires_rule() {
     let findings = compare_interface_members(&old, &new, "MyInterface", &test_file(), 1, 0);
 
     assert!(
-        findings.iter().any(|f| f.rule == "interface-readonly-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "interface-readonly-changed"),
         "Adding readonly should fire interface-readonly-changed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
-    let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
-    assert_eq!(f.severity, interlint::types::Severity::Major, "should be Major");
-    assert!(f.message.contains("added"), "message should say 'added'; got: {}", f.message);
-    assert!(f.message.contains("count"), "message should mention property name; got: {}", f.message);
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "interface-readonly-changed")
+        .unwrap();
+    assert_eq!(
+        f.severity,
+        interlint::types::Severity::Major,
+        "should be Major"
+    );
+    assert!(
+        f.message.contains("added"),
+        "message should say 'added'; got: {}",
+        f.message
+    );
+    assert!(
+        f.message.contains("count"),
+        "message should mention property name; got: {}",
+        f.message
+    );
 }
 
 #[test]
@@ -266,13 +316,29 @@ fn gap_16_03_readonly_removed_fires_rule() {
     let findings = compare_interface_members(&old, &new, "MyInterface", &test_file(), 1, 0);
 
     assert!(
-        findings.iter().any(|f| f.rule == "interface-readonly-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "interface-readonly-changed"),
         "Removing readonly should fire interface-readonly-changed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
-    let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
-    assert_eq!(f.severity, interlint::types::Severity::Major, "should be Major");
-    assert!(f.message.contains("removed"), "message should say 'removed'; got: {}", f.message);
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "interface-readonly-changed")
+        .unwrap();
+    assert_eq!(
+        f.severity,
+        interlint::types::Severity::Major,
+        "should be Major"
+    );
+    assert!(
+        f.message.contains("removed"),
+        "message should say 'removed'; got: {}",
+        f.message
+    );
 }
 
 #[test]
@@ -282,9 +348,14 @@ fn gap_16_03_readonly_unchanged_no_finding() {
     let findings = compare_interface_members(&members, &members, "MyInterface", &test_file(), 1, 0);
 
     assert!(
-        !findings.iter().any(|f| f.rule == "interface-readonly-changed"),
+        !findings
+            .iter()
+            .any(|f| f.rule == "interface-readonly-changed"),
         "Unchanged readonly should not fire; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -297,9 +368,14 @@ fn gap_16_04_index_signature_removed_fires_rule() {
     let old = vec![make_index_sig("string", "number")];
     let new: Vec<IndexSignature> = vec![];
 
-    let findings = compare_interface_index_signatures(&old, &new, "MyInterface", &test_file(), 1, 0);
+    let findings =
+        compare_interface_index_signatures(&old, &new, "MyInterface", &test_file(), 1, 0);
 
-    assert_eq!(findings.len(), 1, "removing index sig should produce 1 finding");
+    assert_eq!(
+        findings.len(),
+        1,
+        "removing index sig should produce 1 finding"
+    );
     assert_eq!(
         findings[0].rule, "interface-index-signature-changed",
         "rule should be interface-index-signature-changed; got: {}",
@@ -320,7 +396,8 @@ fn gap_16_04_index_signature_value_type_changed_fires_rule() {
     let old = vec![make_index_sig("string", "number")];
     let new = vec![make_index_sig("string", "string")];
 
-    let findings = compare_interface_index_signatures(&old, &new, "MyInterface", &test_file(), 1, 0);
+    let findings =
+        compare_interface_index_signatures(&old, &new, "MyInterface", &test_file(), 1, 0);
 
     assert_eq!(
         findings.len(),
@@ -338,7 +415,8 @@ fn gap_16_04_index_signature_value_type_changed_fires_rule() {
 #[test]
 fn gap_16_04_index_signature_unchanged_no_finding() {
     let sigs = vec![make_index_sig("string", "number")];
-    let findings = compare_interface_index_signatures(&sigs, &sigs, "MyInterface", &test_file(), 1, 0);
+    let findings =
+        compare_interface_index_signatures(&sigs, &sigs, "MyInterface", &test_file(), 1, 0);
 
     assert!(
         findings.is_empty(),
@@ -564,7 +642,11 @@ fn gap_16_10_generic_constraint_tightened_no_constraint_to_constraint() {
     // Old: <T>(value: T) => void  (no constraint)
     // New: <T extends string>(value: T) => void  (constraint added)
     let old = vec![make_method("process", 1, Some("<T>(value: T) => void"))];
-    let new = vec![make_method("process", 1, Some("<T extends string>(value: T) => void"))];
+    let new = vec![make_method(
+        "process",
+        1,
+        Some("<T extends string>(value: T) => void"),
+    )];
 
     let findings = compare_interface_members(&old, &new, "MyInterface", &test_file(), 1, 0);
 
@@ -577,7 +659,11 @@ fn gap_16_10_generic_constraint_tightened_no_constraint_to_constraint() {
         .iter()
         .find(|f| f.rule == "interface-generic-constraint-tightened")
         .unwrap();
-    assert_eq!(f.severity, interlint::types::Severity::Major, "should be Major");
+    assert_eq!(
+        f.severity,
+        interlint::types::Severity::Major,
+        "should be Major"
+    );
     assert!(
         f.message.contains("process"),
         "message should mention method name; got: {}",
@@ -589,8 +675,16 @@ fn gap_16_10_generic_constraint_tightened_no_constraint_to_constraint() {
 fn gap_16_10_generic_constraint_changed_fires_rule() {
     // Old: <T extends object>(value: T) => void
     // New: <T extends string>(value: T) => void
-    let old = vec![make_method("transform", 1, Some("<T extends object>(value: T) => void"))];
-    let new = vec![make_method("transform", 1, Some("<T extends string>(value: T) => void"))];
+    let old = vec![make_method(
+        "transform",
+        1,
+        Some("<T extends object>(value: T) => void"),
+    )];
+    let new = vec![make_method(
+        "transform",
+        1,
+        Some("<T extends string>(value: T) => void"),
+    )];
 
     let findings = compare_interface_members(&old, &new, "MyInterface", &test_file(), 1, 0);
 
@@ -608,9 +702,14 @@ fn gap_16_10_no_constraint_unchanged_no_finding() {
     let findings = compare_interface_members(&members, &members, "MyInterface", &test_file(), 1, 0);
 
     assert!(
-        !findings.iter().any(|f| f.rule == "interface-generic-constraint-tightened"),
+        !findings
+            .iter()
+            .any(|f| f.rule == "interface-generic-constraint-tightened"),
         "Unchanged signature should not fire; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -632,7 +731,11 @@ fn gap_16_11_types_versions_wildcard_discovers_d_ts_files() {
         b"export declare function util(): string;\n",
     )
     .unwrap();
-    std::fs::write(pkg_dir.path().join("index.js"), b"exports.helper = function() {};\n").unwrap();
+    std::fs::write(
+        pkg_dir.path().join("index.js"),
+        b"exports.helper = function() {};\n",
+    )
+    .unwrap();
 
     let pkg = serde_json::json!({
         "name": "mypkg",

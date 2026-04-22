@@ -11,8 +11,8 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use super::subtype::{RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED};
 use crate::types::{Finding, Severity};
-use super::subtype::{RULE_CSS_CUSTOM_PROPERTY_REMOVED, RULE_CSS_CLASS_REMOVED};
 
 /// Parse a CSS source buffer using tree-sitter-css.
 ///
@@ -37,7 +37,12 @@ fn extract_css_apis(source: &[u8]) -> (BTreeSet<String>, BTreeSet<String>) {
             tracing::warn!("css_diff: failed to parse CSS source, skipping");
         }
         Some(tree) => {
-            walk_css_node(tree.root_node(), source, &mut custom_props, &mut class_names);
+            walk_css_node(
+                tree.root_node(),
+                source,
+                &mut custom_props,
+                &mut class_names,
+            );
         }
     }
 
@@ -209,10 +214,7 @@ pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
                 file: PathBuf::from(css_file),
                 line: 1,
                 col: 1,
-                message: format!(
-                    "CSS custom property `{}` removed from `{}`",
-                    prop, css_file
-                ),
+                message: format!("CSS custom property `{}` removed from `{}`", prop, css_file),
             });
         }
 
@@ -237,8 +239,8 @@ pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_custom_property_removed() {
@@ -276,7 +278,11 @@ mod tests {
         let (new_props, _) = extract_css_apis(new_css);
 
         let removed: Vec<_> = old_props.difference(&new_props).collect();
-        assert_eq!(removed.len(), 1, "Expected --bg to be detected inside @media");
+        assert_eq!(
+            removed.len(),
+            1,
+            "Expected --bg to be detected inside @media"
+        );
         assert_eq!(removed[0], "--bg");
     }
 
@@ -289,7 +295,11 @@ mod tests {
         let (_, new_classes) = extract_css_apis(new_css);
 
         let removed: Vec<_> = old_classes.difference(&new_classes).collect();
-        assert_eq!(removed.len(), 1, "Expected .child to be detected in nested selector");
+        assert_eq!(
+            removed.len(),
+            1,
+            "Expected .child to be detected in nested selector"
+        );
         assert_eq!(removed[0], "child");
     }
 
@@ -302,7 +312,11 @@ mod tests {
         let (_, new_classes) = extract_css_apis(new_css);
 
         let removed: Vec<_> = old_classes.difference(&new_classes).collect();
-        assert_eq!(removed.len(), 1, "Expected .b to be detected in minified CSS");
+        assert_eq!(
+            removed.len(),
+            1,
+            "Expected .b to be detected in minified CSS"
+        );
         assert_eq!(removed[0], "b");
     }
 
@@ -328,12 +342,20 @@ mod tests {
 
         // Old: main.css has --primary, other.css has --other
         fs::write(old_dir.path().join("package.json"), pkg_json).unwrap();
-        fs::write(old_dir.path().join("main.css"), ":root { --primary: blue; }").unwrap();
+        fs::write(
+            old_dir.path().join("main.css"),
+            ":root { --primary: blue; }",
+        )
+        .unwrap();
         fs::write(old_dir.path().join("other.css"), ":root { --other: red; }").unwrap();
 
         // New: main.css keeps --primary, other.css has --other removed
         fs::write(new_dir.path().join("package.json"), pkg_json).unwrap();
-        fs::write(new_dir.path().join("main.css"), ":root { --primary: blue; }").unwrap();
+        fs::write(
+            new_dir.path().join("main.css"),
+            ":root { --primary: blue; }",
+        )
+        .unwrap();
         fs::write(new_dir.path().join("other.css"), ":root { }").unwrap();
 
         let findings = compare_css_files(old_dir.path(), new_dir.path());
@@ -369,7 +391,9 @@ mod tests {
 
         // b.css should be included in fallback scan
         assert!(
-            findings.iter().any(|f| f.rule == RULE_CSS_CLASS_REMOVED && f.message.contains("bar")),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_CSS_CLASS_REMOVED && f.message.contains("bar")),
             "Fallback scan should detect .bar removal in b.css, got: {:?}",
             findings.iter().map(|f| &f.message).collect::<Vec<_>>()
         );

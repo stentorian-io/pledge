@@ -41,9 +41,9 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32) -> ExportSymbol {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
@@ -77,9 +77,9 @@ fn test_ambient_class_removal_detected() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
-        is_reexport: false,
-        is_type_only: false,
-        release_tag: None,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         },
     );
 
@@ -98,18 +98,14 @@ fn test_ambient_class_removal_detected() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
-        is_reexport: false,
-        is_type_only: false,
-        release_tag: None,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         },
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings
@@ -133,9 +129,7 @@ fn test_star_and_namespace_from_same_source_both_captured() {
 
     let stars: Vec<_> = exports
         .iter()
-        .filter(|e| {
-            e.kind == RawExportKind::StarReexport && e.source.as_deref() == Some("./mod")
-        })
+        .filter(|e| e.kind == RawExportKind::StarReexport && e.source.as_deref() == Some("./mod"))
         .collect();
     assert_eq!(
         stars.len(),
@@ -432,9 +426,9 @@ fn test_structural_diff_with_file_move() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
-        is_reexport: false,
-        is_type_only: false,
-        release_tag: None,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         },
     );
 
@@ -453,18 +447,14 @@ fn test_structural_diff_with_file_move() {
             type_guard_type: None,
             is_async: false,
             is_generator: false,
-        is_reexport: false,
-        is_type_only: false,
-        release_tag: None,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         },
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // verbose was removed from Config — should be detected despite file move.
     // The key assertion is that the function ran without panicking AND
@@ -479,8 +469,7 @@ fn test_structural_diff_with_file_move() {
 
 #[test]
 fn test_js_extension_probes_ts() {
-    let candidates =
-        resolve_module_path(Path::new("/project/src/index.ts"), "./utils.js");
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./utils.js");
     let has_ts = candidates.iter().any(|p| {
         let s = p.to_string_lossy();
         s.ends_with("/utils.ts") && !s.ends_with(".js.ts")
@@ -493,8 +482,7 @@ fn test_js_extension_probes_ts() {
 
 #[test]
 fn test_mjs_extension_probes_mts() {
-    let candidates =
-        resolve_module_path(Path::new("/project/src/index.ts"), "./helper.mjs");
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./helper.mjs");
     let has_mts = candidates
         .iter()
         .any(|p| p.to_string_lossy().ends_with("/helper.mts"));
@@ -506,8 +494,7 @@ fn test_mjs_extension_probes_mts() {
 
 #[test]
 fn test_cjs_extension_probes_cts() {
-    let candidates =
-        resolve_module_path(Path::new("/project/src/index.ts"), "./config.cjs");
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./config.cjs");
     let has_cts = candidates
         .iter()
         .any(|p| p.to_string_lossy().ends_with("/config.cts"));
@@ -521,8 +508,7 @@ fn test_cjs_extension_probes_cts() {
 
 #[test]
 fn test_directory_index_completeness() {
-    let candidates =
-        resolve_module_path(Path::new("/project/src/index.ts"), "./components");
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./components");
     let expected = [
         "index.ts",
         "index.tsx",
@@ -541,10 +527,7 @@ fn test_directory_index_completeness() {
         let found = candidates
             .iter()
             .any(|p| p.to_string_lossy().ends_with(&full));
-        assert!(
-            found,
-            "candidates must include {full}; got: {candidates:?}"
-        );
+        assert!(found, "candidates must include {full}; got: {candidates:?}");
     }
 }
 

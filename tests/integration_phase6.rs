@@ -3,11 +3,10 @@
 use interlint::compare::exports_diff;
 use interlint::compare::metadata;
 use interlint::compare::subtype::{
-    RULE_BIN_ENTRY_CHANGED, RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED,
-    RULE_CONDITION_TARGET_CHANGED, RULE_ESM_TO_CJS, RULE_EXPORTS_FIELD_ADDED,
-    RULE_IMPORTABLE_FILE_REMOVED, RULE_PLATFORM_NARROWED, RULE_SUBPATH_ADDED,
-    RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED, RULE_TYPES_CONDITION_REMOVED,
-    RULE_TYPES_RUNTIME_MISMATCH,
+    RULE_BIN_ENTRY_CHANGED, RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED,
+    RULE_ESM_TO_CJS, RULE_EXPORTS_FIELD_ADDED, RULE_IMPORTABLE_FILE_REMOVED,
+    RULE_PLATFORM_NARROWED, RULE_SUBPATH_ADDED, RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED,
+    RULE_TYPES_CONDITION_REMOVED, RULE_TYPES_RUNTIME_MISMATCH,
 };
 use interlint::types::Severity;
 use std::path::PathBuf;
@@ -120,7 +119,9 @@ fn test_types_condition_removed() {
         .filter(|f| f.message.contains("types") && f.message.contains("./utils"))
         .collect();
     assert!(
-        !types_removed.iter().any(|f| f.rule == RULE_CONDITION_REMOVED),
+        !types_removed
+            .iter()
+            .any(|f| f.rule == RULE_CONDITION_REMOVED),
         "types condition removal should NOT also fire condition-removed (EXP-03)"
     );
 }
@@ -145,7 +146,9 @@ fn test_subpath_pattern_changed() {
         .filter(|f| f.message.contains("features"))
         .collect();
     assert!(
-        !pattern_findings.iter().any(|f| f.rule == RULE_SUBPATH_REMOVED),
+        !pattern_findings
+            .iter()
+            .any(|f| f.rule == RULE_SUBPATH_REMOVED),
         "wildcard pattern removal should fire subpath-pattern-changed, NOT subpath-removed"
     );
 }

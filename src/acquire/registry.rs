@@ -74,7 +74,9 @@ impl NpmClient {
 
         if !resp.status().is_success() {
             let status = resp.status();
-            bail!("Cannot reach npm registry \u{2014} check your network connection. (HTTP {status})");
+            bail!(
+                "Cannot reach npm registry \u{2014} check your network connection. (HTTP {status})"
+            );
         }
 
         let packument: serde_json::Value = resp

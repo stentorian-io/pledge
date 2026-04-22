@@ -134,7 +134,10 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
 
     if warning_count > 0 {
         if color {
-            println!("{}", format!("{} warning(s)", warning_count).bright_yellow());
+            println!(
+                "{}",
+                format!("{} warning(s)", warning_count).bright_yellow()
+            );
         } else {
             println!("{} warning(s)", warning_count);
         }

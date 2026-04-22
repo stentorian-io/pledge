@@ -23,7 +23,12 @@ use std::path::PathBuf;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-fn make_export_sym(name: &str, file: PathBuf, line: u32, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
+fn make_export_sym(
+    name: &str,
+    file: PathBuf,
+    line: u32,
+    decl_kind: Option<DeclarationKind>,
+) -> ExportSymbol {
     ExportSymbol {
         name: name.to_string(),
         kind: ExportKind::Named,
@@ -42,7 +47,11 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32, decl_kind: Option<Decla
     }
 }
 
-fn make_default_export_sym(file: PathBuf, line: u32, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
+fn make_default_export_sym(
+    file: PathBuf,
+    line: u32,
+    decl_kind: Option<DeclarationKind>,
+) -> ExportSymbol {
     ExportSymbol {
         name: "default".to_string(),
         kind: ExportKind::Default,
@@ -97,8 +106,7 @@ fn test_gap15_01_cjs_class_method_removed() {
     let old_dir = tempfile::tempdir().unwrap();
     let new_dir = tempfile::tempdir().unwrap();
 
-    let old_source =
-        b"module.exports = class Foo { method() {} toString() { return \"foo\"; } }\n";
+    let old_source = b"module.exports = class Foo { method() {} toString() { return \"foo\"; } }\n";
     let new_source = b"module.exports = class Foo { toString() { return \"foo\"; } }\n";
 
     std::fs::write(old_dir.path().join("index.js"), old_source).unwrap();
@@ -116,12 +124,8 @@ fn test_gap15_01_cjs_class_method_removed() {
         make_default_export_sym(PathBuf::from("index.js"), 1, Some(DeclarationKind::Class)),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| f.rule == "class-method-removed"),
@@ -148,27 +152,36 @@ fn test_gap15_01_cjs_function_params() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "default".to_string(),
-        make_default_export_sym(PathBuf::from("index.js"), 1, Some(DeclarationKind::Function)),
+        make_default_export_sym(
+            PathBuf::from("index.js"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "default".to_string(),
-        make_default_export_sym(PathBuf::from("index.js"), 1, Some(DeclarationKind::Function)),
+        make_default_export_sym(
+            PathBuf::from("index.js"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // sync-to-async is detectable without LSP — tree-sitter extracts is_async
     assert!(
-        findings.iter().any(|f| f.rule == "sync-to-async" || f.rule == "async-to-sync" || f.rule == "param-added"),
+        findings.iter().any(|f| f.rule == "sync-to-async"
+            || f.rule == "async-to-sync"
+            || f.rule == "param-added"),
         "structural change in CJS function export should be detected; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -189,26 +202,35 @@ fn test_gap15_01_cjs_exports_handler_async() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "handler".to_string(),
-        make_export_sym("handler", PathBuf::from("index.js"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "handler",
+            PathBuf::from("index.js"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "handler".to_string(),
-        make_export_sym("handler", PathBuf::from("index.js"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "handler",
+            PathBuf::from("index.js"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| f.rule == "async-to-sync"),
         "removing async from CJS exports.handler should produce async-to-sync; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -250,7 +272,8 @@ fn test_gap15_02_using_graceful() {
 #[test]
 fn test_gap15_02_await_using_graceful() {
     // export await using handle = getResource() should not panic.
-    let source = b"export function cleanup() { await using handle = getResource(); return handle; }\n";
+    let source =
+        b"export function cleanup() { await using handle = getResource(); return handle; }\n";
     let result = parse_exports(source, SourceLanguage::TypeScript);
     assert!(
         result.is_ok(),
@@ -297,7 +320,10 @@ fn test_gap15_03_types_versions_removed_finding() {
     assert!(
         findings.iter().any(|f| f.rule == "types-versions-changed"),
         "removing typesVersions should produce types-versions-changed finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -357,7 +383,11 @@ fn test_gap15_03_types_versions_entry_discovery() {
         b"export declare function helper(): void;\n",
     )
     .unwrap();
-    std::fs::write(pkg_dir.path().join("index.js"), b"exports.helper = function() {};\n").unwrap();
+    std::fs::write(
+        pkg_dir.path().join("index.js"),
+        b"exports.helper = function() {};\n",
+    )
+    .unwrap();
 
     let pkg = serde_json::json!({
         "name": "pkg",
@@ -531,9 +561,14 @@ fn test_gap15_05_external_reexport_removal() {
     let findings = compare_exports(&old_map, &new_map);
 
     assert!(
-        findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("*<lodash>")),
+        findings
+            .iter()
+            .any(|f| f.rule == "export-removed" && f.message.contains("*<lodash>")),
         "removing external re-export from 'lodash' should produce export-removed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -562,7 +597,11 @@ fn test_gap15_05_external_reexport_is_reexport_flag() {
     .unwrap();
 
     let result = interlint::discover::discover_exports(pkg_dir.path());
-    assert!(result.is_ok(), "discover_exports should succeed; got: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "discover_exports should succeed; got: {:?}",
+        result.err()
+    );
     let (map, _warnings) = result.unwrap();
 
     let lodash_entry = map.get("*<lodash>");
@@ -679,26 +718,34 @@ fn test_gap15_07_const_type_param_removed() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "foo".to_string(),
-        make_export_sym("foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "foo".to_string(),
-        make_export_sym("foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     // Should not panic — graceful degradation acceptable
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // If the grammar supports const type params, the finding should appear
     // If not, the test still passes (graceful degradation)
-    let has_const_finding = findings.iter().any(|f| f.rule == "const-type-param-changed");
+    let has_const_finding = findings
+        .iter()
+        .any(|f| f.rule == "const-type-param-changed");
     let _ = has_const_finding; // Suppress unused variable warning — both true and false are valid
 }
 
@@ -716,26 +763,37 @@ fn test_gap15_07_const_type_param_present_no_change() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "foo".to_string(),
-        make_export_sym("foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "foo".to_string(),
-        make_export_sym("foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_export_sym(
+            "foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
-        !findings.iter().any(|f| f.rule == "const-type-param-changed"),
+        !findings
+            .iter()
+            .any(|f| f.rule == "const-type-param-changed"),
         "unchanged const type params should not produce const-type-param-changed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -780,9 +838,14 @@ fn test_gap15_08_wildcard_pattern_changed() {
 
     // Should have subpath-pattern-changed with "changed to"
     assert!(
-        findings.iter().any(|f| f.rule == "subpath-pattern-changed" && f.message.contains("changed to")),
+        findings
+            .iter()
+            .any(|f| f.rule == "subpath-pattern-changed" && f.message.contains("changed to")),
         "changing ./* to ./*.js should produce subpath-pattern-changed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 
     // Should NOT have separate subpath-removed and subpath-added
@@ -794,12 +857,18 @@ fn test_gap15_08_wildcard_pattern_changed() {
     assert!(
         !has_subpath_removed,
         "wildcard refinement should NOT produce subpath-removed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
     assert!(
         !has_subpath_added_for_wc,
         "wildcard refinement should NOT produce subpath-added for new pattern; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -846,7 +915,10 @@ fn test_gap15_08_wildcard_unrelated_not_merged() {
                 || f.rule == "subpath-removed"
         }),
         "old ./* (unrelated bases) should be reported as removed/pattern-changed; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -880,6 +952,9 @@ fn test_gap15_08_wildcard_unchanged_no_finding() {
     assert!(
         !findings.iter().any(|f| f.rule == "subpath-pattern-changed"),
         "unchanged wildcard pattern should produce no finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }

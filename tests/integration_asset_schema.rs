@@ -46,7 +46,9 @@ fn test_json_required_field_added_integration() {
     let findings = json_diff::compare_json_files(&old, &new);
     // "email" added and in required array -> AST-02
     assert!(
-        findings.iter().any(|f| f.rule == RULE_JSON_REQUIRED_FIELD_ADDED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_JSON_REQUIRED_FIELD_ADDED),
         "Expected json-required-field-added finding, got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
@@ -85,7 +87,9 @@ fn test_css_custom_property_removed_integration() {
     let findings = css_diff::compare_css_files(&old, &new);
     // --color-primary removed -> AST-03
     assert!(
-        findings.iter().any(|f| f.rule == RULE_CSS_CUSTOM_PROPERTY_REMOVED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_CSS_CUSTOM_PROPERTY_REMOVED),
         "Expected css-custom-property-removed finding, got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );

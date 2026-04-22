@@ -648,7 +648,8 @@ fn diff_functions(
             // direction. Reason: is_subtype_of returns true for (any, X) in BOTH directions
             // (any is both top and bottom in TypeScript's escape-hatch semantics), which
             // incorrectly suppresses the narrowing finding when old param is `any`.
-            let is_any_to_concrete = is_any_shape(&old_param.shape) && !is_any_shape(&new_param.shape);
+            let is_any_to_concrete =
+                is_any_shape(&old_param.shape) && !is_any_shape(&new_param.shape);
             if is_any_to_concrete {
                 findings.push(Finding {
                     severity: Severity::Major,

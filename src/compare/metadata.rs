@@ -20,9 +20,9 @@ use crate::types::{Finding, Severity};
 
 // Rule ID constants imported from subtype.rs (single source of truth)
 use super::subtype::{
-    RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED, RULE_MODULE_TYPE_CHANGED,
-    RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
-    RULE_BIN_ENTRY_CHANGED, RULE_PLATFORM_NARROWED, RULE_TYPES_VERSIONS_CHANGED,
+    RULE_BIN_ENTRY_CHANGED, RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED,
+    RULE_MODULE_TYPE_CHANGED, RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
+    RULE_PLATFORM_NARROWED, RULE_TYPES_VERSIONS_CHANGED,
 };
 
 /// Compare package metadata from both package roots and return a list of findings.
@@ -874,9 +874,7 @@ mod tests {
     #[test]
     fn test_types_versions_removed() {
         // Old has typesVersions, new does not — breaking
-        let old = make_pkg(
-            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
-        );
+        let old = make_pkg(r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#);
         let new = make_pkg(r#"{}"#);
         let mut findings = Vec::new();
         compare_types_versions(&old, &new, &mut findings);
@@ -897,9 +895,7 @@ mod tests {
         let old = make_pkg(
             r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}, ">=3.0": {"*": ["dist/legacy/*"]}}}"#,
         );
-        let new = make_pkg(
-            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
-        );
+        let new = make_pkg(r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#);
         let mut findings = Vec::new();
         compare_types_versions(&old, &new, &mut findings);
         assert_eq!(
@@ -920,12 +916,8 @@ mod tests {
     #[test]
     fn test_types_versions_mappings_changed() {
         // Both have ">=4.0" but different path mappings
-        let old = make_pkg(
-            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
-        );
-        let new = make_pkg(
-            r#"{"typesVersions": {">=4.0": {"*": ["dist/new-types/*"]}}}"#,
-        );
+        let old = make_pkg(r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#);
+        let new = make_pkg(r#"{"typesVersions": {">=4.0": {"*": ["dist/new-types/*"]}}}"#);
         let mut findings = Vec::new();
         compare_types_versions(&old, &new, &mut findings);
         assert_eq!(
@@ -947,9 +939,7 @@ mod tests {
     fn test_types_versions_added_no_finding() {
         // Old has no typesVersions, new adds it — non-breaking
         let old = make_pkg(r#"{}"#);
-        let new = make_pkg(
-            r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#,
-        );
+        let new = make_pkg(r#"{"typesVersions": {">=4.0": {"*": ["dist/types/*"]}}}"#);
         let mut findings = Vec::new();
         compare_types_versions(&old, &new, &mut findings);
         assert_eq!(
@@ -970,8 +960,10 @@ mod tests {
         let mut findings = Vec::new();
         compare_entry_points(&old, &new, &mut findings);
         assert!(
-            !findings.iter().any(|f| f.rule == RULE_ENTRY_POINT_CHANGED
-                && f.message.to_lowercase().contains("main")),
+            !findings
+                .iter()
+                .any(|f| f.rule == RULE_ENTRY_POINT_CHANGED
+                    && f.message.to_lowercase().contains("main")),
             "SEM-06: main-change should be suppressed when exports[\".\"] is stable; got: {:?}",
             findings
         );

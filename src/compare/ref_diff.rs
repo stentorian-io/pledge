@@ -956,7 +956,9 @@ mod tests {
             &[],
         );
         assert!(
-            findings.iter().any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED),
             "SEM-05: REF-08 (default-export-changed) must fire; got: {:?}",
             findings
         );
@@ -970,8 +972,16 @@ mod tests {
     #[test]
     fn sem_05_ref_04_fires_alone_when_ref_08_does_not() {
         // Only decl kind flip, NOT a default export — REF-04 alone fires normally.
-        let old = make_sym("Config", ExportKind::Named, Some(DeclarationKind::Interface));
-        let new = make_sym("Config", ExportKind::Named, Some(DeclarationKind::TypeAlias));
+        let old = make_sym(
+            "Config",
+            ExportKind::Named,
+            Some(DeclarationKind::Interface),
+        );
+        let new = make_sym(
+            "Config",
+            ExportKind::Named,
+            Some(DeclarationKind::TypeAlias),
+        );
         let findings = compare_ref_changes(
             &old,
             &new,
@@ -983,7 +993,9 @@ mod tests {
             &[],
         );
         assert!(
-            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
             "SEM-05: REF-04 must fire when REF-08 does not; got: {:?}",
             findings
         );
@@ -1035,7 +1047,10 @@ mod tests {
         );
         // Should fire exactly once (one removed overload)
         assert_eq!(
-            findings.iter().filter(|f| f.rule == RULE_OVERLOAD_REMOVED).count(),
+            findings
+                .iter()
+                .filter(|f| f.rule == RULE_OVERLOAD_REMOVED)
+                .count(),
             1,
             "SEM-07: exactly one overload-removed expected; got: {:?}",
             findings

@@ -17,7 +17,12 @@ use std::path::PathBuf;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-fn make_export_sym(name: &str, file: PathBuf, line: u32, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
+fn make_export_sym(
+    name: &str,
+    file: PathBuf,
+    line: u32,
+    decl_kind: Option<DeclarationKind>,
+) -> ExportSymbol {
     ExportSymbol {
         name: name.to_string(),
         kind: ExportKind::Named,
@@ -30,13 +35,17 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32, decl_kind: Option<Decla
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
-fn make_default_export_sym(file: PathBuf, line: u32, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
+fn make_default_export_sym(
+    file: PathBuf,
+    line: u32,
+    decl_kind: Option<DeclarationKind>,
+) -> ExportSymbol {
     ExportSymbol {
         name: "default".to_string(),
         kind: ExportKind::Default,
@@ -49,9 +58,9 @@ fn make_default_export_sym(file: PathBuf, line: u32, decl_kind: Option<Declarati
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
@@ -75,27 +84,36 @@ fn test_arrow_function_identified_as_function() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "add".to_string(),
-        make_export_sym("add", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "add",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "add".to_string(),
-        make_export_sym("add", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "add",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // async-to-sync is detectable without LSP because is_async is set from tree-sitter extraction
     assert!(
         findings.iter().any(|f| f.rule == "async-to-sync"),
         "arrow function async-to-sync change should be detected; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -116,27 +134,36 @@ fn test_arrow_function_async_to_sync() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "fetch".to_string(),
-        make_export_sym("fetch", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "fetch",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "fetch".to_string(),
-        make_export_sym("fetch", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "fetch",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // async-to-sync is a behavioral change (Warning or Major severity)
     assert!(
         findings.iter().any(|f| f.rule == "async-to-sync"),
         "changing async arrow to sync should produce async-to-sync finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -147,7 +174,8 @@ fn test_function_expression_identified_as_function() {
     let old_dir = tempfile::tempdir().unwrap();
     let new_dir = tempfile::tempdir().unwrap();
 
-    let old_source = b"export const handler = async function(req: string): Promise<string> { return req; };\n";
+    let old_source =
+        b"export const handler = async function(req: string): Promise<string> { return req; };\n";
     let new_source = b"export const handler = function(req: string): string { return req; };\n";
 
     std::fs::write(old_dir.path().join("index.ts"), old_source).unwrap();
@@ -156,26 +184,35 @@ fn test_function_expression_identified_as_function() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "handler".to_string(),
-        make_export_sym("handler", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "handler",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "handler".to_string(),
-        make_export_sym("handler", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Variable)),
+        make_export_sym(
+            "handler",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Variable),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| f.rule == "async-to-sync"),
         "function expression async-to-sync change should be detected; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -210,21 +247,25 @@ fn test_anonymous_default_function_async_to_sync() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "default".to_string(),
-        make_default_export_sym(PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_default_export_sym(
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "default".to_string(),
-        make_default_export_sym(PathBuf::from("index.ts"), 1, Some(DeclarationKind::Function)),
+        make_default_export_sym(
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Function),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| f.rule == "async-to-sync"),
@@ -259,12 +300,8 @@ fn test_anonymous_default_class_method_removed() {
         make_default_export_sym(PathBuf::from("index.ts"), 1, Some(DeclarationKind::Class)),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings
@@ -304,9 +341,9 @@ fn test_namespace_member_removed() {
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
-            is_reexport: false,
-            is_type_only: false,
-            release_tag: None,
+                is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }
@@ -327,9 +364,9 @@ fn test_namespace_member_removed() {
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
-            is_reexport: false,
-            is_type_only: false,
-            release_tag: None,
+                is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }
@@ -348,7 +385,10 @@ fn test_namespace_member_removed() {
             .iter()
             .any(|f| f.rule == "export-removed" && f.message.contains("Foo.bar")),
         "removing namespace member Foo.bar should produce export-removed finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -379,9 +419,9 @@ fn test_namespace_member_added() {
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
-            is_reexport: false,
-            is_type_only: false,
-            release_tag: None,
+                is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }
@@ -402,9 +442,9 @@ fn test_namespace_member_added() {
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
-            is_reexport: false,
-            is_type_only: false,
-            release_tag: None,
+                is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }
@@ -423,7 +463,10 @@ fn test_namespace_member_added() {
             .iter()
             .any(|f| f.rule == "export-added" && f.message.contains("Foo.bar")),
         "adding namespace member Foo.bar should produce export-added finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -463,21 +506,27 @@ fn test_declaration_merging_interface_member_removed() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "Foo".to_string(),
-        make_export_sym("Foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Interface)),
+        make_export_sym(
+            "Foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Interface),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "Foo".to_string(),
-        make_export_sym("Foo", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Interface)),
+        make_export_sym(
+            "Foo",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Interface),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // Removing b() from the merged interface should be detected
     assert!(
@@ -527,12 +576,8 @@ fn test_declaration_merging_collects_all_members() {
         ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     // verbose was in the second declaration — should be detected as removed
     assert!(
@@ -582,12 +627,8 @@ fn test_interface_member_removed_finding() {
         ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| {
@@ -636,20 +677,18 @@ fn test_interface_member_added_required() {
         ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
-        findings.iter().any(|f| {
-            f.rule == "interface-member-added"
-                && f.message.contains("port")
-        }),
+        findings
+            .iter()
+            .any(|f| { f.rule == "interface-member-added" && f.message.contains("port") }),
         "adding 'port' to interface should produce interface-member-added finding; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -689,12 +728,8 @@ fn test_interface_method_param_count_changed() {
         ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     assert!(
         findings.iter().any(|f| {
@@ -721,21 +756,27 @@ fn test_interface_member_removed_is_major() {
     let mut old_exports = ExportMap::new();
     old_exports.insert(
         "Api".to_string(),
-        make_export_sym("Api", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Interface)),
+        make_export_sym(
+            "Api",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Interface),
+        ),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
         "Api".to_string(),
-        make_export_sym("Api", PathBuf::from("index.ts"), 1, Some(DeclarationKind::Interface)),
+        make_export_sym(
+            "Api",
+            PathBuf::from("index.ts"),
+            1,
+            Some(DeclarationKind::Interface),
+        ),
     );
 
-    let findings = compare_structural_diff(
-        old_dir.path(),
-        new_dir.path(),
-        &old_exports,
-        &new_exports,
-    );
+    let findings =
+        compare_structural_diff(old_dir.path(), new_dir.path(), &old_exports, &new_exports);
 
     let removed_finding = findings
         .iter()
@@ -743,7 +784,10 @@ fn test_interface_member_removed_is_major() {
     assert!(
         removed_finding.is_some(),
         "should find interface-member-removed for 'receive'; findings: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         removed_finding.unwrap().severity,

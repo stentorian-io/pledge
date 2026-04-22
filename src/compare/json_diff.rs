@@ -8,11 +8,13 @@
 // Per D-02: Recursive key-by-key diff using serde_json::Value.
 // Per D-03: JSON Schema `required` array detection for AST-02.
 
+use super::subtype::{
+    RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED, RULE_JSON_REQUIRED_FIELD_ADDED,
+};
+use crate::types::{Finding, Severity};
+use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use serde_json::Value;
-use crate::types::{Finding, Severity};
-use super::subtype::{RULE_JSON_FIELD_REMOVED, RULE_JSON_REQUIRED_FIELD_ADDED, RULE_JSON_FIELD_ADDED};
 
 const MAX_DEPTH: usize = 20;
 
@@ -215,7 +217,12 @@ fn make_path(parent: &str, key: &str) -> String {
 }
 
 /// Create a Finding anchored to a JSON file (line 1, col 1).
-fn json_finding(severity: Severity, rule: &'static str, file_path: &str, message: String) -> Finding {
+fn json_finding(
+    severity: Severity,
+    rule: &'static str,
+    file_path: &str,
+    message: String,
+) -> Finding {
     Finding {
         severity,
         rule,
@@ -231,8 +238,8 @@ fn json_finding(severity: Severity, rule: &'static str, file_path: &str, message
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     /// Helper: write a JSON string to a temp dir file and return the dir.
     fn write_json(dir: &TempDir, name: &str, content: &str) {
@@ -289,7 +296,8 @@ mod tests {
         let mut findings = Vec::new();
         diff_json_values(&old, &new, "", "schema.json", &mut findings, 0);
         // Should find: email added as required field
-        let required_findings: Vec<_> = findings.iter()
+        let required_findings: Vec<_> = findings
+            .iter()
             .filter(|f| f.rule == RULE_JSON_REQUIRED_FIELD_ADDED)
             .collect();
         assert_eq!(required_findings.len(), 1);
@@ -313,8 +321,11 @@ mod tests {
         diff_json_values(&old, &new, "", "schema.json", &mut findings, 0);
         assert!(!findings.is_empty());
         // Path should use dotted notation
-        assert!(findings[0].message.contains("properties.name.minLength"),
-            "Expected dotted path in message, got: {}", findings[0].message);
+        assert!(
+            findings[0].message.contains("properties.name.minLength"),
+            "Expected dotted path in message, got: {}",
+            findings[0].message
+        );
     }
 
     #[test]
@@ -329,10 +340,22 @@ mod tests {
     fn test_json_package_json_excluded() {
         let old_dir = TempDir::new().unwrap();
         let new_dir = TempDir::new().unwrap();
-        write_json(&old_dir, "package.json", r#"{"name":"pkg","version":"1.0.0"}"#);
-        write_json(&new_dir, "package.json", r#"{"name":"pkg","version":"2.0.0","extra":"field"}"#);
+        write_json(
+            &old_dir,
+            "package.json",
+            r#"{"name":"pkg","version":"1.0.0"}"#,
+        );
+        write_json(
+            &new_dir,
+            "package.json",
+            r#"{"name":"pkg","version":"2.0.0","extra":"field"}"#,
+        );
         let findings = compare_json_files(old_dir.path(), new_dir.path());
-        assert_eq!(findings.len(), 0, "package.json should be excluded from JSON diff");
+        assert_eq!(
+            findings.len(),
+            0,
+            "package.json should be excluded from JSON diff"
+        );
     }
 
     #[test]
@@ -354,8 +377,16 @@ mod tests {
     fn test_json_files_compared() {
         let old_dir = TempDir::new().unwrap();
         let new_dir = TempDir::new().unwrap();
-        write_json(&old_dir, "schema.json", r#"{"type":"object","properties":{"id":{"type":"number"},"name":{"type":"string"}}}"#);
-        write_json(&new_dir, "schema.json", r#"{"type":"object","properties":{"id":{"type":"number"}}}"#);
+        write_json(
+            &old_dir,
+            "schema.json",
+            r#"{"type":"object","properties":{"id":{"type":"number"},"name":{"type":"string"}}}"#,
+        );
+        write_json(
+            &new_dir,
+            "schema.json",
+            r#"{"type":"object","properties":{"id":{"type":"number"}}}"#,
+        );
         let findings = compare_json_files(old_dir.path(), new_dir.path());
         assert!(!findings.is_empty());
         let removed = findings.iter().any(|f| f.rule == RULE_JSON_FIELD_REMOVED);

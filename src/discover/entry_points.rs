@@ -257,10 +257,8 @@ fn expand_subpath_wildcard(
                 for entry in entries_iter.flatten() {
                     let file_path = entry.path();
                     if file_path.is_file() {
-                        let file_name = file_path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("");
+                        let file_name =
+                            file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                         // Check that the file matches the suffix pattern.
                         if suffix.is_empty() || file_name.ends_with(suffix) {
                             results.push(EntryPoint {
@@ -344,11 +342,19 @@ mod tests {
     fn test_types_and_typings_both_collected() {
         // Package has BOTH `types` and `typings` pointing to DIFFERENT files.
         // Both should be collected (no break); deduplication only removes same-file duplicates.
-        let pkg_json = r#"{"name":"mypkg","types":"./dist/types.d.ts","typings":"./dist/typings.d.ts"}"#;
+        let pkg_json =
+            r#"{"name":"mypkg","types":"./dist/types.d.ts","typings":"./dist/typings.d.ts"}"#;
         let dir = make_pkg(pkg_json, &["dist/types.d.ts", "dist/typings.d.ts"]);
         let entries = resolve_entry_points(dir.path()).unwrap();
-        assert_eq!(entries.len(), 2, "both types and typings fields should contribute entry points; got: {entries:?}");
-        let paths: Vec<String> = entries.iter().map(|e| e.path.to_string_lossy().to_string()).collect();
+        assert_eq!(
+            entries.len(),
+            2,
+            "both types and typings fields should contribute entry points; got: {entries:?}"
+        );
+        let paths: Vec<String> = entries
+            .iter()
+            .map(|e| e.path.to_string_lossy().to_string())
+            .collect();
         assert!(
             paths.iter().any(|p| p.ends_with("types.d.ts")),
             "entry points should include types.d.ts; got: {paths:?}"
@@ -482,10 +488,7 @@ mod tests {
                 }
             }
         }"#;
-        let dir = make_pkg(
-            pkg_json,
-            &["dist/types/foo.d.ts", "dist/types/bar.d.ts"],
-        );
+        let dir = make_pkg(pkg_json, &["dist/types/foo.d.ts", "dist/types/bar.d.ts"]);
         let entries = resolve_entry_points(dir.path()).unwrap();
         let paths: Vec<String> = entries
             .iter()

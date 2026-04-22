@@ -18,8 +18,8 @@ use std::path::Path;
 use crate::types::{Finding, Severity};
 
 use super::subtype::{
-    RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED,
-    RULE_EXPORTS_FIELD_ADDED, RULE_ESM_TO_CJS, RULE_IMPORTABLE_FILE_REMOVED, RULE_SUBPATH_ADDED,
+    RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED, RULE_ESM_TO_CJS,
+    RULE_EXPORTS_FIELD_ADDED, RULE_IMPORTABLE_FILE_REMOVED, RULE_SUBPATH_ADDED,
     RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED, RULE_TYPES_CONDITION_REMOVED,
     RULE_TYPES_RUNTIME_MISMATCH,
 };
@@ -186,9 +186,7 @@ pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
         serde_json::Value::Null => BTreeMap::new(),
         serde_json::Value::Array(arr) => {
             // Take first element per Node.js spec fallback semantics
-            arr.first()
-                .map(parse_exports_map)
-                .unwrap_or_default()
+            arr.first().map(parse_exports_map).unwrap_or_default()
         }
         serde_json::Value::Object(obj) => parse_exports_object(obj),
         // Boolean, Number — treat as empty (no valid exports)
@@ -356,9 +354,7 @@ fn check_format_migration(
         findings.push(pkg_json_finding(
             Severity::Major,
             RULE_ESM_TO_CJS,
-            format!(
-                "ESM-to-CJS migration in subpath `{subpath}`: `import` condition removed"
-            ),
+            format!("ESM-to-CJS migration in subpath `{subpath}`: `import` condition removed"),
         ));
     }
 }
@@ -368,11 +364,7 @@ fn check_format_migration(
 /// Per D-12: fires when types condition uses an explicit format-specific extension
 /// (`.d.cts` for CJS, `.d.mts` for ESM) that conflicts with the runtime condition format.
 /// `.d.ts` is format-neutral and never triggers this rule.
-fn check_types_runtime_mismatch(
-    subpath: &str,
-    entry: &SubpathEntry,
-    findings: &mut Vec<Finding>,
-) {
+fn check_types_runtime_mismatch(subpath: &str, entry: &SubpathEntry, findings: &mut Vec<Finding>) {
     let conds = match &entry.node {
         ConditionNode::Branch(c) => c,
         _ => return, // Only applies to Branch nodes
@@ -394,12 +386,11 @@ fn check_types_runtime_mismatch(
     // Use condition key as primary signal (D-10, signal 1); file extension as secondary (signal 2).
     for cond_key in conds.keys() {
         // Determine runtime format: first try condition key, then extension of its target file
-        let runtime_format = format_from_condition_key(cond_key).or_else(|| {
-            match conds.get(cond_key) {
+        let runtime_format =
+            format_from_condition_key(cond_key).or_else(|| match conds.get(cond_key) {
                 Some(ConditionNode::Leaf(Some(path))) => format_from_extension(path),
                 _ => None,
-            }
-        });
+            });
 
         if let Some(runtime_format) = runtime_format {
             if runtime_format != types_format {
@@ -443,9 +434,7 @@ fn is_importable(path: &Path) -> bool {
     if name.ends_with(".d.ts") {
         return true;
     }
-    IMPORTABLE_EXTENSIONS
-        .iter()
-        .any(|ext| name.ends_with(ext))
+    IMPORTABLE_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
 }
 
 /// Recursively collect importable files from a package directory.
@@ -700,7 +689,11 @@ pub fn compare_exports_diff(
                     )
                 }
             };
-            vec![pkg_json_finding(Severity::Major, RULE_EXPORTS_FIELD_ADDED, message)]
+            vec![pkg_json_finding(
+                Severity::Major,
+                RULE_EXPORTS_FIELD_ADDED,
+                message,
+            )]
         }
 
         (Some(old_val), None) => {
@@ -737,11 +730,20 @@ mod tests {
     #[test]
     fn test_exp08_cjs_to_esm_require_removed() {
         // EXP-08: old has require condition, new drops it -> cjs-to-esm finding
-        let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
-        let cjs_to_esm: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CJS_TO_ESM).collect();
-        assert_eq!(cjs_to_esm.len(), 1, "expected 1 cjs-to-esm finding, got: {:?}", findings);
+        let cjs_to_esm: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_CJS_TO_ESM)
+            .collect();
+        assert_eq!(
+            cjs_to_esm.len(),
+            1,
+            "expected 1 cjs-to-esm finding, got: {:?}",
+            findings
+        );
         assert_eq!(cjs_to_esm[0].severity, Severity::Major);
         assert!(cjs_to_esm[0].message.contains("."));
     }
@@ -749,12 +751,16 @@ mod tests {
     #[test]
     fn test_exp08_no_cjs_to_esm_when_both_conditions_present() {
         // EXP-08 negative: both require and import exist in both versions, targets changed -> NO cjs-to-esm
-        let old = make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
-        let new = make_pkg(r#"{"exports": {".": {"require": "./dist/index.cjs", "import": "./dist/index.mjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"require": "./index.cjs", "import": "./index.mjs"}}}"#);
+        let new = make_pkg(
+            r#"{"exports": {".": {"require": "./dist/index.cjs", "import": "./dist/index.mjs"}}}"#,
+        );
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(
             findings.iter().all(|f| f.rule != RULE_CJS_TO_ESM),
-            "cjs-to-esm should NOT fire when both conditions still present, got: {:?}", findings
+            "cjs-to-esm should NOT fire when both conditions still present, got: {:?}",
+            findings
         );
     }
 
@@ -764,19 +770,37 @@ mod tests {
         let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"require": "./index.cjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
-        let esm_to_cjs: Vec<_> = findings.iter().filter(|f| f.rule == RULE_ESM_TO_CJS).collect();
-        assert_eq!(esm_to_cjs.len(), 1, "expected 1 esm-to-cjs finding, got: {:?}", findings);
+        let esm_to_cjs: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_ESM_TO_CJS)
+            .collect();
+        assert_eq!(
+            esm_to_cjs.len(),
+            1,
+            "expected 1 esm-to-cjs finding, got: {:?}",
+            findings
+        );
         assert_eq!(esm_to_cjs[0].severity, Severity::Major);
     }
 
     #[test]
     fn test_exp10_types_runtime_mismatch_dcts_with_import() {
         // EXP-10: types -> .d.cts (CJS types) but only import condition (ESM) -> mismatch
-        let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
-        let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
+        let new =
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
-        let mismatch: Vec<_> = findings.iter().filter(|f| f.rule == RULE_TYPES_RUNTIME_MISMATCH).collect();
-        assert_eq!(mismatch.len(), 1, "expected 1 types-runtime-mismatch finding, got: {:?}", findings);
+        let mismatch: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_TYPES_RUNTIME_MISMATCH)
+            .collect();
+        assert_eq!(
+            mismatch.len(),
+            1,
+            "expected 1 types-runtime-mismatch finding, got: {:?}",
+            findings
+        );
         assert_eq!(mismatch[0].severity, Severity::Major);
         assert!(mismatch[0].message.contains(".d.cts"));
     }
@@ -784,18 +808,26 @@ mod tests {
     #[test]
     fn test_exp10_no_mismatch_for_format_neutral_dts() {
         // EXP-10 negative: types -> .d.ts (format-neutral) with import -> NO mismatch
-        let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
-        let new = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
+        let new =
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(
-            findings.iter().all(|f| f.rule != RULE_TYPES_RUNTIME_MISMATCH),
-            "types-runtime-mismatch should NOT fire for .d.ts (format-neutral), got: {:?}", findings
+            findings
+                .iter()
+                .all(|f| f.rule != RULE_TYPES_RUNTIME_MISMATCH),
+            "types-runtime-mismatch should NOT fire for .d.ts (format-neutral), got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn test_module_format_from_condition_key() {
-        assert_eq!(format_from_condition_key("require"), Some(ModuleFormat::Cjs));
+        assert_eq!(
+            format_from_condition_key("require"),
+            Some(ModuleFormat::Cjs)
+        );
         assert_eq!(format_from_condition_key("import"), Some(ModuleFormat::Esm));
         assert_eq!(format_from_condition_key("default"), None);
         assert_eq!(format_from_condition_key("types"), None);
@@ -803,15 +835,27 @@ mod tests {
 
     #[test]
     fn test_module_format_from_extension() {
-        assert_eq!(format_from_extension("./index.cjs"), Some(ModuleFormat::Cjs));
-        assert_eq!(format_from_extension("./index.mjs"), Some(ModuleFormat::Esm));
+        assert_eq!(
+            format_from_extension("./index.cjs"),
+            Some(ModuleFormat::Cjs)
+        );
+        assert_eq!(
+            format_from_extension("./index.mjs"),
+            Some(ModuleFormat::Esm)
+        );
         assert_eq!(format_from_extension("./index.js"), None);
     }
 
     #[test]
     fn test_types_format_from_extension() {
-        assert_eq!(types_format_from_extension("./index.d.cts"), Some(ModuleFormat::Cjs));
-        assert_eq!(types_format_from_extension("./index.d.mts"), Some(ModuleFormat::Esm));
+        assert_eq!(
+            types_format_from_extension("./index.d.cts"),
+            Some(ModuleFormat::Cjs)
+        );
+        assert_eq!(
+            types_format_from_extension("./index.d.mts"),
+            Some(ModuleFormat::Esm)
+        );
         assert_eq!(types_format_from_extension("./index.d.ts"), None);
     }
 
@@ -959,17 +1003,34 @@ mod tests {
     fn test_exp03_condition_removed() {
         // Removing the `require` condition fires both EXP-03 (condition-removed) and
         // EXP-08 (cjs-to-esm migration). Both are correct co-occurrences.
-        let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         // EXP-03: condition-removed must fire
-        let condition_removed: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CONDITION_REMOVED).collect();
-        assert_eq!(condition_removed.len(), 1, "expected 1 condition-removed finding, got: {:?}", findings);
+        let condition_removed: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_CONDITION_REMOVED)
+            .collect();
+        assert_eq!(
+            condition_removed.len(),
+            1,
+            "expected 1 condition-removed finding, got: {:?}",
+            findings
+        );
         assert_eq!(condition_removed[0].severity, Severity::Major);
         assert!(condition_removed[0].message.contains("require"));
         // EXP-08: cjs-to-esm migration also fires for this scenario
-        let cjs_to_esm: Vec<_> = findings.iter().filter(|f| f.rule == RULE_CJS_TO_ESM).collect();
-        assert_eq!(cjs_to_esm.len(), 1, "expected 1 cjs-to-esm finding, got: {:?}", findings);
+        let cjs_to_esm: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_CJS_TO_ESM)
+            .collect();
+        assert_eq!(
+            cjs_to_esm.len(),
+            1,
+            "expected 1 cjs-to-esm finding, got: {:?}",
+            findings
+        );
     }
 
     #[test]
@@ -984,11 +1045,17 @@ mod tests {
 
     #[test]
     fn test_exp05_types_condition_removed_no_double_fire() {
-        let old = make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         // Should fire EXP-05 (types-condition-removed) but NOT EXP-03 (condition-removed)
-        assert_eq!(findings.len(), 1, "expected exactly 1 finding, got: {:?}", findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "expected exactly 1 finding, got: {:?}",
+            findings
+        );
         assert_eq!(findings[0].rule, RULE_TYPES_CONDITION_REMOVED);
         assert_eq!(findings[0].severity, Severity::Major);
         // Verify no condition-removed double-fire
@@ -1026,10 +1093,16 @@ mod tests {
 
     #[test]
     fn test_unchanged_exports_no_findings() {
-        let old = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
-        let new = make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
+        let new =
+            make_pkg(r#"{"exports": {".": {"import": "./index.mjs", "require": "./index.cjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
-        assert!(findings.is_empty(), "expected no findings for unchanged exports, got: {:?}", findings);
+        assert!(
+            findings.is_empty(),
+            "expected no findings for unchanged exports, got: {:?}",
+            findings
+        );
     }
 
     // ─── GAP-15-08: Wildcard pattern semantic matching ────────────────────────
@@ -1121,7 +1194,9 @@ mod tests {
         let new = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(
-            findings.iter().all(|f| f.rule != RULE_SUBPATH_PATTERN_CHANGED),
+            findings
+                .iter()
+                .all(|f| f.rule != RULE_SUBPATH_PATTERN_CHANGED),
             "subpath-pattern-changed should NOT fire when pattern exists in both, got: {:?}",
             findings
         );
@@ -1136,8 +1211,8 @@ mod tests {
 
     #[test]
     fn test_exp13_importable_file_removed() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         // Old dir: lib/index.js, lib/utils.js
         let old_dir = tempdir().unwrap();
@@ -1156,16 +1231,28 @@ mod tests {
         let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
-        let removed: Vec<_> = findings.iter().filter(|f| f.rule == RULE_IMPORTABLE_FILE_REMOVED).collect();
-        assert_eq!(removed.len(), 1, "expected 1 importable-file-removed finding, got: {:?}", findings);
+        let removed: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_IMPORTABLE_FILE_REMOVED)
+            .collect();
+        assert_eq!(
+            removed.len(),
+            1,
+            "expected 1 importable-file-removed finding, got: {:?}",
+            findings
+        );
         assert_eq!(removed[0].severity, Severity::Major);
-        assert!(removed[0].message.contains("utils.js"), "message should contain utils.js, got: {}", removed[0].message);
+        assert!(
+            removed[0].message.contains("utils.js"),
+            "message should contain utils.js, got: {}",
+            removed[0].message
+        );
     }
 
     #[test]
     fn test_exp13_added_file_produces_subpath_added() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         // Old dir: lib/index.js only
         let old_dir = tempdir().unwrap();
@@ -1184,15 +1271,23 @@ mod tests {
         let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
-        let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_SUBPATH_ADDED).collect();
-        assert_eq!(added.len(), 1, "expected 1 subpath-added finding, got: {:?}", findings);
+        let added: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_SUBPATH_ADDED)
+            .collect();
+        assert_eq!(
+            added.len(),
+            1,
+            "expected 1 subpath-added finding, got: {:?}",
+            findings
+        );
         assert_eq!(added[0].severity, Severity::Minor);
     }
 
     #[test]
     fn test_exp13_dotfiles_skipped() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         let old_dir = tempdir().unwrap();
         fs::write(old_dir.path().join(".hidden"), "").unwrap();
@@ -1207,13 +1302,17 @@ mod tests {
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
         // No findings because .hidden is skipped
-        assert!(findings.is_empty(), "expected no findings (dotfiles skipped), got: {:?}", findings);
+        assert!(
+            findings.is_empty(),
+            "expected no findings (dotfiles skipped), got: {:?}",
+            findings
+        );
     }
 
     #[test]
     fn test_exp13_only_importable_extensions_included() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         let old_dir = tempdir().unwrap();
         fs::write(old_dir.path().join("README.md"), "").unwrap();
@@ -1229,13 +1328,17 @@ mod tests {
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
         // No findings because .md and .txt are not importable
-        assert!(findings.is_empty(), "expected no findings (.md/.txt not importable), got: {:?}", findings);
+        assert!(
+            findings.is_empty(),
+            "expected no findings (.md/.txt not importable), got: {:?}",
+            findings
+        );
     }
 
     #[test]
     fn test_exp02_enhanced_with_file_listing() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         // Old dir: lib/index.js, lib/utils.js, lib/helper.js
         let old_dir = tempdir().unwrap();
@@ -1252,8 +1355,16 @@ mod tests {
         let new_pkg = make_pkg(r#"{"name": "my-pkg", "exports": {".": "./index.js"}}"#);
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
-        let exp02: Vec<_> = findings.iter().filter(|f| f.rule == RULE_EXPORTS_FIELD_ADDED).collect();
-        assert_eq!(exp02.len(), 1, "expected 1 exports-field-added finding, got: {:?}", findings);
+        let exp02: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == RULE_EXPORTS_FIELD_ADDED)
+            .collect();
+        assert_eq!(
+            exp02.len(),
+            1,
+            "expected 1 exports-field-added finding, got: {:?}",
+            findings
+        );
         // Message should include file listing
         assert!(
             exp02[0].message.contains("index.js") || exp02[0].message.contains("encapsulating"),
@@ -1264,8 +1375,8 @@ mod tests {
 
     #[test]
     fn test_scan_importable_files_basic() {
-        use tempfile::tempdir;
         use std::fs;
+        use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("index.js"), "").unwrap();
@@ -1286,10 +1397,13 @@ mod tests {
     fn sem_02_null_to_string_fires_minor_addition() {
         // "types": null → "types": "./real.d.ts" is additive — Minor (subpath-added)
         let old = make_pkg(r#"{"exports": {".": {"types": null, "default": "./index.js"}}}"#);
-        let new = make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
+        let new =
+            make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(
-            !findings.iter().any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED),
+            !findings
+                .iter()
+                .any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED),
             "SEM-02: null→string should NOT fire condition-target-changed (Major); got: {:?}",
             findings
         );
@@ -1304,11 +1418,14 @@ mod tests {
     #[test]
     fn sem_02_string_to_null_fires_major() {
         // "types": "./real.d.ts" → "types": null is breaking — Major (condition-target-changed)
-        let old = make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
+        let old =
+            make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
         let new = make_pkg(r#"{"exports": {".": {"types": null, "default": "./index.js"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED && f.severity == Severity::Major),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED && f.severity == Severity::Major),
             "SEM-02: string→null should fire condition-target-changed Major; got: {:?}",
             findings
         );
