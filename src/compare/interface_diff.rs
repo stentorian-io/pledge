@@ -783,4 +783,52 @@ mod tests {
             "identical construct signatures should produce no findings"
         );
     }
+
+    // ── SEM-01: has_tighter_generic_constraint rewrite ───────────────────────
+
+    #[test]
+    fn sem_01_loosening_string_to_string_or_number_no_tightening() {
+        assert!(
+            !has_tighter_generic_constraint(
+                "<T extends string>",
+                "<T extends string | number>"
+            ),
+            "string → string|number is LOOSENING — must return false"
+        );
+    }
+
+    #[test]
+    fn sem_01_tightening_string_or_number_to_string() {
+        assert!(
+            has_tighter_generic_constraint(
+                "<T extends string | number>",
+                "<T extends string>"
+            ),
+            "string|number → string is TIGHTENING — must return true"
+        );
+    }
+
+    #[test]
+    fn sem_01_no_constraint_to_constraint_is_tightening() {
+        assert!(
+            has_tighter_generic_constraint("<T>", "<T extends string>"),
+            "constraint added where none existed — must return true"
+        );
+    }
+
+    #[test]
+    fn sem_01_constraint_to_no_constraint_is_loosening() {
+        assert!(
+            !has_tighter_generic_constraint("<T extends string>", "<T>"),
+            "constraint removed — loosening, must return false"
+        );
+    }
+
+    #[test]
+    fn sem_01_identical_no_finding() {
+        assert!(
+            !has_tighter_generic_constraint("<T extends string>", "<T extends string>"),
+            "identical constraints — must return false"
+        );
+    }
 }

@@ -1878,4 +1878,79 @@ mod tests {
             rule_ids(&findings)
         );
     }
+
+    // ── SEM-03: any → T tightening ────────────────────────────────────────────
+
+    #[test]
+    fn sem_03_any_to_string_fires_narrowing() {
+        // Old: fn(x: any) -> void, New: fn(x: string) -> void
+        // any → string is TIGHTENING — must fire param-type-narrowed Major
+        let findings = diff(
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Any),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.rule == "param-type-narrowed" && f.severity == Severity::Major),
+            "SEM-03: any→string must fire param-type-narrowed Major; got: {:?}",
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn sem_03_any_to_any_no_finding() {
+        // Old: fn(x: any) -> void, New: fn(x: any) -> void — idempotent, no finding
+        let findings = diff(
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Any),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".to_string(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Any),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        );
+        assert!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "param-type-narrowed")
+                .count()
+                == 0,
+            "SEM-03: any→any must NOT fire param-type-narrowed; got: {:?}",
+            findings
+                .iter()
+                .map(|f| (f.rule, f.severity.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
 }

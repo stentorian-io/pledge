@@ -163,4 +163,23 @@ mod tests {
         assert!(findings.iter().any(|f| f.rule == "async-to-sync"));
         assert!(findings.iter().any(|f| f.rule == "generator-removed"));
     }
+
+    // ── SEM-04: generator-removed must be Major ───────────────────────────────
+
+    #[test]
+    fn sem_04_generator_removed_is_major_severity() {
+        let old = make_sym(false, true);
+        let new = make_sym(false, false);
+        let findings = run(&old, &new);
+        assert_eq!(findings.len(), 1, "should fire exactly one finding");
+        assert_eq!(
+            findings[0].rule, "generator-removed",
+            "rule should be generator-removed"
+        );
+        assert_eq!(
+            findings[0].severity,
+            Severity::Major,
+            "SEM-04: generator-removed must be Severity::Major, not Warning"
+        );
+    }
 }
