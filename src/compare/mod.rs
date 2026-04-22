@@ -1411,3 +1411,69 @@ mod tests {
         );
     }
 }
+
+// ─── SEM-08: normalize_rollup_suffix tests ───────────────────────────────────
+
+#[cfg(test)]
+mod sem_08_tests {
+    use super::normalize_rollup_suffix;
+    use std::collections::HashSet;
+
+    fn set(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn sem_08_base_exported_suffix_normalized() {
+        let exp = set(&["Foo"]);
+        assert_eq!(normalize_rollup_suffix("Foo$1 | null", &exp), "Foo | null");
+    }
+
+    #[test]
+    fn sem_08_base_not_exported_suffix_preserved() {
+        let exp = set(&["Baz"]);
+        assert_eq!(
+            normalize_rollup_suffix("Bar$1 | null", &exp),
+            "Bar$1 | null"
+        );
+    }
+
+    #[test]
+    fn sem_08_multi_digit_suffix() {
+        let exp = set(&["Foo"]);
+        assert_eq!(normalize_rollup_suffix("Foo$10", &exp), "Foo");
+    }
+
+    #[test]
+    fn sem_08_mixed_names() {
+        let exp = set(&["Foo"]); // Foo exported, Bar not
+        assert_eq!(
+            normalize_rollup_suffix("Array<Foo$1> | Record<string, Bar$2>", &exp),
+            "Array<Foo> | Record<string, Bar$2>"
+        );
+    }
+
+    #[test]
+    fn sem_08_no_suffix_passthrough() {
+        let exp = set(&["Foo"]);
+        assert_eq!(normalize_rollup_suffix("Foo | Bar", &exp), "Foo | Bar");
+    }
+
+    #[test]
+    fn sem_08_no_dollar_fast_path() {
+        let exp = set(&["Foo"]);
+        assert_eq!(
+            normalize_rollup_suffix("string | number", &exp),
+            "string | number"
+        );
+    }
+
+    #[test]
+    fn sem_08_dollar_without_digits_passthrough() {
+        let exp = set(&["Foo"]);
+        assert_eq!(
+            normalize_rollup_suffix("Foo$ | Bar", &exp),
+            "Foo$ | Bar"
+        );
+    }
+}
