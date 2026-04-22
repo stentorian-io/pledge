@@ -2294,8 +2294,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 let prop_obj = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
 
                 // Heuristic: fn_name is "__export*" or short (minified); target must be exports/module
-                let is_export_helper =
-                    fn_name.starts_with("__export") || fn_name.len() <= 3;
+                let is_export_helper = fn_name.starts_with("__export") || fn_name.len() <= 3;
                 let is_valid_target = target == "exports" || target == "module";
 
                 if is_export_helper && is_valid_target {
@@ -2459,10 +2458,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     .and_then(|c| c.node.utf8_text(source).ok())
                     .unwrap_or("");
 
-                if object_id != "Object"
-                    || keys_method != "keys"
-                    || foreach_method != "forEach"
-                {
+                if object_id != "Object" || keys_method != "keys" || foreach_method != "forEach" {
                     continue;
                 }
 
@@ -2531,13 +2527,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         && obj_id != "Object");
 
                 match method {
-                    "defineProperty" | _ if is_define_prop && method != "defineProperties" && method != "assign" => {
+                    _ if is_define_prop && method != "defineProperties" && method != "assign" => {
                         // defineProperty(exports|module.exports, "name", descriptor)
                         if let Some(args) = args_node {
                             // Check first arg is exports or module.exports
-                            let first_arg = args
-                                .named_children(&mut args.walk())
-                                .next();
+                            let first_arg = args.named_children(&mut args.walk()).next();
                             let is_exports_target = first_arg
                                 .and_then(|n| n.utf8_text(source).ok())
                                 .map(|t| t == "exports" || t.starts_with("module."))
@@ -2546,9 +2540,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 continue;
                             }
                             // Second arg is the property name string
-                            let second_arg = args
-                                .named_children(&mut args.walk())
-                                .nth(1);
+                            let second_arg = args.named_children(&mut args.walk()).nth(1);
                             if let Some(name_node) = second_arg {
                                 if let Ok(raw) = name_node.utf8_text(source) {
                                     let name = strip_quotes(raw);
@@ -2595,8 +2587,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     continue;
                                                 }
                                                 let line = key_node.start_position().row as u32 + 1;
-                                                let col = key_node.start_position().column as u32 + 1;
-                                                let already = exports.iter().any(|e| e.name == name);
+                                                let col =
+                                                    key_node.start_position().column as u32 + 1;
+                                                let already =
+                                                    exports.iter().any(|e| e.name == name);
                                                 if !already {
                                                     exports.push(RawExport {
                                                         name: name.to_string(),
@@ -2638,8 +2632,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     continue;
                                                 }
                                                 let line = key_node.start_position().row as u32 + 1;
-                                                let col = key_node.start_position().column as u32 + 1;
-                                                let already = exports.iter().any(|e| e.name == name);
+                                                let col =
+                                                    key_node.start_position().column as u32 + 1;
+                                                let already =
+                                                    exports.iter().any(|e| e.name == name);
                                                 if !already {
                                                     exports.push(RawExport {
                                                         name: name.to_string(),
@@ -5935,8 +5931,16 @@ declare global {
         let source = b"0 && (module.exports = { foo: foo, bar: bar });";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"foo"), "BUN-01: foo must be detected; got: {:?}", names);
-        assert!(names.contains(&"bar"), "BUN-01: bar must be detected; got: {:?}", names);
+        assert!(
+            names.contains(&"foo"),
+            "BUN-01: foo must be detected; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"bar"),
+            "BUN-01: bar must be detected; got: {:?}",
+            names
+        );
     }
 
     #[test]
@@ -5945,8 +5949,16 @@ declare global {
         let source = b"__export(exports, { foo: () => foo, bar: () => bar });";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"foo"), "BUN-02: foo must be detected; got: {:?}", names);
-        assert!(names.contains(&"bar"), "BUN-02: bar must be detected; got: {:?}", names);
+        assert!(
+            names.contains(&"foo"),
+            "BUN-02: foo must be detected; got: {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"bar"),
+            "BUN-02: bar must be detected; got: {:?}",
+            names
+        );
     }
 
     #[test]
@@ -5955,7 +5967,11 @@ declare global {
         let source = b"exports.foo = void 0;";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"foo"), "BUN-04: foo must be detected from void 0 placeholder; got: {:?}", names);
+        assert!(
+            names.contains(&"foo"),
+            "BUN-04: foo must be detected from void 0 placeholder; got: {:?}",
+            names
+        );
     }
 
     #[test]
@@ -5964,7 +5980,11 @@ declare global {
         let source = b"exports[\"foo\"] = bar;";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-        assert!(names.contains(&"foo"), "BUN-06b: foo must be detected from bracket subscript; got: {:?}", names);
+        assert!(
+            names.contains(&"foo"),
+            "BUN-06b: foo must be detected from bracket subscript; got: {:?}",
+            names
+        );
     }
 
     #[test]
@@ -5973,6 +5993,10 @@ declare global {
         let source = b"exports.__esModule = true;";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-        assert!(!names.contains(&"__esModule"), "BUN-07: __esModule must be filtered; got: {:?}", names);
+        assert!(
+            !names.contains(&"__esModule"),
+            "BUN-07: __esModule must be filtered; got: {:?}",
+            names
+        );
     }
 }

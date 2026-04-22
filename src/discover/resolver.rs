@@ -134,6 +134,42 @@ pub fn resolve_tsconfig_alias(
 #[allow(dead_code)]
 const MAX_RESOLVE_DEPTH: usize = 20;
 
+/// CHUNK-01: Normalize hashed bundler chunk filenames so that rollup/vite rebuilds
+/// produce stable paths for diff comparison.
+///
+/// Applies only when the path contains a `/chunks/` directory segment AND the
+/// basename matches `chunk-[A-Z0-9]{8,}.<ext>`. Example:
+///   `dist/chunks/chunk-A1B2C3D4.js` → `dist/chunks/chunk-*.js`
+fn normalize_chunk_path(path: &Path) -> PathBuf {
+    let path_str = path.to_string_lossy();
+    let in_chunks_dir = path_str.contains("/chunks/")
+        || path_str.contains("/dist/chunks/")
+        || path_str.contains("\\chunks\\"); // Windows
+    if !in_chunks_dir {
+        return path.to_path_buf();
+    }
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !file_name.starts_with("chunk-") {
+        return path.to_path_buf();
+    }
+    if let Some((stem_part, ext_part)) = file_name.rsplit_once('.') {
+        if let Some(dash_idx) = stem_part.rfind('-') {
+            let rest = &stem_part[dash_idx + 1..];
+            let looks_like_hash = rest.len() >= 8
+                && rest
+                    .chars()
+                    .all(|c| c.is_ascii_hexdigit() || c.is_ascii_uppercase());
+            if looks_like_hash {
+                let normalized_name = format!("chunk-*.{}", ext_part);
+                if let Some(parent) = path.parent() {
+                    return parent.join(normalized_name);
+                }
+            }
+        }
+    }
+    path.to_path_buf()
+}
+
 /// A non-fatal warning emitted during export resolution.
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
@@ -212,10 +248,9 @@ pub fn collect_exports(
     let raw_exports = parse_exports(&source, lang)?;
 
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
-    let rel_path = canonical
-        .strip_prefix(pkg_root)
-        .unwrap_or(&canonical)
-        .to_path_buf();
+    // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
+    // so that rollup/vite rebuilds produce stable paths for diff comparison.
+    let rel_path = normalize_chunk_path(canonical.strip_prefix(pkg_root).unwrap_or(&canonical));
 
     for export in raw_exports {
         match export.kind {
@@ -267,7 +302,15 @@ pub fn collect_exports(
                     let resolved = candidates.into_iter().find(|p| p.exists());
                     match resolved {
                         Some(target) => {
-                            collect_exports(&target, pkg_root, map, visited, warnings, depth + 1, tsconfig)?;
+                            collect_exports(
+                                &target,
+                                pkg_root,
+                                map,
+                                visited,
+                                warnings,
+                                depth + 1,
+                                tsconfig,
+                            )?;
                         }
                         None => {
                             // GAP-15-05: If specifier looks like an external package (not relative),
@@ -490,7 +533,10 @@ mod tests {
     fn test_compound_extension_preserved() {
         let result = append_extension(Path::new("/a/utils.config"), "ts");
         let name = result.file_name().unwrap().to_string_lossy();
-        assert_eq!(name, "utils.config.ts", "append_extension must preserve compound stem");
+        assert_eq!(
+            name, "utils.config.ts",
+            "append_extension must preserve compound stem"
+        );
     }
 
     #[test]
@@ -499,7 +545,10 @@ mod tests {
         let has_mts = candidates
             .iter()
             .any(|p| p.to_string_lossy().contains("foo.mts"));
-        assert!(has_mts, "candidates must include foo.mts; got: {candidates:?}");
+        assert!(
+            has_mts,
+            "candidates must include foo.mts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -508,7 +557,10 @@ mod tests {
         let has_cts = candidates
             .iter()
             .any(|p| p.to_string_lossy().contains("foo.cts"));
-        assert!(has_cts, "candidates must include foo.cts; got: {candidates:?}");
+        assert!(
+            has_cts,
+            "candidates must include foo.cts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -517,7 +569,10 @@ mod tests {
         let has = candidates
             .iter()
             .any(|p| p.to_string_lossy().contains("foo.d.mts"));
-        assert!(has, "candidates must include foo.d.mts; got: {candidates:?}");
+        assert!(
+            has,
+            "candidates must include foo.d.mts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -526,7 +581,10 @@ mod tests {
         let has = candidates
             .iter()
             .any(|p| p.to_string_lossy().contains("foo.d.cts"));
-        assert!(has, "candidates must include foo.d.cts; got: {candidates:?}");
+        assert!(
+            has,
+            "candidates must include foo.d.cts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -535,15 +593,19 @@ mod tests {
         let has_compound = candidates
             .iter()
             .any(|p| p.to_string_lossy().ends_with("utils.config.ts"));
-        let has_wrong = candidates
-            .iter()
-            .any(|p| {
-                let s = p.to_string_lossy();
-                // "utils.ts" would mean compound stem was dropped
-                s.ends_with("/utils.ts") || s.ends_with("\\utils.ts")
-            });
-        assert!(has_compound, "must include utils.config.ts; got: {candidates:?}");
-        assert!(!has_wrong, "must NOT include utils.ts (dropped compound stem); got: {candidates:?}");
+        let has_wrong = candidates.iter().any(|p| {
+            let s = p.to_string_lossy();
+            // "utils.ts" would mean compound stem was dropped
+            s.ends_with("/utils.ts") || s.ends_with("\\utils.ts")
+        });
+        assert!(
+            has_compound,
+            "must include utils.config.ts; got: {candidates:?}"
+        );
+        assert!(
+            !has_wrong,
+            "must NOT include utils.ts (dropped compound stem); got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -552,19 +614,32 @@ mod tests {
         let has = candidates
             .iter()
             .any(|p| p.to_string_lossy().ends_with("dir/index.mts"));
-        assert!(has, "candidates must include dir/index.mts; got: {candidates:?}");
+        assert!(
+            has,
+            "candidates must include dir/index.mts; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_js_to_ts_probing() {
         // GAP-13-06: ./foo.js should probe foo.ts before foo.js.ts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo.js");
-        let ts_idx = candidates.iter().position(|p| p.to_string_lossy().ends_with("/foo.ts"));
-        let js_ts_idx = candidates.iter().position(|p| p.to_string_lossy().ends_with("/foo.js.ts"));
-        assert!(ts_idx.is_some(), "candidates must include foo.ts; got: {candidates:?}");
+        let ts_idx = candidates
+            .iter()
+            .position(|p| p.to_string_lossy().ends_with("/foo.ts"));
+        let js_ts_idx = candidates
+            .iter()
+            .position(|p| p.to_string_lossy().ends_with("/foo.js.ts"));
+        assert!(
+            ts_idx.is_some(),
+            "candidates must include foo.ts; got: {candidates:?}"
+        );
         // foo.ts should appear before foo.js.ts in the list
         if let (Some(ts), Some(js_ts)) = (ts_idx, js_ts_idx) {
-            assert!(ts < js_ts, "foo.ts (idx {ts}) should appear before foo.js.ts (idx {js_ts})");
+            assert!(
+                ts < js_ts,
+                "foo.ts (idx {ts}) should appear before foo.js.ts (idx {js_ts})"
+            );
         }
     }
 
@@ -572,70 +647,113 @@ mod tests {
     fn test_mjs_to_mts_probing() {
         // GAP-13-06: ./bar.mjs should probe bar.mts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./bar.mjs");
-        let has_mts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/bar.mts"));
-        assert!(has_mts, "candidates must include bar.mts; got: {candidates:?}");
+        let has_mts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("/bar.mts"));
+        assert!(
+            has_mts,
+            "candidates must include bar.mts; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_cjs_to_cts_probing() {
         // GAP-13-06: ./baz.cjs should probe baz.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./baz.cjs");
-        let has_cts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/baz.cts"));
-        assert!(has_cts, "candidates must include baz.cts; got: {candidates:?}");
+        let has_cts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("/baz.cts"));
+        assert!(
+            has_cts,
+            "candidates must include baz.cts; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_js_to_ts_compound_stem() {
         // GAP-13-06 + ECF-06: ./utils.config.js should probe utils.config.ts (not utils.ts)
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./utils.config.js");
-        let has_config_ts = candidates.iter().any(|p| p.to_string_lossy().ends_with("/utils.config.ts"));
-        assert!(has_config_ts, "candidates must include utils.config.ts; got: {candidates:?}");
+        let has_config_ts = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("/utils.config.ts"));
+        assert!(
+            has_config_ts,
+            "candidates must include utils.config.ts; got: {candidates:?}"
+        );
         // Should NOT produce just utils.ts (dropping .config)
         let has_bare_utils = candidates.iter().any(|p| {
             let s = p.to_string_lossy();
             s.ends_with("/utils.ts") && !s.contains("config")
         });
-        assert!(!has_bare_utils, "must NOT drop compound stem; got: {candidates:?}");
+        assert!(
+            !has_bare_utils,
+            "must NOT drop compound stem; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_resolve_includes_index_cts() {
         // GAP-13-07: directory index should include index.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
-        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.cts"));
-        assert!(has, "candidates must include dir/index.cts; got: {candidates:?}");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.cts"));
+        assert!(
+            has,
+            "candidates must include dir/index.cts; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_resolve_includes_index_jsx() {
         // GAP-13-07: directory index should include index.jsx
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
-        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.jsx"));
-        assert!(has, "candidates must include dir/index.jsx; got: {candidates:?}");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.jsx"));
+        assert!(
+            has,
+            "candidates must include dir/index.jsx; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_resolve_includes_index_cjs() {
         // GAP-13-07: directory index should include index.cjs
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
-        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.cjs"));
-        assert!(has, "candidates must include dir/index.cjs; got: {candidates:?}");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.cjs"));
+        assert!(
+            has,
+            "candidates must include dir/index.cjs; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_resolve_includes_index_d_mts() {
         // GAP-13-07: directory index should include index.d.mts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
-        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.d.mts"));
-        assert!(has, "candidates must include dir/index.d.mts; got: {candidates:?}");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.d.mts"));
+        assert!(
+            has,
+            "candidates must include dir/index.d.mts; got: {candidates:?}"
+        );
     }
 
     #[test]
     fn test_resolve_includes_index_d_cts() {
         // GAP-13-07: directory index should include index.d.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
-        let has = candidates.iter().any(|p| p.to_string_lossy().ends_with("dir/index.d.cts"));
-        assert!(has, "candidates must include dir/index.d.cts; got: {candidates:?}");
+        let has = candidates
+            .iter()
+            .any(|p| p.to_string_lossy().ends_with("dir/index.d.cts"));
+        assert!(
+            has,
+            "candidates must include dir/index.d.cts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -646,7 +764,10 @@ mod tests {
             let s = p.to_string_lossy();
             s.ends_with("/foo.d.ts")
         });
-        assert!(has_dts, "candidates must include foo.d.ts; got: {candidates:?}");
+        assert!(
+            has_dts,
+            "candidates must include foo.d.ts; got: {candidates:?}"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -658,13 +779,19 @@ mod tests {
         // Pattern "@/*" with replacement "./src/*", specifier "@/utils" → {root}/src/utils.ts
         let mut paths = std::collections::HashMap::new();
         paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
-        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let tsconfig = TsconfigPaths {
+            base_url: None,
+            paths,
+        };
         let pkg_root = Path::new("/project");
         let candidates = resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
         let has_utils_ts = candidates
             .iter()
             .any(|p| p.to_string_lossy().ends_with("src/utils.ts"));
-        assert!(has_utils_ts, "wildcard alias must produce src/utils.ts; got: {candidates:?}");
+        assert!(
+            has_utils_ts,
+            "wildcard alias must produce src/utils.ts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -672,14 +799,23 @@ mod tests {
         // Exact pattern "@app" with replacement "./src/app.ts", specifier "@app" resolves
         let mut paths = std::collections::HashMap::new();
         paths.insert("@app".to_string(), vec!["./src/app.ts".to_string()]);
-        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let tsconfig = TsconfigPaths {
+            base_url: None,
+            paths,
+        };
         let pkg_root = Path::new("/project");
         let candidates = resolve_tsconfig_alias("@app", &tsconfig, pkg_root);
-        assert!(!candidates.is_empty(), "exact alias must produce candidates; got: {candidates:?}");
+        assert!(
+            !candidates.is_empty(),
+            "exact alias must produce candidates; got: {candidates:?}"
+        );
         let has_app_ts = candidates
             .iter()
             .any(|p| p.to_string_lossy().ends_with("src/app.ts"));
-        assert!(has_app_ts, "exact alias must produce src/app.ts; got: {candidates:?}");
+        assert!(
+            has_app_ts,
+            "exact alias must produce src/app.ts; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -687,10 +823,16 @@ mod tests {
         // Specifier "lodash" with no matching alias returns empty candidates
         let mut paths = std::collections::HashMap::new();
         paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
-        let tsconfig = TsconfigPaths { base_url: None, paths };
+        let tsconfig = TsconfigPaths {
+            base_url: None,
+            paths,
+        };
         let pkg_root = Path::new("/project");
         let candidates = resolve_tsconfig_alias("lodash", &tsconfig, pkg_root);
-        assert!(candidates.is_empty(), "non-aliased specifier must return empty; got: {candidates:?}");
+        assert!(
+            candidates.is_empty(),
+            "non-aliased specifier must return empty; got: {candidates:?}"
+        );
     }
 
     #[test]
@@ -715,7 +857,11 @@ mod tests {
         assert!(tc.paths.contains_key("@/*"), "paths must contain @/*");
         assert!(tc.paths.contains_key("@app"), "paths must contain @app");
         let wildcard_replacements = &tc.paths["@/*"];
-        assert_eq!(wildcard_replacements, &["./src/*"], "replacement for @/* should be ./src/*");
+        assert_eq!(
+            wildcard_replacements,
+            &["./src/*"],
+            "replacement for @/* should be ./src/*"
+        );
     }
 
     #[test]
@@ -730,13 +876,19 @@ mod tests {
         // baseUrl affects resolution path
         let mut paths = std::collections::HashMap::new();
         paths.insert("@/*".to_string(), vec!["src/*".to_string()]);
-        let tsconfig = TsconfigPaths { base_url: Some(".".to_string()), paths };
+        let tsconfig = TsconfigPaths {
+            base_url: Some(".".to_string()),
+            paths,
+        };
         let pkg_root = Path::new("/project");
         let candidates = resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
         let has_ts = candidates
             .iter()
             .any(|p| p.to_string_lossy().contains("src/utils"));
-        assert!(has_ts, "alias with baseUrl must produce src/utils candidates; got: {candidates:?}");
+        assert!(
+            has_ts,
+            "alias with baseUrl must produce src/utils candidates; got: {candidates:?}"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -754,8 +906,16 @@ mod tests {
         let mut visited = HashSet::new();
         let mut warnings = Vec::new();
 
-        collect_exports(&index_path, dir.path(), &mut map, &mut visited, &mut warnings, 0, None)
-            .expect("collect_exports should succeed");
+        collect_exports(
+            &index_path,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        )
+        .expect("collect_exports should succeed");
 
         assert!(
             map.contains_key("*<lodash>"),
@@ -763,7 +923,10 @@ mod tests {
             map.keys().collect::<Vec<_>>()
         );
         let sym = &map["*<lodash>"];
-        assert!(sym.is_reexport, "*<lodash> entry must have is_reexport=true");
+        assert!(
+            sym.is_reexport,
+            "*<lodash> entry must have is_reexport=true"
+        );
     }
 
     #[test]
@@ -796,7 +959,9 @@ mod tests {
 
         let findings = crate::compare::compare_exports(&old_map, &new_map);
         assert!(
-            findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("*<lodash>")),
+            findings
+                .iter()
+                .any(|f| f.rule == "export-removed" && f.message.contains("*<lodash>")),
             "removal of *<lodash> must fire export-removed; got: {:?}",
             findings
         );
@@ -813,13 +978,63 @@ mod tests {
         let mut visited = HashSet::new();
         let mut warnings = Vec::new();
 
-        collect_exports(&index_path, dir.path(), &mut map, &mut visited, &mut warnings, 0, None)
-            .expect("collect_exports should succeed");
+        collect_exports(
+            &index_path,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        )
+        .expect("collect_exports should succeed");
 
         // No external key should be created for relative specifiers
         let has_external = map.keys().any(|k| k.starts_with("*<"));
-        assert!(!has_external, "relative re-export failure must NOT produce external key; got: {:?}", map.keys().collect::<Vec<_>>());
+        assert!(
+            !has_external,
+            "relative re-export failure must NOT produce external key; got: {:?}",
+            map.keys().collect::<Vec<_>>()
+        );
         // Should have produced a warning instead
-        assert!(!warnings.is_empty(), "failed relative re-export must produce a warning");
+        assert!(
+            !warnings.is_empty(),
+            "failed relative re-export must produce a warning"
+        );
+    }
+
+    // ── CHUNK-01: normalize_chunk_path ───────────────────────────────────────
+
+    #[test]
+    fn chunk_01_hashed_chunk_normalized() {
+        let p = std::path::Path::new("dist/chunks/chunk-A1B2C3D4.js");
+        assert_eq!(
+            normalize_chunk_path(p).to_string_lossy(),
+            "dist/chunks/chunk-*.js"
+        );
+    }
+
+    #[test]
+    fn chunk_01_unrelated_path_unchanged() {
+        let p = std::path::Path::new("src/index.ts");
+        assert_eq!(normalize_chunk_path(p).to_string_lossy(), "src/index.ts");
+    }
+
+    #[test]
+    fn chunk_01_short_hash_unchanged() {
+        let p = std::path::Path::new("dist/chunks/chunk-ABC.js");
+        assert_eq!(
+            normalize_chunk_path(p).to_string_lossy(),
+            "dist/chunks/chunk-ABC.js"
+        );
+    }
+
+    #[test]
+    fn chunk_01_mjs_extension_normalized() {
+        let p = std::path::Path::new("pkg/dist/chunks/chunk-DEADBEEF.mjs");
+        assert_eq!(
+            normalize_chunk_path(p).to_string_lossy(),
+            "pkg/dist/chunks/chunk-*.mjs"
+        );
     }
 }

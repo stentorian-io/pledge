@@ -381,11 +381,11 @@ pub const RULE_CHUNK_PATH_NORMALIZED: &str = "chunk-path-normalized";
 
 // ─── Phase 17: TLF — TypeScript language feature rules ──────────────────────
 pub const RULE_CONSTRUCT_SIGNATURE_REMOVED: &str = "construct-signature-removed"; // TLF-01
-pub const RULE_THIS_PARAM_CHANGED: &str = "this-param-changed";                   // TLF-03
-pub const RULE_ASSERTION_WIDENED: &str = "assertion-widened";                     // TLF-04
-pub const RULE_GENERIC_VARIANCE_CHANGED: &str = "generic-variance-changed";       // TLF-05
-pub const RULE_CLASS_ACCESSOR_CHANGED: &str = "class-accessor-changed";           // TLF-06
-pub const RULE_TYPE_ONLY_REEXPORT_CHANGED: &str = "type-only-reexport-changed";   // TLF-07
+pub const RULE_THIS_PARAM_CHANGED: &str = "this-param-changed"; // TLF-03
+pub const RULE_ASSERTION_WIDENED: &str = "assertion-widened"; // TLF-04
+pub const RULE_GENERIC_VARIANCE_CHANGED: &str = "generic-variance-changed"; // TLF-05
+pub const RULE_CLASS_ACCESSOR_CHANGED: &str = "class-accessor-changed"; // TLF-06
+pub const RULE_TYPE_ONLY_REEXPORT_CHANGED: &str = "type-only-reexport-changed"; // TLF-07
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
@@ -938,18 +938,27 @@ mod tests {
     // ── Phase 17: TLF rule constant values ───────────────────────────────────
     #[test]
     fn phase17_tlf_rule_constant_values() {
-        assert_eq!(RULE_CONSTRUCT_SIGNATURE_REMOVED, "construct-signature-removed");
+        assert_eq!(
+            RULE_CONSTRUCT_SIGNATURE_REMOVED,
+            "construct-signature-removed"
+        );
         assert_eq!(RULE_THIS_PARAM_CHANGED, "this-param-changed");
         assert_eq!(RULE_ASSERTION_WIDENED, "assertion-widened");
         assert_eq!(RULE_GENERIC_VARIANCE_CHANGED, "generic-variance-changed");
         assert_eq!(RULE_CLASS_ACCESSOR_CHANGED, "class-accessor-changed");
-        assert_eq!(RULE_TYPE_ONLY_REEXPORT_CHANGED, "type-only-reexport-changed");
+        assert_eq!(
+            RULE_TYPE_ONLY_REEXPORT_CHANGED,
+            "type-only-reexport-changed"
+        );
     }
 
     // ── Phase 17: BUN/CHUNK rule constant values ─────────────────────────────
     #[test]
     fn phase17_bun_rule_constant_values() {
-        assert_eq!(RULE_CJS_BUNDLER_EXPORT_DETECTED, "cjs-bundler-export-detected");
+        assert_eq!(
+            RULE_CJS_BUNDLER_EXPORT_DETECTED,
+            "cjs-bundler-export-detected"
+        );
         assert_eq!(RULE_CHUNK_PATH_NORMALIZED, "chunk-path-normalized");
     }
 }
