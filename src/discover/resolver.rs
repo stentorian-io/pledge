@@ -560,11 +560,16 @@ pub fn collect_exports(
         for spec in sorted_specifiers {
             let names = &barrel_failures[&spec];
             if names.len() >= BARREL_AGGREGATE_THRESHOLD {
+                // WR-03 (Phase 17 review): sort re-export names so the aggregated
+                // message is deterministic across source reorderings. Matches the
+                // sorted_specifiers pattern two lines above.
+                let mut sorted_names = names.clone();
+                sorted_names.sort();
                 warnings.push(ResolveWarning::new(format!(
                     "barrel '{}' unresolvable: {} named re-exports could not be resolved ({})",
                     spec,
-                    names.len(),
-                    names.join(", ")
+                    sorted_names.len(),
+                    sorted_names.join(", ")
                 )));
             } else {
                 for name in names {
@@ -1256,6 +1261,48 @@ mod tests {
                 w.message
             );
         }
+    }
+
+    #[test]
+    fn wr_03_meta_05_names_emitted_in_sorted_order() {
+        // WR-03 (Phase 17 review): names in the aggregated barrel warning must be
+        // emitted in sorted order so the message is deterministic across source
+        // reorderings (and resistant to downstream warning-diff tools seeing
+        // spurious changes when the author reorders unrelated lines).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("index.ts");
+        // Write names in REVERSE alphabetical order — expected output is sorted.
+        std::fs::write(
+            &index_path,
+            b"export { zebra } from './missing';\nexport { mango } from './missing';\nexport { apple } from './missing';\n",
+        )
+        .unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &index_path,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        )
+        .expect("collect_exports should succeed");
+
+        assert_eq!(warnings.len(), 1, "expected one aggregated warning");
+        let msg = &warnings[0].message;
+        // Expect "apple, mango, zebra" not "zebra, mango, apple"
+        let apple_pos = msg.find("apple").expect("message contains apple");
+        let mango_pos = msg.find("mango").expect("message contains mango");
+        let zebra_pos = msg.find("zebra").expect("message contains zebra");
+        assert!(
+            apple_pos < mango_pos && mango_pos < zebra_pos,
+            "WR-03: names must be sorted; got: {msg:?}"
+        );
     }
 
     // ── CHUNK-01: normalize_chunk_path ───────────────────────────────────────
