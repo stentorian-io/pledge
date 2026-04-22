@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -252,6 +252,11 @@ pub fn collect_exports(
     // so that rollup/vite rebuilds produce stable paths for diff comparison.
     let rel_path = normalize_chunk_path(canonical.strip_prefix(pkg_root).unwrap_or(&canonical));
 
+    // META-05: Accumulate named re-export failures keyed by specifier so we can
+    // aggregate them into a single "barrel" warning when ≥3 from the same barrel
+    // file are unresolvable (at depth 0 only).
+    let mut barrel_failures: HashMap<String, Vec<String>> = HashMap::new();
+
     for export in raw_exports {
         match export.kind {
             RawExportKind::Named => {
@@ -402,7 +407,15 @@ pub fn collect_exports(
                                     is_type_only: false,
                                     release_tag: None,
                                 });
+                            } else if depth == 0 {
+                                // META-05: At root depth, accumulate failures per
+                                // specifier for potential barrel aggregation below.
+                                barrel_failures
+                                    .entry(specifier.to_string())
+                                    .or_default()
+                                    .push(export.name.clone());
                             } else {
+                                // At non-root depth, emit individual warning immediately.
                                 warnings.push(ResolveWarning::new(format!(
                                     "could not resolve named re-export '{}' from {} (specifier '{}')",
                                     export.name,
@@ -412,6 +425,33 @@ pub fn collect_exports(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // META-05: Flush accumulated barrel failures.
+    // At depth 0, specifiers with ≥3 unresolvable named exports are aggregated
+    // into a single "barrel" warning to reduce noise.  Specifiers with fewer
+    // failures produce individual warnings as before.
+    if depth == 0 {
+        let mut sorted_specifiers: Vec<String> = barrel_failures.keys().cloned().collect();
+        sorted_specifiers.sort();
+        for spec in sorted_specifiers {
+            let names = &barrel_failures[&spec];
+            if names.len() >= 3 {
+                warnings.push(ResolveWarning::new(format!(
+                    "barrel '{}' unresolvable: {} named re-exports could not be resolved ({})",
+                    spec,
+                    names.len(),
+                    names.join(", ")
+                )));
+            } else {
+                for name in names {
+                    warnings.push(ResolveWarning::new(format!(
+                        "could not resolve named re-export '{name}' from {} (specifier '{spec}')",
+                        file.display(),
+                    )));
                 }
             }
         }
@@ -1001,6 +1041,101 @@ mod tests {
             !warnings.is_empty(),
             "failed relative re-export must produce a warning"
         );
+    }
+
+    // ── META-05: barrel-unresolvable aggregation ─────────────────────────────
+
+    #[test]
+    fn meta_05_three_or_more_failures_aggregated_at_depth_zero() {
+        // A barrel with ≥3 unresolvable named re-exports from the same relative
+        // specifier at depth==0 must produce ONE aggregated warning containing
+        // "barrel" and the count, not three individual warnings.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("index.ts");
+        // Three named re-exports from ./missing, none of which can be resolved.
+        std::fs::write(
+            &index_path,
+            b"export { foo } from './missing';\nexport { bar } from './missing';\nexport { baz } from './missing';\n",
+        )
+        .unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &index_path,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        )
+        .expect("collect_exports should succeed");
+
+        // Must produce exactly ONE warning (aggregated), not three.
+        assert_eq!(
+            warnings.len(),
+            1,
+            "3+ failures from same barrel must produce exactly 1 aggregated warning; got {}: {:?}",
+            warnings.len(),
+            warnings.iter().map(|w| &w.message).collect::<Vec<_>>()
+        );
+        let msg = &warnings[0].message;
+        assert!(
+            msg.contains("barrel"),
+            "aggregated warning must contain 'barrel'; got: {msg:?}"
+        );
+        assert!(
+            msg.contains('3') || msg.contains("3 "),
+            "aggregated warning must mention count 3; got: {msg:?}"
+        );
+    }
+
+    #[test]
+    fn meta_05_below_threshold_individual_warnings() {
+        // Only 2 failures from the same specifier → NOT aggregated, must produce
+        // 2 individual warnings (threshold is 3).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let index_path = dir.path().join("index.ts");
+        std::fs::write(
+            &index_path,
+            b"export { foo } from './missing';\nexport { bar } from './missing';\n",
+        )
+        .unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &index_path,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        )
+        .expect("collect_exports should succeed");
+
+        // Must produce 2 individual warnings, not 1 aggregated.
+        assert_eq!(
+            warnings.len(),
+            2,
+            "2 failures must produce 2 individual warnings (below threshold); got {}: {:?}",
+            warnings.len(),
+            warnings.iter().map(|w| &w.message).collect::<Vec<_>>()
+        );
+        // Individual warnings must NOT contain "barrel".
+        for w in &warnings {
+            assert!(
+                !w.message.contains("barrel"),
+                "individual warning must not say 'barrel'; got: {:?}",
+                w.message
+            );
+        }
     }
 
     // ── CHUNK-01: normalize_chunk_path ───────────────────────────────────────
