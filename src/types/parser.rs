@@ -15,6 +15,15 @@ use std::collections::BTreeMap;
 /// exceed this depth produce `TypeShape::Opaque(raw_input)` rather than a stack overflow.
 const MAX_DEPTH: usize = 20;
 
+// WR-05 (Phase 17 review): byte-count constants for keywords the parser advances
+// past. All matched keywords are pure ASCII, so byte length and char length agree.
+// Using named constants rather than magic literals documents the invariant and
+// makes the intent refactor-safe if someone extends the keyword set later.
+const KW_EXTENDS_LEN: usize = "extends".len();
+const KW_READONLY_LEN: usize = "readonly".len();
+const KW_IN_LEN: usize = "in".len();
+const KW_REST_DOTS_LEN: usize = "...".len();
+
 /// Parse a TypeScript type string (from LSP hover output) into a `TypeShape`.
 ///
 /// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per D-13).
@@ -143,7 +152,7 @@ impl<'a> TypeParser<'a> {
             return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
         }
         // consume "extends"
-        self.pos += 7; // "extends".len()
+        self.pos += KW_EXTENDS_LEN;
         self.skip_whitespace();
         // Parse the extends constraint — use parse_primary to avoid consuming `?`
         let extends = self.parse_primary(depth + 1)?;
@@ -289,7 +298,7 @@ impl<'a> TypeParser<'a> {
         // Check for mapped type: `{ [K in ...]: V }` or `{ readonly [K in ...]: V }`
         let saved = self.pos;
         let has_readonly = if self.peek_str("readonly") {
-            self.pos += 8; // "readonly".len()
+            self.pos += KW_READONLY_LEN;
             self.skip_whitespace();
             true
         } else {
@@ -312,7 +321,7 @@ impl<'a> TypeParser<'a> {
             }
             // Check for `readonly` keyword — capture for IFT-02
             let readonly = if self.peek_str("readonly") {
-                self.pos += 8;
+                self.pos += KW_READONLY_LEN;
                 self.skip_whitespace();
                 true
             } else {
@@ -377,7 +386,7 @@ impl<'a> TypeParser<'a> {
             self.pos = saved;
             return None;
         }
-        self.pos += 2; // consume "in"
+        self.pos += KW_IN_LEN;
         self.skip_whitespace();
         // Parse key constraint type (e.g., `keyof T`, `string`, etc.)
         let key_type = self.parse_type(depth + 1)?;
@@ -533,7 +542,7 @@ impl<'a> TypeParser<'a> {
             }
             // Handle rest params: `...name: T`
             let rest_param = if self.peek_str("...") {
-                self.pos += 3;
+                self.pos += KW_REST_DOTS_LEN;
                 true
             } else {
                 false
