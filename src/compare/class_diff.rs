@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, Visibility};
 use super::subtype::{
-    RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
+    RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_ACCESSOR_CHANGED, RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
     RULE_CLASS_IMPLEMENTS_REMOVED, RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT,
     RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED,
     RULE_CLASS_READONLY_CHANGED, RULE_CLASS_STATIC_TYPE_CHANGED,
@@ -281,6 +281,24 @@ pub fn compare_class_shapes(
                     message: format!(
                         "property `{}` readonly modifier {} in class `{}`",
                         name, modifier_change, symbol_name
+                    ),
+                });
+            }
+
+            // TLF-06: accessor keyword changed
+            // Breaking: changes call-site semantics (property access vs accessor protocol).
+            // Severity: Warning (not Major) because callers still use property syntax.
+            if old_member.is_accessor != new_member.is_accessor {
+                let change = if new_member.is_accessor { "added" } else { "removed" };
+                findings.push(Finding {
+                    severity: Severity::Warning,
+                    rule: RULE_CLASS_ACCESSOR_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "accessor keyword {} on `{}` in class `{}`",
+                        change, name, symbol_name
                     ),
                 });
             }
@@ -686,6 +704,40 @@ mod tests {
             rules(&findings).contains(&"class-method-kind-changed"),
             "getter->setter should fire class-method-kind-changed, got: {:?}",
             rules(&findings)
+        );
+    }
+
+    // ── TLF-06: accessor keyword changed ─────────────────────────────────────
+
+    #[test]
+    fn tlf_06_accessor_flipped_fires_warning() {
+        let old_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
+        let mut new_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
+        new_m.is_accessor = true;
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+        assert!(
+            rules(&findings).contains(&crate::compare::subtype::RULE_CLASS_ACCESSOR_CHANGED),
+            "accessor flip should fire class-accessor-changed, got: {:?}",
+            rules(&findings)
+        );
+        let f = findings.iter().find(|f| f.rule == crate::compare::subtype::RULE_CLASS_ACCESSOR_CHANGED).unwrap();
+        assert_eq!(f.severity, Severity::Warning, "class-accessor-changed should be Warning");
+    }
+
+    #[test]
+    fn tlf_06_accessor_unchanged_no_finding() {
+        let mut old_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
+        old_m.is_accessor = true;
+        let mut new_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
+        new_m.is_accessor = true;
+        let old = make_class(vec![old_m]);
+        let new = make_class(vec![new_m]);
+        let findings = run(&old, &new);
+        assert!(
+            !rules(&findings).contains(&crate::compare::subtype::RULE_CLASS_ACCESSOR_CHANGED),
+            "unchanged accessor should NOT fire"
         );
     }
 

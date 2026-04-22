@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::discover::tree_query::IndexSignature;
-use crate::types::{ClassMember, ClassMemberKind, Finding, Severity};
+use crate::types::{ClassMember, ClassMemberKind, ConstructSignature, Finding, Severity};
 use super::subtype::{
+    RULE_CONSTRUCT_SIGNATURE_REMOVED,
     RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED, RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
     RULE_INTERFACE_MEMBER_ADDED, RULE_INTERFACE_MEMBER_REMOVED,
     RULE_INTERFACE_PARAM_COUNT_CHANGED, RULE_INTERFACE_READONLY_CHANGED,
@@ -229,6 +230,40 @@ pub fn compare_interface_index_signatures(
                 });
             }
             _ => {}
+        }
+    }
+
+    findings
+}
+
+/// Compare construct signatures between old and new interface versions (TLF-01).
+///
+/// A construct signature is removed when old has `new(...)` that new doesn't have.
+/// Matched by param_count (arity). Removal is Major.
+pub fn compare_construct_signatures(
+    old_sigs: &[ConstructSignature],
+    new_sigs: &[ConstructSignature],
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    for old_sig in old_sigs {
+        let matched = new_sigs.iter().any(|n| n.param_count == old_sig.param_count);
+        if !matched {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_CONSTRUCT_SIGNATURE_REMOVED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "construct signature with {} parameter(s) was removed from `{}`",
+                    old_sig.param_count, symbol_name
+                ),
+            });
         }
     }
 
@@ -590,5 +625,29 @@ mod tests {
             findings
         );
         assert!(findings[0].message.contains("number"));
+    }
+
+    // ── TLF-01: construct signature removed ──────────────────────────────────
+    #[test]
+    fn tlf_01_construct_signature_removed_is_major() {
+        use crate::types::ConstructSignature;
+        let old_sigs = vec![ConstructSignature {
+            param_count: 1,
+            return_text: Some("Foo".into()),
+            is_abstract: false,
+        }];
+        let new_sigs: Vec<ConstructSignature> = vec![];
+        let findings = compare_construct_signatures(&old_sigs, &new_sigs, "MyInterface", &file(), 1, 1);
+        assert_eq!(findings.len(), 1, "removed construct signature should fire; got: {:?}", findings);
+        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_CONSTRUCT_SIGNATURE_REMOVED);
+        assert_eq!(findings[0].severity, crate::types::Severity::Major);
+    }
+
+    #[test]
+    fn tlf_01_construct_signature_unchanged_no_finding() {
+        use crate::types::ConstructSignature;
+        let sig = ConstructSignature { param_count: 1, return_text: Some("Foo".into()), is_abstract: false };
+        let findings = compare_construct_signatures(&[sig.clone()], &[sig], "MyInterface", &file(), 1, 1);
+        assert!(findings.is_empty(), "identical construct signatures should produce no findings");
     }
 }

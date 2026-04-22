@@ -17,6 +17,7 @@ use super::subtype::{
     RULE_GENERIC_CONSTRAINT_TIGHTENED, RULE_GENERIC_DEFAULT_CHANGED,
     RULE_GENERIC_PARAM_ADDED, RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
     RULE_GENERIC_PARAM_REMOVED, RULE_GENERIC_PARAM_REORDERED,
+    RULE_GENERIC_VARIANCE_CHANGED,
 };
 
 /// Compare two TypeParam slices and produce findings for generic-related breaking changes.
@@ -177,6 +178,31 @@ pub fn compare_type_params(
                 message: format!(
                     "`const` modifier {} type parameter `{}` of `{}` — inference behavior changed",
                     action, old_param.name, symbol_name
+                ),
+            });
+        }
+
+        // TLF-05: variance modifier changed (in/out/inout)
+        // Changing variance changes the assignability contract — Major.
+        if old_param.variance != new_param.variance {
+            let variance_str = |v: &Option<crate::types::Variance>| match v {
+                Some(crate::types::Variance::In) => "in",
+                Some(crate::types::Variance::Out) => "out",
+                Some(crate::types::Variance::InOut) => "in out",
+                None => "none",
+            };
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_GENERIC_VARIANCE_CHANGED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "variance of type parameter `{}` changed from `{}` to `{}` in `{}`",
+                    old_param.name,
+                    variance_str(&old_param.variance),
+                    variance_str(&new_param.variance),
+                    symbol_name,
                 ),
             });
         }
@@ -680,6 +706,39 @@ mod tests {
             !findings.iter().any(|f| f.rule == "const-type-param-changed"),
             "should not fire for unchanged const; got: {:?}",
             findings
+        );
+    }
+
+    // ── TLF-05: generic variance changed ─────────────────────────────────────
+
+    #[test]
+    fn tlf_05_variance_changed_fires_major() {
+        use crate::types::Variance;
+        let mut old_p = param("T");
+        old_p.variance = Some(Variance::In);
+        let mut new_p = param("T");
+        new_p.variance = Some(Variance::Out);
+        let findings = diff(&[old_p], &[new_p]);
+        assert!(
+            findings.iter().any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
+            "variance change should fire generic-variance-changed, got: {:?}",
+            findings
+        );
+        let f = findings.iter().find(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED).unwrap();
+        assert_eq!(f.severity, Severity::Major, "generic-variance-changed should be Major");
+    }
+
+    #[test]
+    fn tlf_05_variance_unchanged_no_finding() {
+        use crate::types::Variance;
+        let mut old_p = param("T");
+        old_p.variance = Some(Variance::In);
+        let mut new_p = param("T");
+        new_p.variance = Some(Variance::In);
+        let findings = diff(&[old_p], &[new_p]);
+        assert!(
+            !findings.iter().any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
+            "unchanged variance should NOT fire"
         );
     }
 

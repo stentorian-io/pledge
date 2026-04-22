@@ -3296,6 +3296,51 @@ pub fn extract_assertion_target(fn_node: tree_sitter::Node, source: &[u8]) -> Op
     None
 }
 
+/// TLF-03: Extract the `this` parameter type annotation from a function node.
+///
+/// In TypeScript, `this` is the first parameter with name `this`. It constrains
+/// the call receiver. Example: `function onClick(this: HTMLElement): void {}`.
+/// Returns `Some("HTMLElement")` for that example, `None` otherwise.
+pub fn extract_this_param_type(fn_node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    // Look for "parameters" field child (works for function_declaration, arrow_function,
+    // function_signature, method_definition, etc.)
+    let params_node = fn_node.child_by_field_name("parameters")?;
+    let mut cursor = params_node.walk();
+    for param in params_node.children(&mut cursor) {
+        // `this` parameter parses as required_parameter with identifier child named "this"
+        if param.kind() == "required_parameter" {
+            // Check if the pattern (first named child) is the identifier `this`
+            let mut pc = param.walk();
+            let mut name_text: Option<&str> = None;
+            for child in param.children(&mut pc) {
+                if child.kind() == "identifier" || child.kind() == "this" {
+                    name_text = child.utf8_text(source).ok();
+                    break;
+                }
+            }
+            if name_text != Some("this") {
+                continue;
+            }
+            // Found the `this` parameter — extract its type annotation
+            let mut tc = param.walk();
+            for child in param.children(&mut tc) {
+                if child.kind() == "type_annotation" {
+                    let mut inner_cursor = child.walk();
+                    let type_node = child
+                        .children(&mut inner_cursor)
+                        .find(|c| c.is_named());
+                    return type_node
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(String::from);
+                }
+            }
+        }
+        // Only check the first parameter — `this` must be first
+        break;
+    }
+    None
+}
+
 /// Extract the text of the first named child of a type_annotation node.
 /// Returns None if no named child is found.
 fn first_named_child_text<'a>(node: tree_sitter::Node<'a>, source: &'a [u8]) -> Option<&'a str> {

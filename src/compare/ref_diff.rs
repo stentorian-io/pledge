@@ -10,9 +10,10 @@ use crate::types::shape::TypeShape;
 use crate::types::{DeclarationKind, ExportKind, ExportSymbol, Finding, Severity};
 
 use super::subtype::{
-    is_subtype_of, RULE_DECLARATION_KIND_CHANGED, RULE_DEFAULT_EXPORT_CHANGED,
-    RULE_INDEX_SIGNATURE_CHANGED, RULE_NAMESPACE_TO_OTHER, RULE_OVERLOAD_REMOVED,
-    RULE_REST_PARAM_NARROWED, RULE_TYPE_GUARD_WIDENED,
+    is_subtype_of, RULE_ASSERTION_WIDENED, RULE_DECLARATION_KIND_CHANGED,
+    RULE_DEFAULT_EXPORT_CHANGED, RULE_INDEX_SIGNATURE_CHANGED, RULE_NAMESPACE_TO_OTHER,
+    RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED, RULE_THIS_PARAM_CHANGED,
+    RULE_TYPE_GUARD_WIDENED,
 };
 
 /// Compare two ExportSymbols for Phase 8 REF rules.
@@ -338,6 +339,100 @@ fn find_rest_param(shape: &TypeShape) -> Option<&TypeShape> {
     }
 }
 
+/// Compare `this` parameter types between old and new function versions (TLF-03).
+///
+/// A `this` parameter constrains the call receiver. Changing or removing it is
+/// breaking for callers who rely on the old receiver type contract.
+pub fn compare_this_param(
+    old_this: Option<&str>,
+    new_this: Option<&str>,
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    match (old_this, new_this) {
+        (Some(old_t), Some(new_t)) if old_t != new_t => {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_THIS_PARAM_CHANGED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "`this` parameter type changed from `{}` to `{}` in `{}`",
+                    old_t, new_t, name
+                ),
+            });
+        }
+        (Some(old_t), None) => {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_THIS_PARAM_CHANGED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "`this` parameter (was `{}`) was removed from `{}`",
+                    old_t, name
+                ),
+            });
+        }
+        _ => {} // unchanged, widened (None -> Some), or both None
+    }
+
+    findings
+}
+
+/// Compare assertion targets between old and new function versions (TLF-04).
+///
+/// An `asserts x is T` return narrows the caller's type. Removing or widening
+/// the assertion target is a breaking change for consumers relying on the narrowing.
+pub fn compare_assertion(
+    old_target: Option<&str>,
+    new_target: Option<&str>,
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    match (old_target, new_target) {
+        (Some(_), None) => {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_ASSERTION_WIDENED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "assertion return type was removed from `{}` — type narrowing no longer guaranteed",
+                    name
+                ),
+            });
+        }
+        (Some(old_t), Some(new_t)) if old_t != new_t => {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_ASSERTION_WIDENED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "assertion target changed from `{}` to `{}` in `{}`",
+                    old_t, new_t, name
+                ),
+            });
+        }
+        _ => {} // unchanged or assertion added (not breaking)
+    }
+
+    findings
+}
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -618,6 +713,86 @@ mod tests {
             "Expected no declaration-kind-changed for function->function, got: {:?}",
             findings
         );
+    }
+
+    // ── TLF-03: this-param type changed ──────────────────────────────────────
+
+    #[test]
+    fn tlf_03_this_param_changed_fires_major() {
+        let findings = compare_this_param(
+            Some("HTMLElement"),
+            Some("Element"),
+            "onClick",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+        );
+        assert_eq!(findings.len(), 1, "changed this-param should fire; got: {:?}", findings);
+        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_THIS_PARAM_CHANGED);
+        assert_eq!(findings[0].severity, Severity::Major);
+    }
+
+    #[test]
+    fn tlf_03_this_param_removed_fires_major() {
+        let findings = compare_this_param(
+            Some("HTMLElement"),
+            None,
+            "onClick",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+        );
+        assert_eq!(findings.len(), 1, "removed this-param should fire; got: {:?}", findings);
+        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_THIS_PARAM_CHANGED);
+    }
+
+    #[test]
+    fn tlf_03_this_param_unchanged_no_finding() {
+        let findings = compare_this_param(
+            Some("HTMLElement"),
+            Some("HTMLElement"),
+            "onClick",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+        );
+        assert!(findings.is_empty(), "identical this-param should produce no findings");
+    }
+
+    // ── TLF-04: assertion target widened ─────────────────────────────────────
+
+    #[test]
+    fn tlf_04_assertion_removed_fires_major() {
+        let findings = compare_assertion(
+            Some("string"),
+            None,
+            "assertIsString",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+        );
+        assert_eq!(findings.len(), 1, "removed assertion should fire; got: {:?}", findings);
+        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_ASSERTION_WIDENED);
+        assert_eq!(findings[0].severity, Severity::Major);
+    }
+
+    #[test]
+    fn tlf_04_assertion_unchanged_no_finding() {
+        let findings = compare_assertion(
+            Some("string"),
+            Some("string"),
+            "assertIsString",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+        );
+        assert!(findings.is_empty(), "identical assertion should produce no findings");
+    }
+
+    #[test]
+    fn tlf_04_no_assertion_no_finding() {
+        let findings = compare_assertion(None, None, "fn", &PathBuf::from("test.ts"), 1, 1);
+        assert!(findings.is_empty(), "no assertion on either side should produce no findings");
     }
 
     #[test]

@@ -17,7 +17,7 @@ pub mod type_diff;
 use std::path::Path;
 
 use crate::discover::tree_query;
-use crate::types::{ClassShape, EnumShape, ExportMap, Finding, Severity, TypeParam};
+use crate::types::{ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, Severity, TypeParam};
 
 /// Compare two export maps and produce a list of findings.
 ///
@@ -159,6 +159,10 @@ struct ExtractedDecl {
     // NEW for Phase 9 BEH-01/BEH-02:
     is_async: bool,
     is_generator: bool,
+    // NEW for Phase 17 TLF rules:
+    construct_signatures: Vec<ConstructSignature>,
+    this_param_type: Option<String>,
+    assertion_target: Option<String>,
 }
 
 /// Check if an arrow_function node has the `async` keyword.
@@ -300,6 +304,34 @@ fn extract_declaration(
         false
     };
 
+    // TLF-01: extract construct signatures from interface/class body
+    let construct_signatures = if is_interface {
+        tree_query::find_interface_body(decl_node)
+            .map(|body| tree_query::extract_construct_signatures(body, source))
+            .unwrap_or_default()
+    } else if is_class {
+        decl_node
+            .child_by_field_name("body")
+            .map(|body| tree_query::extract_construct_signatures(body, source))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // TLF-03: extract this parameter type from function declarations
+    let this_param_type = if is_function {
+        tree_query::extract_this_param_type(decl_node, source)
+    } else {
+        None
+    };
+
+    // TLF-04: extract assertion target from function declarations
+    let assertion_target = if is_function {
+        tree_query::extract_assertion_target(decl_node, source)
+    } else {
+        None
+    };
+
     Some(ExtractedDecl {
         is_class,
         is_enum,
@@ -313,6 +345,9 @@ fn extract_declaration(
         overloads,
         is_async: is_async_fn,
         is_generator: is_generator_fn,
+        construct_signatures,
+        this_param_type,
+        assertion_target,
     })
 }
 
@@ -869,6 +904,70 @@ pub fn compare_structural_diff(
                 new_sym.line,
                 new_sym.col,
             ));
+        }
+
+        // TLF-01: construct signature removed (interfaces and classes)
+        if (old_decl.is_interface && new_decl.is_interface)
+            || (old_decl.is_class && new_decl.is_class)
+        {
+            if !old_decl.construct_signatures.is_empty()
+                || !new_decl.construct_signatures.is_empty()
+            {
+                findings.extend(interface_diff::compare_construct_signatures(
+                    &old_decl.construct_signatures,
+                    &new_decl.construct_signatures,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
+            }
+        }
+
+        // TLF-03: this parameter type changed (functions)
+        if old_decl.is_function && new_decl.is_function {
+            findings.extend(ref_diff::compare_this_param(
+                old_decl.this_param_type.as_deref(),
+                new_decl.this_param_type.as_deref(),
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
+        }
+
+        // TLF-04: assertion target widened (functions)
+        if old_decl.is_function && new_decl.is_function {
+            findings.extend(ref_diff::compare_assertion(
+                old_decl.assertion_target.as_deref(),
+                new_decl.assertion_target.as_deref(),
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
+        }
+
+        // TLF-07: type-only re-export flag changed
+        // Going from a value re-export to type-only re-export (or vice versa) changes
+        // the consumer's ability to use the import as a value.
+        if old_sym.is_reexport && new_sym.is_reexport
+            && old_sym.is_type_only != new_sym.is_type_only
+        {
+            let change = if new_sym.is_type_only { "became type-only" } else { "became value re-export" };
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: subtype::RULE_TYPE_ONLY_REEXPORT_CHANGED,
+                file: new_sym.file.clone(),
+                line: new_sym.line,
+                col: new_sym.col,
+                message: format!(
+                    "re-export of `{}` {} — consumers relying on the {} may break",
+                    name,
+                    change,
+                    if new_sym.is_type_only { "value" } else { "type-only constraint" },
+                ),
+            });
         }
     }
 
