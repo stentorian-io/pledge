@@ -4,7 +4,9 @@
 //         sync-to-async (sync function became async)
 // BEH-02: generator-removed (generator function became non-generator)
 //
-// All findings use Severity::Warning (Tier 2).
+// Most findings use Severity::Warning (Tier 2), except generator-removed
+// which is Severity::Major (Tier 1) per SEM-04 — removing a generator breaks
+// consumers' for...of iteration deterministically at call time.
 
 use std::path::Path;
 
@@ -62,9 +64,11 @@ pub fn compare_behavior(
     }
 
     // BEH-02: generator -> non-generator
+    // SEM-04: upgraded from Warning to Major — removing a generator deterministically
+    // breaks consumers doing `for...of` iteration on the return value.
     if old_sym.is_generator && !new_sym.is_generator {
         findings.push(Finding {
-            severity: Severity::Warning,
+            severity: Severity::Major,
             rule: RULE_GENERATOR_REMOVED,
             file: file.to_path_buf(),
             line,
@@ -135,7 +139,8 @@ mod tests {
         let findings = run(&old, &new);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule, "generator-removed");
-        assert_eq!(findings[0].severity, Severity::Warning);
+        // SEM-04: generator-removed is Tier 1 (Major), not Warning
+        assert_eq!(findings[0].severity, Severity::Major);
     }
 
     #[test]

@@ -176,28 +176,49 @@ pub fn compare_interface_members(
     findings
 }
 
-/// Heuristic check for generic constraint tightening.
+/// SEM-01: Direction-aware generic constraint check using parsed TypeShape subtype test.
 ///
-/// Compares extends clauses in type signatures. A constraint is considered
-/// tightened if: (a) old had no extends but new does, or (b) both have extends
-/// but the new constraint text is different (conservative: any change is flagged).
+/// Returns true when the new constraint is strictly narrower than the old (tightening).
+/// Returns false when the constraint is loosened or unchanged (no finding).
+///
+/// Rules:
+///   - no constraint → constraint added: tightening (true)
+///   - constraint → no constraint: loosening (false)
+///   - identical constraints: no change (false)
+///   - old <: new (old is subtype of new): loosening, new accepts more (false)
+///   - new <: old (new is subtype of old): tightening, new accepts less (true)
+///   - both Opaque or incomparable: conservative — assume tightening (true)
 fn has_tighter_generic_constraint(old_sig: &str, new_sig: &str) -> bool {
-    let old_has_extends = old_sig.contains(" extends ");
-    let new_has_extends = new_sig.contains(" extends ");
-    if !old_has_extends && new_has_extends {
-        // Constraint added where none existed
+    let (old_c, new_c) = match (
+        extract_extends_constraint(old_sig),
+        extract_extends_constraint(new_sig),
+    ) {
+        (None, Some(_)) => return true,  // constraint added — tightening
+        (Some(_), None) => return false, // constraint removed — loosening
+        (None, None) => return false,    // no constraints in either
+        (Some(o), Some(n)) => (o, n),
+    };
+
+    if old_c == new_c {
+        return false; // identical constraint text — no change
+    }
+
+    let old_shape = crate::types::parser::parse_type_string(&old_c);
+    let new_shape = crate::types::parser::parse_type_string(&new_c);
+
+    let old_subtypes_new = crate::compare::subtype::is_subtype_of(&old_shape, &new_shape, 0);
+    let new_subtypes_old = crate::compare::subtype::is_subtype_of(&new_shape, &old_shape, 0);
+
+    if new_subtypes_old && !old_subtypes_new {
+        // New is strictly narrower: new <: old but old ⊄ new
         return true;
     }
-    if old_has_extends && new_has_extends {
-        // Both have extends — extract and compare the constraint text
-        if let (Some(old_c), Some(new_c)) = (
-            extract_extends_constraint(old_sig),
-            extract_extends_constraint(new_sig),
-        ) {
-            return old_c != new_c;
-        }
+    if old_subtypes_new && !new_subtypes_old {
+        // Old is strictly narrower: old <: new — new constraint is looser
+        return false;
     }
-    false
+    // Incomparable (both Opaque, or bidirectional): conservative — assume tightening
+    !old_subtypes_new && !new_subtypes_old
 }
 
 /// Extract the constraint text following " extends " in a type signature string.

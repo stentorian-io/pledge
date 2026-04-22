@@ -21,6 +21,17 @@ use crate::types::{Finding, Severity};
 
 const MAX_DEPTH: usize = 20;
 
+/// SEM-03: Returns true when the shape is `any` (TypeShape::Primitive(PrimitiveKind::Any)).
+///
+/// Used to detect `any → T` narrowing before calling is_subtype_of, which returns true
+/// for (any, X) in both directions and would suppress the narrowing finding.
+fn is_any_shape(s: &TypeShape) -> bool {
+    matches!(
+        s,
+        TypeShape::Primitive(crate::types::shape::PrimitiveKind::Any)
+    )
+}
+
 /// Compare two TypeShapes structurally and produce findings for differences.
 ///
 /// `symbol_name`: the export symbol name (for finding messages)
@@ -633,6 +644,26 @@ fn diff_functions(
     // If NOT, the new param type is narrower — breaking.
     for (i, (old_param, new_param)) in old_params.iter().zip(new_params.iter()).enumerate() {
         if old_param.shape != new_param.shape {
+            // SEM-03: Treat any → T (where T is not any) as tightening regardless of subtype
+            // direction. Reason: is_subtype_of returns true for (any, X) in BOTH directions
+            // (any is both top and bottom in TypeScript's escape-hatch semantics), which
+            // incorrectly suppresses the narrowing finding when old param is `any`.
+            let is_any_to_concrete = is_any_shape(&old_param.shape) && !is_any_shape(&new_param.shape);
+            if is_any_to_concrete {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_PARAM_TYPE_NARROWED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "parameter `{}` narrowed from `any` to `{}` in `{symbol_name}` (position {i})",
+                        new_param.name,
+                        format_type(&new_param.shape)
+                    ),
+                });
+                continue;
+            }
             // Contravariant check: new param must accept what old param accepted.
             // new_param is "safe" if old_param <: new_param (old is subtype of new)
             // meaning new accepts at least everything old accepted.
