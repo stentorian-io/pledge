@@ -13,12 +13,12 @@
 //!   REF-07: index-signature-changed
 //!   REF-08: default-export-changed
 
-use interlint::compare::{ref_diff, type_diff};
 use interlint::compare::subtype::{
     RULE_DECLARATION_KIND_CHANGED, RULE_DEFAULT_EXPORT_CHANGED, RULE_INDEX_SIGNATURE_CHANGED,
     RULE_NAMESPACE_TO_OTHER, RULE_OVERLOAD_REMOVED, RULE_PROPERTY_MADE_REQUIRED,
     RULE_REST_PARAM_NARROWED, RULE_TYPE_GUARD_WIDENED,
 };
+use interlint::compare::{ref_diff, type_diff};
 use interlint::discover::tree_query::{self, IndexSignature};
 use interlint::types::shape::{FieldShape, ParamShape, PrimitiveKind, TypeShape};
 use interlint::types::{DeclarationKind, ExportKind, ExportSymbol, Finding};
@@ -38,7 +38,9 @@ fn parse_ts(source: &[u8]) -> (tree_sitter::Tree, Vec<u8>) {
     let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
     parser.set_language(&lang).unwrap();
     let bytes = source.to_vec();
-    let tree = parser.parse(&bytes, None).expect("tree-sitter parse failed");
+    let tree = parser
+        .parse(&bytes, None)
+        .expect("tree-sitter parse failed");
     (tree, bytes)
 }
 
@@ -94,7 +96,9 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
         if child.kind() == "export_statement" {
             let mut ec = child.walk();
             for export_child in child.children(&mut ec) {
-                if export_child.kind() == "function_signature" || export_child.kind() == "function_declaration" {
+                if export_child.kind() == "function_signature"
+                    || export_child.kind() == "function_declaration"
+                {
                     let matches_name = export_child
                         .child_by_field_name("name")
                         .and_then(|n| n.utf8_text(&bytes).ok())
@@ -124,9 +128,9 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
@@ -154,9 +158,8 @@ fn test_ref_01_overload_removed() {
 
     // old_sym should have 2 overload signatures (arity 1 and arity 2)
     // new_sym should have 1 overload signature (arity 1)
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "foo", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "foo", &test_file(), 1, 1, &[], &[]);
 
     assert!(
         findings.iter().any(|f| f.rule == RULE_OVERLOAD_REMOVED),
@@ -190,9 +193,9 @@ fn test_ref_02_rest_param_narrowed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -215,9 +218,9 @@ fn test_ref_02_rest_param_narrowed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     // Old has rest param, new does not — rest-param-narrowed
@@ -231,9 +234,8 @@ fn test_ref_02_rest_param_narrowed() {
         return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
     }];
 
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "bar", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "bar", &test_file(), 1, 1, &[], &[]);
 
     assert!(
         findings.iter().any(|f| f.rule == RULE_REST_PARAM_NARROWED),
@@ -247,7 +249,8 @@ fn test_ref_02_rest_param_narrowed() {
 #[test]
 fn test_ref_03_type_guard_widened() {
     // Use tree-sitter to extract type_guard_type from old source
-    let old_src = b"export function isStr(x: unknown): x is string { return typeof x === \"string\"; }";
+    let old_src =
+        b"export function isStr(x: unknown): x is string { return typeof x === \"string\"; }";
     let new_src = b"export function isStr(x: unknown): boolean { return typeof x === \"string\"; }";
 
     let (old_tree, old_bytes) = parse_ts(old_src);
@@ -273,9 +276,9 @@ fn test_ref_03_type_guard_widened() {
         type_guard_type: old_type_guard,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -290,14 +293,13 @@ fn test_ref_03_type_guard_widened() {
         type_guard_type: new_type_guard,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "isStr", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "isStr", &test_file(), 1, 1, &[], &[]);
 
     assert!(
         findings.iter().any(|f| f.rule == RULE_TYPE_GUARD_WIDENED),
@@ -325,9 +327,9 @@ fn test_ref_04_declaration_kind_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -342,17 +344,18 @@ fn test_ref_04_declaration_kind_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "Config", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "Config", &test_file(), 1, 1, &[], &[]);
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
         "Expected declaration-kind-changed (interface->type alias); got: {:?}",
         rule_ids(&findings)
     );
@@ -384,9 +387,9 @@ fn test_ref_05_namespace_to_other() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     // Log what tree-sitter sees for debugging
@@ -404,14 +407,13 @@ fn test_ref_05_namespace_to_other() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "Utils", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "Utils", &test_file(), 1, 1, &[], &[]);
 
     assert!(
         findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
@@ -430,6 +432,7 @@ fn test_ref_06_property_made_required() {
         "name".to_string(),
         FieldShape {
             optional: true,
+            readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::String),
         },
     );
@@ -439,6 +442,7 @@ fn test_ref_06_property_made_required() {
         "name".to_string(),
         FieldShape {
             optional: false,
+            readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::String),
         },
     );
@@ -453,7 +457,9 @@ fn test_ref_06_property_made_required() {
     );
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_PROPERTY_MADE_REQUIRED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_PROPERTY_MADE_REQUIRED),
         "Expected property-made-required; got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
@@ -495,9 +501,9 @@ fn test_ref_07_index_signature_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -512,9 +518,9 @@ fn test_ref_07_index_signature_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -536,7 +542,10 @@ fn test_ref_07_index_signature_changed() {
         rule_ids(&findings)
     );
 
-    let f = findings.iter().find(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED).unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED)
+        .unwrap();
     assert!(
         f.message.contains("number") && f.message.contains("string"),
         "Message should mention old and new types: {}",
@@ -565,19 +574,28 @@ fn test_ref_07_index_signature_removed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = old_sym.clone();
 
     let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "Dict", &test_file(), 1, 1, &old_sigs, &[],
+        &old_sym,
+        &new_sym,
+        "Dict",
+        &test_file(),
+        1,
+        1,
+        &old_sigs,
+        &[],
     );
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED),
         "Expected index-signature-changed (removed); got: {:?}",
         rule_ids(&findings)
     );
@@ -600,9 +618,9 @@ fn test_ref_08_default_export_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -617,17 +635,18 @@ fn test_ref_08_default_export_changed() {
         type_guard_type: None,
         is_async: false,
         is_generator: false,
-    is_reexport: false,
-    is_type_only: false,
-    release_tag: None,
+        is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     };
 
-    let findings = ref_diff::compare_ref_changes(
-        &old_sym, &new_sym, "default", &test_file(), 1, 1, &[], &[],
-    );
+    let findings =
+        ref_diff::compare_ref_changes(&old_sym, &new_sym, "default", &test_file(), 1, 1, &[], &[]);
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED),
         "Expected default-export-changed; got: {:?}",
         rule_ids(&findings)
     );

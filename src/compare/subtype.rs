@@ -526,6 +526,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -536,6 +537,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -543,6 +545,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: string(),
             },
         );
@@ -566,6 +569,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -573,6 +577,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: string(),
             },
         );
@@ -583,6 +588,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -606,6 +612,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -613,6 +620,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: true,
+                readonly: false,
                 shape: string(),
             },
         );
@@ -623,6 +631,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: number(),
             },
         );
@@ -974,7 +983,10 @@ mod tests {
             RULE_INTERFACE_PROPERTY_MADE_REQUIRED,
             "interface-property-made-required"
         );
-        assert_eq!(RULE_TYPE_ALIAS_READONLY_CHANGED, "type-alias-readonly-changed");
+        assert_eq!(
+            RULE_TYPE_ALIAS_READONLY_CHANGED,
+            "type-alias-readonly-changed"
+        );
         assert_eq!(
             RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
             "constructor-param-made-required"

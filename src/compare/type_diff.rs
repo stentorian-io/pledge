@@ -14,7 +14,7 @@ use super::subtype::{
     format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
     RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
     RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
-    RULE_TYPE_INCOMPATIBLE,
+    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE,
 };
 use crate::types::shape::{ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -187,6 +187,28 @@ fn diff_recursive(
                             ),
                         });
                     }
+
+                    // IFT-02: readonly modifier flip on type alias object field (parity with CLS-08)
+                    if old_field.readonly != new_field.readonly {
+                        let path = make_path(field_path, field_name);
+                        let direction = if !old_field.readonly && new_field.readonly {
+                            "added"
+                        } else {
+                            "removed"
+                        };
+                        findings.push(Finding {
+                            severity: Severity::Major,
+                            rule: RULE_TYPE_ALIAS_READONLY_CHANGED,
+                            file: file.to_path_buf(),
+                            line,
+                            col,
+                            message: format!(
+                                "field `{}` readonly modifier {} on type `{}`",
+                                path, direction, symbol_name
+                            ),
+                        });
+                    }
+
                     let child_path = make_path(field_path, field_name);
                     if old_field.shape != new_field.shape {
                         // Use subtype check to decide: try recursion first for more specific findings.
@@ -755,6 +777,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -762,6 +785,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -770,6 +794,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -792,6 +817,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -800,6 +826,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -831,6 +858,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -839,6 +867,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -846,6 +875,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -865,6 +895,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -873,6 +904,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -880,6 +912,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: true,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -898,6 +931,7 @@ mod tests {
             "timeout".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -906,6 +940,7 @@ mod tests {
             "timeout".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -915,6 +950,7 @@ mod tests {
             "config".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Object(inner_old),
             },
         );
@@ -923,6 +959,7 @@ mod tests {
             "config".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Object(inner_new),
             },
         );
@@ -1069,6 +1106,7 @@ mod tests {
                     "a".to_string(),
                     FieldShape {
                         optional: false,
+                        readonly: false,
                         shape: nested_object(depth - 1),
                     },
                 );
@@ -1087,6 +1125,7 @@ mod tests {
                     "a".to_string(),
                     FieldShape {
                         optional: false,
+                        readonly: false,
                         shape: nested_object_num(depth - 1),
                     },
                 );
@@ -1210,6 +1249,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -1217,6 +1257,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: true,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -1729,6 +1770,7 @@ mod tests {
             "name".to_string(),
             FieldShape {
                 optional: true,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
@@ -1737,13 +1779,102 @@ mod tests {
             "name".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );
         let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
         assert!(
-            findings.iter().any(|f| f.rule == RULE_PROPERTY_MADE_REQUIRED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_PROPERTY_MADE_REQUIRED),
             "should emit property-made-required when optional becomes required; got: {:?}",
+            rule_ids(&findings)
+        );
+    }
+
+    // ── IFT-02: Readonly modifier flip on type alias object field ─────────────
+
+    fn make_field(optional: bool, readonly: bool) -> FieldShape {
+        FieldShape {
+            optional,
+            readonly,
+            shape: TypeShape::Primitive(PrimitiveKind::String),
+        }
+    }
+
+    #[test]
+    fn ift_02_readonly_added_on_type_alias_field_fires_major() {
+        let mut old_fields = BTreeMap::new();
+        old_fields.insert("foo".to_string(), make_field(false, false));
+        let mut new_fields = BTreeMap::new();
+        new_fields.insert("foo".to_string(), make_field(false, true));
+
+        let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
+        let ift_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "type-alias-readonly-changed")
+            .collect();
+        assert_eq!(
+            ift_findings.len(),
+            1,
+            "readonly added should fire exactly once; got: {:?}",
+            rule_ids(&findings)
+        );
+        assert_eq!(ift_findings[0].severity, Severity::Major);
+        assert!(
+            ift_findings[0].message.contains("added"),
+            "message should say 'added': {}",
+            ift_findings[0].message
+        );
+        assert!(
+            ift_findings[0].message.contains("foo"),
+            "message should mention field name: {}",
+            ift_findings[0].message
+        );
+    }
+
+    #[test]
+    fn ift_02_readonly_removed_on_type_alias_field_fires_major() {
+        let mut old_fields = BTreeMap::new();
+        old_fields.insert("foo".to_string(), make_field(false, true));
+        let mut new_fields = BTreeMap::new();
+        new_fields.insert("foo".to_string(), make_field(false, false));
+
+        let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
+        let ift_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "type-alias-readonly-changed")
+            .collect();
+        assert_eq!(
+            ift_findings.len(),
+            1,
+            "readonly removed should fire exactly once; got: {:?}",
+            rule_ids(&findings)
+        );
+        assert_eq!(ift_findings[0].severity, Severity::Major);
+        assert!(
+            ift_findings[0].message.contains("removed"),
+            "message should say 'removed': {}",
+            ift_findings[0].message
+        );
+    }
+
+    #[test]
+    fn ift_02_readonly_same_no_finding() {
+        let mut old_fields = BTreeMap::new();
+        old_fields.insert("foo".to_string(), make_field(false, true));
+        let mut new_fields = BTreeMap::new();
+        new_fields.insert("foo".to_string(), make_field(false, true));
+
+        let findings = diff(TypeShape::Object(old_fields), TypeShape::Object(new_fields));
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "type-alias-readonly-changed")
+                .count(),
+            0,
+            "same readonly state should NOT fire; got: {:?}",
             rule_ids(&findings)
         );
     }

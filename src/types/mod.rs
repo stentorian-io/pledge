@@ -71,15 +71,15 @@ pub struct ExportSymbol {
     pub line: u32,
     pub col: u32,
     pub type_signature: Option<String>,
-    pub overloads: Vec<shape::TypeShape>,       // replaces type_shape per D-06
-    pub decl_kind: Option<DeclarationKind>,      // per D-03
-    pub type_guard_type: Option<String>,          // for REF-03 — guarded type name
-    pub is_async: bool,                           // for BEH-01/BEH-02 — async detection
-    pub is_generator: bool,                       // for BEH-03 — generator detection
-    pub is_reexport: bool,                        // for GAP-15-05 — tracks external re-export entries
+    pub overloads: Vec<shape::TypeShape>, // replaces type_shape per D-06
+    pub decl_kind: Option<DeclarationKind>, // per D-03
+    pub type_guard_type: Option<String>,  // for REF-03 — guarded type name
+    pub is_async: bool,                   // for BEH-01/BEH-02 — async detection
+    pub is_generator: bool,               // for BEH-03 — generator detection
+    pub is_reexport: bool,                // for GAP-15-05 — tracks external re-export entries
     // Phase 17 fields:
-    pub is_type_only: bool,                       // TLF-07 — export type * vs export *
-    pub release_tag: Option<ReleaseTag>,          // META-04 — TSDoc release tag (populated in Plan 17-05)
+    pub is_type_only: bool,              // TLF-07 — export type * vs export *
+    pub release_tag: Option<ReleaseTag>, // META-04 — TSDoc release tag (populated in Plan 17-05)
 }
 
 #[allow(dead_code)]
@@ -117,8 +117,8 @@ pub struct ClassMember {
     pub param_count: usize,
     pub type_signature: Option<String>,
     // Phase 17 TLF fields:
-    pub is_optional: bool,          // TLF-02/IFT-01 — replaces type_signature=="optional" stopgap
-    pub is_accessor: bool,          // TLF-06 — TS 4.9 accessor modifier
+    pub is_optional: bool, // TLF-02/IFT-01 — replaces type_signature=="optional" stopgap
+    pub is_accessor: bool, // TLF-06 — TS 4.9 accessor modifier
     pub this_param_type: Option<String>, // TLF-03 — this parameter type annotation
 }
 
@@ -130,6 +130,7 @@ pub struct ClassShape {
     pub extends_text: Option<String>,
     pub implements_list: Vec<String>,
     pub type_params: Vec<TypeParam>,
+    pub constructor_param_optionality: Vec<bool>, // IFT-03 — per-position optional flag for constructor params
 }
 
 // ─── Enum shape model ───────────────────────────────────────────────────────
@@ -254,6 +255,7 @@ mod tests {
             extends_text: Some("Base".to_string()),
             implements_list: vec!["IFoo".to_string()],
             type_params: vec![],
+            constructor_param_optionality: vec![],
         };
         assert_eq!(shape.members.len(), 1);
         assert!(!shape.is_abstract);
@@ -348,9 +350,22 @@ mod tests {
 
     #[test]
     fn test_severity_warning_sorts_last() {
-        let mut severities = vec![Severity::Warning, Severity::Major, Severity::Patch, Severity::Minor];
+        let mut severities = vec![
+            Severity::Warning,
+            Severity::Major,
+            Severity::Patch,
+            Severity::Minor,
+        ];
         severities.sort();
-        assert_eq!(severities, vec![Severity::Major, Severity::Minor, Severity::Patch, Severity::Warning]);
+        assert_eq!(
+            severities,
+            vec![
+                Severity::Major,
+                Severity::Minor,
+                Severity::Patch,
+                Severity::Warning
+            ]
+        );
     }
 
     #[test]

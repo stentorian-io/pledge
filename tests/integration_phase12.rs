@@ -12,11 +12,13 @@
 //! compare_class_shapes directly with constructed inputs.
 
 use interlint::compare::class_diff::compare_class_shapes;
-use interlint::compare::subtype::{RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED};
 use interlint::compare::compare_exports;
+use interlint::compare::subtype::{RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED};
 use interlint::discover::resolver::resolve_module_path;
 use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
-use interlint::types::{ClassMember, ClassMemberKind, ClassShape, ExportKind, ExportMap, ExportSymbol, Visibility};
+use interlint::types::{
+    ClassMember, ClassMemberKind, ClassShape, ExportKind, ExportMap, ExportSymbol, Visibility,
+};
 use std::path::{Path, PathBuf};
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -48,6 +50,7 @@ fn make_class(members: Vec<ClassMember>) -> ClassShape {
         extends_text: None,
         implements_list: vec![],
         type_params: vec![],
+        constructor_param_optionality: vec![],
     }
 }
 
@@ -96,15 +99,25 @@ fn test_type_only_export_captured() {
     );
 
     assert!(
-        exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
+        exports
+            .iter()
+            .any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
         "Expected export named 'Foo' with kind Named; got: {:?}",
-        exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        exports
+            .iter()
+            .map(|e| (&e.name, &e.kind))
+            .collect::<Vec<_>>()
     );
 
     assert!(
-        exports.iter().any(|e| e.name == "Bar" && e.kind == RawExportKind::Named),
+        exports
+            .iter()
+            .any(|e| e.name == "Bar" && e.kind == RawExportKind::Named),
         "Expected export named 'Bar' with kind Named; got: {:?}",
-        exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        exports
+            .iter()
+            .map(|e| (&e.name, &e.kind))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -131,7 +144,10 @@ fn test_type_only_reexport_captured() {
         "Type-only re-export should have kind NamedReexport"
     );
     assert!(
-        exp.source.as_deref().map(|s| s.contains("other")).unwrap_or(false),
+        exp.source
+            .as_deref()
+            .map(|s| s.contains("other"))
+            .unwrap_or(false),
         "Source should contain 'other'; got: {:?}",
         exp.source
     );
@@ -160,9 +176,14 @@ fn test_type_only_export_removal_detected() {
     let findings = compare_exports(&old_map, &new_map);
 
     assert!(
-        findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("Foo")),
+        findings
+            .iter()
+            .any(|f| f.rule == "export-removed" && f.message.contains("Foo")),
         "Expected export-removed for 'Foo'; got: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -185,10 +206,15 @@ fn test_destructured_export_captured() {
 
     for expected_name in ["alpha", "beta", "gamma"] {
         assert!(
-            exports.iter().any(|e| e.name == expected_name && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == expected_name && e.kind == RawExportKind::Named),
             "Expected export named '{}' with kind Named; got: {:?}",
             expected_name,
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 }
@@ -203,15 +229,25 @@ fn test_destructured_export_removal_detected() {
     let findings = compare_exports(&old_map, &new_map);
 
     assert!(
-        findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("beta")),
+        findings
+            .iter()
+            .any(|f| f.rule == "export-removed" && f.message.contains("beta")),
         "Expected export-removed for 'beta'; got: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 
     assert!(
-        !findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("alpha")),
+        !findings
+            .iter()
+            .any(|f| f.rule == "export-removed" && f.message.contains("alpha")),
         "Should NOT fire export-removed for 'alpha' (still present); got: {:?}",
-        findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (&f.rule, &f.message))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -283,10 +319,7 @@ export declare const VERSION: string;
 /// `./utils.config` → candidates must include "utils.config.ts", NOT just "utils.ts".
 #[test]
 fn test_resolver_compound_extension() {
-    let candidates = resolve_module_path(
-        Path::new("/project/src/index.ts"),
-        "./utils.config",
-    );
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./utils.config");
 
     let candidate_strings: Vec<String> = candidates
         .iter()
@@ -295,7 +328,9 @@ fn test_resolver_compound_extension() {
 
     // Must have a candidate with utils.config.ts (compound stem preserved).
     assert!(
-        candidate_strings.iter().any(|s| s.contains("utils.config.ts")),
+        candidate_strings
+            .iter()
+            .any(|s| s.contains("utils.config.ts")),
         "Candidates must include 'utils.config.ts'; got: {:?}",
         candidate_strings
     );
@@ -312,10 +347,7 @@ fn test_resolver_compound_extension() {
 /// Validates that modern TS extension resolution is complete.
 #[test]
 fn test_resolver_mts_cts_candidates() {
-    let candidates = resolve_module_path(
-        Path::new("/project/src/index.ts"),
-        "./module",
-    );
+    let candidates = resolve_module_path(Path::new("/project/src/index.ts"), "./module");
 
     let candidate_strings: Vec<String> = candidates
         .iter()
@@ -335,13 +367,17 @@ fn test_resolver_mts_cts_candidates() {
     );
 
     assert!(
-        candidate_strings.iter().any(|s| s.ends_with("module.d.mts")),
+        candidate_strings
+            .iter()
+            .any(|s| s.ends_with("module.d.mts")),
         "Candidates must include 'module.d.mts'; got: {:?}",
         candidate_strings
     );
 
     assert!(
-        candidate_strings.iter().any(|s| s.ends_with("module.d.cts")),
+        candidate_strings
+            .iter()
+            .any(|s| s.ends_with("module.d.cts")),
         "Candidates must include 'module.d.cts'; got: {:?}",
         candidate_strings
     );
@@ -354,24 +390,23 @@ fn test_resolver_mts_cts_candidates() {
 /// class-method-kind-changed rule added in Phase 12 Plan 03.
 #[test]
 fn test_getter_setter_kind_change_detected() {
-    let old_class = make_class(vec![
-        make_member("value", ClassMemberKind::Getter, Visibility::Public),
-    ]);
-    let new_class = make_class(vec![
-        make_member("value", ClassMemberKind::Method, Visibility::Public),
-    ]);
+    let old_class = make_class(vec![make_member(
+        "value",
+        ClassMemberKind::Getter,
+        Visibility::Public,
+    )]);
+    let new_class = make_class(vec![make_member(
+        "value",
+        ClassMemberKind::Method,
+        Visibility::Public,
+    )]);
 
-    let findings = compare_class_shapes(
-        &old_class,
-        &new_class,
-        "MyClass",
-        &test_file(),
-        1,
-        1,
-    );
+    let findings = compare_class_shapes(&old_class, &new_class, "MyClass", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
         "Expected class-method-kind-changed (Getter→Method); got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
@@ -390,24 +425,23 @@ fn test_getter_setter_kind_change_detected() {
 /// ECF-08: Setter → Property kind change should fire class-method-kind-changed.
 #[test]
 fn test_setter_to_property_kind_change_detected() {
-    let old_class = make_class(vec![
-        make_member("count", ClassMemberKind::Setter, Visibility::Public),
-    ]);
-    let new_class = make_class(vec![
-        make_member("count", ClassMemberKind::Property, Visibility::Public),
-    ]);
+    let old_class = make_class(vec![make_member(
+        "count",
+        ClassMemberKind::Setter,
+        Visibility::Public,
+    )]);
+    let new_class = make_class(vec![make_member(
+        "count",
+        ClassMemberKind::Property,
+        Visibility::Public,
+    )]);
 
-    let findings = compare_class_shapes(
-        &old_class,
-        &new_class,
-        "Counter",
-        &test_file(),
-        1,
-        1,
-    );
+    let findings = compare_class_shapes(&old_class, &new_class, "Counter", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
         "Expected class-method-kind-changed (Setter→Property); got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
@@ -417,19 +451,14 @@ fn test_setter_to_property_kind_change_detected() {
 /// Validates that getter members participate in the removal detection path.
 #[test]
 fn test_getter_removal_detected() {
-    let old_class = make_class(vec![
-        make_member("name", ClassMemberKind::Getter, Visibility::Public),
-    ]);
+    let old_class = make_class(vec![make_member(
+        "name",
+        ClassMemberKind::Getter,
+        Visibility::Public,
+    )]);
     let new_class = make_class(vec![]);
 
-    let findings = compare_class_shapes(
-        &old_class,
-        &new_class,
-        "Entity",
-        &test_file(),
-        1,
-        1,
-    );
+    let findings = compare_class_shapes(&old_class, &new_class, "Entity", &test_file(), 1, 1);
 
     assert!(
         findings.iter().any(|f| f.rule == RULE_CLASS_METHOD_REMOVED),
@@ -453,9 +482,11 @@ fn test_private_field_not_in_class_shape() {
 
     // A class with no private fields at all should compare identically to one
     // that has #hidden excluded — no findings.
-    let class_without_private = make_class(vec![
-        make_member("visible", ClassMemberKind::Property, Visibility::Public),
-    ]);
+    let class_without_private = make_class(vec![make_member(
+        "visible",
+        ClassMemberKind::Property,
+        Visibility::Public,
+    )]);
 
     let findings = compare_class_shapes(
         &class_with_private,
@@ -491,7 +522,9 @@ fn test_private_field_export_not_leaked() {
     );
 
     assert!(
-        !exports.iter().any(|e| e.name == "#hidden" || e.name.contains("hidden")),
+        !exports
+            .iter()
+            .any(|e| e.name == "#hidden" || e.name.contains("hidden")),
         "Private field '#hidden' must not appear as an export; got: {:?}",
         exports.iter().map(|e| &e.name).collect::<Vec<_>>()
     );
@@ -500,24 +533,23 @@ fn test_private_field_export_not_leaked() {
 /// ECF-08: Getter → Setter kind change (both accessor kinds) fires class-method-kind-changed.
 #[test]
 fn test_getter_to_setter_kind_change_detected() {
-    let old_class = make_class(vec![
-        make_member("data", ClassMemberKind::Getter, Visibility::Public),
-    ]);
-    let new_class = make_class(vec![
-        make_member("data", ClassMemberKind::Setter, Visibility::Public),
-    ]);
+    let old_class = make_class(vec![make_member(
+        "data",
+        ClassMemberKind::Getter,
+        Visibility::Public,
+    )]);
+    let new_class = make_class(vec![make_member(
+        "data",
+        ClassMemberKind::Setter,
+        Visibility::Public,
+    )]);
 
-    let findings = compare_class_shapes(
-        &old_class,
-        &new_class,
-        "DataHolder",
-        &test_file(),
-        1,
-        1,
-    );
+    let findings = compare_class_shapes(&old_class, &new_class, "DataHolder", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
+        findings
+            .iter()
+            .any(|f| f.rule == RULE_CLASS_METHOD_KIND_CHANGED),
         "Expected class-method-kind-changed (Getter→Setter); got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );

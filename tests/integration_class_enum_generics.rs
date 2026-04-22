@@ -26,7 +26,9 @@ fn parse_ts(source: &[u8]) -> (tree_sitter::Tree, Vec<u8>) {
     let lang: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
     parser.set_language(&lang).unwrap();
     let bytes = source.to_vec();
-    let tree = parser.parse(&bytes, None).expect("tree-sitter parse failed");
+    let tree = parser
+        .parse(&bytes, None)
+        .expect("tree-sitter parse failed");
     (tree, bytes)
 }
 
@@ -112,7 +114,9 @@ fn test_cls_01_constructor_param_added() {
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-constructor-param-added"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-constructor-param-added"),
         "Expected class-constructor-param-added, got: {:?}",
         rule_ids(&findings)
     );
@@ -132,7 +136,9 @@ fn test_cls_02_method_visibility_changed() {
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-method-visibility-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-method-visibility-changed"),
         "Expected class-method-visibility-changed, got: {:?}",
         rule_ids(&findings)
     );
@@ -198,7 +204,9 @@ fn test_cls_05_abstract_method_added() {
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-abstract-method-added"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-abstract-method-added"),
         "Expected class-abstract-method-added, got: {:?}",
         rule_ids(&findings)
     );
@@ -224,7 +232,9 @@ fn test_cls_06_inheritance_changed() {
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-inheritance-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-inheritance-changed"),
         "Expected class-inheritance-changed, got: {:?}",
         rule_ids(&findings)
     );
@@ -279,6 +289,7 @@ fn test_cls_07_static_type_changed() {
         extends_text: None,
         implements_list: vec![],
         type_params: vec![],
+        constructor_param_optionality: vec![],
     };
     let new_shape = ClassShape {
         members: vec![new_member],
@@ -286,13 +297,16 @@ fn test_cls_07_static_type_changed() {
         extends_text: None,
         implements_list: vec![],
         type_params: vec![],
+        constructor_param_optionality: vec![],
     };
 
     let findings =
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-static-type-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-static-type-changed"),
         "Expected class-static-type-changed, got: {:?}",
         rule_ids(&findings)
     );
@@ -340,7 +354,9 @@ fn test_cls_09_implements_removed() {
         class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "class-implements-removed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "class-implements-removed"),
         "Expected class-implements-removed, got: {:?}",
         rule_ids(&findings)
     );
@@ -392,7 +408,9 @@ fn test_enum_02_member_value_changed() {
         enum_diff::compare_enum_shapes(&old_shape, &new_shape, "Color", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "enum-member-value-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "enum-member-value-changed"),
         "Expected enum-member-value-changed, got: {:?}",
         rule_ids(&findings)
     );
@@ -545,7 +563,9 @@ fn test_gen_04_constraint_tightened() {
         generics_diff::compare_type_params(&old_params, &new_params, "foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "generic-constraint-tightened"),
+        findings
+            .iter()
+            .any(|f| f.rule == "generic-constraint-tightened"),
         "Expected generic-constraint-tightened, got: {:?}",
         rule_ids(&findings)
     );
@@ -597,7 +617,9 @@ fn test_gen_06_param_added_with_default() {
         generics_diff::compare_type_params(&old_params, &new_params, "foo", &test_file(), 1, 1);
 
     assert!(
-        findings.iter().any(|f| f.rule == "generic-param-added-with-default"),
+        findings
+            .iter()
+            .any(|f| f.rule == "generic-param-added-with-default"),
         "Expected generic-param-added-with-default, got: {:?}",
         rule_ids(&findings)
     );

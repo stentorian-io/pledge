@@ -3,7 +3,9 @@
 //! Converts raw type strings (from LSP hover responses) into `TypeShape` trees.
 //! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
 
-use crate::types::shape::{FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TypeShape};
+use crate::types::shape::{
+    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TypeShape,
+};
 use std::collections::BTreeMap;
 
 /// Parse a TypeScript type string (from LSP hover output) into a `TypeShape`.
@@ -281,11 +283,14 @@ impl<'a> TypeParser<'a> {
             if self.peek_char() == Some('}') {
                 break;
             }
-            // Skip `readonly` keyword
-            if self.peek_str("readonly") {
+            // Check for `readonly` keyword — capture for IFT-02
+            let readonly = if self.peek_str("readonly") {
                 self.pos += 8;
                 self.skip_whitespace();
-            }
+                true
+            } else {
+                false
+            };
             // Parse field name (may be quoted or identifier)
             let key = if matches!(self.peek_char(), Some('"') | Some('\'') | Some('`')) {
                 self.read_quoted_string()?.to_string()
@@ -305,7 +310,14 @@ impl<'a> TypeParser<'a> {
             self.expect_char(':')?;
             self.skip_whitespace();
             let shape = self.parse_type()?;
-            fields.insert(key, FieldShape { optional, shape });
+            fields.insert(
+                key,
+                FieldShape {
+                    optional,
+                    readonly,
+                    shape,
+                },
+            );
             self.skip_whitespace();
             // Separator: `;` or `,` (optional trailing)
             if matches!(self.peek_char(), Some(';') | Some(',')) {
@@ -810,6 +822,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -817,6 +830,7 @@ mod tests {
             "y".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
             },
         );

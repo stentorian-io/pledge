@@ -19,7 +19,7 @@ use super::subtype::{
     RULE_CLASS_CONSTRUCTOR_PARAM_ADDED, RULE_CLASS_IMPLEMENTS_REMOVED,
     RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT, RULE_CLASS_METHOD_KIND_CHANGED,
     RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
-    RULE_CLASS_STATIC_TYPE_CHANGED,
+    RULE_CLASS_STATIC_TYPE_CHANGED, RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
 };
 use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, Visibility};
 
@@ -301,6 +301,28 @@ pub fn compare_class_shapes(
         }
     }
 
+    // IFT-03: Per-position constructor parameter optional→required check.
+    // Compares old and new constructor_param_optionality vectors. For each
+    // position where old was optional (true) and new is required (false), emit
+    // constructor-param-made-required (Major).
+    let old_opt = &old.constructor_param_optionality;
+    let new_opt = &new.constructor_param_optionality;
+    for (i, (old_o, new_o)) in old_opt.iter().zip(new_opt.iter()).enumerate() {
+        if *old_o && !*new_o {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "constructor parameter at position {} was made required in class `{}` (was optional)",
+                    i, symbol_name
+                ),
+            });
+        }
+    }
+
     findings
 }
 
@@ -337,6 +359,7 @@ mod tests {
             extends_text: None,
             implements_list: vec![],
             type_params: vec![],
+            constructor_param_optionality: vec![],
         }
     }
 
@@ -817,6 +840,65 @@ mod tests {
         assert!(
             findings.is_empty(),
             "Identical shapes should produce no findings, got: {:?}",
+            rules(&findings)
+        );
+    }
+
+    // ── IFT-03: Constructor parameter optional→required ───────────────────────
+
+    fn make_class_with_ctor_optionality(optionality: Vec<bool>) -> ClassShape {
+        ClassShape {
+            members: vec![],
+            is_abstract: false,
+            extends_text: None,
+            implements_list: vec![],
+            type_params: vec![],
+            constructor_param_optionality: optionality,
+        }
+    }
+
+    #[test]
+    fn ift_03_constructor_param_optional_to_required_fires_major() {
+        // Old: [required, optional] → New: [required, required] — position 1 flipped
+        let old = make_class_with_ctor_optionality(vec![false, true]);
+        let new = make_class_with_ctor_optionality(vec![false, false]);
+        let findings = run(&old, &new);
+        let ift_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == crate::compare::subtype::RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED)
+            .collect();
+        assert_eq!(
+            ift_findings.len(),
+            1,
+            "optional→required at position 1 should fire exactly once; got: {:?}",
+            rules(&findings)
+        );
+        assert_eq!(ift_findings[0].severity, Severity::Major);
+        assert!(
+            ift_findings[0].message.contains("position 1"),
+            "message should mention position 1: {}",
+            ift_findings[0].message
+        );
+        assert!(
+            ift_findings[0].message.contains("MyClass"),
+            "message should mention class name: {}",
+            ift_findings[0].message
+        );
+    }
+
+    #[test]
+    fn ift_03_no_change_no_finding() {
+        // Both have same optionality — no IFT-03 finding
+        let old = make_class_with_ctor_optionality(vec![false, true]);
+        let new = make_class_with_ctor_optionality(vec![false, true]);
+        let findings = run(&old, &new);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == crate::compare::subtype::RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED)
+                .count(),
+            0,
+            "same optionality should NOT fire; got: {:?}",
             rules(&findings)
         );
     }

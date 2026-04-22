@@ -50,6 +50,7 @@ pub enum TemplatePart {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldShape {
     pub optional: bool,
+    pub readonly: bool, // IFT-02 — readonly modifier on type alias object field
     pub shape: TypeShape,
 }
 
@@ -58,7 +59,7 @@ pub struct FieldShape {
 pub struct ParamShape {
     pub name: std::string::String,
     pub optional: bool,
-    pub rest: bool,     // true if this is a ...rest parameter, per REF-02
+    pub rest: bool, // true if this is a ...rest parameter, per REF-02
     pub shape: TypeShape,
 }
 
@@ -145,6 +146,7 @@ impl TypeShape {
                             k,
                             FieldShape {
                                 optional: v.optional,
+                                readonly: v.readonly,
                                 shape: v.shape.normalize(),
                             },
                         )
@@ -222,6 +224,7 @@ mod tests {
             "x".to_string(),
             FieldShape {
                 optional: false,
+                readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
             },
         );
@@ -297,6 +300,7 @@ mod tests {
     fn test_field_shape_optional() {
         let field = FieldShape {
             optional: true,
+            readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::Number),
         };
         assert!(field.optional);

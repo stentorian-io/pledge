@@ -3342,12 +3342,50 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
     let type_params = parse_type_params(source, decl_node);
     let members = parse_class_members(source, decl_node);
 
+    // IFT-03: Extract per-position constructor param optionality.
+    // Find the class_body, scan for the constructor method_definition, then
+    // call extract_param_optionality on it.
+    let constructor_param_optionality = {
+        let class_body = {
+            let mut found = None;
+            for i in 0..decl_node.child_count() as u32 {
+                if let Some(child) = decl_node.child(i) {
+                    if child.kind() == "class_body" {
+                        found = Some(child);
+                        break;
+                    }
+                }
+            }
+            found
+        };
+        if let Some(body) = class_body {
+            let mut optionality = Vec::new();
+            let mut cursor = body.walk();
+            for child in body.children(&mut cursor) {
+                if child.kind() == "method_definition" {
+                    let is_ctor = child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        == Some("constructor");
+                    if is_ctor {
+                        optionality = extract_param_optionality(child);
+                        break;
+                    }
+                }
+            }
+            optionality
+        } else {
+            Vec::new()
+        }
+    };
+
     ClassShape {
         members,
         is_abstract,
         extends_text,
         implements_list,
         type_params,
+        constructor_param_optionality,
     }
 }
 
@@ -6051,8 +6089,7 @@ declare global {
 
     #[test]
     fn ift_03_extract_param_optionality_constructor() {
-        let source =
-            b"class C { constructor(a: number, b?: string, c?: boolean) {} }";
+        let source = b"class C { constructor(a: number, b?: string, c?: boolean) {} }";
         let mut parser = tree_sitter::Parser::new();
         parser
             .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
