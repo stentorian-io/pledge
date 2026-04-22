@@ -1255,4 +1255,38 @@ mod tests {
         assert!(files.contains("module.mjs"), "should include module.mjs");
         assert!(!files.contains("README.md"), "should NOT include README.md");
     }
+
+    // ── SEM-02: Direction-aware null handling in condition targets ────────────
+
+    #[test]
+    fn sem_02_null_to_string_fires_minor_addition() {
+        // "types": null → "types": "./real.d.ts" is additive — Minor (subpath-added)
+        let old = make_pkg(r#"{"exports": {".": {"types": null, "default": "./index.js"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
+        let findings = diff_with_empty_dirs(&old, &new);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED),
+            "SEM-02: null→string should NOT fire condition-target-changed (Major); got: {:?}",
+            findings
+        );
+        // Should fire a Minor finding (subpath-added or similar)
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Minor),
+            "SEM-02: null→string should produce a Minor finding; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn sem_02_string_to_null_fires_major() {
+        // "types": "./real.d.ts" → "types": null is breaking — Major (condition-target-changed)
+        let old = make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);
+        let new = make_pkg(r#"{"exports": {".": {"types": null, "default": "./index.js"}}}"#);
+        let findings = diff_with_empty_dirs(&old, &new);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_CONDITION_TARGET_CHANGED && f.severity == Severity::Major),
+            "SEM-02: string→null should fire condition-target-changed Major; got: {:?}",
+            findings
+        );
+    }
 }

@@ -934,4 +934,35 @@ mod tests {
             findings
         );
     }
+
+    // ── SEM-06: main+exports dedup ────────────────────────────────────────────
+
+    #[test]
+    fn sem_06_main_change_suppressed_when_exports_dot_stable() {
+        // main changes but exports["."] is identical in both — suppress main finding
+        let old = make_pkg(r#"{"main": "./old.js", "exports": {".": "./same.js"}}"#);
+        let new = make_pkg(r#"{"main": "./new.js", "exports": {".": "./same.js"}}"#);
+        let mut findings = Vec::new();
+        compare_entry_points(&old, &new, &mut findings);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_ENTRY_POINT_CHANGED
+                && f.message.to_lowercase().contains("main")),
+            "SEM-06: main-change should be suppressed when exports[\".\"] is stable; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn sem_06_main_change_fires_when_exports_dot_absent() {
+        // main changes and there is no exports field — finding must still fire
+        let old = make_pkg(r#"{"main": "./old.js"}"#);
+        let new = make_pkg(r#"{"main": "./new.js"}"#);
+        let mut findings = Vec::new();
+        compare_entry_points(&old, &new, &mut findings);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_ENTRY_POINT_CHANGED),
+            "SEM-06: main-change must still fire when exports field absent; got: {:?}",
+            findings
+        );
+    }
 }

@@ -921,4 +921,169 @@ mod tests {
             findings
         );
     }
+
+    // ── SEM-05: REF-04/REF-08 dedup ──────────────────────────────────────────
+
+    #[test]
+    fn sem_05_ref_04_suppressed_when_ref_08_fires() {
+        // Both REF-04 (decl kind flips) AND REF-08 (default export kind change) would fire.
+        // SEM-05: only REF-08 should be emitted for the same symbol.
+        let mut old = make_sym("default", ExportKind::Default, Some(DeclarationKind::Class));
+        old.overloads = vec![];
+        let mut new = make_sym(
+            "default",
+            ExportKind::Default,
+            Some(DeclarationKind::Function),
+        );
+        new.overloads = vec![];
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "default",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED),
+            "SEM-05: REF-08 (default-export-changed) must fire; got: {:?}",
+            findings
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            "SEM-05: REF-04 (declaration-kind-changed) must be suppressed when REF-08 fires for same symbol; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn sem_05_ref_04_fires_alone_when_ref_08_does_not() {
+        // Only decl kind flip, NOT a default export — REF-04 alone fires normally.
+        let old = make_sym("Config", ExportKind::Named, Some(DeclarationKind::Interface));
+        let new = make_sym("Config", ExportKind::Named, Some(DeclarationKind::TypeAlias));
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "Config",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            "SEM-05: REF-04 must fire when REF-08 does not; got: {:?}",
+            findings
+        );
+    }
+
+    // ── SEM-07: Shape-aware overload matching with consumed tracking ──────────
+
+    #[test]
+    fn sem_07_unmatched_overload_fires_removed() {
+        // Old: [fn(string), fn(number)]; New: [fn(string)]
+        // fn(number) overload has no match in new → overload-removed
+        let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        old.overloads = vec![
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Number),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        ];
+        let mut new = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        new.overloads = vec![TypeShape::Function {
+            params: vec![ParamShape {
+                name: "x".into(),
+                optional: false,
+                rest: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            }],
+            return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+        }];
+        let findings =
+            compare_ref_changes(&old, &new, "fn", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_OVERLOAD_REMOVED),
+            "SEM-07: fn(number) overload removal must fire overload-removed; got: {:?}",
+            findings
+        );
+        // Should fire exactly once (one removed overload)
+        assert_eq!(
+            findings.iter().filter(|f| f.rule == RULE_OVERLOAD_REMOVED).count(),
+            1,
+            "SEM-07: exactly one overload-removed expected; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn sem_07_matched_shapes_no_removal() {
+        // Both sides: [fn(string)] — same shape, no removal
+        let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        old.overloads = vec![
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Number),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        ];
+        let mut new = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
+        new.overloads = vec![
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+            TypeShape::Function {
+                params: vec![ParamShape {
+                    name: "x".into(),
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Number),
+                }],
+                return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
+            },
+        ];
+        let findings =
+            compare_ref_changes(&old, &new, "fn", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_OVERLOAD_REMOVED),
+            "SEM-07: matching overloads on both sides should not fire overload-removed; got: {:?}",
+            findings
+        );
+    }
 }
