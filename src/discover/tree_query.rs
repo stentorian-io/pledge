@@ -535,6 +535,91 @@ const CJS_EXPORTS_ALIASING_QUERY: &str = r#"
       right: (object) @obj)))
 "#;
 
+/// BUN-01: esbuild `0 && (module.exports = { ... })` tree-shake wrapper.
+/// The binary_expression's RHS (under parenthesized_expression) is the module.exports assignment.
+const ESBUILD_TREE_SHAKE_WRAPPER_QUERY: &str = r#"
+(binary_expression
+  left: (number)
+  operator: "&&"
+  right: (parenthesized_expression
+    (assignment_expression
+      left: (member_expression
+        object: (identifier) @mod_obj
+        property: (property_identifier) @mod_prop)
+      right: (object) @exports_obj)))
+"#;
+
+/// BUN-02: esbuild `__export(target, { foo: () => foo })` helper.
+/// Helper name is unstable (minified); match on call shape and verify target is
+/// `exports` or `module` and values are arrow_function getters. BUN-02.
+const ESBUILD_EXPORT_HELPER_QUERY: &str = r#"
+(call_expression
+  function: (identifier) @fn_name
+  arguments: (arguments
+    (identifier) @target
+    (object) @prop_obj))
+"#;
+
+/// BUN-03: `var __defProp = Object.defineProperty;` alias binding.
+/// We capture alias_name → (obj_name, prop_name) to resolve later __defProp calls.
+/// Does NOT emit exports on its own — builds cjs_aliases map. BUN-03.
+const ESBUILD_DEFPROP_ALIAS_QUERY: &str = r#"
+(variable_declarator
+  name: (identifier) @alias_name
+  value: (member_expression
+    object: (identifier) @obj_name
+    property: (property_identifier) @prop_name))
+"#;
+
+/// BUN-04: tsc `exports.foo = void 0;` placeholder.
+/// Chained assignments (`exports.foo = exports.bar = void 0`) each produce a
+/// separate match because tree-sitter emits one assignment_expression per node.
+/// BUN-04.
+const TSC_VOID_EXPORTS_QUERY: &str = r#"
+(assignment_expression
+  left: (member_expression
+    object: (identifier) @exports_id
+    property: (property_identifier) @name)
+  right: (_) @rhs)
+"#;
+
+/// BUN-05: swc `Object.keys(m).forEach(k => exports[k] = m[k])` star re-export shim.
+/// Detected as StarReexport with source resolved from the require() bound to `m`.
+/// BUN-05.
+const SWC_STAR_REEXPORT_SHIM_QUERY: &str = r#"
+(call_expression
+  function: (member_expression
+    object: (call_expression
+      function: (member_expression
+        object: (identifier) @object_id
+        property: (property_identifier) @keys_method)
+      arguments: (arguments (identifier) @source_module))
+    property: (property_identifier) @foreach_method)
+  arguments: (arguments (_) @callback))
+"#;
+
+/// BUN-06a: `Object.defineProperty(exports, "foo", ...)`,
+/// `Object.defineProperties(exports, { foo: {...} })`,
+/// `Object.assign(exports, { foo: x })` forms.
+/// Also resolves __defProp aliases from the BUN-03 map. BUN-06.
+const OBJECT_DEFINE_EXPORT_QUERY: &str = r#"
+(call_expression
+  function: (member_expression
+    object: (identifier) @obj_id
+    property: (property_identifier) @method)
+  arguments: (arguments) @args)
+"#;
+
+/// BUN-06b: `exports["foo"] = bar;` bracket-subscript assignment.
+/// BUN-06.
+const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
+(assignment_expression
+  left: (subscript_expression
+    object: (identifier) @exports_id
+    index: (string) @name_str)
+  right: (_))
+"#;
+
 // ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
@@ -2078,6 +2163,574 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
     }
+
+    // --- Bundler CJS output: BUN-01..07 (JavaScript only) ----------------------
+    // Detects esbuild tree-shake wrappers, __export helper calls, __defProp aliases,
+    // tsc void 0 placeholders, swc star re-export shims, Object.defineProperty/
+    // defineProperties/assign forms, and bracket-subscript assignments.
+    if matches!(lang, SourceLanguage::JavaScript) {
+        // BUN-03: Build alias map: identifier → (Object, defineProperty) before processing
+        // other queries so BUN-06a can resolve __defProp aliases.
+        let mut cjs_aliases: std::collections::HashMap<String, (String, String)> =
+            std::collections::HashMap::new();
+        if let Ok(query) = Query::new(&language, ESBUILD_DEFPROP_ALIAS_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let alias_name = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                let obj_name = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                let prop_name = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 2)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("")
+                    .to_string();
+                if obj_name == "Object" && prop_name == "defineProperty" && !alias_name.is_empty() {
+                    cjs_aliases.insert(alias_name, (obj_name, prop_name));
+                }
+            }
+        }
+
+        // BUN-01: esbuild `0 && (module.exports = { ... })` tree-shake wrapper
+        if let Ok(query) = Query::new(&language, ESBUILD_TREE_SHAKE_WRAPPER_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let mod_obj = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                let mod_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok());
+                let exports_obj = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
+
+                if mod_obj == Some("module") && mod_prop == Some("exports") {
+                    if let Some(obj) = exports_obj {
+                        let mut obj_cursor = obj.walk();
+                        for child in obj.children(&mut obj_cursor) {
+                            if child.kind() == "pair" {
+                                if let Some(key_node) = child.child_by_field_name("key") {
+                                    if let Ok(name) = key_node.utf8_text(source) {
+                                        if name == "__esModule" {
+                                            continue;
+                                        }
+                                        let line = key_node.start_position().row as u32 + 1;
+                                        let col = key_node.start_position().column as u32 + 1;
+                                        let already = exports.iter().any(|e| e.name == name);
+                                        if !already {
+                                            exports.push(RawExport {
+                                                name: name.to_string(),
+                                                kind: RawExportKind::Named,
+                                                line,
+                                                col,
+                                                source: None,
+                                                decl_kind: None,
+                                                is_type_only: false,
+                                            });
+                                        }
+                                    }
+                                }
+                            } else if child.kind() == "shorthand_property_identifier" {
+                                if let Ok(name) = child.utf8_text(source) {
+                                    if name == "__esModule" {
+                                        continue;
+                                    }
+                                    let line = child.start_position().row as u32 + 1;
+                                    let col = child.start_position().column as u32 + 1;
+                                    let already = exports.iter().any(|e| e.name == name);
+                                    if !already {
+                                        exports.push(RawExport {
+                                            name: name.to_string(),
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind: None,
+                                            is_type_only: false,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BUN-02: esbuild `__export(target, { foo: () => foo })` helper
+        if let Ok(query) = Query::new(&language, ESBUILD_EXPORT_HELPER_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let fn_name = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let target = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let prop_obj = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
+
+                // Heuristic: fn_name is "__export*" or short (minified); target must be exports/module
+                let is_export_helper =
+                    fn_name.starts_with("__export") || fn_name.len() <= 3;
+                let is_valid_target = target == "exports" || target == "module";
+
+                if is_export_helper && is_valid_target {
+                    if let Some(obj) = prop_obj {
+                        let mut obj_cursor = obj.walk();
+                        for child in obj.children(&mut obj_cursor) {
+                            if child.kind() == "pair" {
+                                // Only emit if value is an arrow_function (getter)
+                                if let Some(val_node) = child.child_by_field_name("value") {
+                                    if val_node.kind() != "arrow_function" {
+                                        continue;
+                                    }
+                                }
+                                if let Some(key_node) = child.child_by_field_name("key") {
+                                    if let Ok(name) = key_node.utf8_text(source) {
+                                        if name == "__esModule" {
+                                            continue;
+                                        }
+                                        let line = key_node.start_position().row as u32 + 1;
+                                        let col = key_node.start_position().column as u32 + 1;
+                                        let already = exports.iter().any(|e| e.name == name);
+                                        if !already {
+                                            exports.push(RawExport {
+                                                name: name.to_string(),
+                                                kind: RawExportKind::Named,
+                                                line,
+                                                col,
+                                                source: None,
+                                                decl_kind: None,
+                                                is_type_only: false,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BUN-04: tsc `exports.foo = void 0;` placeholder
+        if let Ok(query) = Query::new(&language, TSC_VOID_EXPORTS_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let exports_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let name_node = m.captures.iter().find(|c| c.index == 1).map(|c| c.node);
+                let rhs_node = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
+
+                if exports_id != "exports" {
+                    continue;
+                }
+
+                // Only capture void 0 placeholders here (real assignments captured by
+                // the existing CJS_EXPORTS_PROPERTY_QUERY)
+                let is_void_rhs = rhs_node
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .map(|t| t.trim() == "void 0")
+                    .unwrap_or(false);
+
+                if is_void_rhs {
+                    if let Some(name_n) = name_node {
+                        if let Ok(name) = name_n.utf8_text(source) {
+                            if name == "__esModule" {
+                                continue;
+                            }
+                            let line = name_n.start_position().row as u32 + 1;
+                            let col = name_n.start_position().column as u32 + 1;
+                            let already = exports.iter().any(|e| e.name == name);
+                            if !already {
+                                exports.push(RawExport {
+                                    name: name.to_string(),
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: None,
+                                    is_type_only: false,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // BUN-05: swc `Object.keys(m).forEach(k => exports[k] = m[k])` star re-export shim.
+        // Build a quick require-binding map first: var m = require('...')
+        let mut require_bindings: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        {
+            let require_query_str = r#"
+            (variable_declarator
+              name: (identifier) @binding
+              value: (call_expression
+                function: (identifier) @req_fn
+                arguments: (arguments (string) @req_path)))
+            "#;
+            if let Ok(rq) = Query::new(&language, require_query_str) {
+                let mut cur = QueryCursor::new();
+                let mut mit = cur.matches(&rq, root, source);
+                while let Some(rm) = mit.next() {
+                    let binding = rm
+                        .captures
+                        .iter()
+                        .find(|c| c.index == 0)
+                        .and_then(|c| c.node.utf8_text(source).ok())
+                        .unwrap_or("")
+                        .to_string();
+                    let req_fn = rm
+                        .captures
+                        .iter()
+                        .find(|c| c.index == 1)
+                        .and_then(|c| c.node.utf8_text(source).ok())
+                        .unwrap_or("");
+                    let req_path = rm
+                        .captures
+                        .iter()
+                        .find(|c| c.index == 2)
+                        .and_then(|c| c.node.utf8_text(source).ok())
+                        .map(strip_quotes)
+                        .unwrap_or_default();
+                    if req_fn == "require" && !binding.is_empty() && !req_path.is_empty() {
+                        require_bindings.insert(binding, req_path.to_string());
+                    }
+                }
+            }
+        }
+        if let Ok(query) = Query::new(&language, SWC_STAR_REEXPORT_SHIM_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let object_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let keys_method = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let source_module_ident = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 2)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let foreach_method = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 3)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+
+                if object_id != "Object"
+                    || keys_method != "keys"
+                    || foreach_method != "forEach"
+                {
+                    continue;
+                }
+
+                // Resolve the identifier to a require() target
+                if let Some(require_target) = require_bindings.get(source_module_ident) {
+                    let first_cap = m.captures.first().map(|c| c.node);
+                    let (line, col) = first_cap
+                        .map(|n| {
+                            (
+                                n.start_position().row as u32 + 1,
+                                n.start_position().column as u32 + 1,
+                            )
+                        })
+                        .unwrap_or((1, 1));
+                    let star_key = format!("*{}", require_target);
+                    let already = exports.iter().any(|e| e.name == star_key);
+                    if !already {
+                        exports.push(RawExport {
+                            name: star_key,
+                            kind: RawExportKind::StarReexport,
+                            line,
+                            col,
+                            source: Some(require_target.clone()),
+                            decl_kind: None,
+                            is_type_only: false,
+                        });
+                    }
+                }
+            }
+        }
+
+        // BUN-06a: Object.defineProperty / defineProperties / assign exports
+        if let Ok(query) = Query::new(&language, OBJECT_DEFINE_EXPORT_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let method = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let args_node = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
+
+                // Gate: obj_id is "Object" directly OR an alias to Object.defineProperty
+                let is_object_ref = obj_id == "Object"
+                    || cjs_aliases
+                        .get(obj_id)
+                        .map(|(o, _)| o == "Object")
+                        .unwrap_or(false);
+                if !is_object_ref {
+                    continue;
+                }
+
+                let is_define_prop = method == "defineProperty"
+                    || (cjs_aliases
+                        .get(obj_id)
+                        .map(|(_, p)| p == "defineProperty")
+                        .unwrap_or(false)
+                        && obj_id != "Object");
+
+                match method {
+                    "defineProperty" | _ if is_define_prop && method != "defineProperties" && method != "assign" => {
+                        // defineProperty(exports|module.exports, "name", descriptor)
+                        if let Some(args) = args_node {
+                            // Check first arg is exports or module.exports
+                            let first_arg = args
+                                .named_children(&mut args.walk())
+                                .next();
+                            let is_exports_target = first_arg
+                                .and_then(|n| n.utf8_text(source).ok())
+                                .map(|t| t == "exports" || t.starts_with("module."))
+                                .unwrap_or(false);
+                            if !is_exports_target {
+                                continue;
+                            }
+                            // Second arg is the property name string
+                            let second_arg = args
+                                .named_children(&mut args.walk())
+                                .nth(1);
+                            if let Some(name_node) = second_arg {
+                                if let Ok(raw) = name_node.utf8_text(source) {
+                                    let name = strip_quotes(raw);
+                                    if name == "__esModule" || name.is_empty() {
+                                        continue;
+                                    }
+                                    let line = name_node.start_position().row as u32 + 1;
+                                    let col = name_node.start_position().column as u32 + 1;
+                                    let already = exports.iter().any(|e| e.name == name);
+                                    if !already {
+                                        exports.push(RawExport {
+                                            name: name.to_string(),
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind: None,
+                                            is_type_only: false,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "defineProperties" => {
+                        if let Some(args) = args_node {
+                            let first_arg = args.named_children(&mut args.walk()).next();
+                            let is_exports_target = first_arg
+                                .and_then(|n| n.utf8_text(source).ok())
+                                .map(|t| t == "exports" || t.starts_with("module."))
+                                .unwrap_or(false);
+                            if !is_exports_target {
+                                continue;
+                            }
+                            // Second arg is the object of descriptors
+                            let second_arg = args.named_children(&mut args.walk()).nth(1);
+                            if let Some(obj_node) = second_arg {
+                                let mut obj_cur = obj_node.walk();
+                                for child in obj_node.children(&mut obj_cur) {
+                                    if child.kind() == "pair" {
+                                        if let Some(key_node) = child.child_by_field_name("key") {
+                                            if let Ok(name) = key_node.utf8_text(source) {
+                                                if name == "__esModule" {
+                                                    continue;
+                                                }
+                                                let line = key_node.start_position().row as u32 + 1;
+                                                let col = key_node.start_position().column as u32 + 1;
+                                                let already = exports.iter().any(|e| e.name == name);
+                                                if !already {
+                                                    exports.push(RawExport {
+                                                        name: name.to_string(),
+                                                        kind: RawExportKind::Named,
+                                                        line,
+                                                        col,
+                                                        source: None,
+                                                        decl_kind: None,
+                                                        is_type_only: false,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "assign" => {
+                        if let Some(args) = args_node {
+                            let first_arg = args.named_children(&mut args.walk()).next();
+                            let is_exports_target = first_arg
+                                .and_then(|n| n.utf8_text(source).ok())
+                                .map(|t| t == "exports" || t.starts_with("module."))
+                                .unwrap_or(false);
+                            if !is_exports_target {
+                                continue;
+                            }
+                            // Remaining args are objects whose pairs to emit
+                            let remaining: Vec<_> =
+                                args.named_children(&mut args.walk()).skip(1).collect();
+                            for obj_node in remaining {
+                                let mut obj_cur = obj_node.walk();
+                                for child in obj_node.children(&mut obj_cur) {
+                                    if child.kind() == "pair" {
+                                        if let Some(key_node) = child.child_by_field_name("key") {
+                                            if let Ok(name) = key_node.utf8_text(source) {
+                                                if name == "__esModule" {
+                                                    continue;
+                                                }
+                                                let line = key_node.start_position().row as u32 + 1;
+                                                let col = key_node.start_position().column as u32 + 1;
+                                                let already = exports.iter().any(|e| e.name == name);
+                                                if !already {
+                                                    exports.push(RawExport {
+                                                        name: name.to_string(),
+                                                        kind: RawExportKind::Named,
+                                                        line,
+                                                        col,
+                                                        source: None,
+                                                        decl_kind: None,
+                                                        is_type_only: false,
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    } else if child.kind() == "shorthand_property_identifier" {
+                                        if let Ok(name) = child.utf8_text(source) {
+                                            if name == "__esModule" {
+                                                continue;
+                                            }
+                                            let line = child.start_position().row as u32 + 1;
+                                            let col = child.start_position().column as u32 + 1;
+                                            let already = exports.iter().any(|e| e.name == name);
+                                            if !already {
+                                                exports.push(RawExport {
+                                                    name: name.to_string(),
+                                                    kind: RawExportKind::Named,
+                                                    line,
+                                                    col,
+                                                    source: None,
+                                                    decl_kind: None,
+                                                    is_type_only: false,
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // BUN-06b: `exports["foo"] = bar;` bracket-subscript assignment
+        if let Ok(query) = Query::new(&language, BRACKET_SUBSCRIPT_EXPORT_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let exports_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let name_str_node = m.captures.iter().find(|c| c.index == 1).map(|c| c.node);
+
+                if exports_id != "exports" {
+                    continue;
+                }
+
+                if let Some(name_n) = name_str_node {
+                    if let Ok(raw) = name_n.utf8_text(source) {
+                        let name = strip_quotes(raw);
+                        if name == "__esModule" || name.is_empty() {
+                            continue;
+                        }
+                        let line = name_n.start_position().row as u32 + 1;
+                        let col = name_n.start_position().column as u32 + 1;
+                        let already = exports.iter().any(|e| e.name == name);
+                        if !already {
+                            exports.push(RawExport {
+                                name: name.to_string(),
+                                kind: RawExportKind::Named,
+                                line,
+                                col,
+                                source: None,
+                                decl_kind: None,
+                                is_type_only: false,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    } // end matches!(lang, SourceLanguage::JavaScript) BUN-01..07
+
+    // BUN-07: Belt-and-suspenders __esModule final sweep.
+    // Individual query processors already skip __esModule, but existing queries
+    // (CJS_EXPORTS_PROPERTY_QUERY, CJS_EXPORTS_SHORTHAND_QUERY) may have captured it
+    // from unrelated patterns. Remove unconditionally regardless of source.
+    exports.retain(|e| e.name != "__esModule");
 
     Ok(exports)
 }
