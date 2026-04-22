@@ -12,7 +12,7 @@ use super::subtype::{
     RULE_CONSTRUCT_SIGNATURE_REMOVED, RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED,
     RULE_INTERFACE_INDEX_SIGNATURE_CHANGED, RULE_INTERFACE_MEMBER_ADDED,
     RULE_INTERFACE_MEMBER_REMOVED, RULE_INTERFACE_PARAM_COUNT_CHANGED,
-    RULE_INTERFACE_READONLY_CHANGED,
+    RULE_INTERFACE_PROPERTY_MADE_REQUIRED, RULE_INTERFACE_READONLY_CHANGED,
 };
 use crate::discover::tree_query::IndexSignature;
 use crate::types::{ClassMember, ClassMemberKind, ConstructSignature, Finding, Severity};
@@ -149,6 +149,26 @@ pub fn compare_interface_members(
                         });
                     }
                 }
+            }
+
+            // IFT-01: Interface property optional→required (parity with GAP-16-01 on function params)
+            // Only applies to Property-Property pairs; Methods/Getters/Setters are not affected.
+            if matches!(old_member.kind, ClassMemberKind::Property)
+                && matches!(new_member.kind, ClassMemberKind::Property)
+                && old_member.is_optional
+                && !new_member.is_optional
+            {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INTERFACE_PROPERTY_MADE_REQUIRED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "property `{}` was made required in interface `{}` (was optional)",
+                        name, symbol_name
+                    ),
+                });
             }
         }
     }
@@ -669,6 +689,83 @@ mod tests {
             crate::compare::subtype::RULE_CONSTRUCT_SIGNATURE_REMOVED
         );
         assert_eq!(findings[0].severity, crate::types::Severity::Major);
+    }
+
+    // ── IFT-01: Interface property optional→required ──────────────────────────
+
+    fn make_interface_property(name: &str, is_optional: bool) -> ClassMember {
+        ClassMember {
+            name: name.to_string(),
+            kind: ClassMemberKind::Property,
+            visibility: Visibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_readonly: false,
+            param_count: 0,
+            type_signature: None,
+            is_optional,
+            is_accessor: false,
+            this_param_type: None,
+        }
+    }
+
+    #[test]
+    fn ift_01_optional_to_required_fires_major() {
+        let old = vec![make_interface_property("x", true)];
+        let new = vec![make_interface_property("x", false)];
+        let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
+        let ift_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.rule == "interface-property-made-required")
+            .collect();
+        assert_eq!(
+            ift_findings.len(),
+            1,
+            "optional→required should fire exactly once; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
+        assert!(
+            matches!(ift_findings[0].severity, crate::types::Severity::Major),
+            "should be Major"
+        );
+        assert!(
+            ift_findings[0].message.contains("`x`"),
+            "message should mention property name"
+        );
+        assert!(
+            ift_findings[0].message.contains("Iface"),
+            "message should mention interface name"
+        );
+    }
+
+    #[test]
+    fn ift_01_required_to_optional_no_finding() {
+        let old = vec![make_interface_property("x", false)];
+        let new = vec![make_interface_property("x", true)];
+        let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "interface-property-made-required")
+                .count(),
+            0,
+            "required→optional (widening) should NOT fire interface-property-made-required"
+        );
+    }
+
+    #[test]
+    fn ift_01_same_optionality_no_finding() {
+        let old = vec![make_interface_property("x", true)];
+        let new = vec![make_interface_property("x", true)];
+        let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "interface-property-made-required")
+                .count(),
+            0,
+            "same optionality should NOT fire"
+        );
     }
 
     #[test]
