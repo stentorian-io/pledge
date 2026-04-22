@@ -392,6 +392,14 @@ pub const RULE_INTERFACE_PROPERTY_MADE_REQUIRED: &str = "interface-property-made
 pub const RULE_TYPE_ALIAS_READONLY_CHANGED: &str = "type-alias-readonly-changed"; // IFT-02
 pub const RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED: &str = "constructor-param-made-required"; // IFT-03
 
+// ─── Phase 17: META — Metadata polish ──────────────────────────────────────
+pub const RULE_SIDE_EFFECTS_WIDENED: &str = "side-effects-widened"; // META-01
+pub const RULE_PEER_DEP_OPTIONAL_REMOVED: &str = "peer-dep-optional-removed"; // META-02
+pub const RULE_EXPORT_DEPRECATED: &str = "export-deprecated"; // META-04
+pub const RULE_BARREL_UNRESOLVABLE: &str = "barrel-unresolvable"; // META-05
+pub const RULE_AUGMENT_GLOBAL_CHANGED: &str = "augment-global-changed"; // META-03 (global)
+pub const RULE_AUGMENT_MODULE_CHANGED: &str = "augment-module-changed"; // META-03 (module)
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -991,5 +999,16 @@ mod tests {
             RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
             "constructor-param-made-required"
         );
+    }
+
+    // ── Phase 17: META rule constant values ──────────────────────────────────
+    #[test]
+    fn phase17_meta_rule_constant_values() {
+        assert_eq!(RULE_SIDE_EFFECTS_WIDENED, "side-effects-widened");
+        assert_eq!(RULE_PEER_DEP_OPTIONAL_REMOVED, "peer-dep-optional-removed");
+        assert_eq!(RULE_EXPORT_DEPRECATED, "export-deprecated");
+        assert_eq!(RULE_BARREL_UNRESOLVABLE, "barrel-unresolvable");
+        assert_eq!(RULE_AUGMENT_GLOBAL_CHANGED, "augment-global-changed");
+        assert_eq!(RULE_AUGMENT_MODULE_CHANGED, "augment-module-changed");
     }
 }
