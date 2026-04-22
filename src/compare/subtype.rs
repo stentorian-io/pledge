@@ -375,6 +375,10 @@ pub const RULE_INTERFACE_INDEX_SIGNATURE_CHANGED: &str = "interface-index-signat
 pub const RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED: &str =
     "interface-generic-constraint-tightened";
 
+// ─── Phase 17: Bundler CJS coverage + chunk path normalization ─────────────
+pub const RULE_CJS_BUNDLER_EXPORT_DETECTED: &str = "cjs-bundler-export-detected";
+pub const RULE_CHUNK_PATH_NORMALIZED: &str = "chunk-path-normalized";
+
 // ─── Phase 17: TLF — TypeScript language feature rules ──────────────────────
 pub const RULE_CONSTRUCT_SIGNATURE_REMOVED: &str = "construct-signature-removed"; // TLF-01
 pub const RULE_THIS_PARAM_CHANGED: &str = "this-param-changed";                   // TLF-03
@@ -940,5 +944,12 @@ mod tests {
         assert_eq!(RULE_GENERIC_VARIANCE_CHANGED, "generic-variance-changed");
         assert_eq!(RULE_CLASS_ACCESSOR_CHANGED, "class-accessor-changed");
         assert_eq!(RULE_TYPE_ONLY_REEXPORT_CHANGED, "type-only-reexport-changed");
+    }
+
+    // ── Phase 17: BUN/CHUNK rule constant values ─────────────────────────────
+    #[test]
+    fn phase17_bun_rule_constant_values() {
+        assert_eq!(RULE_CJS_BUNDLER_EXPORT_DETECTED, "cjs-bundler-export-detected");
+        assert_eq!(RULE_CHUNK_PATH_NORMALIZED, "chunk-path-normalized");
     }
 }
