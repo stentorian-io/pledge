@@ -26,85 +26,87 @@ pub struct TsconfigPaths {
 /// The state machine correctly handles strings — comment markers inside string literals
 /// are treated as regular characters. Unbalanced block-comment delimiters (e.g., `/*`
 /// without a matching `*/`) are handled safely: the inner loop terminates at EOF.
+///
+/// Iterates over Unicode scalar values (chars) rather than raw bytes to preserve
+/// multi-byte UTF-8 sequences — a tsconfig.json with non-ASCII identifiers, paths,
+/// or comments (e.g., emoji, CJK) must survive stripping intact for serde_json.
 fn strip_jsonc(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let bytes = input.as_bytes();
-    let mut i = 0;
+    let mut chars = input.char_indices().peekable();
     let mut in_string = false;
-    let mut string_char = b'"';
+    let mut string_char = '"';
 
-    while i < bytes.len() {
-        let c = bytes[i];
-
+    while let Some((_idx, c)) = chars.next() {
         if in_string {
-            out.push(c as char);
-            if c == b'\\' && i + 1 < bytes.len() {
-                // escape sequence — copy next char verbatim
-                out.push(bytes[i + 1] as char);
-                i += 2;
+            out.push(c);
+            if c == '\\' {
+                // Escape sequence — copy the next char verbatim (preserves e.g. \" inside strings).
+                if let Some((_, next_c)) = chars.next() {
+                    out.push(next_c);
+                }
                 continue;
             }
             if c == string_char {
                 in_string = false;
             }
-            i += 1;
             continue;
         }
 
         // Start of a string
-        if c == b'"' || c == b'\'' {
+        if c == '"' || c == '\'' {
             in_string = true;
             string_char = c;
-            out.push(c as char);
-            i += 1;
+            out.push(c);
             continue;
         }
 
         // Line comment: // ...
-        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
-            // Skip until newline (preserve the newline itself for line counting)
-            i += 2;
-            while i < bytes.len() && bytes[i] != b'\n' {
-                i += 1;
+        if c == '/' && matches!(chars.peek(), Some((_, '/'))) {
+            chars.next(); // consume second '/'
+            while let Some(&(_, nc)) = chars.peek() {
+                if nc == '\n' {
+                    break;
+                }
+                chars.next();
             }
             continue;
         }
 
         // Block comment: /* ... */
-        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
-            i += 2;
-            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
-                i += 1;
-            }
-            if i + 1 < bytes.len() {
-                i += 2; // consume the closing */
+        if c == '/' && matches!(chars.peek(), Some((_, '*'))) {
+            chars.next(); // consume '*'
+            while let Some((_, nc)) = chars.next() {
+                if nc == '*' && matches!(chars.peek(), Some((_, '/'))) {
+                    chars.next(); // consume '/'
+                    break;
+                }
             }
             continue;
         }
 
-        out.push(c as char);
-        i += 1;
+        out.push(c);
     }
 
-    // Second pass: strip trailing commas before `}` or `]`
+    // Second pass: strip trailing commas before `}` or `]`.
+    // Work on chars (not bytes) so multi-byte sequences remain intact.
     let mut result = String::with_capacity(out.len());
-    let bytes2 = out.as_bytes();
+    let chars: Vec<char> = out.chars().collect();
     let mut j = 0;
-    while j < bytes2.len() {
-        let c = bytes2[j];
-        if c == b',' {
+    while j < chars.len() {
+        let c = chars[j];
+        if c == ',' {
             // Lookahead past whitespace for } or ]
             let mut k = j + 1;
-            while k < bytes2.len() && bytes2[k].is_ascii_whitespace() {
+            while k < chars.len() && chars[k].is_whitespace() {
                 k += 1;
             }
-            if k < bytes2.len() && (bytes2[k] == b'}' || bytes2[k] == b']') {
+            if k < chars.len() && (chars[k] == '}' || chars[k] == ']') {
                 // Skip this trailing comma
                 j += 1;
                 continue;
             }
         }
-        result.push(c as char);
+        result.push(c);
         j += 1;
     }
 
@@ -1372,5 +1374,40 @@ mod tests {
             parsed.is_ok(),
             "ROB-04: line comment regression — cleaned: {cleaned}"
         );
+    }
+
+    #[test]
+    fn rob_04_tsconfig_preserves_utf8_in_strings() {
+        // CR-01 (Phase 17 review): strip_jsonc previously cast each byte to `char`
+        // which corrupted multi-byte UTF-8 sequences. Non-ASCII path aliases and
+        // comments must survive stripping intact so serde_json sees valid UTF-8.
+        let input = r#"{
+            "paths": { "@文件/*": ["./src/*"] },
+            /* 日本語コメント */
+            "emoji": "🚀"
+        }"#;
+        let cleaned = strip_jsonc(input);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&cleaned).expect("non-ASCII JSONC must parse");
+        assert!(
+            parsed["paths"]["@文件/*"].is_array(),
+            "CR-01: non-ASCII key must survive strip_jsonc; cleaned: {cleaned}"
+        );
+        assert_eq!(
+            parsed["emoji"].as_str(),
+            Some("🚀"),
+            "CR-01: emoji in string literal must survive strip_jsonc; cleaned: {cleaned}"
+        );
+    }
+
+    #[test]
+    fn rob_04_tsconfig_preserves_utf8_trailing_comma_path() {
+        // Ensure the second pass (trailing-comma stripper) also operates on chars,
+        // not bytes — so a trailing comma near non-ASCII content is handled safely.
+        let input = r#"{ "name": "léa", }"#;
+        let cleaned = strip_jsonc(input);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&cleaned).expect("UTF-8 + trailing comma must parse");
+        assert_eq!(parsed["name"].as_str(), Some("léa"));
     }
 }
