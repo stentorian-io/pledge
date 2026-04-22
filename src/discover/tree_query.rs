@@ -5273,4 +5273,53 @@ declare global {
                 .collect::<Vec<_>>()
         );
     }
+
+    // ── Phase 17 BUN-01..07: Bundler CJS output detection ────────────────────
+
+    #[test]
+    fn bun_01_esbuild_tree_shake_wrapper() {
+        // BUN-01: esbuild `0 && (module.exports = { foo, bar })` tree-shake wrapper
+        let source = b"0 && (module.exports = { foo: foo, bar: bar });";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"foo"), "BUN-01: foo must be detected; got: {:?}", names);
+        assert!(names.contains(&"bar"), "BUN-01: bar must be detected; got: {:?}", names);
+    }
+
+    #[test]
+    fn bun_02_esbuild_export_helper() {
+        // BUN-02: __export(exports, { foo: () => foo, bar: () => bar })
+        let source = b"__export(exports, { foo: () => foo, bar: () => bar });";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"foo"), "BUN-02: foo must be detected; got: {:?}", names);
+        assert!(names.contains(&"bar"), "BUN-02: bar must be detected; got: {:?}", names);
+    }
+
+    #[test]
+    fn bun_04_tsc_void_placeholder() {
+        // BUN-04: exports.foo = void 0; — tsc placeholder
+        let source = b"exports.foo = void 0;";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"foo"), "BUN-04: foo must be detected from void 0 placeholder; got: {:?}", names);
+    }
+
+    #[test]
+    fn bun_06b_bracket_subscript_export() {
+        // BUN-06b: exports["foo"] = bar
+        let source = b"exports[\"foo\"] = bar;";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"foo"), "BUN-06b: foo must be detected from bracket subscript; got: {:?}", names);
+    }
+
+    #[test]
+    fn bun_07_esmodule_filtered() {
+        // BUN-07: __esModule must never appear in final export list
+        let source = b"exports.__esModule = true;";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
+        assert!(!names.contains(&"__esModule"), "BUN-07: __esModule must be filtered; got: {:?}", names);
+    }
 }
