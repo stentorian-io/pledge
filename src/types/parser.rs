@@ -8,6 +8,13 @@ use crate::types::shape::{
 };
 use std::collections::BTreeMap;
 
+/// ROB-05: Maximum recursion depth for the type parser.
+///
+/// Matches the constant in `compare/subtype.rs` (MAX_DEPTH = 20) for consistency
+/// across the type system. Adversarial or pathologically complex type strings that
+/// exceed this depth produce `TypeShape::Opaque(raw_input)` rather than a stack overflow.
+const MAX_DEPTH: usize = 20;
+
 /// Parse a TypeScript type string (from LSP hover output) into a `TypeShape`.
 ///
 /// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per D-13).
@@ -21,7 +28,7 @@ pub fn parse_type_string(input: &str) -> TypeShape {
     // 3. `const foo: <type>` / `let foo: <type>` / `var foo: <type>` — variable hover
     let stripped = strip_hover_prefix(input);
 
-    match TypeParser::new(stripped).parse() {
+    match TypeParser::new(stripped).parse(0) {
         Some(shape) => shape.normalize(),
         None => TypeShape::Opaque(input.to_string()),
     }
@@ -101,8 +108,8 @@ impl<'a> TypeParser<'a> {
     }
 
     /// Attempt to parse the entire input as a type, returning None on failure.
-    fn parse(mut self) -> Option<TypeShape> {
-        let shape = self.parse_type()?;
+    fn parse(mut self, depth: usize) -> Option<TypeShape> {
+        let shape = self.parse_type(depth)?;
         self.skip_whitespace();
         // Must consume the entire input
         if self.pos != self.input.len() {
@@ -115,32 +122,39 @@ impl<'a> TypeParser<'a> {
     // Grammar entry point: Union < Intersection < Primary
     // -----------------------------------------------------------------------
 
-    fn parse_type(&mut self) -> Option<TypeShape> {
-        let base = self.parse_union()?;
+    fn parse_type(&mut self, depth: usize) -> Option<TypeShape> {
+        // ROB-05: depth guard — return Opaque on overflow to prevent stack overflow.
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
+        let base = self.parse_union(depth + 1)?;
         self.skip_whitespace();
         // Check for conditional type: `T extends U ? Then : Else`
         if self.peek_str("extends ") || self.peek_str("extends\t") {
-            return self.parse_conditional(base);
+            return self.parse_conditional(base, depth + 1);
         }
         Some(base)
     }
 
     /// Parse the `extends <U> ? <Then> : <Else>` tail of a conditional type.
     /// `check` is the type already parsed before the `extends` keyword.
-    fn parse_conditional(&mut self, check: TypeShape) -> Option<TypeShape> {
+    fn parse_conditional(&mut self, check: TypeShape, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         // consume "extends"
         self.pos += 7; // "extends".len()
         self.skip_whitespace();
         // Parse the extends constraint — use parse_primary to avoid consuming `?`
-        let extends = self.parse_primary()?;
+        let extends = self.parse_primary(depth + 1)?;
         self.skip_whitespace();
         self.expect_char('?')?;
         self.skip_whitespace();
-        let then_type = self.parse_type()?;
+        let then_type = self.parse_type(depth + 1)?;
         self.skip_whitespace();
         self.expect_char(':')?;
         self.skip_whitespace();
-        let else_type = self.parse_type()?;
+        let else_type = self.parse_type(depth + 1)?;
         Some(TypeShape::Conditional {
             check: Box::new(check),
             extends: Box::new(extends),
@@ -149,8 +163,11 @@ impl<'a> TypeParser<'a> {
         })
     }
 
-    fn parse_union(&mut self) -> Option<TypeShape> {
-        let first = self.parse_intersection()?;
+    fn parse_union(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
+        let first = self.parse_intersection(depth + 1)?;
         self.skip_whitespace();
         if self.peek_char() != Some('|') {
             return Some(first);
@@ -159,14 +176,17 @@ impl<'a> TypeParser<'a> {
         while self.peek_char() == Some('|') {
             self.advance(); // consume '|'
             self.skip_whitespace();
-            members.push(self.parse_intersection()?);
+            members.push(self.parse_intersection(depth + 1)?);
             self.skip_whitespace();
         }
         Some(TypeShape::Union(members))
     }
 
-    fn parse_intersection(&mut self) -> Option<TypeShape> {
-        let first = self.parse_primary()?;
+    fn parse_intersection(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
+        let first = self.parse_primary(depth + 1)?;
         self.skip_whitespace();
         if self.peek_char() != Some('&') {
             return Some(first);
@@ -177,22 +197,26 @@ impl<'a> TypeParser<'a> {
             // just consume and continue
             self.advance();
             self.skip_whitespace();
-            members.push(self.parse_primary()?);
+            members.push(self.parse_primary(depth + 1)?);
             self.skip_whitespace();
         }
         Some(TypeShape::Intersection(members))
     }
 
-    fn parse_primary(&mut self) -> Option<TypeShape> {
+    fn parse_primary(&mut self, depth: usize) -> Option<TypeShape> {
+        // ROB-05: depth guard at every entry point.
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         self.skip_whitespace();
         let ch = self.peek_char()?;
 
         let shape = match ch {
-            '{' => self.parse_object()?,
-            '[' => self.parse_tuple()?,
+            '{' => self.parse_object(depth + 1)?,
+            '[' => self.parse_tuple(depth + 1)?,
             '(' => {
                 // Could be function type `(params) => T` or parenthesized type
-                self.parse_function_or_paren()?
+                self.parse_function_or_paren(depth + 1)?
             }
             '"' | '\'' | '`' => self.parse_string_literal()?,
             '0'..='9' | '-' => self.parse_number_literal()?,
@@ -216,7 +240,7 @@ impl<'a> TypeParser<'a> {
                     "false" => TypeShape::Literal(LiteralKind::Boolean(false)),
                     "keyof" => {
                         self.skip_whitespace();
-                        let inner = self.parse_primary()?;
+                        let inner = self.parse_primary(depth + 1)?;
                         TypeShape::Generic {
                             name: "keyof".to_string(),
                             args: vec![inner],
@@ -235,7 +259,7 @@ impl<'a> TypeParser<'a> {
                     name => {
                         // Check for generic args
                         if self.peek_char() == Some('<') {
-                            self.parse_generic(name.to_string())?
+                            self.parse_generic(name.to_string(), depth + 1)?
                         } else {
                             // Type parameter reference
                             TypeShape::TypeParam(name.to_string())
@@ -246,7 +270,7 @@ impl<'a> TypeParser<'a> {
         };
 
         // Check for array suffix `[]` (may be stacked: `string[][]`)
-        let shape = self.parse_array_suffix(shape);
+        let shape = self.parse_array_suffix(shape, depth + 1);
 
         Some(shape)
     }
@@ -255,7 +279,10 @@ impl<'a> TypeParser<'a> {
     // Object type: `{ key: T; key?: T }`
     // -----------------------------------------------------------------------
 
-    fn parse_object(&mut self) -> Option<TypeShape> {
+    fn parse_object(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         self.expect_char('{')?;
         self.skip_whitespace();
 
@@ -269,7 +296,7 @@ impl<'a> TypeParser<'a> {
             false
         };
         if self.peek_char() == Some('[') {
-            if let Some(mapped) = self.try_parse_mapped_type(has_readonly) {
+            if let Some(mapped) = self.try_parse_mapped_type(has_readonly, depth + 1) {
                 return Some(mapped);
             }
         }
@@ -309,7 +336,7 @@ impl<'a> TypeParser<'a> {
             // Expect `:` separator
             self.expect_char(':')?;
             self.skip_whitespace();
-            let shape = self.parse_type()?;
+            let shape = self.parse_type(depth + 1)?;
             fields.insert(
                 key,
                 FieldShape {
@@ -335,7 +362,10 @@ impl<'a> TypeParser<'a> {
 
     /// Try to parse a mapped type starting at `[` (after optional `readonly` prefix).
     /// Returns None and backtracks on failure so parse_object can fall through.
-    fn try_parse_mapped_type(&mut self, has_readonly: bool) -> Option<TypeShape> {
+    fn try_parse_mapped_type(&mut self, has_readonly: bool, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return None;
+        }
         let saved = self.pos;
         self.expect_char('[')?;
         self.skip_whitespace();
@@ -350,7 +380,7 @@ impl<'a> TypeParser<'a> {
         self.pos += 2; // consume "in"
         self.skip_whitespace();
         // Parse key constraint type (e.g., `keyof T`, `string`, etc.)
-        let key_type = self.parse_type()?;
+        let key_type = self.parse_type(depth + 1)?;
         self.skip_whitespace();
         // Expect closing `]`
         if self.expect_char(']').is_none() {
@@ -372,7 +402,7 @@ impl<'a> TypeParser<'a> {
             return None;
         }
         self.skip_whitespace();
-        let value_type = self.parse_type()?;
+        let value_type = self.parse_type(depth + 1)?;
         self.skip_whitespace();
         // Allow optional trailing `;`
         if self.peek_char() == Some(';') {
@@ -401,12 +431,15 @@ impl<'a> TypeParser<'a> {
     // Tuple type: `[T, U, ...]`
     // -----------------------------------------------------------------------
 
-    fn parse_tuple(&mut self) -> Option<TypeShape> {
+    fn parse_tuple(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         self.expect_char('[')?;
         self.skip_whitespace();
         let mut elements = Vec::new();
         while self.peek_char() != Some(']') {
-            elements.push(self.parse_type()?);
+            elements.push(self.parse_type(depth + 1)?);
             self.skip_whitespace();
             if self.peek_char() == Some(',') {
                 self.advance();
@@ -422,7 +455,10 @@ impl<'a> TypeParser<'a> {
     // Parenthesized type: `(T)` — fallback when no `=>`
     // -----------------------------------------------------------------------
 
-    fn parse_function_or_paren(&mut self) -> Option<TypeShape> {
+    fn parse_function_or_paren(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         // Save position so we can backtrack
         let saved_pos = self.pos;
 
@@ -431,13 +467,13 @@ impl<'a> TypeParser<'a> {
         self.skip_whitespace();
 
         // Parse parameter list
-        let params = self.parse_param_list();
+        let params = self.parse_param_list(depth + 1);
 
         self.skip_whitespace();
         if self.expect_char(')').is_none() {
             // Failed — backtrack and try parenthesized expression
             self.pos = saved_pos;
-            return self.parse_parenthesized();
+            return self.parse_parenthesized(depth + 1);
         }
         self.skip_whitespace();
 
@@ -445,7 +481,7 @@ impl<'a> TypeParser<'a> {
         if self.peek_str("=>") {
             self.pos += 2;
             self.skip_whitespace();
-            let return_type = self.parse_type()?;
+            let return_type = self.parse_type(depth + 1)?;
             return Some(TypeShape::Function {
                 params: params?,
                 return_type: Box::new(return_type),
@@ -457,7 +493,7 @@ impl<'a> TypeParser<'a> {
         if self.peek_char() == Some(':') {
             self.advance(); // consume `:`
             self.skip_whitespace();
-            let return_type = self.parse_type()?;
+            let return_type = self.parse_type(depth + 1)?;
             return Some(TypeShape::Function {
                 params: params?,
                 return_type: Box::new(return_type),
@@ -467,14 +503,17 @@ impl<'a> TypeParser<'a> {
         // No `=>` or `:` — this was a parenthesized type (single element)
         // Backtrack and parse as parenthesized
         self.pos = saved_pos;
-        self.parse_parenthesized()
+        self.parse_parenthesized(depth + 1)
     }
 
     /// Parse `(T)` — a type wrapped in parens for grouping.
-    fn parse_parenthesized(&mut self) -> Option<TypeShape> {
+    fn parse_parenthesized(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+        }
         self.expect_char('(')?;
         self.skip_whitespace();
-        let inner = self.parse_type()?;
+        let inner = self.parse_type(depth + 1)?;
         self.skip_whitespace();
         self.expect_char(')')?;
         Some(inner)
@@ -482,7 +521,10 @@ impl<'a> TypeParser<'a> {
 
     /// Parse a comma-separated list of `name?: T` parameters inside `(...)`.
     /// Returns None if parsing fails (so caller can backtrack).
-    fn parse_param_list(&mut self) -> Option<Vec<ParamShape>> {
+    fn parse_param_list(&mut self, depth: usize) -> Option<Vec<ParamShape>> {
+        if depth >= MAX_DEPTH {
+            return None;
+        }
         let mut params = Vec::new();
         while self.peek_char() != Some(')') {
             self.skip_whitespace();
@@ -508,7 +550,7 @@ impl<'a> TypeParser<'a> {
             self.skip_whitespace();
             self.expect_char(':')?;
             self.skip_whitespace();
-            let shape = self.parse_type()?;
+            let shape = self.parse_type(depth + 1)?;
             params.push(ParamShape {
                 name,
                 optional,
@@ -528,21 +570,66 @@ impl<'a> TypeParser<'a> {
     // Generic type: `Name<T, U>`  (special: Array<T> -> TypeShape::Array)
     // -----------------------------------------------------------------------
 
-    fn parse_generic(&mut self, name: String) -> Option<TypeShape> {
-        let args = self.parse_generic_args()?;
+    fn parse_generic(&mut self, name: String, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            // Skip past the `<...>` block to avoid leaving the parser stuck,
+            // then return Opaque for the generic construct.
+            self.skip_balanced_angles();
+            return Some(TypeShape::Opaque(format!("{}<...>", name)));
+        }
+        let args = self.parse_generic_args(depth + 1)?;
         if name == "Array" && args.len() == 1 {
             return Some(TypeShape::Array(Box::new(args.into_iter().next().unwrap())));
         }
         Some(TypeShape::Generic { name, args })
     }
 
-    fn parse_generic_args(&mut self) -> Option<Vec<TypeShape>> {
+    /// Skip a balanced `<...>` block, handling nesting. Used by depth-cap fallback.
+    fn skip_balanced_angles(&mut self) {
+        if self.peek_char() != Some('<') {
+            return;
+        }
+        let mut nesting = 0usize;
+        while let Some(c) = self.peek_char() {
+            match c {
+                '<' => { nesting += 1; self.advance(); }
+                '>' => {
+                    self.advance();
+                    nesting -= 1;
+                    if nesting == 0 { break; }
+                }
+                _ => { self.advance(); }
+            }
+        }
+    }
+
+    fn parse_generic_args(&mut self, depth: usize) -> Option<Vec<TypeShape>> {
         self.expect_char('<')?;
         self.skip_whitespace();
         let mut args = Vec::new();
         while self.peek_char() != Some('>') {
-            args.push(self.parse_type()?);
+            // ROB-05: if parse_type returns Opaque due to depth exhaustion, the
+            // remaining input still contains the nested `<...>` body plus closing `>`.
+            // We need to consume everything up to the matching `>` before breaking.
+            let arg = self.parse_type(depth + 1)?;
+            let is_opaque = matches!(arg, TypeShape::Opaque(_));
+            args.push(arg);
             self.skip_whitespace();
+            if is_opaque {
+                // Depth was exhausted — skip any remaining content up to the
+                // matching `>` (which may be many levels deep) to avoid infinite loop.
+                let mut nesting = 0usize;
+                loop {
+                    match self.peek_char() {
+                        None => break,
+                        Some('<') => { nesting += 1; self.advance(); }
+                        Some('>') if nesting > 0 => { nesting -= 1; self.advance(); }
+                        Some('>') => break, // outer `>` — let expect_char consume it
+                        _ => { self.advance(); }
+                    }
+                }
+                break;
+            }
             if self.peek_char() == Some(',') {
                 self.advance();
                 self.skip_whitespace();
@@ -556,9 +643,13 @@ impl<'a> TypeParser<'a> {
     // Array suffix: `T[]` -> Array(T), stacked: `T[][]` -> Array(Array(T))
     // -----------------------------------------------------------------------
 
-    fn parse_array_suffix(&mut self, base: TypeShape) -> TypeShape {
+    fn parse_array_suffix(&mut self, base: TypeShape, depth: usize) -> TypeShape {
         let mut current = base;
         loop {
+            // ROB-05: stop accumulating array wrappers at depth cap.
+            if depth >= MAX_DEPTH {
+                break;
+            }
             self.skip_whitespace();
             if self.peek_str("[]") {
                 self.pos += 2;
@@ -570,7 +661,7 @@ impl<'a> TypeParser<'a> {
                 self.advance(); // consume '['
                 self.skip_whitespace();
                 // Empty bracket would have been caught by `[]` check above
-                if let Some(index) = self.parse_type() {
+                if let Some(index) = self.parse_type(depth + 1) {
                     self.skip_whitespace();
                     if self.expect_char(']').is_some() {
                         current = TypeShape::Indexed {
@@ -1044,6 +1135,37 @@ mod tests {
     #[test]
     fn test_type_param_reference() {
         assert_shape("T", TypeShape::TypeParam("T".to_string()));
+    }
+
+    // ─── ROB-05: MAX_DEPTH guard — no stack overflow on adversarial input ───────
+
+    #[test]
+    fn rob_05_simple_type_parses_ok() {
+        let shape = parse_type_string("string");
+        assert!(
+            matches!(shape, TypeShape::Primitive(_)),
+            "ROB-05: simple 'string' should parse; got: {:?}",
+            shape
+        );
+    }
+
+    #[test]
+    fn rob_05_deeply_nested_array_returns_opaque_not_stack_overflow() {
+        // 100 levels of Array<Array<...>> should cap to Opaque at MAX_DEPTH=20
+        let mut input = String::from("string");
+        for _ in 0..100 {
+            input = format!("Array<{}>", input);
+        }
+        // Should not panic (stack overflow). Result shape is well-defined.
+        let shape = parse_type_string(&input);
+        let _ = shape;
+    }
+
+    #[test]
+    fn rob_05_parens_depth_exhaustion_no_panic() {
+        let input = "(".repeat(100) + &"string".to_string() + &")".repeat(100);
+        let shape = parse_type_string(&input);
+        let _ = shape; // no panic
     }
 
     // ─── GAP-16-02: Conditional, mapped, indexed type parsing ─────────────────

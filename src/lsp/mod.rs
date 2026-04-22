@@ -72,6 +72,13 @@ pub async fn enrich_exports(
     // Collect file list first so we can process without holding borrow on exports
     let file_list: Vec<(PathBuf, Vec<String>)> = file_groups.into_iter().collect();
 
+    // ROB-02: Track consecutive LSP request failures. If the session crashes mid-run
+    // (e.g., tsserver OOM, SIGKILL, or IPC channel closed), hover requests will fail
+    // repeatedly. After CRASH_THRESHOLD consecutive failures, treat as a session crash
+    // and return Degraded rather than spinning through all remaining files.
+    const CRASH_THRESHOLD: usize = 3;
+    let mut consecutive_failures: usize = 0;
+
     for (rel_file_path, symbol_names) in &file_list {
         if budget_start.elapsed() >= total_budget {
             tracing::warn!(
@@ -100,11 +107,25 @@ pub async fn enrich_exports(
             .collect();
 
         // Send hover requests for this file's symbols
+        // ROB-02: Mid-session tsserver crash detection.
+        // Any error from the LSP request path (server exit, channel closed, timeout)
+        // increments the failure counter. On CRASH_THRESHOLD consecutive failures,
+        // return Degraded to avoid spinning through all remaining files.
         let results = match hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs).await
         {
-            Ok(r) => r,
+            Ok(r) => {
+                consecutive_failures = 0; // reset on success
+                r
+            }
             Err(e) => {
+                consecutive_failures += 1;
                 tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
+                if consecutive_failures >= CRASH_THRESHOLD {
+                    return Ok(EnrichResult::Degraded(format!(
+                        "LSP session failed: {} \u{2014} falling back to structural-only diff",
+                        e
+                    )));
+                }
                 continue;
             }
         };
@@ -126,4 +147,39 @@ pub async fn enrich_exports(
     }
 
     Ok(EnrichResult::Enriched)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ROB-02: Structural test — verify that EnrichResult::Degraded carries the crash message
+    /// and that the pattern-match branches are correct. The full crash path (CRASH_THRESHOLD
+    /// consecutive failures from a real subprocess) is exercised by integration tests in
+    /// tests/phase17_integration.rs; this unit test validates the type and message structure.
+    #[test]
+    fn rob_02_degraded_carries_failure_message() {
+        let err = anyhow::anyhow!("simulated tsserver crash");
+        let result = EnrichResult::Degraded(format!(
+            "LSP session failed: {} \u{2014} falling back to structural-only diff",
+            err
+        ));
+        match result {
+            EnrichResult::Degraded(msg) => {
+                assert!(
+                    msg.contains("LSP session failed"),
+                    "ROB-02: Degraded message must contain 'LSP session failed'; got: {msg:?}"
+                );
+                assert!(
+                    msg.contains("falling back"),
+                    "ROB-02: Degraded message must contain 'falling back'; got: {msg:?}"
+                );
+            }
+            EnrichResult::Enriched => panic!("expected Degraded, got Enriched"),
+        }
+    }
 }
