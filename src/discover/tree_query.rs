@@ -2957,6 +2957,31 @@ fn count_required_params(method_node: tree_sitter::Node) -> usize {
     0
 }
 
+/// IFT-03: Extract per-position optionality of parameters in a function/method node.
+///
+/// Finds the `formal_parameters` child and returns a `Vec<bool>` where `true`
+/// means the parameter at that position is optional. Skips non-parameter children
+/// (commas, parentheses, etc.).
+pub fn extract_param_optionality(fn_or_method_node: tree_sitter::Node) -> Vec<bool> {
+    for i in 0..fn_or_method_node.child_count() as u32 {
+        if let Some(params_node) = fn_or_method_node.child(i) {
+            if params_node.kind() == "formal_parameters" {
+                let mut result = Vec::new();
+                let mut cursor = params_node.walk();
+                for child in params_node.children(&mut cursor) {
+                    match child.kind() {
+                        "required_parameter" => result.push(false),
+                        "optional_parameter" => result.push(true),
+                        _ => {} // skip commas, parens, etc.
+                    }
+                }
+                return result;
+            }
+        }
+    }
+    Vec::new()
+}
+
 /// Extract all class members (methods, constructors, properties, abstract methods)
 /// from a `class_declaration` or `abstract_class_declaration` node.
 ///
@@ -5997,6 +6022,81 @@ declare global {
             !names.contains(&"__esModule"),
             "BUN-07: __esModule must be filtered; got: {:?}",
             names
+        );
+    }
+
+    // ── Phase 17 IFT-01: Interface property optionality extracted ────────────
+
+    #[test]
+    fn ift_01_interface_property_optionality_extracted() {
+        let source = b"interface Foo { x?: number; y: string; }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        // Find the interface_declaration node
+        let iface_node = first_node_of_kind(tree.root_node(), "interface_declaration")
+            .expect("interface_declaration not found");
+        // Find interface body (interface_body or object_type)
+        let body = find_interface_body(iface_node).expect("interface body not found");
+        let members = parse_interface_members(source, body);
+        let x = members.iter().find(|m| m.name == "x").expect("x not found");
+        let y = members.iter().find(|m| m.name == "y").expect("y not found");
+        assert!(x.is_optional, "x? should be optional");
+        assert!(!y.is_optional, "y should not be optional");
+    }
+
+    // ── Phase 17 IFT-03: extract_param_optionality on constructor ────────────
+
+    #[test]
+    fn ift_03_extract_param_optionality_constructor() {
+        let source =
+            b"class C { constructor(a: number, b?: string, c?: boolean) {} }";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration")
+            .expect("class_declaration not found");
+        // Find class_body
+        let class_body = {
+            let mut found = None;
+            for i in 0..class_node.child_count() as u32 {
+                if let Some(child) = class_node.child(i) {
+                    if child.kind() == "class_body" {
+                        found = Some(child);
+                        break;
+                    }
+                }
+            }
+            found.expect("class_body not found")
+        };
+        // Find the constructor method_definition
+        let ctor_node = {
+            let mut found = None;
+            let mut cursor = class_body.walk();
+            for child in class_body.children(&mut cursor) {
+                if child.kind() == "method_definition" {
+                    let name_text = child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .unwrap_or("");
+                    if name_text == "constructor" {
+                        found = Some(child);
+                        break;
+                    }
+                }
+            }
+            found.expect("constructor method_definition not found")
+        };
+        let optionality = extract_param_optionality(ctor_node);
+        assert_eq!(
+            optionality,
+            vec![false, true, true],
+            "a is required, b? and c? are optional; got: {:?}",
+            optionality
         );
     }
 }

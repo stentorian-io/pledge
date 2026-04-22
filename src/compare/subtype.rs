@@ -387,6 +387,11 @@ pub const RULE_GENERIC_VARIANCE_CHANGED: &str = "generic-variance-changed"; // T
 pub const RULE_CLASS_ACCESSOR_CHANGED: &str = "class-accessor-changed"; // TLF-06
 pub const RULE_TYPE_ONLY_REEXPORT_CHANGED: &str = "type-only-reexport-changed"; // TLF-07
 
+// ─── Phase 17: IFT — Interface/type diff symmetry ────────────────────────────
+pub const RULE_INTERFACE_PROPERTY_MADE_REQUIRED: &str = "interface-property-made-required"; // IFT-01
+pub const RULE_TYPE_ALIAS_READONLY_CHANGED: &str = "type-alias-readonly-changed"; // IFT-02
+pub const RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED: &str = "constructor-param-made-required"; // IFT-03
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -960,5 +965,19 @@ mod tests {
             "cjs-bundler-export-detected"
         );
         assert_eq!(RULE_CHUNK_PATH_NORMALIZED, "chunk-path-normalized");
+    }
+
+    // ── Phase 17: IFT rule constant values ───────────────────────────────────
+    #[test]
+    fn phase17_ift_rule_constant_values() {
+        assert_eq!(
+            RULE_INTERFACE_PROPERTY_MADE_REQUIRED,
+            "interface-property-made-required"
+        );
+        assert_eq!(RULE_TYPE_ALIAS_READONLY_CHANGED, "type-alias-readonly-changed");
+        assert_eq!(
+            RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
+            "constructor-param-made-required"
+        );
     }
 }
