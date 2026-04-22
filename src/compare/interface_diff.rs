@@ -59,7 +59,8 @@ pub fn compare_interface_members(
     // Optional members are Minor (implementors unaffected)
     for (name, new_member) in &new_map {
         if !old_map.contains_key(name) {
-            let is_optional = new_member.type_signature.as_deref() == Some("optional");
+            // Phase 17: use proper is_optional field (replaces type_signature=="optional" stopgap)
+            let is_optional = new_member.is_optional;
             findings.push(Finding {
                 severity: if is_optional { Severity::Minor } else { Severity::Major },
                 rule: RULE_INTERFACE_MEMBER_ADDED,
@@ -256,6 +257,9 @@ mod tests {
             is_readonly: false,
             param_count,
             type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 
@@ -269,6 +273,9 @@ mod tests {
             is_readonly: false,
             param_count: 0,
             type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 
@@ -281,7 +288,10 @@ mod tests {
             is_abstract: false,
             is_readonly: false,
             param_count: 0,
-            type_signature: Some("optional".to_string()),
+            type_signature: None,
+            is_optional: true,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 
@@ -414,6 +424,9 @@ mod tests {
             is_readonly: true,
             param_count: 0,
             type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 
@@ -472,6 +485,9 @@ mod tests {
             is_readonly: false,
             param_count: 1,
             type_signature: Some(sig.to_string()),
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 

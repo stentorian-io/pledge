@@ -51,6 +51,8 @@ fn make_sym(name: &str, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
         is_async: false,
         is_generator: false,
         is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
@@ -68,6 +70,8 @@ fn make_fn_sym_with_overloads(name: &str, overloads: Vec<TypeShape>) -> ExportSy
         is_async: false,
         is_generator: false,
         is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 
@@ -132,6 +136,8 @@ fn test_export_alias_detected_correctly() {
                 is_async: false,
                 is_generator: false,
                 is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }
@@ -153,6 +159,8 @@ fn test_export_alias_detected_correctly() {
                 is_async: false,
                 is_generator: false,
                 is_reexport: false,
+                is_type_only: false,
+                release_tag: None,
             },
         );
     }

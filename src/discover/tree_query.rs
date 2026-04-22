@@ -2313,6 +2313,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_readonly,
                     param_count,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             "public_field_definition" => {
@@ -2351,6 +2354,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_readonly,
                     param_count: 0,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             "abstract_method_signature" => {
@@ -2372,6 +2378,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_readonly: false,
                     param_count,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             // BUG-13-01: .d.ts ambient class members use method_signature /
@@ -2404,6 +2413,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_readonly: false,
                     param_count,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             "property_signature" => {
@@ -2436,6 +2448,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_readonly,
                     param_count: 0,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             _ => {}
@@ -2745,6 +2760,7 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
                 default_text,
                 constraint_shape: None, // LSP fills in later for GEN-04
                 is_const,
+                variance: None,
             });
         }
     }
@@ -2903,6 +2919,9 @@ pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node)
                     is_readonly: false,
                     param_count,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             "property_signature" => {
@@ -2942,8 +2961,11 @@ pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node)
                     is_abstract: false,
                     is_readonly,
                     param_count: 0,
-                    // Use type_signature to signal optional status for interface_diff
-                    type_signature: if is_optional { Some("optional".to_string()) } else { None },
+                    // Phase 17: use proper is_optional field (replaces type_signature stopgap)
+                    type_signature: None,
+                    is_optional,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             "call_signature" => {
@@ -2959,6 +2981,9 @@ pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node)
                     is_readonly: false,
                     param_count,
                     type_signature: None,
+                    is_optional: false,
+                    is_accessor: false,
+                    this_param_type: None,
                 });
             }
             _ => {}

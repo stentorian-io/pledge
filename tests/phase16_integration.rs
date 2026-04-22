@@ -42,6 +42,9 @@ fn make_property(name: &str, is_readonly: bool) -> ClassMember {
         is_readonly,
         param_count: 0,
         type_signature: None,
+        is_optional: false,
+        is_accessor: false,
+        this_param_type: None,
     }
 }
 
@@ -55,6 +58,9 @@ fn make_method(name: &str, param_count: usize, type_signature: Option<&str>) -> 
         is_readonly: false,
         param_count,
         type_signature: type_signature.map(|s| s.to_string()),
+        is_optional: false,
+        is_accessor: false,
+        this_param_type: None,
     }
 }
 

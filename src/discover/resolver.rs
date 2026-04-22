@@ -233,6 +233,8 @@ pub fn collect_exports(
                     is_async: false,
                     is_generator: false,
                     is_reexport: false,
+                    is_type_only: false,
+                    release_tag: None,
                 });
             }
             RawExportKind::Default => {
@@ -249,6 +251,8 @@ pub fn collect_exports(
                     is_async: false,
                     is_generator: false,
                     is_reexport: false,
+                    is_type_only: false,
+                    release_tag: None,
                 });
             }
             RawExportKind::StarReexport => {
@@ -283,6 +287,8 @@ pub fn collect_exports(
                                     is_async: false,
                                     is_generator: false,
                                     is_reexport: true,
+                                    is_type_only: false,
+                                    release_tag: None,
                                 });
                             } else {
                                 warnings.push(ResolveWarning::new(format!(
@@ -329,6 +335,8 @@ pub fn collect_exports(
                                 is_async: false,
                                 is_generator: false,
                                 is_reexport: false,
+                                is_type_only: false,
+                                release_tag: None,
                             });
                         }
                         None => {
@@ -348,6 +356,8 @@ pub fn collect_exports(
                                     is_async: false,
                                     is_generator: false,
                                     is_reexport: true,
+                                    is_type_only: false,
+                                    release_tag: None,
                                 });
                             } else {
                                 warnings.push(ResolveWarning::new(format!(
@@ -778,6 +788,8 @@ mod tests {
                 is_async: false,
                 is_generator: false,
                 is_reexport: true,
+                is_type_only: false,
+                release_tag: None,
             },
         );
         let new_map = crate::types::ExportMap::new();

@@ -125,6 +125,8 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     }
 }
 
@@ -189,6 +191,8 @@ fn test_ref_02_rest_param_narrowed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -212,6 +216,8 @@ fn test_ref_02_rest_param_narrowed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     // Old has rest param, new does not — rest-param-narrowed
@@ -268,6 +274,8 @@ fn test_ref_03_type_guard_widened() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -283,6 +291,8 @@ fn test_ref_03_type_guard_widened() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -316,6 +326,8 @@ fn test_ref_04_declaration_kind_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -331,6 +343,8 @@ fn test_ref_04_declaration_kind_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -371,6 +385,8 @@ fn test_ref_05_namespace_to_other() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     // Log what tree-sitter sees for debugging
@@ -389,6 +405,8 @@ fn test_ref_05_namespace_to_other() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -478,6 +496,8 @@ fn test_ref_07_index_signature_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -493,6 +513,8 @@ fn test_ref_07_index_signature_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -544,6 +566,8 @@ fn test_ref_07_index_signature_removed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = old_sym.clone();
@@ -577,6 +601,8 @@ fn test_ref_08_default_export_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let new_sym = ExportSymbol {
@@ -592,6 +618,8 @@ fn test_ref_08_default_export_changed() {
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     };
 
     let findings = ref_diff::compare_ref_changes(

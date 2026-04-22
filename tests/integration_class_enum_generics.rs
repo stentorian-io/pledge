@@ -255,6 +255,9 @@ fn test_cls_07_static_type_changed() {
         is_readonly: false,
         param_count: 0,
         type_signature: Some("number".to_string()),
+        is_optional: false,
+        is_accessor: false,
+        this_param_type: None,
     };
     let new_member = ClassMember {
         name: "val".to_string(),
@@ -265,6 +268,9 @@ fn test_cls_07_static_type_changed() {
         is_readonly: false,
         param_count: 0,
         type_signature: Some("string".to_string()),
+        is_optional: false,
+        is_accessor: false,
+        this_param_type: None,
     };
 
     let old_shape = ClassShape {

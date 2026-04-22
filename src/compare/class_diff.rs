@@ -309,6 +309,9 @@ mod tests {
             is_readonly: false,
             param_count: 0,
             type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         }
     }
 

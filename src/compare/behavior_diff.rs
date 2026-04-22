@@ -99,6 +99,8 @@ mod tests {
             is_async,
             is_generator,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         }
     }
 

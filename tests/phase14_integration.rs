@@ -31,6 +31,8 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32, decl_kind: Option<Decla
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     }
 }
 
@@ -48,6 +50,8 @@ fn make_default_export_sym(file: PathBuf, line: u32, decl_kind: Option<Declarati
         is_async: false,
         is_generator: false,
     is_reexport: false,
+    is_type_only: false,
+    release_tag: None,
     }
 }
 
@@ -301,6 +305,8 @@ fn test_namespace_member_removed() {
                 is_async: false,
                 is_generator: false,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
             },
         );
     }
@@ -322,6 +328,8 @@ fn test_namespace_member_removed() {
                 is_async: false,
                 is_generator: false,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
             },
         );
     }
@@ -372,6 +380,8 @@ fn test_namespace_member_added() {
                 is_async: false,
                 is_generator: false,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
             },
         );
     }
@@ -393,6 +403,8 @@ fn test_namespace_member_added() {
                 is_async: false,
                 is_generator: false,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
             },
         );
     }

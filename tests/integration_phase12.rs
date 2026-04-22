@@ -35,6 +35,9 @@ fn make_member(name: &str, kind: ClassMemberKind, vis: Visibility) -> ClassMembe
         is_readonly: false,
         param_count: 0,
         type_signature: None,
+        is_optional: false,
+        is_accessor: false,
+        this_param_type: None,
     }
 }
 
@@ -62,6 +65,8 @@ fn make_export_sym(name: &str) -> ExportSymbol {
         is_async: false,
         is_generator: false,
         is_reexport: false,
+        is_type_only: false,
+        release_tag: None,
     }
 }
 

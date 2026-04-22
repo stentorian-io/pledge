@@ -386,6 +386,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: false,
+            variance: None,
         }
     }
 
@@ -396,6 +397,7 @@ mod tests {
             default_text: Some(default.to_string()),
             constraint_shape: None,
             is_const: false,
+            variance: None,
         }
     }
 
@@ -406,6 +408,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: false,
+            variance: None,
         }
     }
 
@@ -416,6 +419,7 @@ mod tests {
             default_text: None,
             constraint_shape: Some(shape),
             is_const: false,
+            variance: None,
         }
     }
 
@@ -609,6 +613,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: true,
+            variance: None,
         }];
         let new = vec![TypeParam {
             name: "T".to_string(),
@@ -616,6 +621,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: false,
+            variance: None,
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(
@@ -633,6 +639,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: false,
+            variance: None,
         }];
         let new = vec![TypeParam {
             name: "T".to_string(),
@@ -640,6 +647,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: true,
+            variance: None,
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(
@@ -657,6 +665,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: true,
+            variance: None,
         }];
         let new = vec![TypeParam {
             name: "T".to_string(),
@@ -664,6 +673,7 @@ mod tests {
             default_text: None,
             constraint_shape: None,
             is_const: true,
+            variance: None,
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(

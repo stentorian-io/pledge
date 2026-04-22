@@ -77,6 +77,9 @@ pub struct ExportSymbol {
     pub is_async: bool,                           // for BEH-01/BEH-02 — async detection
     pub is_generator: bool,                       // for BEH-03 — generator detection
     pub is_reexport: bool,                        // for GAP-15-05 — tracks external re-export entries
+    // Phase 17 fields:
+    pub is_type_only: bool,                       // TLF-07 — export type * vs export *
+    pub release_tag: Option<ReleaseTag>,          // META-04 — TSDoc release tag (populated in Plan 17-05)
 }
 
 #[allow(dead_code)]
@@ -113,6 +116,10 @@ pub struct ClassMember {
     pub is_readonly: bool,
     pub param_count: usize,
     pub type_signature: Option<String>,
+    // Phase 17 TLF fields:
+    pub is_optional: bool,          // TLF-02/IFT-01 — replaces type_signature=="optional" stopgap
+    pub is_accessor: bool,          // TLF-06 — TS 4.9 accessor modifier
+    pub this_param_type: Option<String>, // TLF-03 — this parameter type annotation
 }
 
 #[allow(dead_code)]
@@ -153,6 +160,37 @@ pub struct EnumShape {
 
 // ─── Generic type parameter model ───────────────────────────────────────────
 
+/// TLF-05: Generic type parameter variance modifier.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Variance {
+    In,
+    Out,
+    InOut,
+}
+
+/// META-04: TSDoc release tag extracted from `@internal`, `@alpha`, `@experimental`,
+/// `@public`, `@deprecated` tags in block comments adjacent to exported symbols.
+/// Stubbed here; populated by Plan 17-05.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseTag {
+    Internal,
+    Alpha,
+    Experimental,
+    Public,
+    Deprecated,
+}
+
+/// TLF-01: Interface construct signature shape (`new (params): ReturnType`).
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct ConstructSignature {
+    pub param_count: usize,
+    pub return_text: Option<String>,
+    pub is_abstract: bool,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TypeParam {
@@ -161,6 +199,7 @@ pub struct TypeParam {
     pub default_text: Option<String>,
     pub constraint_shape: Option<shape::TypeShape>,
     pub is_const: bool, // GAP-15-07 — const type parameter modifier (TS 4.9+)
+    pub variance: Option<Variance>, // TLF-05
 }
 
 // ─── Tests for new data model types ─────────────────────────────────────────
@@ -205,6 +244,9 @@ mod tests {
             is_readonly: false,
             param_count: 1,
             type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
         };
         let shape = ClassShape {
             members: vec![member],
@@ -243,6 +285,7 @@ mod tests {
             default_text: Some("never".to_string()),
             constraint_shape: None,
             is_const: false,
+            variance: None,
         };
         assert_eq!(param.name, "T");
         assert_eq!(param.constraint_text.as_deref(), Some("string"));
@@ -297,6 +340,8 @@ mod tests {
             is_async: false,
             is_generator: false,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         };
         assert_eq!(sym.name, "foo");
     }
@@ -323,8 +368,98 @@ mod tests {
             is_async: true,
             is_generator: true,
             is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);
+    }
+
+    #[test]
+    fn tlf_05_variance_variants_exist() {
+        let _in_var = Variance::In;
+        let _out_var = Variance::Out;
+        let _inout_var = Variance::InOut;
+        assert_eq!(Variance::In, Variance::In);
+        assert_ne!(Variance::In, Variance::Out);
+        assert_ne!(Variance::In, Variance::InOut);
+        assert_ne!(Variance::Out, Variance::InOut);
+    }
+
+    #[test]
+    fn tlf_06_class_member_is_accessor_defaults_false() {
+        let m = ClassMember {
+            name: "foo".into(),
+            kind: ClassMemberKind::Property,
+            visibility: Visibility::Public,
+            is_static: false,
+            is_abstract: false,
+            is_readonly: false,
+            param_count: 0,
+            type_signature: None,
+            is_optional: false,
+            is_accessor: false,
+            this_param_type: None,
+        };
+        assert!(!m.is_accessor);
+        assert!(!m.is_optional);
+        assert!(m.this_param_type.is_none());
+    }
+
+    #[test]
+    fn tlf_01_construct_signature_struct_shape() {
+        let cs = ConstructSignature {
+            param_count: 2,
+            return_text: Some("Foo".into()),
+            is_abstract: false,
+        };
+        assert_eq!(cs.param_count, 2);
+        assert_eq!(cs.return_text.as_deref(), Some("Foo"));
+        assert!(!cs.is_abstract);
+    }
+
+    #[test]
+    fn tlf_07_export_symbol_is_type_only_field_exists() {
+        let sym = ExportSymbol {
+            name: "mod".to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kind: None,
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: true,
+            is_type_only: true,
+            release_tag: None,
+        };
+        assert!(sym.is_type_only);
+    }
+
+    #[test]
+    fn tlf_type_param_variance_field_exists() {
+        let tp = TypeParam {
+            name: "T".to_string(),
+            constraint_text: None,
+            default_text: None,
+            constraint_shape: None,
+            is_const: false,
+            variance: Some(Variance::In),
+        };
+        assert_eq!(tp.variance, Some(Variance::In));
+    }
+
+    #[test]
+    fn tlf_release_tag_variants_exist() {
+        let _ = ReleaseTag::Internal;
+        let _ = ReleaseTag::Alpha;
+        let _ = ReleaseTag::Experimental;
+        let _ = ReleaseTag::Public;
+        let _ = ReleaseTag::Deprecated;
+        assert_eq!(ReleaseTag::Internal, ReleaseTag::Internal);
+        assert_ne!(ReleaseTag::Internal, ReleaseTag::Public);
     }
 }
