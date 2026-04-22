@@ -121,10 +121,17 @@ pub async fn enrich_exports(
                 consecutive_failures += 1;
                 tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
                 if consecutive_failures >= CRASH_THRESHOLD {
-                    return Ok(EnrichResult::Degraded(format!(
+                    let msg = format!(
                         "LSP session failed: {} \u{2014} falling back to structural-only diff",
                         e
-                    )));
+                    );
+                    // WR-04 (Phase 17 review): attempt a graceful shutdown handshake
+                    // before drop. kill_on_drop remains the safety net — shutdown
+                    // errors are intentionally ignored because the session is already
+                    // failing, but the handshake lets tsserver flush buffers / temp
+                    // files cleanly when it IS still responsive to a final request.
+                    let _ = session.shutdown().await;
+                    return Ok(EnrichResult::Degraded(msg));
                 }
                 continue;
             }
