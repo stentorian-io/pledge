@@ -431,15 +431,16 @@ pub fn collect_exports(
     }
 
     // META-05: Flush accumulated barrel failures.
-    // At depth 0, specifiers with ≥3 unresolvable named exports are aggregated
-    // into a single "barrel" warning to reduce noise.  Specifiers with fewer
-    // failures produce individual warnings as before.
+    // At depth 0, specifiers with ≥ BARREL_AGGREGATE_THRESHOLD unresolvable named
+    // exports are aggregated into a single "barrel" warning to reduce noise.
+    // Specifiers with fewer failures produce individual warnings as before.
+    const BARREL_AGGREGATE_THRESHOLD: usize = 3;
     if depth == 0 {
         let mut sorted_specifiers: Vec<String> = barrel_failures.keys().cloned().collect();
         sorted_specifiers.sort();
         for spec in sorted_specifiers {
             let names = &barrel_failures[&spec];
-            if names.len() >= 3 {
+            if names.len() >= BARREL_AGGREGATE_THRESHOLD {
                 warnings.push(ResolveWarning::new(format!(
                     "barrel '{}' unresolvable: {} named re-exports could not be resolved ({})",
                     spec,
