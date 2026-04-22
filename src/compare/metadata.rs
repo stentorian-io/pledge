@@ -301,6 +301,18 @@ fn compare_engines(
     }
 }
 
+/// SEM-06: Get `exports["."]` as a bare string, or None for objects/null/arrays.
+///
+/// Conservative — only suppresses the main/module finding when exports["."] is a
+/// string literal equal in both versions. Objects and conditional exports maps are
+/// handled by exports_diff.rs at higher granularity (D-07).
+fn exports_dot_string(pkg: &serde_json::Value) -> Option<String> {
+    pkg.get("exports")
+        .and_then(|e| e.get("."))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+}
+
 /// META-06: detect entry point field changes.
 ///
 /// Checks `main`, `module`, `types` (string fields).
@@ -310,10 +322,23 @@ fn compare_entry_points(
     new_pkg: &serde_json::Value,
     findings: &mut Vec<Finding>,
 ) {
+    // SEM-06: Suppress main/module entry-point-changed when exports["."] is a stable
+    // bare string in both versions. The exports field is the authoritative entry point
+    // when present; main/module become redundant legacy aliases.
+    let old_dot = exports_dot_string(old_pkg);
+    let new_dot = exports_dot_string(new_pkg);
+    let exports_dot_stable = old_dot.is_some() && old_dot == new_dot;
+
     // Simple string fields
     for field in &["main", "module", "types"] {
         let old_val = old_pkg.get(field).and_then(|v| v.as_str());
         let new_val = new_pkg.get(field).and_then(|v| v.as_str());
+
+        // SEM-06: Skip main/module finding when exports["."] is stable.
+        // `types` is always checked — it's type-resolution-specific, not covered by exports["."].
+        if exports_dot_stable && (*field == "main" || *field == "module") {
+            continue;
+        }
 
         match (old_val, new_val) {
             (Some(old_v), Some(new_v)) if old_v != new_v => {

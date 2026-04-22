@@ -37,23 +37,43 @@ pub fn compare_ref_changes(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
+    // SEM-05: Track whether REF-08 (default-export-changed) fires for this symbol.
+    // When REF-08 fires, suppress REF-04 (declaration-kind-changed) for the same symbol
+    // to avoid double-reporting the same conceptual change at two different rule levels.
+    let mut ref_08_fired = false;
+
     // REF-01: overload-removed
-    // Per D-08: match overloads by parameter arity first, then check parameter type compatibility.
-    // For each old overload, check if any new overload has the same arity AND compatible param types.
-    // If no match, emit overload-removed.
+    // SEM-07: Shape-aware overload matching with consumed tracking.
+    // Each new overload can match at most one old overload. Unmatched old overloads
+    // fire overload-removed Major. This prevents a single new overload from
+    // "absorbing" multiple old overloads of the same arity (the prior FN).
     if old_sym.overloads.len() > 1 {
         // Only check overloads when old had multiple signatures
+        let mut consumed = vec![false; new_sym.overloads.len()];
         for old_overload in &old_sym.overloads {
             let old_arity = count_required_arity(old_overload);
-            // First check: any new overload with same arity?
-            let arity_matches: Vec<_> = new_sym
-                .overloads
-                .iter()
-                .filter(|new_ol| count_required_arity(new_ol) == old_arity)
-                .collect();
+            let mut matched = false;
 
-            if arity_matches.is_empty() {
-                // No arity match at all -> overload removed
+            for (i, new_overload) in new_sym.overloads.iter().enumerate() {
+                if consumed[i] {
+                    continue; // already matched to another old overload
+                }
+                if count_required_arity(new_overload) != old_arity {
+                    continue; // arity bucket mismatch
+                }
+                // Shape equality: exact match or bidirectional subtype (structural equivalence)
+                let equal_shape = old_overload == new_overload
+                    || (is_subtype_of(old_overload, new_overload, 0)
+                        && is_subtype_of(new_overload, old_overload, 0))
+                    || overload_params_compatible(old_overload, new_overload);
+                if equal_shape {
+                    consumed[i] = true;
+                    matched = true;
+                    break;
+                }
+            }
+
+            if !matched {
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_OVERLOAD_REMOVED,
@@ -65,24 +85,6 @@ pub fn compare_ref_changes(
                         old_arity, name
                     ),
                 });
-            } else {
-                // Arity matches exist — check if any has compatible param types
-                let has_type_match = arity_matches
-                    .iter()
-                    .any(|new_ol| overload_params_compatible(old_overload, new_ol));
-                if !has_type_match {
-                    findings.push(Finding {
-                        severity: Severity::Major,
-                        rule: RULE_OVERLOAD_REMOVED,
-                        file: file.to_path_buf(),
-                        line,
-                        col,
-                        message: format!(
-                            "overload signature with arity {} had incompatible parameter type changes in `{}`",
-                            old_arity, name
-                        ),
-                    });
-                }
             }
         }
     }
@@ -216,6 +218,7 @@ pub fn compare_ref_changes(
     if old_sym.kind == ExportKind::Default {
         if let (Some(old_kind), Some(new_kind)) = (&old_sym.decl_kind, &new_sym.decl_kind) {
             if old_kind != new_kind {
+                ref_08_fired = true; // SEM-05: record that REF-08 fired for this symbol
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_DEFAULT_EXPORT_CHANGED,
@@ -229,6 +232,12 @@ pub fn compare_ref_changes(
                 });
             }
         }
+    }
+
+    // SEM-05: When REF-08 fired for this symbol, suppress REF-04 (declaration-kind-changed)
+    // to avoid double-reporting the same conceptual change at two rule levels.
+    if ref_08_fired {
+        findings.retain(|f| f.rule != RULE_DECLARATION_KIND_CHANGED);
     }
 
     findings

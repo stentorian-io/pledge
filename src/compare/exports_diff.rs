@@ -238,21 +238,45 @@ fn diff_condition_nodes(
     match (old, new) {
         (ConditionNode::Leaf(old_target), ConditionNode::Leaf(new_target)) => {
             if old_target != new_target {
-                let old_str = old_target
-                    .as_deref()
-                    .unwrap_or("null")
-                    .to_string();
-                let new_str = new_target
-                    .as_deref()
-                    .unwrap_or("null")
-                    .to_string();
-                findings.push(pkg_json_finding(
-                    Severity::Major,
-                    RULE_CONDITION_TARGET_CHANGED,
-                    format!(
-                        "condition target changed in subpath `{subpath}` from `{old_str}` to `{new_str}`"
-                    ),
-                ));
+                let old_is_null = old_target.is_none();
+                let new_is_null = new_target.is_none();
+                let old_str = old_target.as_deref().unwrap_or("null").to_string();
+                let new_str = new_target.as_deref().unwrap_or("null").to_string();
+
+                // SEM-02: Direction-aware null handling.
+                // - null → "./file.js": additive (condition target was absent, now present)
+                //   → Minor, use RULE_SUBPATH_ADDED (not breaking for consumers)
+                // - "./file.js" → null: breaking (condition target removed)
+                //   → Major, RULE_CONDITION_TARGET_CHANGED (keeps existing behavior)
+                match (old_is_null, new_is_null) {
+                    (true, false) => {
+                        findings.push(pkg_json_finding(
+                            Severity::Minor,
+                            RULE_SUBPATH_ADDED,
+                            format!(
+                                "condition target in subpath `{subpath}` became `{new_str}` (was null)"
+                            ),
+                        ));
+                    }
+                    (false, true) => {
+                        findings.push(pkg_json_finding(
+                            Severity::Major,
+                            RULE_CONDITION_TARGET_CHANGED,
+                            format!(
+                                "condition target in subpath `{subpath}` became null (was `{old_str}`)"
+                            ),
+                        ));
+                    }
+                    _ => {
+                        findings.push(pkg_json_finding(
+                            Severity::Major,
+                            RULE_CONDITION_TARGET_CHANGED,
+                            format!(
+                                "condition target changed in subpath `{subpath}` from `{old_str}` to `{new_str}`"
+                            ),
+                        ));
+                    }
+                }
             }
         }
         (ConditionNode::Branch(old_conds), ConditionNode::Branch(new_conds)) => {
