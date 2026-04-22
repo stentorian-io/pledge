@@ -86,6 +86,8 @@ pub struct RawExport {
     /// The syntactic form of the declaration (function, class, interface, etc.).
     /// `None` for re-exports, default expression-form exports, and plain `export { foo }`.
     pub decl_kind: Option<DeclarationKind>,
+    /// TLF-07: true for `export type * from './mod'` (type-only star re-export).
+    pub is_type_only: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +624,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     col,
                     source: Some(src),
                     decl_kind: None,
+                    is_type_only: false,
                 });
             }
         }
@@ -651,6 +654,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 col,
                                 source: Some(src),
                                 decl_kind: None,
+                                is_type_only: false,
                             });
                         }
                     }
@@ -678,6 +682,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: None,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -724,6 +729,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     col,
                     source: None,
                     decl_kind: None,
+                    is_type_only: false,
                 });
             }
         }
@@ -764,6 +770,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         col,
                         source: None,
                         decl_kind: None,
+                        is_type_only: false,
                     });
                 }
             }
@@ -814,6 +821,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: None,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -855,6 +863,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         col,
                         source: Some(src),
                         decl_kind: None,
+                        is_type_only: false,
                     });
                 }
             }
@@ -896,6 +905,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     col,
                                     source: None,
                                     decl_kind: None,
+                                    is_type_only: false,
                                 });
                             }
                         }
@@ -947,6 +957,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: Some(src),
                             decl_kind: None,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -976,6 +987,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     col,
                     source: None,
                     decl_kind: None,
+                    is_type_only: false,
                 });
             }
         }
@@ -1007,6 +1019,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         col,
                         source: None,
                         decl_kind: None,
+                        is_type_only: false,
                     });
                 }
             }
@@ -1037,6 +1050,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: None,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1100,6 +1114,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         col: node.start_position().column as u32 + 1,
                         source: None,
                         decl_kind,
+                        is_type_only: false,
                     });
                 }
             }
@@ -1155,6 +1170,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col: node.start_position().column as u32 + 1,
                             source: None,
                             decl_kind,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1186,6 +1202,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1211,6 +1228,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1238,6 +1256,41 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         e.kind == RawExportKind::StarReexport
                             && e.source.as_deref() == Some(&spec_str)
                     });
+                    // TLF-07: Detect `export type * from '...'`.
+                    // In tree-sitter-typescript 0.23.2, `export type *` is parsed as:
+                    //   export_statement { export, ERROR { type }, *, from, string }
+                    // The `type` keyword is inside an ERROR child, not a direct unnamed child.
+                    // We check both direct children AND ERROR children for the `type` token.
+                    let is_type_only = {
+                        let mut found_type = false;
+                        if let Some(stmt) = node.parent() {
+                            let mut sc = stmt.walk();
+                            for c in stmt.children(&mut sc) {
+                                if !c.is_named()
+                                    && c.utf8_text(source).ok().as_deref() == Some("type")
+                                {
+                                    found_type = true;
+                                    break;
+                                }
+                                if c.kind() == "ERROR" {
+                                    let mut ec = c.walk();
+                                    for inner in c.children(&mut ec) {
+                                        if !inner.is_named()
+                                            && inner.utf8_text(source).ok().as_deref()
+                                                == Some("type")
+                                        {
+                                            found_type = true;
+                                            break;
+                                        }
+                                    }
+                                    if found_type {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        found_type
+                    };
                     if !already {
                         exports.push(RawExport {
                             name: "*".to_string(),
@@ -1246,6 +1299,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col: node.start_position().column as u32 + 1,
                             source: Some(spec_str),
                             decl_kind: None,
+                            is_type_only,
                         });
                     }
                 }
@@ -1296,6 +1350,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: Some(src),
                             decl_kind: None,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1345,6 +1400,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     col,
                     source: Some(src),
                     decl_kind: None,
+                    is_type_only: false,
                 });
             }
         }
@@ -1390,6 +1446,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     col,
                     source: Some(src),
                     decl_kind: None,
+                    is_type_only: false,
                 });
             }
         }
@@ -1413,6 +1470,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: Some(DeclarationKind::Variable),
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1438,6 +1496,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             col,
                             source: None,
                             decl_kind: Some(DeclarationKind::Variable),
+                            is_type_only: false,
                         });
                     }
                 }
@@ -1476,6 +1535,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     col,
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Variable),
+                                    is_type_only: false,
                                 });
                             }
                         }
@@ -1529,6 +1589,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             col,
                                             source: None,
                                             decl_kind: Some(DeclarationKind::Variable),
+                                            is_type_only: false,
                                         });
                                     }
                                 }
@@ -1576,6 +1637,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         col,
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
+                                        is_type_only: false,
                                     });
                                 }
                             }
@@ -1614,6 +1676,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         col,
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
+                                        is_type_only: false,
                                     });
                                 }
                             }
@@ -1651,6 +1714,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         col,
                                         source: None,
                                         decl_kind: Some(DeclarationKind::Variable),
+                                        is_type_only: false,
                                     });
                                 }
                             }
@@ -1689,6 +1753,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 col,
                                 source: None,
                                 decl_kind: Some(DeclarationKind::Class),
+                                is_type_only: false,
                             });
                         }
                     }
@@ -1723,6 +1788,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 col,
                                 source: None,
                                 decl_kind: Some(DeclarationKind::Function),
+                                is_type_only: false,
                             });
                         }
                     }
@@ -1770,6 +1836,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     col,
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Function),
+                                    is_type_only: false,
                                 });
                             }
                         }
@@ -1807,6 +1874,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     col,
                                     source: None,
                                     decl_kind: None,
+                                    is_type_only: false,
                                 });
                             }
                         }
@@ -1853,6 +1921,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 col,
                                                 source: None,
                                                 decl_kind: None,
+                                                is_type_only: false,
                                             });
                                         }
                                     }
@@ -1871,6 +1940,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     col,
                                                     source: None,
                                                     decl_kind: None,
+                                                    is_type_only: false,
                                                 });
                                             }
                                         }
@@ -1914,6 +1984,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     col,
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Namespace),
+                                    is_type_only: false,
                                 });
                             }
                         }
@@ -1958,6 +2029,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             col,
                                             source: None,
                                             decl_kind: Some(DeclarationKind::Namespace),
+                                            is_type_only: false,
                                         });
                                     }
                                 }
@@ -2038,6 +2110,7 @@ fn expand_namespace_members(
                                     col,
                                     source: None,
                                     decl_kind: Some(DeclarationKind::Namespace),
+                                    is_type_only: false,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -2096,6 +2169,7 @@ fn expand_namespace_members(
                             col,
                             source: None,
                             decl_kind,
+                            is_type_only: false,
                         });
                     }
                 }
@@ -2287,22 +2361,90 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
 
                 let visibility = extract_visibility(child, source);
 
-                // Check for static, readonly, abstract keyword children
+                // Check for static, readonly, abstract, accessor keyword children
                 let mut is_static = false;
                 let mut is_abstract = false;
                 let mut is_readonly = false;
+                let mut is_accessor = false; // TLF-06
                 for j in 0..child.child_count() as u32 {
                     if let Some(kw) = child.child(j) {
                         match kw.kind() {
                             "static" => is_static = true,
                             "abstract" => is_abstract = true,
                             "readonly" => is_readonly = true,
+                            "accessor" => is_accessor = true, // TLF-06
                             _ => {}
                         }
                     }
                 }
 
                 let param_count = count_required_params(child);
+
+                // TLF-02: Synthesize Property members from constructor parameter properties.
+                // A parameter property is a constructor parameter with an accessibility modifier
+                // (public/protected/private) or readonly keyword. Bare parameters are NOT
+                // synthesized (Pitfall 4).
+                if name == "constructor" {
+                    // Walk formal_parameters to find parameter properties
+                    let fp_node = child.children(&mut child.walk()).find(|c| c.kind() == "formal_parameters");
+                    if let Some(fp) = fp_node {
+                        let mut fp_cursor = fp.walk();
+                        for param in fp.children(&mut fp_cursor) {
+                            if param.kind() == "required_parameter" || param.kind() == "optional_parameter" {
+                                let is_opt_param = param.kind() == "optional_parameter";
+                                // Check for accessibility_modifier or readonly child
+                                let mut param_vis: Option<crate::types::Visibility> = None;
+                                let mut param_readonly = false;
+                                let mut pp_cursor = param.walk();
+                                for pp_child in param.children(&mut pp_cursor) {
+                                    if pp_child.kind() == "accessibility_modifier" {
+                                        let text = pp_child.utf8_text(source).unwrap_or("");
+                                        param_vis = Some(match text {
+                                            "protected" => crate::types::Visibility::Protected,
+                                            "private" => crate::types::Visibility::Private,
+                                            _ => crate::types::Visibility::Public,
+                                        });
+                                    } else if pp_child.kind() == "readonly" {
+                                        param_readonly = true;
+                                    }
+                                }
+                                // Only synthesize when an accessibility modifier or readonly is present
+                                if param_vis.is_some() || param_readonly {
+                                    // Get the parameter name: prefer `name` field, fallback to
+                                    // first identifier child (tree-sitter 0.23.2 may not always
+                                    // use the field name for parameter identifier nodes).
+                                    let param_name_node = param.child_by_field_name("name")
+                                        .or_else(|| {
+                                            let mut wc = param.walk();
+                                            let found = param
+                                                .children(&mut wc)
+                                                .find(|n| n.kind() == "identifier");
+                                            found
+                                        });
+                                    let param_name = param_name_node
+                                        .and_then(|n| n.utf8_text(source).ok())
+                                        .unwrap_or("")
+                                        .to_string();
+                                    if !param_name.is_empty() {
+                                        members.push(ClassMember {
+                                            name: param_name,
+                                            kind: ClassMemberKind::Property,
+                                            visibility: param_vis.unwrap_or(crate::types::Visibility::Public),
+                                            is_static: false,
+                                            is_abstract: false,
+                                            is_readonly: param_readonly,
+                                            param_count: 0,
+                                            type_signature: None,
+                                            is_optional: is_opt_param,
+                                            is_accessor: false,
+                                            this_param_type: None,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 members.push(ClassMember {
                     name,
@@ -2314,7 +2456,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     param_count,
                     type_signature: None,
                     is_optional: false,
-                    is_accessor: false,
+                    is_accessor,
                     this_param_type: None,
                 });
             }
@@ -2335,11 +2477,13 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
 
                 let mut is_static = false;
                 let mut is_readonly = false;
+                let mut is_accessor = false; // TLF-06: accessor keyword on public_field_definition
                 for j in 0..child.child_count() as u32 {
                     if let Some(kw) = child.child(j) {
                         match kw.kind() {
                             "static" => is_static = true,
                             "readonly" => is_readonly = true,
+                            "accessor" => is_accessor = true, // TLF-06
                             _ => {}
                         }
                     }
@@ -2355,7 +2499,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     param_count: 0,
                     type_signature: None,
                     is_optional: false,
-                    is_accessor: false,
+                    is_accessor,
                     this_param_type: None,
                 });
             }
@@ -2707,14 +2851,71 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
         None => return params,
     };
 
-    let mut cursor = tp_node.walk();
-    for child in tp_node.children(&mut cursor) {
+    // TLF-05: tree-sitter-typescript 0.23.2 does not fully support variance modifiers
+    // (`in T`, `out T`, `in out T`). When encountered, it parses them as:
+    //   type_parameter { name: "in" | "out" }  followed by  ERROR { identifier: "T" }
+    // We collect all children first to allow lookahead for this pattern.
+    let all_children: Vec<tree_sitter::Node> = {
+        let mut wc = tp_node.walk();
+        tp_node.children(&mut wc).collect()
+    };
+
+    let mut i = 0;
+    while i < all_children.len() {
+        let child = all_children[i];
         if child.kind() == "type_parameter" {
-            let name = child
+            let raw_name = child
                 .child_by_field_name("name")
                 .and_then(|n| n.utf8_text(source).ok())
                 .unwrap_or("")
                 .to_string();
+
+            // TLF-05: Detect variance modifiers by checking if the type_parameter's
+            // apparent "name" is actually an `in`/`out` keyword, indicating that
+            // tree-sitter mis-parsed a variance-annotated type parameter.
+            let (name, variance) = {
+                let name_is_variance_kw = matches!(raw_name.as_str(), "in" | "out");
+                if name_is_variance_kw {
+                    // Look for the actual name in the next ERROR sibling
+                    let saw_in = raw_name == "in";
+                    let mut saw_out = raw_name == "out";
+                    let mut real_name = String::new();
+
+                    // The ERROR node immediately following this type_parameter contains
+                    // the real type parameter name (and possibly "out" for `in out T`).
+                    let mut j = i + 1;
+                    while j < all_children.len() && all_children[j].kind() == "ERROR" {
+                        let err = all_children[j];
+                        let mut ec = err.walk();
+                        for err_child in err.children(&mut ec) {
+                            let t = err_child.utf8_text(source).unwrap_or("");
+                            match t {
+                                "out" => saw_out = true,
+                                s if !s.is_empty() && s != "in" => {
+                                    if real_name.is_empty() {
+                                        real_name = s.to_string();
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        j += 1;
+                    }
+                    // Advance i past the consumed ERROR nodes
+                    i = j - 1; // will be incremented to j at end of loop body
+
+                    let variance = match (saw_in, saw_out) {
+                        (true, true) => Some(crate::types::Variance::InOut),
+                        (true, false) => Some(crate::types::Variance::In),
+                        (false, true) => Some(crate::types::Variance::Out),
+                        _ => None,
+                    };
+                    (real_name, variance)
+                } else {
+                    // Standard type parameter (no variance modifier)
+                    (raw_name, None)
+                }
+            };
 
             let constraint_text = child
                 .child_by_field_name("constraint")
@@ -2754,15 +2955,18 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
                 found_const
             };
 
-            params.push(TypeParam {
-                name,
-                constraint_text,
-                default_text,
-                constraint_shape: None, // LSP fills in later for GEN-04
-                is_const,
-                variance: None,
-            });
+            if !name.is_empty() {
+                params.push(TypeParam {
+                    name,
+                    constraint_text,
+                    default_text,
+                    constraint_shape: None, // LSP fills in later for GEN-04
+                    is_const,
+                    variance,
+                });
+            }
         }
+        i += 1;
     }
 
     params
@@ -2990,6 +3194,106 @@ pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node)
         }
     }
     members
+}
+
+/// TLF-01: Extract interface construct signatures (`new (x: T): U` and `abstract new(): T`).
+///
+/// In tree-sitter-typescript 0.23.2 the node kind is `construct_signature`.
+/// It appears as a direct child of `interface_body` / `object_type`.
+pub fn extract_construct_signatures(
+    body_node: tree_sitter::Node,
+    source: &[u8],
+) -> Vec<crate::types::ConstructSignature> {
+    let mut sigs = Vec::new();
+    let mut cursor = body_node.walk();
+    for child in body_node.children(&mut cursor) {
+        if child.kind() == "construct_signature" {
+            let param_count = count_required_params(child);
+            // In tree-sitter-typescript 0.23.2 the return type of a construct_signature
+            // appears as a `type_annotation` child (`: T`), not a named field `return_type`.
+            // Walk children to find it and unwrap the inner type node.
+            let return_text = {
+                let mut cs_cursor = child.walk();
+                let ta_node = child
+                    .children(&mut cs_cursor)
+                    .find(|c| c.kind() == "type_annotation");
+                if let Some(ta) = ta_node {
+                    let mut ta_cursor = ta.walk();
+                    let inner_node = ta.children(&mut ta_cursor).find(|c| c.is_named());
+                    inner_node
+                        .and_then(|inner| inner.utf8_text(source).ok())
+                        .map(String::from)
+                } else {
+                    None
+                }
+            };
+            // Check for `abstract` token (unnamed child before the `new` keyword)
+            let mut is_abstract = false;
+            let mut abs_cursor = child.walk();
+            for ch in child.children(&mut abs_cursor) {
+                if !ch.is_named() && ch.utf8_text(source).ok().as_deref() == Some("abstract") {
+                    is_abstract = true;
+                    break;
+                }
+            }
+            sigs.push(crate::types::ConstructSignature {
+                param_count,
+                return_text,
+                is_abstract,
+            });
+        }
+    }
+    sigs
+}
+
+/// TLF-04: Extract the asserted type from an `asserts x is T` signature.
+///
+/// In tree-sitter-typescript 0.23.2 the asserts annotation appears inside a
+/// `type_predicate_annotation` node (the same container as `x is T` type guards).
+/// Within it, when the `asserts` keyword is present, there may be a `type_predicate`
+/// child or the asserted type may be a direct named child after `is`.
+/// Returns `Some("T")` for `function foo(): asserts x is T`.
+/// Returns `None` for non-assertion functions.
+pub fn extract_assertion_target(fn_node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    let mut cursor = fn_node.walk();
+    for child in fn_node.children(&mut cursor) {
+        if child.kind() == "type_predicate_annotation" {
+            // Look for `asserts` keyword — if present, this is an assertion function
+            let mut saw_asserts = false;
+            let mut inner_cursor = child.walk();
+            for inner_child in child.children(&mut inner_cursor) {
+                if !inner_child.is_named()
+                    && inner_child.utf8_text(source).ok().as_deref() == Some("asserts")
+                {
+                    saw_asserts = true;
+                }
+            }
+            if !saw_asserts {
+                continue;
+            }
+            // Walk type_predicate child or direct type child after `asserts`
+            let mut inner_cursor2 = child.walk();
+            for inner_child in child.children(&mut inner_cursor2) {
+                if inner_child.kind() == "type_predicate" {
+                    // asserts x is T — find the type after `is`
+                    let type_node = inner_child.child_by_field_name("type").or_else(|| {
+                        let mut tc = inner_child.walk();
+                        inner_child
+                            .children(&mut tc)
+                            .filter(|c| c.is_named() && c.kind() != "identifier")
+                            .last()
+                    });
+                    if let Some(tn) = type_node {
+                        return tn.utf8_text(source).ok().map(String::from);
+                    }
+                } else if inner_child.is_named() && inner_child.kind() != "identifier" {
+                    // asserts x (without `is T`) — asserts a boolean condition
+                    // Return None to distinguish from typed asserts
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Extract the text of the first named child of a type_annotation node.
@@ -4617,5 +4921,76 @@ declare global {
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         assert!(exports.iter().all(|e| !e.name.starts_with("augment:")));
     }
-}
 
+    // ── Phase 17 TLF extraction tests ────────────────────────────────────────
+
+    #[test]
+    fn tlf_01_extract_construct_signature() {
+        let src = "interface Foo { new (x: number): Bar; }";
+        let (tree, bytes) = parse_ts(src);
+        let iface_node = first_node_of_kind(tree.root_node(), "interface_declaration").unwrap();
+        // Find interface_body child
+        let body = (0..iface_node.child_count() as u32)
+            .filter_map(|i| iface_node.child(i))
+            .find(|c| c.kind() == "interface_body" || c.kind() == "object_type")
+            .expect("interface body not found");
+        let sigs = extract_construct_signatures(body, &bytes);
+        assert_eq!(sigs.len(), 1, "should extract one construct signature; got: {:?}", sigs);
+        assert_eq!(sigs[0].param_count, 1, "one param");
+        assert_eq!(sigs[0].return_text.as_deref(), Some("Bar"), "return type Bar");
+        assert!(!sigs[0].is_abstract, "not abstract");
+    }
+
+    #[test]
+    fn tlf_02_parameter_properties_synthesized() {
+        let src = "class Foo { constructor(public x: number, private y: string, z: boolean) {} }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        // x and y should be synthesized as Property members
+        let x = members.iter().find(|m| m.name == "x");
+        let y = members.iter().find(|m| m.name == "y");
+        let z = members.iter().find(|m| m.name == "z");
+        assert!(x.is_some(), "x should be synthesized as property; members: {:?}", members.iter().map(|m| &m.name).collect::<Vec<_>>());
+        assert!(y.is_some(), "y should be synthesized as property");
+        assert!(z.is_none(), "z has no modifier — must NOT be synthesized");
+        assert_eq!(x.unwrap().kind, ClassMemberKind::Property);
+        assert_eq!(x.unwrap().visibility, Visibility::Public);
+        assert_eq!(y.unwrap().visibility, Visibility::Private);
+    }
+
+    #[test]
+    fn tlf_05_variance_in_out_extracted() {
+        let src = "type X<in T, out U, in out V> = [T, U, V];";
+        let (tree, bytes) = parse_ts(src);
+        let alias_node = first_node_of_kind(tree.root_node(), "type_alias_declaration").unwrap();
+        // Pass the declaration node (parse_type_params looks up type_parameters internally)
+        let params = parse_type_params(&bytes, alias_node);
+        assert_eq!(params.len(), 3, "three type params; got: {:?}", params.iter().map(|p| &p.name).collect::<Vec<_>>());
+        assert_eq!(params[0].variance, Some(crate::types::Variance::In), "T should be in");
+        assert_eq!(params[1].variance, Some(crate::types::Variance::Out), "U should be out");
+        assert_eq!(params[2].variance, Some(crate::types::Variance::InOut), "V should be in out");
+    }
+
+    #[test]
+    fn tlf_06_accessor_keyword_captured() {
+        let src = "class Foo { accessor bar: number; }";
+        let (tree, bytes) = parse_ts(src);
+        let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
+        let members = parse_class_members(&bytes, class_node);
+        let bar = members.iter().find(|m| m.name == "bar")
+            .expect("bar member should be present");
+        assert!(bar.is_accessor, "bar should have is_accessor=true");
+    }
+
+    #[test]
+    fn tlf_07_export_type_star_is_type_only() {
+        let source = b"export type * from './mod';";
+        let raw = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            raw.iter().any(|e| e.is_type_only),
+            "export type * should produce is_type_only=true; got: {:?}",
+            raw.iter().map(|e| (&e.name, e.is_type_only)).collect::<Vec<_>>()
+        );
+    }
+}

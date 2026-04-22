@@ -375,6 +375,14 @@ pub const RULE_INTERFACE_INDEX_SIGNATURE_CHANGED: &str = "interface-index-signat
 pub const RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED: &str =
     "interface-generic-constraint-tightened";
 
+// ─── Phase 17: TLF — TypeScript language feature rules ──────────────────────
+pub const RULE_CONSTRUCT_SIGNATURE_REMOVED: &str = "construct-signature-removed"; // TLF-01
+pub const RULE_THIS_PARAM_CHANGED: &str = "this-param-changed";                   // TLF-03
+pub const RULE_ASSERTION_WIDENED: &str = "assertion-widened";                     // TLF-04
+pub const RULE_GENERIC_VARIANCE_CHANGED: &str = "generic-variance-changed";       // TLF-05
+pub const RULE_CLASS_ACCESSOR_CHANGED: &str = "class-accessor-changed";           // TLF-06
+pub const RULE_TYPE_ONLY_REEXPORT_CHANGED: &str = "type-only-reexport-changed";   // TLF-07
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -921,5 +929,16 @@ mod tests {
             args: vec![string()],
         };
         assert_eq!(format_type(&gen), "Promise<string>");
+    }
+
+    // ── Phase 17: TLF rule constant values ───────────────────────────────────
+    #[test]
+    fn phase17_tlf_rule_constant_values() {
+        assert_eq!(RULE_CONSTRUCT_SIGNATURE_REMOVED, "construct-signature-removed");
+        assert_eq!(RULE_THIS_PARAM_CHANGED, "this-param-changed");
+        assert_eq!(RULE_ASSERTION_WIDENED, "assertion-widened");
+        assert_eq!(RULE_GENERIC_VARIANCE_CHANGED, "generic-variance-changed");
+        assert_eq!(RULE_CLASS_ACCESSOR_CHANGED, "class-accessor-changed");
+        assert_eq!(RULE_TYPE_ONLY_REEXPORT_CHANGED, "type-only-reexport-changed");
     }
 }
