@@ -101,8 +101,16 @@ fn bun_01_esbuild_export_helper_captures_arrow_getters() {
     "#;
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-    assert!(names.contains(&"foo"), "BUN-01: foo not detected. Got: {:?}", names);
-    assert!(names.contains(&"bar"), "BUN-01: bar not detected. Got: {:?}", names);
+    assert!(
+        names.contains(&"foo"),
+        "BUN-01: foo not detected. Got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"bar"),
+        "BUN-01: bar not detected. Got: {:?}",
+        names
+    );
     assert!(
         !names.contains(&"__esModule"),
         "BUN-07: __esModule must be filtered. Got: {:?}",
@@ -146,9 +154,17 @@ fn bun_03_defprop_alias_declaration_with_object_defineproperty() {
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
     // BUN-02 captures foo from the __export call
-    assert!(names.contains(&"foo"), "BUN-03: foo not captured via __export helper. Got: {:?}", names);
+    assert!(
+        names.contains(&"foo"),
+        "BUN-03: foo not captured via __export helper. Got: {:?}",
+        names
+    );
     // BUN-06a captures bar from Object.defineProperty directly
-    assert!(names.contains(&"bar"), "BUN-03: bar not captured via Object.defineProperty. Got: {:?}", names);
+    assert!(
+        names.contains(&"bar"),
+        "BUN-03: bar not captured via Object.defineProperty. Got: {:?}",
+        names
+    );
 }
 
 #[test]
@@ -161,8 +177,16 @@ fn bun_04_tsc_void_0_placeholders_captured() {
     "#;
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
-    assert!(names.contains(&"foo"), "BUN-04: foo not captured. Got: {:?}", names);
-    assert!(names.contains(&"bar"), "BUN-04: bar not captured (chained LHS). Got: {:?}", names);
+    assert!(
+        names.contains(&"foo"),
+        "BUN-04: foo not captured. Got: {:?}",
+        names
+    );
+    assert!(
+        names.contains(&"bar"),
+        "BUN-04: bar not captured (chained LHS). Got: {:?}",
+        names
+    );
     assert!(
         !names.contains(&"__esModule"),
         "BUN-07: __esModule must be filtered. Got: {:?}",
@@ -183,7 +207,11 @@ fn bun_05_swc_star_reexport_shim_emits_star_reexport() {
     let has_star = raw
         .iter()
         .any(|e| matches!(e.kind, RawExportKind::StarReexport));
-    assert!(has_star, "BUN-05: swc star re-export shim not detected. Got: {:?}", raw);
+    assert!(
+        has_star,
+        "BUN-05: swc star re-export shim not detected. Got: {:?}",
+        raw
+    );
 }
 
 #[test]
@@ -200,7 +228,12 @@ fn bun_06_object_defineproperty_captured() {
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let names: Vec<&str> = raw.iter().map(|e| e.name.as_str()).collect();
     for expected in ["foo", "bar", "baz", "qux", "zap"] {
-        assert!(names.contains(&expected), "BUN-06: {} not captured. Got: {:?}", expected, names);
+        assert!(
+            names.contains(&expected),
+            "BUN-06: {} not captured. Got: {:?}",
+            expected,
+            names
+        );
     }
 }
 
@@ -217,7 +250,11 @@ fn bun_07_esmodule_always_filtered() {
         "BUN-07: __esModule not filtered. Got: {:?}",
         names
     );
-    assert!(names.contains(&"foo"), "BUN-07: valid exports still retained. Got: {:?}", names);
+    assert!(
+        names.contains(&"foo"),
+        "BUN-07: valid exports still retained. Got: {:?}",
+        names
+    );
 }
 
 // ─── CHUNK-01: Hashed chunk filename normalization ──────────────────────────
@@ -252,8 +289,7 @@ fn chunk_01_hashed_filename_normalized_in_pipeline() {
 fn tlf_01_construct_signature_removed_fires_major() {
     let old = vec![make_construct_sig(1, "Foo")];
     let new: Vec<ConstructSignature> = vec![];
-    let findings =
-        compare_construct_signatures(&old, &new, "Iface", &test_file(), 1, 1);
+    let findings = compare_construct_signatures(&old, &new, "Iface", &test_file(), 1, 1);
     assert_eq!(
         findings
             .iter()
@@ -306,7 +342,10 @@ fn tlf_03_this_param_change_fires_major() {
         "TLF-03: expected this-param-changed. Got: {:?}",
         findings
     );
-    let f = findings.iter().find(|f| f.rule == "this-param-changed").unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "this-param-changed")
+        .unwrap();
     assert_eq!(
         f.severity,
         interlint::types::Severity::Major,
@@ -332,7 +371,10 @@ fn tlf_04_assertion_dropped_fires_major() {
         "TLF-04: expected assertion-widened. Got: {:?}",
         findings
     );
-    let f = findings.iter().find(|f| f.rule == "assertion-widened").unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "assertion-widened")
+        .unwrap();
     assert_eq!(
         f.severity,
         interlint::types::Severity::Major,
@@ -346,7 +388,9 @@ fn tlf_05_variance_modifier_change_fires_major() {
     let new = vec![make_type_param("T", None)];
     let findings = compare_type_params(&old, &new, "X", &test_file(), 1, 1);
     assert!(
-        findings.iter().any(|f| f.rule == "generic-variance-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "generic-variance-changed"),
         "TLF-05: expected generic-variance-changed. Got: {:?}",
         findings
     );
@@ -360,14 +404,16 @@ fn tlf_06_accessor_flip_fires_warning() {
 
     let old_shape = make_class(vec![old_member], vec![]);
     let new_shape = make_class(vec![new_member], vec![]);
-    let findings =
-        compare_class_shapes(&old_shape, &new_shape, "MyClass", &test_file(), 1, 1);
+    let findings = compare_class_shapes(&old_shape, &new_shape, "MyClass", &test_file(), 1, 1);
     assert!(
         findings.iter().any(|f| f.rule == "class-accessor-changed"),
         "TLF-06: expected class-accessor-changed. Got: {:?}",
         findings
     );
-    let f = findings.iter().find(|f| f.rule == "class-accessor-changed").unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "class-accessor-changed")
+        .unwrap();
     assert_eq!(
         f.severity,
         interlint::types::Severity::Warning,
@@ -392,10 +438,11 @@ fn tlf_07_export_type_star_is_type_only_flag_set() {
 fn ift_01_interface_property_optional_to_required_fires_major() {
     let old = vec![make_property("x", true, false)];
     let new = vec![make_property("x", false, false)];
-    let findings =
-        compare_interface_members(&old, &new, "Iface", &test_file(), 1, 1);
+    let findings = compare_interface_members(&old, &new, "Iface", &test_file(), 1, 1);
     assert!(
-        findings.iter().any(|f| f.rule == "interface-property-made-required"),
+        findings
+            .iter()
+            .any(|f| f.rule == "interface-property-made-required"),
         "IFT-01: expected interface-property-made-required. Got: {:?}",
         findings
     );
@@ -414,10 +461,11 @@ fn ift_01_interface_property_optional_to_required_fires_major() {
 fn ift_01_required_to_optional_does_not_fire() {
     let old = vec![make_property("x", false, false)];
     let new = vec![make_property("x", true, false)];
-    let findings =
-        compare_interface_members(&old, &new, "Iface", &test_file(), 1, 1);
+    let findings = compare_interface_members(&old, &new, "Iface", &test_file(), 1, 1);
     assert!(
-        !findings.iter().any(|f| f.rule == "interface-property-made-required"),
+        !findings
+            .iter()
+            .any(|f| f.rule == "interface-property-made-required"),
         "IFT-01: required->optional should NOT fire. Got: {:?}",
         findings
     );
@@ -431,19 +479,29 @@ fn ift_02_type_alias_readonly_flip_fires_major() {
     let mut fields_old = BTreeMap::new();
     fields_old.insert(
         "x".to_string(),
-        FieldShape { optional: false, readonly: false, shape: TypeShape::Opaque("number".to_string()) },
+        FieldShape {
+            optional: false,
+            readonly: false,
+            shape: TypeShape::Opaque("number".to_string()),
+        },
     );
     let mut fields_new = BTreeMap::new();
     fields_new.insert(
         "x".to_string(),
-        FieldShape { optional: false, readonly: true, shape: TypeShape::Opaque("number".to_string()) },
+        FieldShape {
+            optional: false,
+            readonly: true,
+            shape: TypeShape::Opaque("number".to_string()),
+        },
     );
 
     let old_shape = TypeShape::Object(fields_old);
     let new_shape = TypeShape::Object(fields_new);
     let findings = diff_types(&old_shape, &new_shape, "MyAlias", &test_file(), 1, 1);
     assert!(
-        findings.iter().any(|f| f.rule == "type-alias-readonly-changed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "type-alias-readonly-changed"),
         "IFT-02: expected type-alias-readonly-changed. Got: {:?}",
         findings
     );
@@ -455,10 +513,11 @@ fn ift_03_constructor_param_optional_to_required_fires_major() {
     // new=[false, false] -> position 1 is now required
     let old_shape = make_class(vec![], vec![false, true]);
     let new_shape = make_class(vec![], vec![false, false]);
-    let findings =
-        compare_class_shapes(&old_shape, &new_shape, "MyClass", &test_file(), 1, 1);
+    let findings = compare_class_shapes(&old_shape, &new_shape, "MyClass", &test_file(), 1, 1);
     assert!(
-        findings.iter().any(|f| f.rule == "constructor-param-made-required"),
+        findings
+            .iter()
+            .any(|f| f.rule == "constructor-param-made-required"),
         "IFT-03: expected constructor-param-made-required. Got: {:?}",
         findings
     );
@@ -556,7 +615,11 @@ fn sem_03_any_to_concrete_fires_narrowing() {
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
-        params: vec![make_param("x", false, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            false,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let findings = diff_types(&old_shape, &new_shape, "myFn", &test_file(), 1, 1);
@@ -611,7 +674,10 @@ fn sem_04_generator_removed_is_major_severity() {
         "SEM-04: expected generator-removed. Got: {:?}",
         findings
     );
-    let f = findings.iter().find(|f| f.rule == "generator-removed").unwrap();
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "generator-removed")
+        .unwrap();
     assert_eq!(
         f.severity,
         interlint::types::Severity::Major,
@@ -660,10 +726,11 @@ fn sem_05_ref_04_suppressed_when_ref_08_fires() {
         type_signature: None,
         type_guard_type: None,
     };
-    let findings =
-        compare_ref_changes(&old_sym, &new_sym, "default", &file, 1, 0, &[], &[]);
+    let findings = compare_ref_changes(&old_sym, &new_sym, "default", &file, 1, 0, &[], &[]);
     // REF-04 should not appear when REF-08 fires
-    let has_ref_04 = findings.iter().any(|f| f.rule == "declaration-kind-changed");
+    let has_ref_04 = findings
+        .iter()
+        .any(|f| f.rule == "declaration-kind-changed");
     let has_ref_08 = findings.iter().any(|f| f.rule == "default-export-changed");
     assert!(
         has_ref_08,
@@ -717,11 +784,19 @@ fn sem_07_unmatched_overload_fires_removed() {
     // old: 2 overloads at arity 1; new: 1 overload at arity 1
     // After consumed-tracking, one should fire overload-removed
     let overload_string = TypeShape::Function {
-        params: vec![make_param("x", false, TypeShape::Opaque("string".to_string()))],
+        params: vec![make_param(
+            "x",
+            false,
+            TypeShape::Opaque("string".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let overload_number = TypeShape::Function {
-        params: vec![make_param("x", false, TypeShape::Opaque("number".to_string()))],
+        params: vec![make_param(
+            "x",
+            false,
+            TypeShape::Opaque("number".to_string()),
+        )],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
 
@@ -816,10 +891,8 @@ fn meta_01_side_effects_false_to_true_fires_warning() {
 
     let findings = compare_metadata(&old_dir, &new_dir);
     assert!(
-        findings
-            .iter()
-            .any(|f| f.rule == "side-effects-widened"
-                && matches!(f.severity, interlint::types::Severity::Warning)),
+        findings.iter().any(|f| f.rule == "side-effects-widened"
+            && matches!(f.severity, interlint::types::Severity::Warning)),
         "META-01: expected side-effects-widened Warning. Got: {:?}",
         findings
     );
@@ -847,7 +920,9 @@ fn meta_02_peer_dep_optional_removed_fires_major() {
 
     let findings = compare_metadata(&old_dir, &new_dir);
     assert!(
-        findings.iter().any(|f| f.rule == "peer-dep-optional-removed"),
+        findings
+            .iter()
+            .any(|f| f.rule == "peer-dep-optional-removed"),
         "META-02: expected peer-dep-optional-removed. Got: {:?}",
         findings
     );
@@ -890,13 +965,21 @@ fn meta_04_internal_tag_excludes_from_comparison() {
     let hidden = exports.iter().find(|e| e.name == "hidden");
     let visible = exports.iter().find(|e| e.name == "visible");
 
-    assert!(hidden.is_some(), "META-04: hidden export missing. Got: {:?}", exports);
+    assert!(
+        hidden.is_some(),
+        "META-04: hidden export missing. Got: {:?}",
+        exports
+    );
     assert!(
         hidden.unwrap().release_tag == Some(ReleaseTag::Internal),
         "META-04: hidden release_tag should be Internal. Got: {:?}",
         hidden.unwrap().release_tag
     );
-    assert!(visible.is_some(), "META-04: visible export missing. Got: {:?}", exports);
+    assert!(
+        visible.is_some(),
+        "META-04: visible export missing. Got: {:?}",
+        exports
+    );
     assert!(
         visible.unwrap().release_tag.is_none(),
         "META-04: visible should have no release_tag. Got: {:?}",
@@ -954,7 +1037,7 @@ fn rob_01_invalid_utf8_does_not_abort() {
     )
     .unwrap();
     // Write invalid UTF-8 bytes as the main file
-    std::fs::write(pkg.join("index.js"), &[0x80u8, 0x81u8, 0x82u8]).unwrap();
+    std::fs::write(pkg.join("index.js"), [0x80u8, 0x81u8, 0x82u8]).unwrap();
 
     // resolve_entry_points should succeed even with invalid UTF-8 in the main file
     let result = resolve_entry_points(pkg);
@@ -1074,9 +1157,24 @@ fn rob_07_widened_dedup_key_preserves_distinct_messages() {
         message: "export `bar` was removed".to_string(),
     };
     // Different messages → both should survive dedup; verify they are distinct
-    let key1 = (&f1.rule, f1.file.clone(), f1.line, f1.col, f1.message.clone());
-    let key2 = (&f2.rule, f2.file.clone(), f2.line, f2.col, f2.message.clone());
-    assert_ne!(key1, key2, "ROB-07: distinct messages should produce distinct dedup keys");
+    let key1 = (
+        &f1.rule,
+        f1.file.clone(),
+        f1.line,
+        f1.col,
+        f1.message.clone(),
+    );
+    let key2 = (
+        &f2.rule,
+        f2.file.clone(),
+        f2.line,
+        f2.col,
+        f2.message.clone(),
+    );
+    assert_ne!(
+        key1, key2,
+        "ROB-07: distinct messages should produce distinct dedup keys"
+    );
 }
 
 // ─── Fixture-based end-to-end tests ─────────────────────────────────────────
@@ -1090,10 +1188,8 @@ fn fixture_esbuild_detects_removed_export_bar() {
         return;
     }
     // Parse exports from old and new dist/index.js and verify "bar" is in old but not new
-    let old_src =
-        std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
-    let new_src =
-        std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
+    let old_src = std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
+    let new_src = std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
 
     let old_exports = parse_exports(&old_src, SourceLanguage::JavaScript).unwrap();
     let new_exports = parse_exports(&new_src, SourceLanguage::JavaScript).unwrap();
@@ -1132,10 +1228,8 @@ fn fixture_tsc_detects_removed_farewell() {
         eprintln!("fixture missing; skipping");
         return;
     }
-    let old_src =
-        std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
-    let new_src =
-        std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
+    let old_src = std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
+    let new_src = std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
 
     let old_exports = parse_exports(&old_src, SourceLanguage::JavaScript).unwrap();
     let new_exports = parse_exports(&new_src, SourceLanguage::JavaScript).unwrap();
@@ -1174,10 +1268,8 @@ fn fixture_swc_detects_removed_helper_via_star_reexport() {
         eprintln!("fixture missing; skipping");
         return;
     }
-    let old_src =
-        std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
-    let new_src =
-        std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
+    let old_src = std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
+    let new_src = std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
 
     let old_exports = parse_exports(&old_src, SourceLanguage::JavaScript).unwrap();
     let new_exports = parse_exports(&new_src, SourceLanguage::JavaScript).unwrap();
@@ -1248,10 +1340,8 @@ fn fixture_vite_chunk_normalization_no_spurious_path_findings() {
         return;
     }
     // Read the index.js entry points from old and new
-    let old_src =
-        std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
-    let new_src =
-        std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
+    let old_src = std::fs::read(old.join("dist/index.js")).expect("old/dist/index.js must exist");
+    let new_src = std::fs::read(new.join("dist/index.js")).expect("new/dist/index.js must exist");
 
     let old_exports = parse_exports(&old_src, SourceLanguage::JavaScript).unwrap();
     let new_exports = parse_exports(&new_src, SourceLanguage::JavaScript).unwrap();
