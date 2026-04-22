@@ -62,7 +62,25 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
                     i += 1;
                 }
                 if i > digits_start {
-                    // Consumed $<digits>. Decide whether to normalize.
+                    // WR-01 (Phase 17 review): after `$<digits>`, check for an identifier-
+                    // continuation char. If present, the `$N` sits MID-identifier
+                    // (e.g., `price$1plus2`) and must NOT be split — we'd otherwise
+                    // concatenate two parse tokens (`price` + `plus2` -> `priceplus2`)
+                    // or, worse, emit `ident` verbatim when it's exported.
+                    if i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                        // Treat the entire span as a single identifier. Emit the
+                        // prefix + `$digits` + the continuation chars verbatim.
+                        out.push_str(&ident);
+                        out.extend(chars[dollar_pos..i].iter());
+                        let rest_start = i;
+                        while i < chars.len() && (chars[i].is_alphanumeric() || chars[i] == '_') {
+                            i += 1;
+                        }
+                        out.extend(chars[rest_start..i].iter());
+                        continue;
+                    }
+
+                    // Pure suffix form `Ident$N` — safe to normalize.
                     if exported_names.contains(&ident) {
                         // Base is exported: emit just `ident` (strip $digits)
                         out.push_str(&ident);
@@ -1642,5 +1660,37 @@ mod sem_08_tests {
     fn sem_08_dollar_without_digits_passthrough() {
         let exp = set(&["Foo"]);
         assert_eq!(normalize_rollup_suffix("Foo$ | Bar", &exp), "Foo$ | Bar");
+    }
+
+    // WR-01 (Phase 17 review): `$N` mid-identifier must NOT split the token.
+    // The stripper previously treated `Foo$1Bar` as `Foo` + consumed `$1` +
+    // new identifier `Bar`, concatenating two parse tokens into `FooBar`.
+    #[test]
+    fn sem_08_wr_01_dollar_n_mid_identifier_preserved() {
+        let exp = set(&["Foo"]); // Foo is exported
+        // `Foo$1Bar` is a single JS-valid identifier — must NOT become `FooBar`.
+        assert_eq!(
+            normalize_rollup_suffix("Foo$1Bar | null", &exp),
+            "Foo$1Bar | null"
+        );
+    }
+
+    #[test]
+    fn sem_08_wr_01_dollar_n_mid_identifier_preserved_unexported_base() {
+        let exp = set(&["Qux"]); // `price` not exported
+        assert_eq!(
+            normalize_rollup_suffix("price$2plus", &exp),
+            "price$2plus"
+        );
+    }
+
+    #[test]
+    fn sem_08_wr_01_dollar_n_mid_identifier_underscore_continuation() {
+        let exp = set(&["Foo"]); // exported base
+        // Underscore as continuation char after `$N` — also mid-identifier, do not split.
+        assert_eq!(
+            normalize_rollup_suffix("Foo$1_tail", &exp),
+            "Foo$1_tail"
+        );
     }
 }
