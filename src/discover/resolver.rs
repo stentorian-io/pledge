@@ -1319,8 +1319,15 @@ mod tests {
             0,
             None,
         );
-        assert!(result.is_ok(), "ROB-01: should not propagate error for invalid UTF-8; got: {:?}", result.err());
-        assert!(!warnings.is_empty(), "ROB-01: expected a ResolveWarning; got none");
+        assert!(
+            result.is_ok(),
+            "ROB-01: should not propagate error for invalid UTF-8; got: {:?}",
+            result.err()
+        );
+        assert!(
+            !warnings.is_empty(),
+            "ROB-01: expected a ResolveWarning; got none"
+        );
     }
 
     // ── ROB-04: JSONC tsconfig parsing (block comments + trailing commas) ────

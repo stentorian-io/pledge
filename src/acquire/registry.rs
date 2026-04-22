@@ -111,9 +111,15 @@ impl NpmClient {
 
     /// Download a tarball from the given URL and return its bytes.
     ///
-    /// Buffers the entire response in memory before returning (not streamed),
-    /// which is required before passing to GzDecoder.
+    /// ROB-06: Streams the response in chunks and enforces a 500MB hard cap.
+    /// If the tarball exceeds the cap, aborts with an error to prevent OOM.
+    /// Streaming also avoids allocating the full response buffer before we know
+    /// the size (the previous `.bytes().await` would allocate Content-Length bytes).
     pub async fn download_tarball(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+        use futures_util::StreamExt;
+
+        const MAX_TARBALL_BYTES: usize = 500 * 1024 * 1024; // 500MB
+
         let resp = self
             .client
             .get(url)
@@ -125,11 +131,18 @@ impl NpmClient {
             bail!("Failed to download tarball from {url}");
         }
 
-        Ok(resp
-            .bytes()
-            .await
-            .context("Failed to read tarball bytes")?
-            .to_vec())
+        let mut stream = resp.bytes_stream();
+        let mut buf = Vec::new();
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.context("Failed to read tarball chunk")?;
+            if buf.len() + chunk.len() > MAX_TARBALL_BYTES {
+                bail!(
+                    "Tarball from {url} exceeds 500MB cap \u{2014} aborting to prevent memory exhaustion"
+                );
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        Ok(buf)
     }
 }
 
@@ -203,6 +216,42 @@ mod tests {
             result.is_ok(),
             "NpmClient::new() should succeed; got: {:?}",
             result.err()
+        );
+    }
+
+    // ── ROB-06: streaming tarball with 500MB cap ──────────────────────────────
+
+    /// Helper that simulates the streaming accumulator logic used in download_tarball.
+    fn accumulate_with_cap(chunks: Vec<Vec<u8>>, cap: usize) -> anyhow::Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        for chunk in chunks {
+            if buf.len() + chunk.len() > cap {
+                anyhow::bail!("exceeds cap");
+            }
+            buf.extend_from_slice(&chunk);
+        }
+        Ok(buf)
+    }
+
+    #[test]
+    fn rob_06_under_cap_accumulates() {
+        let chunks = vec![vec![0u8; 100], vec![1u8; 200]];
+        let result = accumulate_with_cap(chunks, 1000).unwrap();
+        assert_eq!(
+            result.len(),
+            300,
+            "ROB-06: under-cap should accumulate all bytes"
+        );
+    }
+
+    #[test]
+    fn rob_06_over_cap_bails() {
+        let chunks = vec![vec![0u8; 600]];
+        let result = accumulate_with_cap(chunks, 500);
+        assert!(result.is_err(), "ROB-06: over-cap should return Err");
+        assert!(
+            result.unwrap_err().to_string().contains("exceeds"),
+            "ROB-06: error message should contain 'exceeds'"
         );
     }
 }

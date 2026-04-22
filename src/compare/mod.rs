@@ -107,18 +107,14 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     filtered_old.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
-            Some(ReleaseTag::Internal)
-                | Some(ReleaseTag::Alpha)
-                | Some(ReleaseTag::Experimental)
+            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Experimental)
         )
     });
     let mut filtered_new = new.clone();
     filtered_new.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
-            Some(ReleaseTag::Internal)
-                | Some(ReleaseTag::Alpha)
-                | Some(ReleaseTag::Experimental)
+            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Experimental)
         )
     });
 

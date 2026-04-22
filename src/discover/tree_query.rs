@@ -2141,12 +2141,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     // META-03: emit synthetic keys for each top-level member in the body.
                     // Naming convention: `augment:<module>:*<member>`.
                     if let Some(body) = body_node_opt {
-                        emit_augmentation_members(
-                            body,
-                            &module_name,
-                            source,
-                            &mut exports,
-                        );
+                        emit_augmentation_members(body, &module_name, source, &mut exports);
                     }
                 }
             }
@@ -2945,13 +2940,15 @@ fn emit_augmentation_members(
     for child in body.children(&mut cursor) {
         let kind = child.kind();
         let member_name = match kind {
-            "interface_declaration" | "type_alias_declaration" | "class_declaration"
-            | "abstract_class_declaration" | "function_declaration" | "function_signature" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .map(String::from)
-            }
+            "interface_declaration"
+            | "type_alias_declaration"
+            | "class_declaration"
+            | "abstract_class_declaration"
+            | "function_declaration"
+            | "function_signature" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .map(String::from),
             "variable_declaration" | "lexical_declaration" => {
                 // Find first variable_declarator name — collect to avoid borrow issue
                 let mut vc = child.walk();
@@ -6113,7 +6110,9 @@ declare global {
         let source = br#"declare global { interface Window { foo: string; } }"#;
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name.starts_with("augment:global:*Window")),
+            exports
+                .iter()
+                .any(|e| e.name.starts_with("augment:global:*Window")),
             "META-03: declare global member not captured. Got: {:?}",
             exports.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
@@ -6153,8 +6152,7 @@ declare global {
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let e = exports.iter().find(|e| e.name == "plainFn").unwrap();
         assert_eq!(
-            e.release_tag,
-            None,
+            e.release_tag, None,
             "META-04: no tag should yield None; got: {:?}",
             e.release_tag
         );

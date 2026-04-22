@@ -177,7 +177,10 @@ fn resolve_exports_value(
 ) {
     let mut warnings = Vec::new();
     results.extend(resolve_exports_value_with_warnings(
-        value, base_path, condition, &mut warnings,
+        value,
+        base_path,
+        condition,
+        &mut warnings,
     ));
     // Non-standard value warnings are currently discarded here (caller doesn't thread warnings).
     // When callers are updated to thread warnings, pass the vec through.
@@ -642,7 +645,10 @@ mod tests {
         let v = serde_json::json!(false);
         let mut warnings: Vec<String> = Vec::new();
         let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
-        assert!(res.is_empty(), "ROB-03: exports=false should produce empty results");
+        assert!(
+            res.is_empty(),
+            "ROB-03: exports=false should produce empty results"
+        );
         assert!(
             warnings.iter().any(|w| w.contains("false")),
             "ROB-03: expected warning mentioning 'false'; got: {warnings:?}"
@@ -654,7 +660,10 @@ mod tests {
         let v = serde_json::Value::Null;
         let mut warnings: Vec<String> = Vec::new();
         let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
-        assert!(res.is_empty(), "ROB-03: exports=null should produce empty results");
+        assert!(
+            res.is_empty(),
+            "ROB-03: exports=null should produce empty results"
+        );
         assert!(
             warnings.iter().any(|w| w.contains("null")),
             "ROB-03: expected warning mentioning 'null'; got: {warnings:?}"
@@ -667,7 +676,9 @@ mod tests {
         let mut warnings: Vec<String> = Vec::new();
         let _ = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
         assert!(
-            warnings.iter().any(|w| w.contains("42") || w.contains("numeric")),
+            warnings
+                .iter()
+                .any(|w| w.contains("42") || w.contains("numeric")),
             "ROB-03: expected warning mentioning numeric value; got: {warnings:?}"
         );
     }

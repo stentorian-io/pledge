@@ -592,13 +592,20 @@ impl<'a> TypeParser<'a> {
         let mut nesting = 0usize;
         while let Some(c) = self.peek_char() {
             match c {
-                '<' => { nesting += 1; self.advance(); }
+                '<' => {
+                    nesting += 1;
+                    self.advance();
+                }
                 '>' => {
                     self.advance();
                     nesting -= 1;
-                    if nesting == 0 { break; }
+                    if nesting == 0 {
+                        break;
+                    }
                 }
-                _ => { self.advance(); }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -622,10 +629,18 @@ impl<'a> TypeParser<'a> {
                 loop {
                     match self.peek_char() {
                         None => break,
-                        Some('<') => { nesting += 1; self.advance(); }
-                        Some('>') if nesting > 0 => { nesting -= 1; self.advance(); }
+                        Some('<') => {
+                            nesting += 1;
+                            self.advance();
+                        }
+                        Some('>') if nesting > 0 => {
+                            nesting -= 1;
+                            self.advance();
+                        }
                         Some('>') => break, // outer `>` — let expect_char consume it
-                        _ => { self.advance(); }
+                        _ => {
+                            self.advance();
+                        }
                     }
                 }
                 break;

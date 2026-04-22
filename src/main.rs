@@ -5,14 +5,17 @@ use interlint::acquire::{self, AcquireResult};
 use interlint::cli::Cli;
 use interlint::{compare, discover, lsp, report};
 
-/// Remove duplicate findings (same rule + file + line).
+/// Remove duplicate findings by a 5-tuple key: (rule, file, line, col, message).
 ///
-/// When multiple analysis passes detect the same change, keep only the first
-/// occurrence (which is typically from the most specific analysis pass).
+/// ROB-07: The key was widened from (rule, file, line) to include `col` and `message`.
+/// This prevents two findings at the same location but with different messages from being
+/// silently collapsed — e.g., overload-removed and param-type-narrowed at the same line.
+/// Called twice in each pipeline path: once after merging passes, and once after sorting,
+/// to collapse any cross-pass duplicates that the sort may have brought together.
 fn dedup_findings(findings: &mut Vec<interlint::types::Finding>) {
     let mut seen = HashSet::new();
     findings.retain(|f| {
-        let key = (f.rule, f.file.clone(), f.line);
+        let key = (f.rule, f.file.clone(), f.line, f.col, f.message.clone());
         seen.insert(key)
     });
 }
@@ -40,6 +43,62 @@ async fn main() {
             eprintln!("error: {e}");
             std::process::exit(2);
         }
+    }
+}
+
+#[cfg(test)]
+mod rob_07_tests {
+    use interlint::types::{Finding, Severity};
+    use std::path::PathBuf;
+
+    fn make_finding(rule: &'static str, line: u32, col: u32, message: &str) -> Finding {
+        Finding {
+            severity: Severity::Major,
+            rule,
+            file: PathBuf::from("a.ts"),
+            line,
+            col,
+            message: message.into(),
+        }
+    }
+
+    #[test]
+    fn rob_07_different_message_same_line_preserved() {
+        let mut findings = vec![
+            make_finding("r", 1, 1, "first"),
+            make_finding("r", 1, 1, "second"),
+        ];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "ROB-07: same rule/file/line/col but different message must both be retained"
+        );
+    }
+
+    #[test]
+    fn rob_07_identical_fields_deduped() {
+        let mut findings = vec![
+            make_finding("r", 1, 1, "same"),
+            make_finding("r", 1, 1, "same"),
+        ];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "ROB-07: identical 5-tuple must be deduped to 1"
+        );
+    }
+
+    #[test]
+    fn rob_07_different_col_preserved() {
+        let mut findings = vec![make_finding("r", 1, 1, "m"), make_finding("r", 1, 5, "m")];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "ROB-07: different col must be retained as distinct findings"
+        );
     }
 }
 
@@ -74,6 +133,9 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // Deduplicate findings from multiple analysis passes (BUG 7)
             dedup_findings(&mut findings);
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
+            // ROB-07: Second dedup pass after sort — collapses cross-pass duplicates
+            // that the sort may have brought into adjacency.
+            dedup_findings(&mut findings);
             report::print_report(&findings, &all_warnings, false);
 
             if compare::has_breaking_changes(&findings) {
@@ -163,6 +225,9 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
 
             // Re-sort after merging and dedup (Major first, then Minor, then Patch — D-01)
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
+            // ROB-07: Second dedup pass after sort — collapses cross-pass duplicates
+            // that the sort may have brought into adjacency.
+            dedup_findings(&mut findings);
 
             // Step 4: Report
             report::print_report(&findings, &all_warnings, degraded);

@@ -21,9 +21,9 @@ use crate::types::{Finding, Severity};
 // Rule ID constants imported from subtype.rs (single source of truth)
 use super::subtype::{
     RULE_BIN_ENTRY_CHANGED, RULE_ENGINE_ADDED, RULE_ENGINE_BUMPED, RULE_ENTRY_POINT_CHANGED,
-    RULE_MODULE_TYPE_CHANGED, RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED, RULE_PEER_DEP_REMOVED,
-    RULE_PEER_DEP_OPTIONAL_REMOVED, RULE_PLATFORM_NARROWED, RULE_SIDE_EFFECTS_WIDENED,
-    RULE_TYPES_VERSIONS_CHANGED,
+    RULE_MODULE_TYPE_CHANGED, RULE_PEER_DEP_ADDED, RULE_PEER_DEP_BUMPED,
+    RULE_PEER_DEP_OPTIONAL_REMOVED, RULE_PEER_DEP_REMOVED, RULE_PLATFORM_NARROWED,
+    RULE_SIDE_EFFECTS_WIDENED, RULE_TYPES_VERSIONS_CHANGED,
 };
 
 /// Compare package metadata from both package roots and return a list of findings.
@@ -1080,8 +1080,9 @@ mod tests {
         let mut findings = Vec::new();
         compare_side_effects(&old, &new, &mut findings);
         assert!(
-            findings.iter().any(|f| f.rule == "side-effects-widened"
-                && matches!(f.severity, Severity::Warning)),
+            findings.iter().any(
+                |f| f.rule == "side-effects-widened" && matches!(f.severity, Severity::Warning)
+            ),
             "META-01a: expected side-effects-widened Warning; got: {:?}",
             findings
         );
@@ -1148,8 +1149,10 @@ mod tests {
         let mut findings = Vec::new();
         compare_peer_deps_meta_optional(&old, &new, &mut findings);
         assert!(
-            findings.iter().any(|f| f.rule == "peer-dep-optional-removed"
-                && matches!(f.severity, Severity::Major)),
+            findings
+                .iter()
+                .any(|f| f.rule == "peer-dep-optional-removed"
+                    && matches!(f.severity, Severity::Major)),
             "META-02a: expected peer-dep-optional-removed Major; got: {:?}",
             findings
         );
@@ -1162,7 +1165,9 @@ mod tests {
         let mut findings = Vec::new();
         compare_peer_deps_meta_optional(&old, &new, &mut findings);
         assert!(
-            findings.iter().any(|f| f.rule == "peer-dep-optional-removed"),
+            findings
+                .iter()
+                .any(|f| f.rule == "peer-dep-optional-removed"),
             "META-02b: expected peer-dep-optional-removed when entry removed; got: {:?}",
             findings
         );
@@ -1174,7 +1179,9 @@ mod tests {
         let mut findings = Vec::new();
         compare_peer_deps_meta_optional(&v, &v, &mut findings);
         assert!(
-            !findings.iter().any(|f| f.rule == "peer-dep-optional-removed"),
+            !findings
+                .iter()
+                .any(|f| f.rule == "peer-dep-optional-removed"),
             "META-02c: unchanged optional=true should produce no finding; got: {:?}",
             findings
         );
