@@ -237,7 +237,9 @@ pub fn compare_ref_changes(
 /// Count the number of required (non-optional) parameters in a TypeShape::Function.
 fn count_required_arity(shape: &TypeShape) -> usize {
     match shape {
-        TypeShape::Function { params, .. } => params.iter().filter(|p| !p.optional && !p.rest).count(),
+        TypeShape::Function { params, .. } => {
+            params.iter().filter(|p| !p.optional && !p.rest).count()
+        }
         _ => 0,
     }
 }
@@ -317,15 +319,12 @@ fn overload_params_compatible(old: &TypeShape, new: &TypeShape) -> bool {
             if old_required.len() != new_required.len() {
                 return false;
             }
-            old_required
-                .iter()
-                .zip(new_required.iter())
-                .all(|(o, n)| {
-                    // Exact match or subtype relationship in either direction
-                    o.shape == n.shape
-                        || is_subtype_of(&o.shape, &n.shape, 0)
-                        || is_subtype_of(&n.shape, &o.shape, 0)
-                })
+            old_required.iter().zip(new_required.iter()).all(|(o, n)| {
+                // Exact match or subtype relationship in either direction
+                o.shape == n.shape
+                    || is_subtype_of(&o.shape, &n.shape, 0)
+                    || is_subtype_of(&n.shape, &o.shape, 0)
+            })
         }
         _ => false,
     }
@@ -462,19 +461,45 @@ mod tests {
 
     #[test]
     fn test_ref04_interface_to_type_alias() {
-        let old = make_sym("Config", ExportKind::Named, Some(DeclarationKind::Interface));
-        let new = make_sym("Config", ExportKind::Named, Some(DeclarationKind::TypeAlias));
-        let findings =
-            compare_ref_changes(&old, &new, "Config", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
-        assert!(findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED));
+        let old = make_sym(
+            "Config",
+            ExportKind::Named,
+            Some(DeclarationKind::Interface),
+        );
+        let new = make_sym(
+            "Config",
+            ExportKind::Named,
+            Some(DeclarationKind::TypeAlias),
+        );
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "Config",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED));
     }
 
     #[test]
     fn test_ref05_namespace_to_variable() {
         let old = make_sym("MyNS", ExportKind::Named, Some(DeclarationKind::Namespace));
         let new = make_sym("MyNS", ExportKind::Named, Some(DeclarationKind::Variable));
-        let findings =
-            compare_ref_changes(&old, &new, "MyNS", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "MyNS",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
         assert!(findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER));
     }
 
@@ -483,8 +508,16 @@ mod tests {
         let mut old = make_sym("isStr", ExportKind::Named, Some(DeclarationKind::Function));
         old.type_guard_type = Some("string".to_string());
         let new = make_sym("isStr", ExportKind::Named, Some(DeclarationKind::Function));
-        let findings =
-            compare_ref_changes(&old, &new, "isStr", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "isStr",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
         assert!(findings.iter().any(|f| f.rule == RULE_TYPE_GUARD_WIDENED));
     }
 
@@ -506,7 +539,9 @@ mod tests {
             &old_sigs,
             &[],
         );
-        assert!(findings.iter().any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED));
     }
 
     #[test]
@@ -531,7 +566,9 @@ mod tests {
             &old_sigs,
             &new_sigs,
         );
-        assert!(findings.iter().any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED));
         let f = findings
             .iter()
             .find(|f| f.rule == RULE_INDEX_SIGNATURE_CHANGED)
@@ -541,7 +578,11 @@ mod tests {
 
     #[test]
     fn test_ref08_default_export_kind_changed() {
-        let old = make_sym("default", ExportKind::Default, Some(DeclarationKind::Function));
+        let old = make_sym(
+            "default",
+            ExportKind::Default,
+            Some(DeclarationKind::Function),
+        );
         let new = make_sym("default", ExportKind::Default, Some(DeclarationKind::Class));
         let findings = compare_ref_changes(
             &old,
@@ -553,7 +594,9 @@ mod tests {
             &[],
             &[],
         );
-        assert!(findings.iter().any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_DEFAULT_EXPORT_CHANGED));
     }
 
     #[test]
@@ -682,7 +725,9 @@ mod tests {
         let findings =
             compare_ref_changes(&old, &new, "Foo", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
         assert!(
-            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
             "Expected declaration-kind-changed for class->function, got: {:?}",
             findings
         );
@@ -691,11 +736,25 @@ mod tests {
     #[test]
     fn test_ref04_enum_to_interface() {
         let old = make_sym("MyEnum", ExportKind::Named, Some(DeclarationKind::Enum));
-        let new = make_sym("MyEnum", ExportKind::Named, Some(DeclarationKind::Interface));
-        let findings =
-            compare_ref_changes(&old, &new, "MyEnum", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
+        let new = make_sym(
+            "MyEnum",
+            ExportKind::Named,
+            Some(DeclarationKind::Interface),
+        );
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "MyEnum",
+            &PathBuf::from("test.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
         assert!(
-            findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
             "Expected declaration-kind-changed for enum->interface, got: {:?}",
             findings
         );
@@ -709,7 +768,9 @@ mod tests {
         let findings =
             compare_ref_changes(&old, &new, "fn", &PathBuf::from("test.ts"), 1, 1, &[], &[]);
         assert!(
-            !findings.iter().any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
+            !findings
+                .iter()
+                .any(|f| f.rule == RULE_DECLARATION_KIND_CHANGED),
             "Expected no declaration-kind-changed for function->function, got: {:?}",
             findings
         );
@@ -727,8 +788,16 @@ mod tests {
             1,
             1,
         );
-        assert_eq!(findings.len(), 1, "changed this-param should fire; got: {:?}", findings);
-        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_THIS_PARAM_CHANGED);
+        assert_eq!(
+            findings.len(),
+            1,
+            "changed this-param should fire; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings[0].rule,
+            crate::compare::subtype::RULE_THIS_PARAM_CHANGED
+        );
         assert_eq!(findings[0].severity, Severity::Major);
     }
 
@@ -742,8 +811,16 @@ mod tests {
             1,
             1,
         );
-        assert_eq!(findings.len(), 1, "removed this-param should fire; got: {:?}", findings);
-        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_THIS_PARAM_CHANGED);
+        assert_eq!(
+            findings.len(),
+            1,
+            "removed this-param should fire; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings[0].rule,
+            crate::compare::subtype::RULE_THIS_PARAM_CHANGED
+        );
     }
 
     #[test]
@@ -756,7 +833,10 @@ mod tests {
             1,
             1,
         );
-        assert!(findings.is_empty(), "identical this-param should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "identical this-param should produce no findings"
+        );
     }
 
     // ── TLF-04: assertion target widened ─────────────────────────────────────
@@ -771,8 +851,16 @@ mod tests {
             1,
             1,
         );
-        assert_eq!(findings.len(), 1, "removed assertion should fire; got: {:?}", findings);
-        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_ASSERTION_WIDENED);
+        assert_eq!(
+            findings.len(),
+            1,
+            "removed assertion should fire; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings[0].rule,
+            crate::compare::subtype::RULE_ASSERTION_WIDENED
+        );
         assert_eq!(findings[0].severity, Severity::Major);
     }
 
@@ -786,13 +874,19 @@ mod tests {
             1,
             1,
         );
-        assert!(findings.is_empty(), "identical assertion should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "identical assertion should produce no findings"
+        );
     }
 
     #[test]
     fn tlf_04_no_assertion_no_finding() {
         let findings = compare_assertion(None, None, "fn", &PathBuf::from("test.ts"), 1, 1);
-        assert!(findings.is_empty(), "no assertion on either side should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "no assertion on either side should produce no findings"
+        );
     }
 
     #[test]

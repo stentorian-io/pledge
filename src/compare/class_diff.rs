@@ -14,13 +14,14 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, Visibility};
 use super::subtype::{
-    RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_ACCESSOR_CHANGED, RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
-    RULE_CLASS_IMPLEMENTS_REMOVED, RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT,
-    RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED,
-    RULE_CLASS_READONLY_CHANGED, RULE_CLASS_STATIC_TYPE_CHANGED,
+    RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_ACCESSOR_CHANGED,
+    RULE_CLASS_CONSTRUCTOR_PARAM_ADDED, RULE_CLASS_IMPLEMENTS_REMOVED,
+    RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT, RULE_CLASS_METHOD_KIND_CHANGED,
+    RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
+    RULE_CLASS_STATIC_TYPE_CHANGED,
 };
+use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, Visibility};
 
 /// Returns true if visibility was narrowed (a breaking change for consumers).
 ///
@@ -69,14 +70,8 @@ pub fn compare_class_shapes(
     // Breaking: changes the prototype chain; consumers relying on inherited
     // members or instanceof checks will break.
     if old.extends_text != new.extends_text {
-        let old_extends = old
-            .extends_text
-            .as_deref()
-            .unwrap_or("(none)");
-        let new_extends = new
-            .extends_text
-            .as_deref()
-            .unwrap_or("(none)");
+        let old_extends = old.extends_text.as_deref().unwrap_or("(none)");
+        let new_extends = new.extends_text.as_deref().unwrap_or("(none)");
         findings.push(Finding {
             severity: Severity::Major,
             rule: RULE_CLASS_INHERITANCE_CHANGED,
@@ -135,10 +130,7 @@ pub fn compare_class_shapes(
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!(
-                    "method `{}` was removed from class `{}`",
-                    name, symbol_name
-                ),
+                message: format!("method `{}` was removed from class `{}`", name, symbol_name),
             });
         }
     }
@@ -289,7 +281,11 @@ pub fn compare_class_shapes(
             // Breaking: changes call-site semantics (property access vs accessor protocol).
             // Severity: Warning (not Major) because callers still use property syntax.
             if old_member.is_accessor != new_member.is_accessor {
-                let change = if new_member.is_accessor { "added" } else { "removed" };
+                let change = if new_member.is_accessor {
+                    "added"
+                } else {
+                    "removed"
+                };
                 findings.push(Finding {
                     severity: Severity::Warning,
                     rule: RULE_CLASS_ACCESSOR_CHANGED,
@@ -360,9 +356,17 @@ mod tests {
 
     #[test]
     fn test_cls01_constructor_param_added() {
-        let mut old_ctor = make_member("constructor", ClassMemberKind::Constructor, Visibility::Public);
+        let mut old_ctor = make_member(
+            "constructor",
+            ClassMemberKind::Constructor,
+            Visibility::Public,
+        );
         old_ctor.param_count = 1;
-        let mut new_ctor = make_member("constructor", ClassMemberKind::Constructor, Visibility::Public);
+        let mut new_ctor = make_member(
+            "constructor",
+            ClassMemberKind::Constructor,
+            Visibility::Public,
+        );
         new_ctor.param_count = 2;
 
         let old = make_class(vec![old_ctor]);
@@ -383,9 +387,17 @@ mod tests {
     #[test]
     fn test_cls01_negative_param_count_decreased() {
         // Fewer params is not breaking for callers — no CLS-01 finding.
-        let mut old_ctor = make_member("constructor", ClassMemberKind::Constructor, Visibility::Public);
+        let mut old_ctor = make_member(
+            "constructor",
+            ClassMemberKind::Constructor,
+            Visibility::Public,
+        );
         old_ctor.param_count = 2;
-        let mut new_ctor = make_member("constructor", ClassMemberKind::Constructor, Visibility::Public);
+        let mut new_ctor = make_member(
+            "constructor",
+            ClassMemberKind::Constructor,
+            Visibility::Public,
+        );
         new_ctor.param_count = 1;
 
         let old = make_class(vec![old_ctor]);
@@ -537,7 +549,9 @@ mod tests {
             "Changed extends should fire class-inheritance-changed"
         );
         assert!(
-            findings.iter().any(|f| f.message.contains("Base") && f.message.contains("OtherBase")),
+            findings
+                .iter()
+                .any(|f| f.message.contains("Base") && f.message.contains("OtherBase")),
             "Message should include old and new extends"
         );
     }
@@ -583,7 +597,9 @@ mod tests {
             "Changed static member type should fire class-static-type-changed"
         );
         assert!(
-            findings.iter().any(|f| f.message.contains("number") && f.message.contains("string")),
+            findings
+                .iter()
+                .any(|f| f.message.contains("number") && f.message.contains("string")),
             "Message should include old and new types"
         );
     }
@@ -722,8 +738,15 @@ mod tests {
             "accessor flip should fire class-accessor-changed, got: {:?}",
             rules(&findings)
         );
-        let f = findings.iter().find(|f| f.rule == crate::compare::subtype::RULE_CLASS_ACCESSOR_CHANGED).unwrap();
-        assert_eq!(f.severity, Severity::Warning, "class-accessor-changed should be Warning");
+        let f = findings
+            .iter()
+            .find(|f| f.rule == crate::compare::subtype::RULE_CLASS_ACCESSOR_CHANGED)
+            .unwrap();
+        assert_eq!(
+            f.severity,
+            Severity::Warning,
+            "class-accessor-changed should be Warning"
+        );
     }
 
     #[test]
@@ -775,7 +798,11 @@ mod tests {
 
     #[test]
     fn test_identical_shapes_no_findings() {
-        let mut ctor = make_member("constructor", ClassMemberKind::Constructor, Visibility::Public);
+        let mut ctor = make_member(
+            "constructor",
+            ClassMemberKind::Constructor,
+            Visibility::Public,
+        );
         ctor.param_count = 2;
         let method = make_member("doWork", ClassMemberKind::Method, Visibility::Public);
         let mut prop = make_member("name", ClassMemberKind::Property, Visibility::Public);

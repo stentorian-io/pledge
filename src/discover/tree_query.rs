@@ -945,9 +945,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_only_reexport_positions.insert((line, col));
                     // Skip if already captured by non-type-only named re-export query
                     let already = exports.iter().any(|e| {
-                        e.kind == RawExportKind::NamedReexport
-                            && e.line == line
-                            && e.col == col
+                        e.kind == RawExportKind::NamedReexport && e.line == line && e.col == col
                     });
                     if !already {
                         exports.push(RawExport {
@@ -1133,11 +1131,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 for capture in m.captures {
                     if capture.index == 0 {
                         let node = capture.node;
-                        let name =
-                            match node.utf8_text(source) {
-                                Ok(n) => n.to_string(),
-                                Err(_) => continue,
-                            };
+                        let name = match node.utf8_text(source) {
+                            Ok(n) => n.to_string(),
+                            Err(_) => continue,
+                        };
 
                         // Skip if already captured (ambient + non-ambient declarations
                         // on the same symbol would be redundant).
@@ -1266,9 +1263,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         if let Some(stmt) = node.parent() {
                             let mut sc = stmt.walk();
                             for c in stmt.children(&mut sc) {
-                                if !c.is_named()
-                                    && c.utf8_text(source).ok().as_deref() == Some("type")
-                                {
+                                if !c.is_named() && c.utf8_text(source).ok() == Some("type") {
                                     found_type = true;
                                     break;
                                 }
@@ -1276,8 +1271,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     let mut ec = c.walk();
                                     for inner in c.children(&mut ec) {
                                         if !inner.is_named()
-                                            && inner.utf8_text(source).ok().as_deref()
-                                                == Some("type")
+                                            && inner.utf8_text(source).ok() == Some("type")
                                         {
                                             found_type = true;
                                             break;
@@ -1560,7 +1554,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             if top_child.kind() == "export_statement" || top_child.kind() == "ERROR" {
                 let mut ec = top_child.walk();
                 for export_child in top_child.children(&mut ec) {
-                    if export_child.kind() == "ERROR" || export_child.kind() == "expression_statement" {
+                    if export_child.kind() == "ERROR"
+                        || export_child.kind() == "expression_statement"
+                    {
                         if let Ok(text) = export_child.utf8_text(source) {
                             let trimmed = text.trim();
                             let (keyword_len, is_using) = if trimmed.starts_with("await using ") {
@@ -1821,10 +1817,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         let line = name_node.start_position().row as u32 + 1;
                         let col = name_node.start_position().column as u32 + 1;
                         // Update existing entry's decl_kind if already emitted as Variable by query #3
-                        if let Some(existing) = exports
-                            .iter_mut()
-                            .find(|e| e.name == export_name && e.decl_kind == Some(DeclarationKind::Variable))
-                        {
+                        if let Some(existing) = exports.iter_mut().find(|e| {
+                            e.name == export_name && e.decl_kind == Some(DeclarationKind::Variable)
+                        }) {
                             existing.decl_kind = Some(DeclarationKind::Function);
                         } else {
                             let already = exports.iter().any(|e| e.name == export_name);
@@ -1893,16 +1888,27 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
                 // Verify: @lhs is "exports", @mod_obj is "module", @mod_prop is "exports"
-                let lhs = m.captures.iter().find(|c| c.index == 0)
+                let lhs = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
                     .and_then(|c| c.node.utf8_text(source).ok());
-                let mod_obj = m.captures.iter().find(|c| c.index == 1)
+                let mod_obj = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
                     .and_then(|c| c.node.utf8_text(source).ok());
-                let mod_prop = m.captures.iter().find(|c| c.index == 2)
+                let mod_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 2)
                     .and_then(|c| c.node.utf8_text(source).ok());
-                let obj_node = m.captures.iter().find(|c| c.index == 3)
-                    .map(|c| c.node);
+                let obj_node = m.captures.iter().find(|c| c.index == 3).map(|c| c.node);
 
-                if lhs == Some("exports") && mod_obj == Some("module") && mod_prop == Some("exports") {
+                if lhs == Some("exports")
+                    && mod_obj == Some("module")
+                    && mod_prop == Some("exports")
+                {
                     if let Some(obj) = obj_node {
                         // Extract properties from the object literal
                         let mut obj_cursor = obj.walk();
@@ -2020,7 +2026,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 if !has_module_child {
                                     let line = body_node.start_position().row as u32 + 1;
                                     let col = body_node.start_position().column as u32 + 1;
-                                    let already = exports.iter().any(|e| e.name == "augment:global");
+                                    let already =
+                                        exports.iter().any(|e| e.name == "augment:global");
                                     if !already {
                                         exports.push(RawExport {
                                             name: "augment:global".to_string(),
@@ -2115,7 +2122,13 @@ fn expand_namespace_members(
                             }
                             // Recurse into the nested namespace body
                             if let Some(body) = decl_child.child_by_field_name("body") {
-                                expand_namespace_members(body, &nested_prefix, source, exports, language);
+                                expand_namespace_members(
+                                    body,
+                                    &nested_prefix,
+                                    source,
+                                    exports,
+                                    language,
+                                );
                             }
                         }
                     }
@@ -2131,12 +2144,10 @@ fn expand_namespace_members(
                     | "interface_declaration"
                     | "type_alias_declaration"
                     | "enum_declaration"
-                    | "function_signature" => {
-                        decl_child
-                            .child_by_field_name("name")
-                            .and_then(|n| n.utf8_text(source).ok())
-                            .map(|s| s.to_string())
-                    }
+                    | "function_signature" => decl_child
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source).ok())
+                        .map(|s| s.to_string()),
                     "lexical_declaration" => {
                         // export const baz = ... inside namespace
                         let mut found = None;
@@ -2386,11 +2397,15 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                 // synthesized (Pitfall 4).
                 if name == "constructor" {
                     // Walk formal_parameters to find parameter properties
-                    let fp_node = child.children(&mut child.walk()).find(|c| c.kind() == "formal_parameters");
+                    let fp_node = child
+                        .children(&mut child.walk())
+                        .find(|c| c.kind() == "formal_parameters");
                     if let Some(fp) = fp_node {
                         let mut fp_cursor = fp.walk();
                         for param in fp.children(&mut fp_cursor) {
-                            if param.kind() == "required_parameter" || param.kind() == "optional_parameter" {
+                            if param.kind() == "required_parameter"
+                                || param.kind() == "optional_parameter"
+                            {
                                 let is_opt_param = param.kind() == "optional_parameter";
                                 // Check for accessibility_modifier or readonly child
                                 let mut param_vis: Option<crate::types::Visibility> = None;
@@ -2413,8 +2428,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                                     // Get the parameter name: prefer `name` field, fallback to
                                     // first identifier child (tree-sitter 0.23.2 may not always
                                     // use the field name for parameter identifier nodes).
-                                    let param_name_node = param.child_by_field_name("name")
-                                        .or_else(|| {
+                                    let param_name_node =
+                                        param.child_by_field_name("name").or_else(|| {
                                             let mut wc = param.walk();
                                             let found = param
                                                 .children(&mut wc)
@@ -2429,7 +2444,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                                         members.push(ClassMember {
                                             name: param_name,
                                             kind: ClassMemberKind::Property,
-                                            visibility: param_vis.unwrap_or(crate::types::Visibility::Public),
+                                            visibility: param_vis
+                                                .unwrap_or(crate::types::Visibility::Public),
                                             is_static: false,
                                             is_abstract: false,
                                             is_readonly: param_readonly,
@@ -2812,10 +2828,7 @@ pub fn parse_enum_members(source: &[u8], enum_node: tree_sitter::Node) -> Vec<En
             }
             "property_identifier" | "identifier" => {
                 // Bare member with no explicit value (implicit numeric)
-                let name = child
-                    .utf8_text(source)
-                    .unwrap_or("")
-                    .to_string();
+                let name = child.utf8_text(source).unwrap_or("").to_string();
                 members.push(EnumMember {
                     name,
                     raw_value: None,
@@ -3099,7 +3112,10 @@ pub fn find_interface_body(decl_node: tree_sitter::Node) -> Option<tree_sitter::
 /// (same node kinds as .d.ts ambient class members, handled in Phase 13).
 /// All interface members are public (no visibility modifiers in interfaces).
 /// Reuses ClassMember type for consistency with class_diff pipeline.
-pub fn parse_interface_members(source: &[u8], interface_body: tree_sitter::Node) -> Vec<ClassMember> {
+pub fn parse_interface_members(
+    source: &[u8],
+    interface_body: tree_sitter::Node,
+) -> Vec<ClassMember> {
     let mut members = Vec::new();
     let mut cursor = interface_body.walk();
     for child in interface_body.children(&mut cursor) {
@@ -3231,7 +3247,7 @@ pub fn extract_construct_signatures(
             let mut is_abstract = false;
             let mut abs_cursor = child.walk();
             for ch in child.children(&mut abs_cursor) {
-                if !ch.is_named() && ch.utf8_text(source).ok().as_deref() == Some("abstract") {
+                if !ch.is_named() && ch.utf8_text(source).ok() == Some("abstract") {
                     is_abstract = true;
                     break;
                 }
@@ -3262,8 +3278,7 @@ pub fn extract_assertion_target(fn_node: tree_sitter::Node, source: &[u8]) -> Op
             let mut saw_asserts = false;
             let mut inner_cursor = child.walk();
             for inner_child in child.children(&mut inner_cursor) {
-                if !inner_child.is_named()
-                    && inner_child.utf8_text(source).ok().as_deref() == Some("asserts")
+                if !inner_child.is_named() && inner_child.utf8_text(source).ok() == Some("asserts")
                 {
                     saw_asserts = true;
                 }
@@ -3326,9 +3341,7 @@ pub fn extract_this_param_type(fn_node: tree_sitter::Node, source: &[u8]) -> Opt
             for child in param.children(&mut tc) {
                 if child.kind() == "type_annotation" {
                     let mut inner_cursor = child.walk();
-                    let type_node = child
-                        .children(&mut inner_cursor)
-                        .find(|c| c.is_named());
+                    let type_node = child.children(&mut inner_cursor).find(|c| c.is_named());
                     return type_node
                         .and_then(|n| n.utf8_text(source).ok())
                         .map(String::from);
@@ -3575,7 +3588,11 @@ mod tests {
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
         let method = members.iter().find(|m| m.name == "doWork").unwrap();
-        assert_eq!(method.visibility, Visibility::Public, "no modifier = Public");
+        assert_eq!(
+            method.visibility,
+            Visibility::Public,
+            "no modifier = Public"
+        );
     }
 
     #[test]
@@ -3635,7 +3652,11 @@ mod tests {
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
         let getter = members.iter().find(|m| m.name == "foo").unwrap();
-        assert_eq!(getter.kind, ClassMemberKind::Getter, "getter should have kind Getter");
+        assert_eq!(
+            getter.kind,
+            ClassMemberKind::Getter,
+            "getter should have kind Getter"
+        );
     }
 
     #[test]
@@ -3645,7 +3666,11 @@ mod tests {
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
         let setter = members.iter().find(|m| m.name == "foo").unwrap();
-        assert_eq!(setter.kind, ClassMemberKind::Setter, "setter should have kind Setter");
+        assert_eq!(
+            setter.kind,
+            ClassMemberKind::Setter,
+            "setter should have kind Setter"
+        );
     }
 
     #[test]
@@ -3654,7 +3679,11 @@ mod tests {
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
-        assert_eq!(members.len(), 1, "only 'visible' should be present, not '#secret'");
+        assert_eq!(
+            members.len(),
+            1,
+            "only 'visible' should be present, not '#secret'"
+        );
         assert_eq!(members[0].name, "visible");
     }
 
@@ -3664,8 +3693,12 @@ mod tests {
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
-        let getter = members.iter().find(|m| m.name == "x" && m.kind == ClassMemberKind::Getter);
-        let setter = members.iter().find(|m| m.name == "x" && m.kind == ClassMemberKind::Setter);
+        let getter = members
+            .iter()
+            .find(|m| m.name == "x" && m.kind == ClassMemberKind::Getter);
+        let setter = members
+            .iter()
+            .find(|m| m.name == "x" && m.kind == ClassMemberKind::Setter);
         assert!(getter.is_some(), "should have a Getter for x");
         assert!(setter.is_some(), "should have a Setter for x");
     }
@@ -3676,8 +3709,7 @@ mod tests {
     fn test_abstract_class_detection_via_node_kind() {
         let src = "abstract class Base { abstract doWork(): void; }";
         let (tree, bytes) = parse_ts(src);
-        let abs_node =
-            first_node_of_kind(tree.root_node(), "abstract_class_declaration").unwrap();
+        let abs_node = first_node_of_kind(tree.root_node(), "abstract_class_declaration").unwrap();
         assert_eq!(abs_node.kind(), "abstract_class_declaration");
         let shape = parse_class_shape(&bytes, abs_node);
         assert!(shape.is_abstract, "should detect as abstract");
@@ -3844,8 +3876,7 @@ mod tests {
     fn test_parse_type_params_extracts_name_constraint_default() {
         let src = "interface Foo<T extends string = never> {}";
         let (tree, bytes) = parse_ts(src);
-        let iface_node =
-            first_node_of_kind(tree.root_node(), "interface_declaration").unwrap();
+        let iface_node = first_node_of_kind(tree.root_node(), "interface_declaration").unwrap();
         let params = parse_type_params(&bytes, iface_node);
         assert_eq!(params.len(), 1);
         assert_eq!(params[0].name, "T");
@@ -3866,8 +3897,7 @@ mod tests {
     fn test_parse_type_params_multiple_params() {
         let src = "type Pair<K, V> = [K, V];";
         let (tree, bytes) = parse_ts(src);
-        let alias_node =
-            first_node_of_kind(tree.root_node(), "type_alias_declaration").unwrap();
+        let alias_node = first_node_of_kind(tree.root_node(), "type_alias_declaration").unwrap();
         let params = parse_type_params(&bytes, alias_node);
         assert_eq!(params.len(), 2);
         assert_eq!(params[0].name, "K");
@@ -3908,10 +3938,7 @@ mod tests {
         let source = b"export function greet(name: string): string { return name; }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let exp = exports.iter().find(|e| e.name == "greet").unwrap();
-        assert_eq!(
-            exp.decl_kind,
-            Some(crate::types::DeclarationKind::Function)
-        );
+        assert_eq!(exp.decl_kind, Some(crate::types::DeclarationKind::Function));
     }
 
     #[test]
@@ -3966,7 +3993,10 @@ mod tests {
             .children(&mut cursor)
             .find(|c| c.kind() == "required_parameter")
             .unwrap();
-        assert!(is_rest_param(first_param), "...args should be detected as rest param");
+        assert!(
+            is_rest_param(first_param),
+            "...args should be detected as rest param"
+        );
     }
 
     #[test]
@@ -3984,7 +4014,10 @@ mod tests {
             .children(&mut cursor)
             .find(|c| c.kind() == "required_parameter")
             .unwrap();
-        assert!(!is_rest_param(first_param), "normal param should not be rest");
+        assert!(
+            !is_rest_param(first_param),
+            "normal param should not be rest"
+        );
     }
 
     #[test]
@@ -4008,7 +4041,10 @@ mod tests {
         let tree = parser.parse(source, None).unwrap();
         let fn_node = tree.root_node().child(0).unwrap();
         let guard = extract_type_guard(fn_node, source);
-        assert!(guard.is_none(), "regular boolean return should not be a type guard");
+        assert!(
+            guard.is_none(),
+            "regular boolean return should not be a type guard"
+        );
     }
 
     #[test]
@@ -4044,7 +4080,10 @@ mod tests {
             .find(|c| c.kind() == "function_signature")
             .unwrap();
         let shape = build_function_shape_from_node(fn_sig, source);
-        assert!(shape.is_some(), "should build TypeShape from function_signature");
+        assert!(
+            shape.is_some(),
+            "should build TypeShape from function_signature"
+        );
         if let Some(crate::types::shape::TypeShape::Function { params, .. }) = shape {
             assert_eq!(params.len(), 1);
             assert_eq!(params[0].name, "x");
@@ -4135,7 +4174,9 @@ mod tests {
             exports.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
         assert!(
-            !exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            !exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "local name 'foo' should NOT appear as a Named export; got: {:?}",
             exports.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
@@ -4147,7 +4188,9 @@ mod tests {
         let source = b"const foo = 1;\nexport { foo };";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "non-aliased export should use local name 'foo'; got: {:?}",
             exports.iter().map(|e| &e.name).collect::<Vec<_>>()
         );
@@ -4163,14 +4206,20 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "bar" && e.kind == RawExportKind::NamedReexport),
             "aliased re-export 'bar' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
             !exports
                 .iter()
                 .any(|e| e.name == "foo" && e.kind == RawExportKind::NamedReexport),
             "local name 'foo' should NOT appear as a NamedReexport; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4184,14 +4233,20 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "utils" && e.kind == RawExportKind::StarReexport),
             "namespace re-export should use name 'utils'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
             !exports
                 .iter()
                 .any(|e| e.name == "*" && e.source.as_deref() == Some("./mod")),
             "name '*' should not appear for a named namespace re-export; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4205,7 +4260,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "*" && e.kind == RawExportKind::StarReexport),
             "plain star re-export should still produce name='*'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4217,12 +4275,20 @@ mod tests {
         let source = b"export type { Foo };";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
             "export type {{ Foo }} should produce Named export 'Foo'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         let foo = exports.iter().find(|e| e.name == "Foo").unwrap();
-        assert!(foo.decl_kind.is_none(), "type-only export should have no decl_kind");
+        assert!(
+            foo.decl_kind.is_none(),
+            "type-only export should have no decl_kind"
+        );
     }
 
     #[test]
@@ -4231,9 +4297,14 @@ mod tests {
         let source = b"export type { Foo } from './bar';";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::NamedReexport),
+            exports
+                .iter()
+                .any(|e| e.name == "Foo" && e.kind == RawExportKind::NamedReexport),
             "export type {{ Foo }} from './bar' should produce NamedReexport 'Foo'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         let foo = exports
             .iter()
@@ -4252,14 +4323,24 @@ mod tests {
         let source = b"export type { Foo as Bar };";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "Bar" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "Bar" && e.kind == RawExportKind::Named),
             "export type {{ Foo as Bar }} should produce Named export 'Bar'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            !exports.iter().any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
+            !exports
+                .iter()
+                .any(|e| e.name == "Foo" && e.kind == RawExportKind::Named),
             "local name 'Foo' should NOT appear as Named; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4269,14 +4350,24 @@ mod tests {
         let source = b"export const { foo, bar } = obj;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "destructured export 'foo' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
             "destructured export 'bar' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         // Both should have Variable decl_kind
         let foo = exports
@@ -4296,14 +4387,24 @@ mod tests {
         let source = b"export const { foo: renamed } = obj;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "renamed" && e.kind == RawExportKind::Named),
             "pair-pattern destructured export should export 'renamed' (local binding); got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            !exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            !exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "source property key 'foo' should NOT appear as Named export; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4335,8 +4436,14 @@ mod tests {
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let foo_count = exports.iter().filter(|e| e.name == "Foo").count();
         let bar_count = exports.iter().filter(|e| e.name == "Bar").count();
-        assert_eq!(foo_count, 1, "Foo should appear exactly once; got {foo_count}");
-        assert_eq!(bar_count, 1, "Bar should appear exactly once; got {bar_count}");
+        assert_eq!(
+            foo_count, 1,
+            "Foo should appear exactly once; got {foo_count}"
+        );
+        assert_eq!(
+            bar_count, 1,
+            "Bar should appear exactly once; got {bar_count}"
+        );
     }
 
     // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
@@ -4351,7 +4458,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "default" && e.kind == RawExportKind::Default),
             "export = MyClass should produce Default export 'default'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4366,7 +4476,10 @@ mod tests {
         assert!(
             foo.is_some(),
             "export declare function foo should produce Named export 'foo'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             foo.unwrap().decl_kind,
@@ -4386,7 +4499,10 @@ mod tests {
         assert!(
             bar.is_some(),
             "export declare class Bar should produce Named export 'Bar'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             bar.unwrap().decl_kind,
@@ -4406,7 +4522,10 @@ mod tests {
         assert!(
             baz.is_some(),
             "export declare interface Baz should produce Named export 'Baz'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             baz.unwrap().decl_kind,
@@ -4426,7 +4545,10 @@ mod tests {
         assert!(
             version.is_some(),
             "export declare const VERSION should produce Named export 'VERSION'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             version.unwrap().decl_kind,
@@ -4442,14 +4564,24 @@ mod tests {
         let source = b"module.exports = { foo, bar };";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "CJS shorthand export 'foo' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
             "CJS shorthand export 'bar' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4458,14 +4590,24 @@ mod tests {
         let source = b"module.exports = { foo: myFoo, bar: myBar };";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "CJS pair export 'foo' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
             "CJS pair export 'bar' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4474,14 +4616,24 @@ mod tests {
         let source = b"exports.foo = function() {};\nexports.bar = 42;";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && e.kind == RawExportKind::Named),
             "CJS exports.foo should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "bar" && e.kind == RawExportKind::Named),
             "CJS exports.bar should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4494,7 +4646,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "default" && e.kind == RawExportKind::Default),
             "CJS module.exports = MyClass should produce Default 'default'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4506,7 +4661,10 @@ mod tests {
         assert!(
             !exports.iter().any(|e| e.name == "foo"),
             "CJS should not match in TS; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4521,7 +4679,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "Named" && e.kind == RawExportKind::Named),
             "export {{ default as Named }} should export 'Named'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4534,7 +4695,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "default" && e.kind == RawExportKind::NamedReexport),
             "export {{ default }} from './foo' should produce NamedReexport 'default'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4547,7 +4711,10 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "Named" && e.kind == RawExportKind::NamedReexport),
             "export {{ default as Named }} from './foo' should export 'Named'; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4558,14 +4725,24 @@ mod tests {
         let source = b"export const [a, b] = arr;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "a" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "a" && e.kind == RawExportKind::Named),
             "array destructured export 'a' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "b" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "b" && e.kind == RawExportKind::Named),
             "array destructured export 'b' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4578,12 +4755,20 @@ mod tests {
                 .iter()
                 .any(|e| e.name == "first" && e.kind == RawExportKind::Named),
             "array destructured 'first' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "rest" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "rest" && e.kind == RawExportKind::Named),
             "array destructured rest 'rest' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4592,14 +4777,24 @@ mod tests {
         let source = b"export const [a, , c] = arr;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
-            exports.iter().any(|e| e.name == "a" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "a" && e.kind == RawExportKind::Named),
             "array destructured 'a' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert!(
-            exports.iter().any(|e| e.name == "c" && e.kind == RawExportKind::Named),
+            exports
+                .iter()
+                .any(|e| e.name == "c" && e.kind == RawExportKind::Named),
             "array destructured 'c' should appear; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             exports
@@ -4608,7 +4803,10 @@ mod tests {
                 .count(),
             2,
             "holes should not produce Named exports; got: {:?}",
-            exports.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+            exports
+                .iter()
+                .map(|e| (&e.name, &e.kind))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -4661,7 +4859,11 @@ mod tests {
         let source = b"export namespace Foo { export function bar(): void {} }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
-        assert_eq!(count, 1, "Foo.bar should appear exactly once; got count={}", count);
+        assert_eq!(
+            count, 1,
+            "Foo.bar should appear exactly once; got count={}",
+            count
+        );
     }
 
     // ── GAP-16-08: Nested destructuring exports ───────────────────────────────
@@ -4749,8 +4951,7 @@ mod tests {
     #[test]
     fn test_namespace_nested_2_levels() {
         // GAP-16-05: 2-level nested namespace should produce A.B and A.B.baz
-        let source =
-            b"export namespace A { export namespace B { export function baz() {} } }";
+        let source = b"export namespace A { export namespace B { export function baz() {} } }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
         assert!(
@@ -4980,9 +5181,18 @@ declare global {
             .find(|c| c.kind() == "interface_body" || c.kind() == "object_type")
             .expect("interface body not found");
         let sigs = extract_construct_signatures(body, &bytes);
-        assert_eq!(sigs.len(), 1, "should extract one construct signature; got: {:?}", sigs);
+        assert_eq!(
+            sigs.len(),
+            1,
+            "should extract one construct signature; got: {:?}",
+            sigs
+        );
         assert_eq!(sigs[0].param_count, 1, "one param");
-        assert_eq!(sigs[0].return_text.as_deref(), Some("Bar"), "return type Bar");
+        assert_eq!(
+            sigs[0].return_text.as_deref(),
+            Some("Bar"),
+            "return type Bar"
+        );
         assert!(!sigs[0].is_abstract, "not abstract");
     }
 
@@ -4996,7 +5206,11 @@ declare global {
         let x = members.iter().find(|m| m.name == "x");
         let y = members.iter().find(|m| m.name == "y");
         let z = members.iter().find(|m| m.name == "z");
-        assert!(x.is_some(), "x should be synthesized as property; members: {:?}", members.iter().map(|m| &m.name).collect::<Vec<_>>());
+        assert!(
+            x.is_some(),
+            "x should be synthesized as property; members: {:?}",
+            members.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
         assert!(y.is_some(), "y should be synthesized as property");
         assert!(z.is_none(), "z has no modifier — must NOT be synthesized");
         assert_eq!(x.unwrap().kind, ClassMemberKind::Property);
@@ -5011,10 +5225,27 @@ declare global {
         let alias_node = first_node_of_kind(tree.root_node(), "type_alias_declaration").unwrap();
         // Pass the declaration node (parse_type_params looks up type_parameters internally)
         let params = parse_type_params(&bytes, alias_node);
-        assert_eq!(params.len(), 3, "three type params; got: {:?}", params.iter().map(|p| &p.name).collect::<Vec<_>>());
-        assert_eq!(params[0].variance, Some(crate::types::Variance::In), "T should be in");
-        assert_eq!(params[1].variance, Some(crate::types::Variance::Out), "U should be out");
-        assert_eq!(params[2].variance, Some(crate::types::Variance::InOut), "V should be in out");
+        assert_eq!(
+            params.len(),
+            3,
+            "three type params; got: {:?}",
+            params.iter().map(|p| &p.name).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            params[0].variance,
+            Some(crate::types::Variance::In),
+            "T should be in"
+        );
+        assert_eq!(
+            params[1].variance,
+            Some(crate::types::Variance::Out),
+            "U should be out"
+        );
+        assert_eq!(
+            params[2].variance,
+            Some(crate::types::Variance::InOut),
+            "V should be in out"
+        );
     }
 
     #[test]
@@ -5023,7 +5254,9 @@ declare global {
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
-        let bar = members.iter().find(|m| m.name == "bar")
+        let bar = members
+            .iter()
+            .find(|m| m.name == "bar")
             .expect("bar member should be present");
         assert!(bar.is_accessor, "bar should have is_accessor=true");
     }
@@ -5035,7 +5268,9 @@ declare global {
         assert!(
             raw.iter().any(|e| e.is_type_only),
             "export type * should produce is_type_only=true; got: {:?}",
-            raw.iter().map(|e| (&e.name, e.is_type_only)).collect::<Vec<_>>()
+            raw.iter()
+                .map(|e| (&e.name, e.is_type_only))
+                .collect::<Vec<_>>()
         );
     }
 }

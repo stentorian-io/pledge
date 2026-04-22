@@ -17,7 +17,9 @@ pub mod type_diff;
 use std::path::Path;
 
 use crate::discover::tree_query;
-use crate::types::{ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, Severity, TypeParam};
+use crate::types::{
+    ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, Severity, TypeParam,
+};
 
 /// Compare two export maps and produce a list of findings.
 ///
@@ -224,8 +226,10 @@ fn extract_declaration(
     // REQ-14-02: function_expression and generator_function_expression as anonymous defaults
     // Note: tree-sitter uses "function_expression" for `function() {}` values (not "function").
     let is_arrow_function = kind == "arrow_function";
-    let is_anonymous_function =
-        matches!(kind, "function_expression" | "generator_function_expression");
+    let is_anonymous_function = matches!(
+        kind,
+        "function_expression" | "generator_function_expression"
+    );
     let is_anonymous_class = kind == "class";
 
     // Treat arrow functions and anonymous functions as function declarations
@@ -406,55 +410,41 @@ fn find_decl_in_node<'a>(
         let kind = child.kind();
 
         let candidate = match kind {
-            "class_declaration" | "abstract_class_declaration" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "function_declaration" | "generator_function_declaration" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "interface_declaration" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "type_alias_declaration" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "enum_declaration" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "function_signature" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
-            "internal_module" => {
-                child
-                    .child_by_field_name("name")
-                    .and_then(|n| n.utf8_text(source).ok())
-                    .filter(|n| *n == name)
-                    .map(|_| child)
-            }
+            "class_declaration" | "abstract_class_declaration" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "function_declaration" | "generator_function_declaration" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "interface_declaration" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "type_alias_declaration" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "enum_declaration" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "function_signature" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
+            "internal_module" => child
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(source).ok())
+                .filter(|n| *n == name)
+                .map(|_| child),
             "lexical_declaration" | "variable_declaration" => {
                 // REQ-14-01: Look for variable_declarator whose name matches,
                 // then return the value node (arrow_function, function_expression, etc.)
@@ -484,7 +474,8 @@ fn find_decl_in_node<'a>(
                                 }
                             }
                             // Also recurse for nested declarations
-                            if let Some(found) = find_decl_in_node(ld_child, source, name, hint_row) {
+                            if let Some(found) = find_decl_in_node(ld_child, source, name, hint_row)
+                            {
                                 let found_row = found.start_position().row;
                                 let dist = found_row.abs_diff(hint_row);
                                 candidates.push((dist, found));
@@ -760,14 +751,10 @@ pub fn compare_structural_diff(
         };
 
         // Extract all shapes from both versions
-        let Some(old_decl) =
-            extract_declaration(&old_source, &old_lang, name, old_sym.line)
-        else {
+        let Some(old_decl) = extract_declaration(&old_source, &old_lang, name, old_sym.line) else {
             continue;
         };
-        let Some(new_decl) =
-            extract_declaration(&new_source, &new_lang, name, new_sym.line)
-        else {
+        let Some(new_decl) = extract_declaration(&new_source, &new_lang, name, new_sym.line) else {
             continue;
         };
 
@@ -816,8 +803,7 @@ pub fn compare_structural_diff(
 
         // ENUM-01..05: enum diff
         if old_decl.is_enum && new_decl.is_enum {
-            if let (Some(old_shape), Some(new_shape)) =
-                (&old_decl.enum_shape, &new_decl.enum_shape)
+            if let (Some(old_shape), Some(new_shape)) = (&old_decl.enum_shape, &new_decl.enum_shape)
             {
                 findings.extend(enum_diff::compare_enum_shapes(
                     old_shape,
@@ -907,21 +893,20 @@ pub fn compare_structural_diff(
         }
 
         // TLF-01: construct signature removed (interfaces and classes)
-        if (old_decl.is_interface && new_decl.is_interface)
-            || (old_decl.is_class && new_decl.is_class)
+        let is_class_or_interface = (old_decl.is_interface && new_decl.is_interface)
+            || (old_decl.is_class && new_decl.is_class);
+        if is_class_or_interface
+            && (!old_decl.construct_signatures.is_empty()
+                || !new_decl.construct_signatures.is_empty())
         {
-            if !old_decl.construct_signatures.is_empty()
-                || !new_decl.construct_signatures.is_empty()
-            {
-                findings.extend(interface_diff::compare_construct_signatures(
-                    &old_decl.construct_signatures,
-                    &new_decl.construct_signatures,
-                    name,
-                    &new_sym.file,
-                    new_sym.line,
-                    new_sym.col,
-                ));
-            }
+            findings.extend(interface_diff::compare_construct_signatures(
+                &old_decl.construct_signatures,
+                &new_decl.construct_signatures,
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
         }
 
         // TLF-03: this parameter type changed (functions)
@@ -951,10 +936,15 @@ pub fn compare_structural_diff(
         // TLF-07: type-only re-export flag changed
         // Going from a value re-export to type-only re-export (or vice versa) changes
         // the consumer's ability to use the import as a value.
-        if old_sym.is_reexport && new_sym.is_reexport
+        if old_sym.is_reexport
+            && new_sym.is_reexport
             && old_sym.is_type_only != new_sym.is_type_only
         {
-            let change = if new_sym.is_type_only { "became type-only" } else { "became value re-export" };
+            let change = if new_sym.is_type_only {
+                "became type-only"
+            } else {
+                "became value re-export"
+            };
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: subtype::RULE_TYPE_ONLY_REEXPORT_CHANGED,
@@ -965,7 +955,11 @@ pub fn compare_structural_diff(
                     "re-export of `{}` {} — consumers relying on the {} may break",
                     name,
                     change,
-                    if new_sym.is_type_only { "value" } else { "type-only constraint" },
+                    if new_sym.is_type_only {
+                        "value"
+                    } else {
+                        "type-only constraint"
+                    },
                 ),
             });
         }
@@ -1010,10 +1004,16 @@ mod tests {
         // BUG-13-01: export declare class Foo should be found by extract_declaration
         let source = b"export declare class Foo { bar(): void; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
-        assert!(result.is_some(), "extract_declaration should find ambient class Foo");
+        assert!(
+            result.is_some(),
+            "extract_declaration should find ambient class Foo"
+        );
         let decl = result.unwrap();
         assert!(decl.is_class, "declaration should be identified as a class");
-        assert!(decl.class_shape.is_some(), "class shape should be extracted");
+        assert!(
+            decl.class_shape.is_some(),
+            "class shape should be extracted"
+        );
     }
 
     #[test]
@@ -1021,9 +1021,15 @@ mod tests {
         // BUG-13-01: export declare function foo should be found
         let source = b"export declare function foo(x: number): string;";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 1);
-        assert!(result.is_some(), "extract_declaration should find ambient function foo");
+        assert!(
+            result.is_some(),
+            "extract_declaration should find ambient function foo"
+        );
         let decl = result.unwrap();
-        assert!(decl.is_function, "declaration should be identified as a function");
+        assert!(
+            decl.is_function,
+            "declaration should be identified as a function"
+        );
     }
 
     #[test]
@@ -1031,7 +1037,10 @@ mod tests {
         // BUG-13-01: export declare enum Status should be found
         let source = b"export declare enum Status { Active, Inactive }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Status", 1);
-        assert!(result.is_some(), "extract_declaration should find ambient enum Status");
+        assert!(
+            result.is_some(),
+            "extract_declaration should find ambient enum Status"
+        );
         let decl = result.unwrap();
         assert!(decl.is_enum, "declaration should be identified as an enum");
         assert!(decl.enum_shape.is_some(), "enum shape should be extracted");
@@ -1042,9 +1051,15 @@ mod tests {
         // BUG-13-01: export declare interface Opts should be found
         let source = b"export declare interface Opts { debug: boolean; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Opts", 1);
-        assert!(result.is_some(), "extract_declaration should find ambient interface Opts");
+        assert!(
+            result.is_some(),
+            "extract_declaration should find ambient interface Opts"
+        );
         let decl = result.unwrap();
-        assert!(decl.is_interface, "declaration should be identified as an interface");
+        assert!(
+            decl.is_interface,
+            "declaration should be identified as an interface"
+        );
     }
 
     #[test]
@@ -1053,7 +1068,10 @@ mod tests {
         // Simulates a file move where line numbers shift dramatically
         let source = b"\n\n\n\n\n\n\n\n\n\nclass Foo { bar() {} }"; // Foo at line 11
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
-        assert!(result.is_some(), "should find Foo even when hint_line is 1 but actual line is 11");
+        assert!(
+            result.is_some(),
+            "should find Foo even when hint_line is 1 but actual line is 11"
+        );
     }
 
     #[test]
@@ -1071,16 +1089,23 @@ mod tests {
         // REQ-14-01: arrow function exports should be found by extract_declaration
         let source = b"export const add = (x: number, y: number): number => x + y;";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "add", 1);
-        assert!(result.is_some(), "extract_declaration should find arrow function 'add'");
+        assert!(
+            result.is_some(),
+            "extract_declaration should find arrow function 'add'"
+        );
         let decl = result.unwrap();
-        assert!(decl.is_function, "arrow function should be identified as a function");
+        assert!(
+            decl.is_function,
+            "arrow function should be identified as a function"
+        );
         assert!(!decl.is_async, "non-async arrow should not be async");
     }
 
     #[test]
     fn test_async_arrow_function_extract() {
         // REQ-14-01: async arrow function export
-        let source = b"export const fetchData = async (url: string): Promise<string> => { return ''; };";
+        let source =
+            b"export const fetchData = async (url: string): Promise<string> => { return ''; };";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "fetchData", 1);
         assert!(result.is_some(), "should find async arrow function");
         let decl = result.unwrap();
@@ -1095,7 +1120,10 @@ mod tests {
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
         assert!(result.is_some(), "should find anonymous default function");
         let decl = result.unwrap();
-        assert!(decl.is_function, "anonymous function should be identified as function");
+        assert!(
+            decl.is_function,
+            "anonymous function should be identified as function"
+        );
     }
 
     #[test]
@@ -1105,18 +1133,31 @@ mod tests {
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
         assert!(result.is_some(), "should find anonymous default class");
         let decl = result.unwrap();
-        assert!(decl.is_class, "anonymous class should be identified as class");
-        assert!(decl.class_shape.is_some(), "class shape should be extracted");
+        assert!(
+            decl.is_class,
+            "anonymous class should be identified as class"
+        );
+        assert!(
+            decl.class_shape.is_some(),
+            "class shape should be extracted"
+        );
     }
 
     #[test]
     fn test_function_expression_extract() {
         // REQ-14-01: function expression in variable should be found
-        let source = b"export const handler = function(req: Request): Response { return new Response(); };";
+        let source =
+            b"export const handler = function(req: Request): Response { return new Response(); };";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "handler", 1);
-        assert!(result.is_some(), "should find function expression 'handler'");
+        assert!(
+            result.is_some(),
+            "should find function expression 'handler'"
+        );
         let decl = result.unwrap();
-        assert!(decl.is_function, "function expression should be identified as function");
+        assert!(
+            decl.is_function,
+            "function expression should be identified as function"
+        );
     }
 
     #[test]
@@ -1126,7 +1167,10 @@ mod tests {
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "greet", 1);
         assert!(result.is_some());
         let decl = result.unwrap();
-        assert!(!decl.overloads.is_empty(), "arrow function should have overload shape extracted");
+        assert!(
+            !decl.overloads.is_empty(),
+            "arrow function should have overload shape extracted"
+        );
     }
 
     #[test]
@@ -1145,15 +1189,26 @@ mod tests {
         let source = b"export interface Foo { a(): void; }\nexport interface Foo { b(): void; }";
         let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
         let names: Vec<&str> = members.iter().map(|m| m.name.as_str()).collect();
-        assert!(names.contains(&"a"), "member 'a' from first declaration should be present");
-        assert!(names.contains(&"b"), "member 'b' from second declaration should be present");
-        assert_eq!(members.len(), 2, "should have exactly 2 members from merged declarations");
+        assert!(
+            names.contains(&"a"),
+            "member 'a' from first declaration should be present"
+        );
+        assert!(
+            names.contains(&"b"),
+            "member 'b' from second declaration should be present"
+        );
+        assert_eq!(
+            members.len(),
+            2,
+            "should have exactly 2 members from merged declarations"
+        );
     }
 
     #[test]
     fn test_collect_interface_members_dedup() {
         // Same member name in both declarations — first wins
-        let source = b"export interface Foo { x(): void; }\nexport interface Foo { x(): void; y: number; }";
+        let source =
+            b"export interface Foo { x(): void; }\nexport interface Foo { x(): void; y: number; }";
         let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
         let x_count = members.iter().filter(|m| m.name == "x").count();
         assert_eq!(x_count, 1, "duplicate member 'x' should appear only once");
@@ -1171,7 +1226,10 @@ mod tests {
             "extract_declaration should find 'Foo.bar' inside namespace"
         );
         let decl = result.unwrap();
-        assert!(decl.is_function, "Foo.bar should be identified as a function");
+        assert!(
+            decl.is_function,
+            "Foo.bar should be identified as a function"
+        );
     }
 
     #[test]
@@ -1199,8 +1257,14 @@ mod tests {
             "extract_declaration should find CJS inline class as 'default'"
         );
         let decl = result.unwrap();
-        assert!(decl.is_class, "CJS inline class should be identified as class");
-        let shape = decl.class_shape.as_ref().expect("class_shape should be extracted");
+        assert!(
+            decl.is_class,
+            "CJS inline class should be identified as class"
+        );
+        let shape = decl
+            .class_shape
+            .as_ref()
+            .expect("class_shape should be extracted");
         assert!(
             shape.members.iter().any(|m| m.name == "method"),
             "class shape should contain 'method'; got: {:?}",
@@ -1218,7 +1282,10 @@ mod tests {
             "extract_declaration should find CJS inline function as 'default'"
         );
         let decl = result.unwrap();
-        assert!(decl.is_function, "CJS inline function should be identified as function");
+        assert!(
+            decl.is_function,
+            "CJS inline function should be identified as function"
+        );
     }
 
     #[test]
@@ -1231,7 +1298,10 @@ mod tests {
             "extract_declaration should find CJS exports.handler arrow function"
         );
         let decl = result.unwrap();
-        assert!(decl.is_function, "CJS exports.handler arrow should be identified as function");
+        assert!(
+            decl.is_function,
+            "CJS exports.handler arrow should be identified as function"
+        );
         assert!(decl.is_async, "async arrow should have is_async=true");
     }
 
@@ -1253,11 +1323,7 @@ mod tests {
             b"module.exports = class Foo { method() {} }",
         )
         .unwrap();
-        std::fs::write(
-            new_dir.join("index.js"),
-            b"module.exports = class Foo { }",
-        )
-        .unwrap();
+        std::fs::write(new_dir.join("index.js"), b"module.exports = class Foo { }").unwrap();
 
         let file = std::path::PathBuf::from("index.js");
         let sym = ExportSymbol {
@@ -1282,8 +1348,7 @@ mod tests {
         let mut new_exports: ExportMap = HashMap::new();
         new_exports.insert("default".to_string(), sym);
 
-        let findings =
-            compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports);
+        let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports);
         assert!(
             findings.iter().any(|f| f.rule == "class-method-removed"),
             "removing a method from CJS inline class should produce class-method-removed; got: {:?}",
@@ -1338,8 +1403,7 @@ mod tests {
         let mut new_exports_map: ExportMap = HashMap::new();
         new_exports_map.insert("default".to_string(), sym);
 
-        let findings =
-            compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports_map);
+        let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports_map);
         assert!(
             findings.iter().any(|f| f.rule == "sync-to-async"),
             "changing CJS function from sync to async should produce sync-to-async; got: {:?}",

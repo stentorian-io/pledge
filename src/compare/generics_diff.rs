@@ -10,15 +10,12 @@
 
 use std::path::Path;
 
-use crate::types::{Finding, Severity, TypeParam};
 use super::subtype::{
-    format_type, is_subtype_of,
-    RULE_CONST_TYPE_PARAM_CHANGED,
-    RULE_GENERIC_CONSTRAINT_TIGHTENED, RULE_GENERIC_DEFAULT_CHANGED,
-    RULE_GENERIC_PARAM_ADDED, RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
-    RULE_GENERIC_PARAM_REMOVED, RULE_GENERIC_PARAM_REORDERED,
-    RULE_GENERIC_VARIANCE_CHANGED,
+    format_type, is_subtype_of, RULE_CONST_TYPE_PARAM_CHANGED, RULE_GENERIC_CONSTRAINT_TIGHTENED,
+    RULE_GENERIC_DEFAULT_CHANGED, RULE_GENERIC_PARAM_ADDED, RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
+    RULE_GENERIC_PARAM_REMOVED, RULE_GENERIC_PARAM_REORDERED, RULE_GENERIC_VARIANCE_CHANGED,
 };
+use crate::types::{Finding, Severity, TypeParam};
 
 /// Compare two TypeParam slices and produce findings for generic-related breaking changes.
 ///
@@ -244,8 +241,14 @@ fn check_constraint_tightened(
             //
             // To handle `any` correctly: if old is `any` and new is not `any`, it's tightening.
             use crate::types::shape::PrimitiveKind;
-            let old_is_any = matches!(old_shape, crate::types::shape::TypeShape::Primitive(PrimitiveKind::Any));
-            let new_is_any = matches!(new_shape, crate::types::shape::TypeShape::Primitive(PrimitiveKind::Any));
+            let old_is_any = matches!(
+                old_shape,
+                crate::types::shape::TypeShape::Primitive(PrimitiveKind::Any)
+            );
+            let new_is_any = matches!(
+                new_shape,
+                crate::types::shape::TypeShape::Primitive(PrimitiveKind::Any)
+            );
 
             let tightened = if old_is_any && !new_is_any {
                 // was unconstrained (any), now constrained — tightened
@@ -466,7 +469,10 @@ mod tests {
     #[test]
     fn test_empty_params_no_findings() {
         let findings = diff(&[], &[]);
-        assert!(findings.is_empty(), "empty params should produce no findings");
+        assert!(
+            findings.is_empty(),
+            "empty params should produce no findings"
+        );
     }
 
     // ── Test: identical params produce no findings ─────────────────────────────
@@ -491,7 +497,11 @@ mod tests {
         let new = vec![param("T"), param("U")];
         let findings = diff(&old, &new);
 
-        assert_eq!(findings.len(), 1, "should find 1 finding for added required param");
+        assert_eq!(
+            findings.len(),
+            1,
+            "should find 1 finding for added required param"
+        );
         let f = &findings[0];
         assert_eq!(f.rule, RULE_GENERIC_PARAM_ADDED);
         assert_eq!(f.severity, Severity::Major);
@@ -512,7 +522,10 @@ mod tests {
         let f = &findings[0];
         assert_eq!(f.rule, RULE_GENERIC_PARAM_REMOVED);
         assert_eq!(f.severity, Severity::Major);
-        assert!(f.message.contains("U"), "message should mention removed param");
+        assert!(
+            f.message.contains("U"),
+            "message should mention removed param"
+        );
         assert!(f.message.contains("MyFn"), "message should mention symbol");
     }
 
@@ -568,7 +581,11 @@ mod tests {
             .iter()
             .filter(|f| f.rule == RULE_GENERIC_CONSTRAINT_TIGHTENED)
             .collect();
-        assert_eq!(tightened.len(), 1, "different constraint texts should produce finding");
+        assert_eq!(
+            tightened.len(),
+            1,
+            "different constraint texts should produce finding"
+        );
         assert_eq!(tightened[0].severity, Severity::Major);
     }
 
@@ -585,7 +602,10 @@ mod tests {
             .iter()
             .filter(|f| f.rule == RULE_GENERIC_CONSTRAINT_TIGHTENED)
             .collect();
-        assert!(tightened.is_empty(), "same constraint texts should produce no finding");
+        assert!(
+            tightened.is_empty(),
+            "same constraint texts should produce no finding"
+        );
     }
 
     // ── GEN-05: default changed → Major ───────────────────────────────────────
@@ -601,7 +621,11 @@ mod tests {
             .iter()
             .filter(|f| f.rule == RULE_GENERIC_DEFAULT_CHANGED)
             .collect();
-        assert_eq!(default_findings.len(), 1, "changed default should produce finding");
+        assert_eq!(
+            default_findings.len(),
+            1,
+            "changed default should produce finding"
+        );
         assert_eq!(default_findings[0].severity, Severity::Major);
         assert!(default_findings[0].message.contains("T"));
         assert!(default_findings[0].message.contains("string"));
@@ -622,7 +646,11 @@ mod tests {
             .iter()
             .filter(|f| f.rule == RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT)
             .collect();
-        assert_eq!(added_with_default.len(), 1, "should detect added param with default");
+        assert_eq!(
+            added_with_default.len(),
+            1,
+            "should detect added param with default"
+        );
         assert_eq!(added_with_default[0].severity, Severity::Minor);
         assert!(added_with_default[0].message.contains("U"));
         assert!(added_with_default[0].message.contains("string"));
@@ -651,7 +679,9 @@ mod tests {
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(
-            findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            findings
+                .iter()
+                .any(|f| f.rule == "const-type-param-changed"),
             "should detect const removal; got: {:?}",
             findings
         );
@@ -677,7 +707,9 @@ mod tests {
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(
-            findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            findings
+                .iter()
+                .any(|f| f.rule == "const-type-param-changed"),
             "should detect const addition; got: {:?}",
             findings
         );
@@ -703,7 +735,9 @@ mod tests {
         }];
         let findings = compare_type_params(&old, &new, "Foo", &file(), 1, 1);
         assert!(
-            !findings.iter().any(|f| f.rule == "const-type-param-changed"),
+            !findings
+                .iter()
+                .any(|f| f.rule == "const-type-param-changed"),
             "should not fire for unchanged const; got: {:?}",
             findings
         );
@@ -720,12 +754,21 @@ mod tests {
         new_p.variance = Some(Variance::Out);
         let findings = diff(&[old_p], &[new_p]);
         assert!(
-            findings.iter().any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
+            findings
+                .iter()
+                .any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
             "variance change should fire generic-variance-changed, got: {:?}",
             findings
         );
-        let f = findings.iter().find(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED).unwrap();
-        assert_eq!(f.severity, Severity::Major, "generic-variance-changed should be Major");
+        let f = findings
+            .iter()
+            .find(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED)
+            .unwrap();
+        assert_eq!(
+            f.severity,
+            Severity::Major,
+            "generic-variance-changed should be Major"
+        );
     }
 
     #[test]
@@ -737,7 +780,9 @@ mod tests {
         new_p.variance = Some(Variance::In);
         let findings = diff(&[old_p], &[new_p]);
         assert!(
-            !findings.iter().any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
+            !findings
+                .iter()
+                .any(|f| f.rule == crate::compare::subtype::RULE_GENERIC_VARIANCE_CHANGED),
             "unchanged variance should NOT fire"
         );
     }

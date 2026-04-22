@@ -8,14 +8,14 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use super::subtype::{
+    RULE_CONSTRUCT_SIGNATURE_REMOVED, RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED,
+    RULE_INTERFACE_INDEX_SIGNATURE_CHANGED, RULE_INTERFACE_MEMBER_ADDED,
+    RULE_INTERFACE_MEMBER_REMOVED, RULE_INTERFACE_PARAM_COUNT_CHANGED,
+    RULE_INTERFACE_READONLY_CHANGED,
+};
 use crate::discover::tree_query::IndexSignature;
 use crate::types::{ClassMember, ClassMemberKind, ConstructSignature, Finding, Severity};
-use super::subtype::{
-    RULE_CONSTRUCT_SIGNATURE_REMOVED,
-    RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED, RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
-    RULE_INTERFACE_MEMBER_ADDED, RULE_INTERFACE_MEMBER_REMOVED,
-    RULE_INTERFACE_PARAM_COUNT_CHANGED, RULE_INTERFACE_READONLY_CHANGED,
-};
 
 /// Compare interface members from old and new versions.
 ///
@@ -63,7 +63,11 @@ pub fn compare_interface_members(
             // Phase 17: use proper is_optional field (replaces type_signature=="optional" stopgap)
             let is_optional = new_member.is_optional;
             findings.push(Finding {
-                severity: if is_optional { Severity::Minor } else { Severity::Major },
+                severity: if is_optional {
+                    Severity::Minor
+                } else {
+                    Severity::Major
+                },
                 rule: RULE_INTERFACE_MEMBER_ADDED,
                 file: file.to_path_buf(),
                 line,
@@ -166,9 +170,10 @@ fn has_tighter_generic_constraint(old_sig: &str, new_sig: &str) -> bool {
     }
     if old_has_extends && new_has_extends {
         // Both have extends — extract and compare the constraint text
-        if let (Some(old_c), Some(new_c)) =
-            (extract_extends_constraint(old_sig), extract_extends_constraint(new_sig))
-        {
+        if let (Some(old_c), Some(new_c)) = (
+            extract_extends_constraint(old_sig),
+            extract_extends_constraint(new_sig),
+        ) {
             return old_c != new_c;
         }
     }
@@ -251,7 +256,9 @@ pub fn compare_construct_signatures(
     let mut findings = Vec::new();
 
     for old_sig in old_sigs {
-        let matched = new_sigs.iter().any(|n| n.param_count == old_sig.param_count);
+        let matched = new_sigs
+            .iter()
+            .any(|n| n.param_count == old_sig.param_count);
         if !matched {
             findings.push(Finding {
                 severity: Severity::Major,
@@ -475,10 +482,16 @@ mod tests {
             "Adding readonly should fire interface-readonly-changed, got: {:?}",
             rules(&findings)
         );
-        let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "interface-readonly-changed")
+            .unwrap();
         assert_eq!(f.severity, Severity::Major);
         assert!(f.message.contains("added"), "Message should say 'added'");
-        assert!(f.message.contains("`count`"), "Message should include property name");
+        assert!(
+            f.message.contains("`count`"),
+            "Message should include property name"
+        );
     }
 
     #[test]
@@ -491,9 +504,15 @@ mod tests {
             "Removing readonly should fire interface-readonly-changed, got: {:?}",
             rules(&findings)
         );
-        let f = findings.iter().find(|f| f.rule == "interface-readonly-changed").unwrap();
+        let f = findings
+            .iter()
+            .find(|f| f.rule == "interface-readonly-changed")
+            .unwrap();
         assert_eq!(f.severity, Severity::Major);
-        assert!(f.message.contains("removed"), "Message should say 'removed'");
+        assert!(
+            f.message.contains("removed"),
+            "Message should say 'removed'"
+        );
     }
 
     #[test]
@@ -530,7 +549,10 @@ mod tests {
     fn test_generic_constraint_tightened_fires() {
         // Old: no extends, new: adds extends constraint
         let old = vec![make_method_with_sig("process", "<T>(item: T) => void")];
-        let new = vec![make_method_with_sig("process", "<T extends object>(item: T) => void")];
+        let new = vec![make_method_with_sig(
+            "process",
+            "<T extends object>(item: T) => void",
+        )];
         let findings = run(&old, &new);
         assert!(
             rules(&findings).contains(&"interface-generic-constraint-tightened"),
@@ -560,10 +582,7 @@ mod tests {
 
     // ── compare_interface_index_signatures ───────────────────────────────────
 
-    fn run_index(
-        old: &[IndexSignature],
-        new: &[IndexSignature],
-    ) -> Vec<Finding> {
+    fn run_index(old: &[IndexSignature], new: &[IndexSignature]) -> Vec<Finding> {
         compare_interface_index_signatures(old, new, "MyInterface", &file(), 1, 0)
     }
 
@@ -637,17 +656,34 @@ mod tests {
             is_abstract: false,
         }];
         let new_sigs: Vec<ConstructSignature> = vec![];
-        let findings = compare_construct_signatures(&old_sigs, &new_sigs, "MyInterface", &file(), 1, 1);
-        assert_eq!(findings.len(), 1, "removed construct signature should fire; got: {:?}", findings);
-        assert_eq!(findings[0].rule, crate::compare::subtype::RULE_CONSTRUCT_SIGNATURE_REMOVED);
+        let findings =
+            compare_construct_signatures(&old_sigs, &new_sigs, "MyInterface", &file(), 1, 1);
+        assert_eq!(
+            findings.len(),
+            1,
+            "removed construct signature should fire; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings[0].rule,
+            crate::compare::subtype::RULE_CONSTRUCT_SIGNATURE_REMOVED
+        );
         assert_eq!(findings[0].severity, crate::types::Severity::Major);
     }
 
     #[test]
     fn tlf_01_construct_signature_unchanged_no_finding() {
         use crate::types::ConstructSignature;
-        let sig = ConstructSignature { param_count: 1, return_text: Some("Foo".into()), is_abstract: false };
-        let findings = compare_construct_signatures(&[sig.clone()], &[sig], "MyInterface", &file(), 1, 1);
-        assert!(findings.is_empty(), "identical construct signatures should produce no findings");
+        let sig = ConstructSignature {
+            param_count: 1,
+            return_text: Some("Foo".into()),
+            is_abstract: false,
+        };
+        let findings =
+            compare_construct_signatures(&[sig.clone()], &[sig], "MyInterface", &file(), 1, 1);
+        assert!(
+            findings.is_empty(),
+            "identical construct signatures should produce no findings"
+        );
     }
 }
