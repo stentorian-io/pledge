@@ -20,6 +20,97 @@ pub struct TsconfigPaths {
     pub paths: std::collections::HashMap<String, Vec<String>>,
 }
 
+/// ROB-04: Strip JSONC syntax (line comments, block comments, trailing commas) before
+/// handing to serde_json. This covers the full JSONC feature set used by tsconfig.json.
+///
+/// The state machine correctly handles strings — comment markers inside string literals
+/// are treated as regular characters. Unbalanced block-comment delimiters (e.g., `/*`
+/// without a matching `*/`) are handled safely: the inner loop terminates at EOF.
+fn strip_jsonc(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut string_char = b'"';
+
+    while i < bytes.len() {
+        let c = bytes[i];
+
+        if in_string {
+            out.push(c as char);
+            if c == b'\\' && i + 1 < bytes.len() {
+                // escape sequence — copy next char verbatim
+                out.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            if c == string_char {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+
+        // Start of a string
+        if c == b'"' || c == b'\'' {
+            in_string = true;
+            string_char = c;
+            out.push(c as char);
+            i += 1;
+            continue;
+        }
+
+        // Line comment: // ...
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            // Skip until newline (preserve the newline itself for line counting)
+            i += 2;
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+
+        // Block comment: /* ... */
+        if c == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            if i + 1 < bytes.len() {
+                i += 2; // consume the closing */
+            }
+            continue;
+        }
+
+        out.push(c as char);
+        i += 1;
+    }
+
+    // Second pass: strip trailing commas before `}` or `]`
+    let mut result = String::with_capacity(out.len());
+    let bytes2 = out.as_bytes();
+    let mut j = 0;
+    while j < bytes2.len() {
+        let c = bytes2[j];
+        if c == b',' {
+            // Lookahead past whitespace for } or ]
+            let mut k = j + 1;
+            while k < bytes2.len() && bytes2[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k < bytes2.len() && (bytes2[k] == b'}' || bytes2[k] == b']') {
+                // Skip this trailing comma
+                j += 1;
+                continue;
+            }
+        }
+        result.push(c as char);
+        j += 1;
+    }
+
+    result
+}
+
 /// Parse `tsconfig.json` from `pkg_root` and extract `compilerOptions.paths` and `compilerOptions.baseUrl`.
 ///
 /// Returns `None` if tsconfig.json doesn't exist or is unparseable.
@@ -27,19 +118,9 @@ pub struct TsconfigPaths {
 pub fn parse_tsconfig_paths(pkg_root: &Path) -> Option<TsconfigPaths> {
     let tsconfig_path = pkg_root.join("tsconfig.json");
     let content = std::fs::read_to_string(&tsconfig_path).ok()?;
-    // tsconfig.json may have comments — strip // line comments before parsing
-    let stripped: String = content
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim();
-            if trimmed.starts_with("//") {
-                ""
-            } else {
-                line
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // ROB-04: tsconfig.json is JSONC — strip line comments, block comments, and
+    // trailing commas before handing to serde_json.
+    let stripped = strip_jsonc(&content);
     let json: serde_json::Value = serde_json::from_str(&stripped).ok()?;
 
     let compiler_opts = json.get("compilerOptions")?;
@@ -242,10 +323,46 @@ pub fn collect_exports(
         }
     };
 
-    let source = std::fs::read(&canonical)
-        .with_context(|| format!("failed to read {}", canonical.display()))?;
+    // ROB-01: Read the file bytes, then validate UTF-8 before passing to the parser.
+    // tree-sitter accepts raw bytes but subsequent processing expects valid UTF-8.
+    // Invalid UTF-8 (e.g., from binary blobs accidentally named .ts) is treated as
+    // a per-file warning rather than aborting analysis on remaining files.
+    let source = match std::fs::read(&canonical) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            warnings.push(ResolveWarning::new(format!(
+                "failed to read {}: {} \u{2014} skipping file",
+                canonical.display(),
+                e
+            )));
+            return Ok(());
+        }
+    };
 
-    let raw_exports = parse_exports(&source, lang)?;
+    // ROB-01: Validate UTF-8 explicitly. tree-sitter can technically handle arbitrary
+    // bytes, but a file that is not valid UTF-8 is almost certainly not a real JS/TS
+    // source file; treat it as a parse failure and emit a warning.
+    if std::str::from_utf8(&source).is_err() {
+        warnings.push(ResolveWarning::new(format!(
+            "parse failed for {}: invalid UTF-8 encoding \u{2014} skipping file",
+            canonical.display()
+        )));
+        return Ok(());
+    }
+
+    // ROB-01: parse_exports Err is treated as a per-file warning rather than a
+    // global error — this keeps analysis running on remaining files.
+    let raw_exports = match parse_exports(&source, lang) {
+        Ok(rx) => rx,
+        Err(e) => {
+            warnings.push(ResolveWarning::new(format!(
+                "parse failed for {}: {} \u{2014} skipping file",
+                canonical.display(),
+                e
+            )));
+            return Ok(());
+        }
+    };
 
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
     // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
@@ -1171,6 +1288,82 @@ mod tests {
         assert_eq!(
             normalize_chunk_path(p).to_string_lossy(),
             "pkg/dist/chunks/chunk-*.mjs"
+        );
+    }
+
+    // ── ROB-01: UTF-8 / parse failure → per-file warning ────────────────────
+
+    #[test]
+    fn rob_01_invalid_utf8_produces_warning_not_abort() {
+        let dir = tempfile::tempdir().unwrap();
+        let pkg = dir.path();
+        std::fs::create_dir_all(pkg.join("src")).unwrap();
+        std::fs::write(
+            pkg.join("package.json"),
+            r#"{"name":"t","version":"1.0.0","main":"./src/index.ts"}"#,
+        )
+        .unwrap();
+        // Write invalid UTF-8 bytes to the source file
+        std::fs::write(pkg.join("src/index.ts"), &[0x80u8, 0x81u8]).unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        let result = collect_exports(
+            &pkg.join("src/index.ts"),
+            pkg,
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+        );
+        assert!(result.is_ok(), "ROB-01: should not propagate error for invalid UTF-8; got: {:?}", result.err());
+        assert!(!warnings.is_empty(), "ROB-01: expected a ResolveWarning; got none");
+    }
+
+    // ── ROB-04: JSONC tsconfig parsing (block comments + trailing commas) ────
+
+    #[test]
+    fn rob_04_tsconfig_block_comments_stripped() {
+        let input = r#"{
+            "compilerOptions": {
+                /* multiline
+                   comment */
+                "paths": { "@/*": ["./src/*"] }
+            }
+        }"#;
+        let cleaned = strip_jsonc(input);
+        let parsed: serde_json::Value = serde_json::from_str(&cleaned).expect("should parse");
+        assert!(
+            parsed["compilerOptions"]["paths"]["@/*"][0].as_str() == Some("./src/*"),
+            "ROB-04: block comment not stripped; cleaned: {:?}",
+            cleaned
+        );
+    }
+
+    #[test]
+    fn rob_04_tsconfig_trailing_comma_accepted() {
+        let input = r#"{ "paths": { "@/*": ["./src/*"], }, }"#;
+        let cleaned = strip_jsonc(input);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
+        assert!(
+            parsed.is_ok(),
+            "ROB-04: trailing comma not stripped. Got: {cleaned}"
+        );
+    }
+
+    #[test]
+    fn rob_04_tsconfig_line_comment_regression() {
+        // Regression: existing line comment stripping must still work
+        let input = r#"{ "paths": { "@/*": ["./src/*"] // a comment
+        } }"#;
+        let cleaned = strip_jsonc(input);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
+        assert!(
+            parsed.is_ok(),
+            "ROB-04: line comment regression — cleaned: {cleaned}"
         );
     }
 }

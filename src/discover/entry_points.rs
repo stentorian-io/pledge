@@ -175,6 +175,26 @@ fn resolve_exports_value(
     condition: Option<&str>,
     results: &mut Vec<EntryPoint>,
 ) {
+    let mut warnings = Vec::new();
+    results.extend(resolve_exports_value_with_warnings(
+        value, base_path, condition, &mut warnings,
+    ));
+    // Non-standard value warnings are currently discarded here (caller doesn't thread warnings).
+    // When callers are updated to thread warnings, pass the vec through.
+    let _ = warnings;
+}
+
+/// ROB-03: Like `resolve_exports_value` but also emits warnings for non-standard
+/// `exports` field values (false, null, numeric, array-of-non-string).
+///
+/// Returns the collected `EntryPoint`s. Warnings are appended to `warnings`.
+pub(crate) fn resolve_exports_value_with_warnings(
+    value: &serde_json::Value,
+    base_path: &Path,
+    condition: Option<&str>,
+    warnings: &mut Vec<String>,
+) -> Vec<EntryPoint> {
+    let mut results = Vec::new();
     match value {
         serde_json::Value::String(rel) => {
             // Leaf: a concrete file path relative to the package root.
@@ -189,35 +209,70 @@ fn resolve_exports_value(
                 if key.starts_with('.') {
                     if key.contains('*') {
                         // GAP-16-06: Subpath wildcard key like "./*" or "./features/*".
-                        // Expand to actual files matching the pattern in the target directory.
-                        expand_subpath_wildcard(key, child, base_path, results);
+                        expand_subpath_wildcard(key, child, base_path, &mut results);
                     } else {
-                        // Subpath export like "./utils" — recurse without inheriting the key as condition.
-                        resolve_exports_value(child, base_path, None, results);
+                        // Subpath export like "./utils" — recurse without inheriting condition.
+                        results.extend(resolve_exports_value_with_warnings(
+                            child, base_path, None, warnings,
+                        ));
                     }
                 } else {
                     // Condition key like "import", "require", "types", "default".
-                    resolve_exports_value(child, base_path, Some(key.as_str()), results);
+                    results.extend(resolve_exports_value_with_warnings(
+                        child,
+                        base_path,
+                        Some(key.as_str()),
+                        warnings,
+                    ));
                 }
             }
         }
         serde_json::Value::Array(items) => {
             // GAP-16-07: Per Node.js spec, try each candidate in order and use the first
-            // one whose file exists on disk. We add all candidates here; the
-            // canonicalize+filter step in resolve_entry_points already filters out
-            // non-existent paths, so the first existing entry in the array wins naturally.
-            // Deduplication via HashSet<PathBuf> prevents any duplicates.
+            // one whose file exists on disk.
             for item in items {
-                resolve_exports_value(item, base_path, condition, results);
+                // ROB-03: Warn on non-string entries in the array.
+                if !item.is_string() && !item.is_object() && !item.is_array() {
+                    warnings.push(format!(
+                        "non-string entry in exports array: {:?} \u{2014} skipping",
+                        item
+                    ));
+                    continue;
+                }
+                results.extend(resolve_exports_value_with_warnings(
+                    item, base_path, condition, warnings,
+                ));
             }
         }
-        serde_json::Value::Null => {
-            // Explicitly disabled export — skip.
+        // ROB-03: Non-standard scalar exports values — emit warning and return empty.
+        // Caller is responsible for falling back to main/module/types when empty.
+        serde_json::Value::Bool(false) => {
+            warnings.push(
+                "non-standard `exports` value: false \u{2014} falling back to main/module/types"
+                    .to_string(),
+            );
         }
-        _ => {
-            // Boolean or number in exports field — ignore.
+        serde_json::Value::Bool(true) => {
+            warnings.push(
+                "non-standard `exports` value: true \u{2014} falling back to main/module/types"
+                    .to_string(),
+            );
+        }
+        serde_json::Value::Null => {
+            // ROB-03: Explicitly disabled export — emit warning.
+            warnings.push(
+                "non-standard `exports` value: null \u{2014} falling back to main/module/types"
+                    .to_string(),
+            );
+        }
+        serde_json::Value::Number(n) => {
+            warnings.push(format!(
+                "non-standard `exports` value: {} (numeric) \u{2014} falling back to main/module/types",
+                n
+            ));
         }
     }
+    results
 }
 
 /// Expand a subpath wildcard pattern like `"./*": "./dist/*.js"` to actual files on disk.
@@ -577,6 +632,43 @@ mod tests {
         assert!(
             !paths.iter().any(|p| p.ends_with("b.js")),
             "b.js should NOT match a .cjs pattern; got: {paths:?}"
+        );
+    }
+
+    // ── ROB-03: Non-standard `exports` values produce warnings + fallback ────
+
+    #[test]
+    fn rob_03_exports_false_produces_warning_and_empty() {
+        let v = serde_json::json!(false);
+        let mut warnings: Vec<String> = Vec::new();
+        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        assert!(res.is_empty(), "ROB-03: exports=false should produce empty results");
+        assert!(
+            warnings.iter().any(|w| w.contains("false")),
+            "ROB-03: expected warning mentioning 'false'; got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn rob_03_exports_null_produces_warning() {
+        let v = serde_json::Value::Null;
+        let mut warnings: Vec<String> = Vec::new();
+        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        assert!(res.is_empty(), "ROB-03: exports=null should produce empty results");
+        assert!(
+            warnings.iter().any(|w| w.contains("null")),
+            "ROB-03: expected warning mentioning 'null'; got: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn rob_03_exports_numeric_produces_warning() {
+        let v = serde_json::json!(42);
+        let mut warnings: Vec<String> = Vec::new();
+        let _ = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        assert!(
+            warnings.iter().any(|w| w.contains("42") || w.contains("numeric")),
+            "ROB-03: expected warning mentioning numeric value; got: {warnings:?}"
         );
     }
 }
