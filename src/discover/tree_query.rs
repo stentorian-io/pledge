@@ -4181,21 +4181,30 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
     let type_params = parse_type_params(source, decl_node);
     let members = parse_class_members(source, decl_node);
 
-    // CLS-10 (Phase 19): Extract class-level decorators. In TS, decorators can
-    // appear directly on the class_declaration/abstract_class_declaration OR on
-    // the parent export_statement wrapper — check both and concatenate preserving
-    // source order.
+    // CLS-10 (Phase 19): Extract class-level decorators. In TS, decorators
+    // appear as direct children on the class_declaration / abstract_class_declaration
+    // AND ALSO re-surface as children of the parent export_statement wrapper
+    // (verified empirically against tree-sitter-typescript 0.23.2 —
+    // `@Component\nexport class Foo {}` produces the decorator as a child of
+    // BOTH the export_statement and the inner class_declaration).
+    //
+    // To avoid double-counting we prefer the class_declaration's own children
+    // and only fall back to the parent export_statement if the direct children
+    // yielded nothing. For the JS grammar, decorators only appear on the
+    // export_statement, so the fallback path is the primary one there.
     let class_decorators: Vec<crate::types::DecoratorSpec> = {
-        let mut decs = extract_decorators(decl_node, source);
-        if let Some(parent) = decl_node.parent() {
+        let direct = extract_decorators(decl_node, source);
+        if !direct.is_empty() {
+            direct
+        } else if let Some(parent) = decl_node.parent() {
             if parent.kind() == "export_statement" {
-                let mut parent_decs = extract_decorators(parent, source);
-                // Parent-level decorators appear BEFORE the class body in source order.
-                parent_decs.extend(decs);
-                decs = parent_decs;
+                extract_decorators(parent, source)
+            } else {
+                Vec::new()
             }
+        } else {
+            Vec::new()
         }
-        decs
     };
 
     // IFT-03: Extract per-position constructor param optionality.

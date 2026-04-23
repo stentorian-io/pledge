@@ -20,8 +20,10 @@ use super::subtype::{
     RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT, RULE_CLASS_METHOD_KIND_CHANGED,
     RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
     RULE_CLASS_STATIC_TYPE_CHANGED, RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
+    // CLS-10 (Phase 19) — stage-3 decorator diff rule-IDs:
+    RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
-use crate::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Severity, Visibility};
+use crate::types::{ClassMember, ClassMemberKind, ClassShape, DecoratorSpec, Finding, Severity, Visibility};
 
 /// Returns true if visibility was narrowed (a breaking change for consumers).
 ///
@@ -34,6 +36,112 @@ fn is_visibility_narrowed(old: &Visibility, new: &Visibility) -> bool {
             | (Visibility::Public, Visibility::Private)
             | (Visibility::Protected, Visibility::Private)
     )
+}
+
+/// CLS-10 (Phase 19): Human-readable label for a member kind used in
+/// decorator-diff messages (e.g., "method `Foo.bar`").
+fn member_kind_label(kind: &ClassMemberKind) -> &'static str {
+    match kind {
+        ClassMemberKind::Method => "method",
+        ClassMemberKind::Property => "property",
+        ClassMemberKind::Getter => "getter",
+        ClassMemberKind::Setter => "setter",
+        ClassMemberKind::Constructor => "constructor",
+    }
+}
+
+/// CLS-10 (Phase 19): Diff two decorator lists between old and new.
+///
+/// Algorithm:
+/// - Step 1: pair exactly matching (name + args) decorators — those are unchanged.
+/// - Step 2: among unpaired, match by `name` — emit one `decorator-arguments-changed`
+///   per matched pair (same name, different args). This avoids the bug where a
+///   single `@Route('/a')` → `@Route('/b')` would spuriously emit one
+///   `decorator-removed` + one `decorator-added`.
+/// - Step 3: remaining unmatched old → `decorator-removed`; remaining unmatched
+///   new → `decorator-added`.
+///
+/// `owner_description` is human text like "class `Foo`" or "method `Foo.bar`"
+/// used verbatim in finding messages.
+fn diff_decorators(
+    old: &[DecoratorSpec],
+    new: &[DecoratorSpec],
+    owner_description: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings: Vec<Finding> = Vec::new();
+    let mut old_used = vec![false; old.len()];
+    let mut new_used = vec![false; new.len()];
+
+    // Step 1: exact (name, args) equality pairing.
+    for (i, o) in old.iter().enumerate() {
+        for (j, n) in new.iter().enumerate() {
+            if !new_used[j] && !old_used[i] && o == n {
+                old_used[i] = true;
+                new_used[j] = true;
+                break;
+            }
+        }
+    }
+
+    // Step 2: name-match pairing for arguments-changed emission.
+    for (i, o) in old.iter().enumerate() {
+        if old_used[i] {
+            continue;
+        }
+        for (j, n) in new.iter().enumerate() {
+            if !new_used[j] && o.name == n.name {
+                old_used[i] = true;
+                new_used[j] = true;
+                let old_args = o.args.as_deref().unwrap_or("");
+                let new_args = n.args.as_deref().unwrap_or("");
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_DECORATOR_ARGUMENTS_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "decorator `@{}` arguments changed on {}: `{}` -> `{}`",
+                        o.name, owner_description, old_args, new_args
+                    ),
+                });
+                break;
+            }
+        }
+    }
+
+    // Step 3a: residual old-only → removed.
+    for (i, o) in old.iter().enumerate() {
+        if !old_used[i] {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_DECORATOR_REMOVED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!("decorator `@{}` removed from {}", o.name, owner_description),
+            });
+        }
+    }
+
+    // Step 3b: residual new-only → added.
+    for (j, n) in new.iter().enumerate() {
+        if !new_used[j] {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_DECORATOR_ADDED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!("decorator `@{}` added to {}", n.name, owner_description),
+            });
+        }
+    }
+
+    findings
 }
 
 /// Compare two ClassShape structs and produce a list of breaking change findings.
@@ -320,6 +428,47 @@ pub fn compare_class_shapes(
                     i, symbol_name
                 ),
             });
+        }
+    }
+
+    // ── CLS-10 (Phase 19): class-level decorator diff ───────────────────────
+    {
+        let class_desc = format!("class `{}`", symbol_name);
+        findings.extend(diff_decorators(
+            &old.decorators,
+            &new.decorators,
+            &class_desc,
+            file,
+            line,
+            col,
+        ));
+    }
+
+    // ── CLS-10 (Phase 19): per-member decorator diff ────────────────────────
+    // Pair members by name (same key used elsewhere in this function). Only
+    // diff decorators for members present on both sides — decorator-only
+    // findings on a removed/added member would duplicate class-method-removed
+    // (CLS-03) / class-method-added noise.
+    {
+        let old_by_name: std::collections::HashMap<&str, &ClassMember> =
+            old.members.iter().map(|m| (m.name.as_str(), m)).collect();
+        for new_member in &new.members {
+            if let Some(old_member) = old_by_name.get(new_member.name.as_str()) {
+                let owner = format!(
+                    "{} `{}.{}`",
+                    member_kind_label(&new_member.kind),
+                    symbol_name,
+                    new_member.name
+                );
+                findings.extend(diff_decorators(
+                    &old_member.decorators,
+                    &new_member.decorators,
+                    &owner,
+                    file,
+                    line,
+                    col,
+                ));
+            }
         }
     }
 
