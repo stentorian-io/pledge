@@ -44,7 +44,7 @@ async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
         new_result
     );
 
-    let findings = compare::compare_exports(&old_exports, &new_exports);
+    let findings = compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
     let has_breaking = compare::has_breaking_changes(&findings);
     (findings, has_breaking)
 }

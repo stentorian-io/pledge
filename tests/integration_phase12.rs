@@ -181,7 +181,7 @@ fn test_type_only_export_removal_detected() {
         );
     }
 
-    let findings = compare_exports(&old_map, &new_map);
+    let findings = compare_exports(&old_map, &new_map, std::path::Path::new("."));
 
     assert!(
         findings
@@ -234,7 +234,7 @@ fn test_destructured_export_removal_detected() {
     let old_map = map_from_names(&["alpha", "beta"]);
     let new_map = map_from_names(&["alpha"]);
 
-    let findings = compare_exports(&old_map, &new_map);
+    let findings = compare_exports(&old_map, &new_map, std::path::Path::new("."));
 
     assert!(
         findings

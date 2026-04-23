@@ -1310,7 +1310,8 @@ mod tests {
         );
         let new_map = crate::types::ExportMap::new();
 
-        let findings = crate::compare::compare_exports(&old_map, &new_map);
+        let findings =
+            crate::compare::compare_exports(&old_map, &new_map, std::path::Path::new("."));
         assert!(
             findings
                 .iter()

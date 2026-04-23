@@ -10,7 +10,9 @@ pub mod generics_diff;
 pub mod interface_diff;
 pub mod json_diff;
 pub mod metadata;
+pub mod ns_move_cascade;
 pub mod ref_diff;
+pub mod rename_coalesce;
 pub mod subtype;
 pub mod type_diff;
 
@@ -114,8 +116,41 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
 /// - Exports present in `old` but absent in `new` → `export-removed` (Major)
 /// - Exports present in `new` but absent in `old` → `export-added` (Minor)
 ///
-/// Findings are sorted by severity: Major first, then Minor, then Patch (D-01).
-pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
+/// D-04 big-bang (Phase 18): unified signature always takes `pkg_root`. IDN-01
+/// rename detection scans new-side source files for alias trailers; IDN-02
+/// namespace-move consolidation doesn't read files but accepts `pkg_root`
+/// uniformly for symmetry. All callers pass the package root they're comparing
+/// against (typically the "current"/new-side package root).
+///
+/// The public `compare_exports` wraps `compare_exports_core` (base diff without
+/// sort/post-pass) with the IDN-01 + IDN-02 post-passes and a single
+/// total-order sort at the tail (Warning 10: no double-sort).
+///
+/// Findings are sorted by (severity, file, line, col, rule) at the tail.
+pub fn compare_exports(old: &ExportMap, new: &ExportMap, pkg_root: &Path) -> Vec<Finding> {
+    // Base diff: ExportKey iteration, augment routing, type-aware compare.
+    let mut findings = compare_exports_core(old, new);
+    // IDN-01: transparent rename coalescing (alias-trailer-only, D-05).
+    findings = rename_coalesce::coalesce_renames(old, new, findings, pkg_root);
+    // IDN-02: namespace-move cascade consolidation (exact-subtree, depth 1).
+    findings = ns_move_cascade::consolidate_namespace_moves(old, new, findings);
+    // Warning 10 (resolved by Blocker 1 option a): single total-order sort at
+    // the tail. Post-passes see unsorted findings; this is the only sort call.
+    findings.sort_by(|a, b| {
+        a.severity
+            .cmp(&b.severity)
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.col.cmp(&b.col))
+            .then_with(|| a.rule.cmp(b.rule))
+    });
+    findings
+}
+
+/// Base export diff — ExportKey iteration, augment-prefix routing, type-aware
+/// comparison. No sort, no post-passes. Called by `compare_exports` which
+/// wraps this with IDN-01 + IDN-02 post-passes and a single total-order sort.
+fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
     // META-04: Filter symbols marked as non-public release tags before comparison.
@@ -287,18 +322,9 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         }
     }
 
-    // Phase 18 Warning 8: total-order sort so HashMap<ExportKey, _> iteration
-    // non-determinism never surfaces as Finding reorder between runs.
-    // Sort keys: (severity, file, line, col, rule).
-    findings.sort_by(|a, b| {
-        a.severity
-            .cmp(&b.severity)
-            .then_with(|| a.file.cmp(&b.file))
-            .then_with(|| a.line.cmp(&b.line))
-            .then_with(|| a.col.cmp(&b.col))
-            .then_with(|| a.rule.cmp(b.rule))
-    });
-
+    // Warning 10 (Blocker 1 fix, Phase 18): NO sort here — the public
+    // `compare_exports` wrapper performs the single total-order sort after
+    // IDN-01 + IDN-02 post-passes. Sorting here would mean double-sort.
     findings
 }
 
@@ -1729,7 +1755,7 @@ mod tests {
             ExportKey::new("./sub", None, SymbolSpace::Value, "foo"),
             make_basic_sym("foo", PathBuf::from("b.ts"), 1),
         );
-        let findings = compare_exports(&old, &new);
+        let findings = compare_exports(&old, &new, std::path::Path::new("."));
         assert_eq!(
             findings
                 .iter()
@@ -1787,7 +1813,7 @@ mod tests {
             ExportKey::new(".", None, SymbolSpace::Value, "Foo"),
             make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
         );
-        let findings = compare_exports(&old, &new);
+        let findings = compare_exports(&old, &new, std::path::Path::new("."));
         assert_eq!(
             findings
                 .iter()
@@ -1831,7 +1857,7 @@ mod tests {
             make_basic_sym("User", PathBuf::from("src/a.ts"), 1),
         );
         // ./admin User removed.
-        let findings = compare_exports(&old, &new);
+        let findings = compare_exports(&old, &new, std::path::Path::new("."));
         assert_eq!(
             findings
                 .iter()
@@ -1872,8 +1898,8 @@ mod tests {
             );
         }
 
-        let run_a = compare_exports(&old, &new);
-        let run_b = compare_exports(&old, &new);
+        let run_a = compare_exports(&old, &new, std::path::Path::new("."));
+        let run_b = compare_exports(&old, &new, std::path::Path::new("."));
 
         assert_eq!(
             run_a.len(),

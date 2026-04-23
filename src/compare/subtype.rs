@@ -42,6 +42,10 @@ pub const RULE_ENGINE_ADDED: &str = "engine-added";
 pub const RULE_ENTRY_POINT_CHANGED: &str = "entry-point-changed";
 pub const RULE_MODULE_TYPE_CHANGED: &str = "module-type-changed";
 
+// Identity heuristics rules (IDN-*) — Phase 18
+pub const RULE_EXPORT_RENAMED: &str = "export-renamed"; // IDN-01
+pub const RULE_NAMESPACE_MEMBER_MOVED: &str = "namespace-member-moved"; // IDN-02
+
 // Exports diff rules (EXP-*)
 pub const RULE_SUBPATH_REMOVED: &str = "subpath-removed";
 pub const RULE_EXPORTS_FIELD_ADDED: &str = "exports-field-added";

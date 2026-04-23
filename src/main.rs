@@ -195,7 +195,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
 
             // Step 3: Compare (type-aware when shapes available, fallback to presence-only)
             let all_warnings: Vec<_> = old_warnings.into_iter().chain(new_warnings).collect();
-            let mut findings = compare::compare_exports(&old_exports, &new_exports);
+            let mut findings = compare::compare_exports(&old_exports, &new_exports, &current_root);
 
             // Step 3b: Metadata comparison (META-01..07)
             let metadata_findings =

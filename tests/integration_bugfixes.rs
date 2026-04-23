@@ -169,7 +169,8 @@ fn test_export_alias_detected_correctly() {
         );
     }
 
-    let findings = interlint::compare::compare_exports(&old_map, &new_map);
+    let findings =
+        interlint::compare::compare_exports(&old_map, &new_map, std::path::Path::new("."));
 
     // `bar` was removed — should fire export-removed
     assert!(

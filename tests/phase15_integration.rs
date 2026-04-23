@@ -561,7 +561,7 @@ fn test_gap15_05_external_reexport_removal() {
         old_map.keys().collect::<Vec<_>>()
     );
 
-    let findings = compare_exports(&old_map, &new_map);
+    let findings = compare_exports(&old_map, &new_map, std::path::Path::new("."));
 
     assert!(
         findings
@@ -671,7 +671,7 @@ fn test_gap15_06_declare_module_removal() {
         old_map.keys().collect::<Vec<_>>()
     );
 
-    let findings = compare_exports(&old_map, &new_map);
+    let findings = compare_exports(&old_map, &new_map, std::path::Path::new("."));
 
     assert!(
         findings.iter().any(|f| f.rule == "export-removed" && f.message.contains("augment:express")),

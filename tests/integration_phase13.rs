@@ -201,7 +201,7 @@ fn test_destructured_pair_removal_detected() {
     );
     // "other" removed
 
-    let findings = compare_exports(&old_exports, &new_exports);
+    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
     assert!(
         findings
             .iter()
@@ -398,7 +398,7 @@ fn test_array_destructured_removal_detected() {
     );
     // b removed
 
-    let findings = compare_exports(&old_exports, &new_exports);
+    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
     assert!(findings
         .iter()
         .any(|f| f.rule == "export-removed" && f.message.contains('b')));
