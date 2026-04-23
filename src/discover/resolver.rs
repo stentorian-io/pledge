@@ -449,6 +449,13 @@ pub fn collect_exports(
                         None,
                         export.release_tag.clone(),
                     );
+                    // ARCH-02 (Phase 18): merge compound_members into existing symbol
+                    // (dedup to avoid duplicates from multiple discovery passes).
+                    for m in &export.compound_members {
+                        if !existing.compound_members.iter().any(|em| em == m) {
+                            existing.compound_members.push(m.clone());
+                        }
+                    }
                 } else {
                     map.insert(
                         key,
@@ -467,6 +474,9 @@ pub fn collect_exports(
                             is_reexport: false,
                             is_type_only: false,
                             release_tag: export.release_tag, // META-04: propagate TSDoc release tag
+                            // ARCH-02 (Phase 18): propagate compound-component members
+                            // from the RawExport (populated by attach_compound_members).
+                            compound_members: export.compound_members,
                         },
                     );
                 }
@@ -503,6 +513,7 @@ pub fn collect_exports(
                             is_reexport: false,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         },
                     );
                 }
@@ -567,6 +578,7 @@ pub fn collect_exports(
                                             is_reexport: true,
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         },
                                     );
                                 }
@@ -635,6 +647,7 @@ pub fn collect_exports(
                                         is_reexport: false,
                                         is_type_only: false,
                                         release_tag: None,
+                                        compound_members: Vec::new(),
                                     },
                                 );
                             }
@@ -672,6 +685,7 @@ pub fn collect_exports(
                                             is_reexport: true,
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         },
                                     );
                                 }
@@ -1270,6 +1284,7 @@ mod tests {
                 is_reexport: true,
                 is_type_only: false,
                 release_tag: None,
+                compound_members: Vec::new(),
             },
         );
         let new_map = crate::types::ExportMap::new();
@@ -1639,6 +1654,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         }
     }
 
@@ -1740,5 +1756,56 @@ export namespace User { export const kind = "u"; }
         map.insert(a.clone(), make_empty_sym("User"));
         map.insert(b.clone(), make_empty_sym("User"));
         assert_eq!(map.len(), 2, "different subpaths MUST be distinct map keys");
+    }
+
+    // ── Phase 18 ARCH-02: end-to-end compound-member propagation ────────────
+
+    #[test]
+    fn test_arch02_end_to_end_compound_members_propagate_to_symbol() {
+        // ARCH-02: `Menu.Item = X; Menu.Header = Y;` discovered in source must
+        // reach the ExportSymbol's compound_members field via parse_exports ->
+        // attach_compound_members -> resolver Named-insertion path.
+        use tempfile::TempDir;
+        let dir = TempDir::new().unwrap();
+        let src = r#"
+export const Menu = () => null;
+Menu.Item = () => null;
+Menu.Header = () => null;
+"#;
+        let file = dir.path().join("menu.ts");
+        std::fs::write(&file, src).unwrap();
+
+        let mut map: ExportMap = ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+        collect_exports(
+            &file,
+            dir.path(),
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+            ".",
+            None,
+        )
+        .unwrap();
+
+        let menu_key = map
+            .keys()
+            .find(|k| k.name == "Menu")
+            .cloned()
+            .expect("Menu missing from ExportMap");
+        let menu_sym = &map[&menu_key];
+        assert!(
+            menu_sym.compound_members.contains(&"Item".to_string()),
+            "ARCH-02 end-to-end: Menu.Item must propagate; got {:?}",
+            menu_sym.compound_members
+        );
+        assert!(
+            menu_sym.compound_members.contains(&"Header".to_string()),
+            "ARCH-02 end-to-end: Menu.Header must propagate; got {:?}",
+            menu_sym.compound_members
+        );
     }
 }

@@ -44,6 +44,7 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32) -> ExportSymbol {
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
@@ -80,6 +81,7 @@ fn test_ambient_class_removal_detected() {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         },
     );
 
@@ -101,6 +103,7 @@ fn test_ambient_class_removal_detected() {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         },
     );
 
@@ -438,6 +441,7 @@ fn test_structural_diff_with_file_move() {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         },
     );
 
@@ -459,6 +463,7 @@ fn test_structural_diff_with_file_move() {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         },
     );
 

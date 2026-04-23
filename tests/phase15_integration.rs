@@ -44,6 +44,7 @@ fn make_export_sym(
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
@@ -67,6 +68,7 @@ fn make_default_export_sym(
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
@@ -90,6 +92,7 @@ fn raw_exports_to_map(raw: Vec<interlint::discover::tree_query::RawExport>) -> E
                 is_reexport: false,
                 is_type_only: false,
                 release_tag: None,
+                compound_members: Vec::new(),
             },
         );
     }

@@ -53,6 +53,7 @@ fn make_sym(name: &str, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
@@ -72,6 +73,7 @@ fn make_fn_sym_with_overloads(name: &str, overloads: Vec<TypeShape>) -> ExportSy
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
@@ -138,6 +140,7 @@ fn test_export_alias_detected_correctly() {
                 is_reexport: false,
                 is_type_only: false,
                 release_tag: None,
+                compound_members: Vec::new(),
             },
         );
     }
@@ -161,6 +164,7 @@ fn test_export_alias_detected_correctly() {
                 is_reexport: false,
                 is_type_only: false,
                 release_tag: None,
+                compound_members: Vec::new(),
             },
         );
     }

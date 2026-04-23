@@ -481,6 +481,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         }
     }
 
@@ -506,6 +507,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         }
     }
 
@@ -565,16 +567,7 @@ mod tests {
             ExportKind::Named,
             vec![DeclarationKind::Class, DeclarationKind::Namespace],
         );
-        let findings = compare_ref_changes(
-            &old,
-            &new,
-            "X",
-            &PathBuf::from("x.ts"),
-            1,
-            1,
-            &[],
-            &[],
-        );
+        let findings = compare_ref_changes(&old, &new, "X", &PathBuf::from("x.ts"), 1, 1, &[], &[]);
         assert!(
             !findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
             "hybrid class+namespace must not fire RULE_NAMESPACE_TO_OTHER; got: {:?}",
@@ -587,16 +580,7 @@ mod tests {
         // Old: pure namespace. New: pure class (no namespace kind). Must fire REF-05.
         let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
         let new = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Class]);
-        let findings = compare_ref_changes(
-            &old,
-            &new,
-            "X",
-            &PathBuf::from("x.ts"),
-            1,
-            1,
-            &[],
-            &[],
-        );
+        let findings = compare_ref_changes(&old, &new, "X", &PathBuf::from("x.ts"), 1, 1, &[], &[]);
         assert!(
             findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
             "pure namespace→class must fire REF-05; got: {:?}",
@@ -611,16 +595,7 @@ mod tests {
         // REF-05 did NOT fire. Must preserve that semantics.
         let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
         let new = make_sym_multi("X", ExportKind::Named, Vec::new());
-        let findings = compare_ref_changes(
-            &old,
-            &new,
-            "X",
-            &PathBuf::from("x.ts"),
-            1,
-            1,
-            &[],
-            &[],
-        );
+        let findings = compare_ref_changes(&old, &new, "X", &PathBuf::from("x.ts"), 1, 1, &[], &[]);
         assert!(
             !findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
             "empty new.decl_kinds must NOT fire REF-05 (Warning 4 pre-classification-gap semantics); got: {:?}",

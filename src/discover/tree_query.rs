@@ -91,6 +91,12 @@ pub struct RawExport {
     /// META-04: TSDoc release tag extracted from adjacent block comment.
     /// Populated during parse_exports for named declaration exports.
     pub release_tag: Option<crate::types::ReleaseTag>,
+    /// ARCH-02 (Phase 18): compound-component members attached to this export
+    /// via `Target.Member = X` or `Object.assign(Target, { Member: X })`.
+    /// Populated during the compound-assignment second pass in `parse_exports`.
+    /// D-16 conservative: only populated when Target is itself an exported
+    /// symbol in the same file.
+    pub compound_members: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +131,42 @@ const NAMED_EXPORT_ALIAS_QUERY: &str = r#"
     (export_specifier
       name: (identifier) @local_name
       alias: (identifier) @alias_name)))
+"#;
+
+/// ARCH-02 Form 1: `Target.Member = X;` top-level member assignment.
+///
+/// Captures `@target` (the object identifier) and `@member` (the new property
+/// name). Matched against `expression_statement` nodes at the program level so
+/// nested-inside-function assignments are excluded — those don't contribute to
+/// the public surface.
+const COMPOUND_ASSIGN_MEMBER_QUERY: &str = r#"
+(program
+  (expression_statement
+    (assignment_expression
+      left: (member_expression
+        object: (identifier) @target
+        property: (property_identifier) @member)
+      right: (_) @value)))
+"#;
+
+/// ARCH-02 Form 3: `Object.assign(Target, { Member: X, ... })` compound
+/// component composition.
+///
+/// Captures `@obj` + `@assign_prop` (to check Object.assign), `@target` (first
+/// arg identifier), and `@member` for every property key in the object literal.
+/// Supports both `(pair key: (property_identifier))` and shorthand properties.
+const COMPOUND_OBJECT_ASSIGN_QUERY: &str = r#"
+(call_expression
+  function: (member_expression
+    object: (identifier) @obj
+    property: (property_identifier) @assign_prop)
+  arguments: (arguments
+    (identifier) @target
+    (object
+      [
+        (pair key: (property_identifier) @member)
+        (shorthand_property_identifier) @member
+      ])))
 "#;
 
 /// Captures `export default <expr>` — the `value:` field covers expressions and
@@ -714,6 +756,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -745,6 +788,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 decl_kind: None,
                                 is_type_only: false,
                                 release_tag: None,
+                                compound_members: Vec::new(),
                             });
                         }
                     }
@@ -774,6 +818,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -822,6 +867,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -864,6 +910,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         decl_kind: None,
                         is_type_only: false,
                         release_tag: None,
+                        compound_members: Vec::new(),
                     });
                 }
             }
@@ -916,6 +963,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -959,6 +1007,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         decl_kind: None,
                         is_type_only: false,
                         release_tag: None,
+                        compound_members: Vec::new(),
                     });
                 }
             }
@@ -1002,6 +1051,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     decl_kind: None,
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                         }
@@ -1053,6 +1103,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1084,6 +1135,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -1117,6 +1169,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         decl_kind: None,
                         is_type_only: false,
                         release_tag: None,
+                        compound_members: Vec::new(),
                     });
                 }
             }
@@ -1149,6 +1202,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1219,6 +1273,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         decl_kind,
                         is_type_only: false,
                         release_tag,
+                        compound_members: Vec::new(),
                     });
                 }
             }
@@ -1282,6 +1337,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind,
                             is_type_only: false,
                             release_tag,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1315,6 +1371,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1342,6 +1399,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: Some(crate::types::DeclarationKind::Variable),
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1411,6 +1469,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1463,6 +1522,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1514,6 +1574,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -1561,6 +1622,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -1586,6 +1648,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: Some(DeclarationKind::Variable),
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1613,6 +1676,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: Some(DeclarationKind::Variable),
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -1653,6 +1717,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     decl_kind: Some(DeclarationKind::Variable),
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                         }
@@ -1710,6 +1775,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             decl_kind: Some(DeclarationKind::Variable),
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         });
                                     }
                                 }
@@ -1759,6 +1825,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
                                         release_tag: None,
+                                        compound_members: Vec::new(),
                                     });
                                 }
                             }
@@ -1799,6 +1866,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
                                         release_tag: None,
+                                        compound_members: Vec::new(),
                                     });
                                 }
                             }
@@ -1838,6 +1906,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         decl_kind: Some(DeclarationKind::Variable),
                                         is_type_only: false,
                                         release_tag: None,
+                                        compound_members: Vec::new(),
                                     });
                                 }
                             }
@@ -1878,6 +1947,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 decl_kind: Some(DeclarationKind::Class),
                                 is_type_only: false,
                                 release_tag: None,
+                                compound_members: Vec::new(),
                             });
                         }
                     }
@@ -1914,6 +1984,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 decl_kind: Some(DeclarationKind::Function),
                                 is_type_only: false,
                                 release_tag: None,
+                                compound_members: Vec::new(),
                             });
                         }
                     }
@@ -1962,6 +2033,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     decl_kind: Some(DeclarationKind::Function),
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                         }
@@ -2001,6 +2073,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     decl_kind: None,
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                         }
@@ -2060,6 +2133,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 decl_kind: None,
                                                 is_type_only: false,
                                                 release_tag: None,
+                                                compound_members: Vec::new(),
                                             });
                                         }
                                     }
@@ -2080,6 +2154,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     decl_kind: None,
                                                     is_type_only: false,
                                                     release_tag: None,
+                                                    compound_members: Vec::new(),
                                                 });
                                             }
                                         }
@@ -2136,6 +2211,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: Some(DeclarationKind::Namespace),
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                     // META-03: emit synthetic keys for each top-level member in the body.
@@ -2186,6 +2262,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             decl_kind: Some(DeclarationKind::Namespace),
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         });
                                     }
                                     // META-03: emit synthetic keys for top-level members.
@@ -2315,6 +2392,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 decl_kind: None,
                                                 is_type_only: false,
                                                 release_tag: None,
+                                                compound_members: Vec::new(),
                                             });
                                         }
                                     }
@@ -2337,6 +2415,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             decl_kind: None,
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         });
                                     }
                                 }
@@ -2399,6 +2478,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 decl_kind: None,
                                                 is_type_only: false,
                                                 release_tag: None,
+                                                compound_members: Vec::new(),
                                             });
                                         }
                                     }
@@ -2454,6 +2534,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     decl_kind: None,
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                         }
@@ -2560,6 +2641,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             decl_kind: None,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -2636,6 +2718,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             decl_kind: None,
                                             is_type_only: false,
                                             release_tag: None,
+                                            compound_members: Vec::new(),
                                         });
                                     }
                                 }
@@ -2678,6 +2761,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         decl_kind: None,
                                                         is_type_only: false,
                                                         release_tag: None,
+                                                        compound_members: Vec::new(),
                                                     });
                                                 }
                                             }
@@ -2724,6 +2808,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         decl_kind: None,
                                                         is_type_only: false,
                                                         release_tag: None,
+                                                        compound_members: Vec::new(),
                                                     });
                                                 }
                                             }
@@ -2746,6 +2831,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     decl_kind: None,
                                                     is_type_only: false,
                                                     release_tag: None,
+                                                    compound_members: Vec::new(),
                                                 });
                                             }
                                         }
@@ -2795,6 +2881,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 decl_kind: None,
                                 is_type_only: false,
                                 release_tag: None,
+                                compound_members: Vec::new(),
                             });
                         }
                     }
@@ -2809,7 +2896,98 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // from unrelated patterns. Remove unconditionally regardless of source.
     exports.retain(|e| e.name != "__esModule");
 
+    // ARCH-02 (Phase 18): compound-component capture as a second pass.
+    // Per D-16 conservative: members attach ONLY when the target identifier is
+    // itself an exported symbol discovered by the first pass.
+    attach_compound_members(root, source, &language, &mut exports);
+
     Ok(exports)
+}
+
+/// ARCH-02 (Phase 18): second-pass attachment of compound-component members.
+///
+/// Scans the program for `Target.Member = X;` and `Object.assign(Target, { ... })`
+/// patterns. When `Target` matches an already-exported symbol (D-16 conservative),
+/// appends matched members to that symbol's `compound_members` list. Silent when
+/// the target is not an exported symbol — this correctly handles minified/internal
+/// names where the target is an internal binding.
+fn attach_compound_members(
+    root: tree_sitter::Node<'_>,
+    source: &[u8],
+    language: &tree_sitter::Language,
+    exports: &mut [RawExport],
+) {
+    use std::collections::HashSet;
+    let exported_names: HashSet<String> = exports.iter().map(|r| r.name.clone()).collect();
+
+    let attach = |target: &str, member: &str, exports: &mut [RawExport]| {
+        if !exported_names.contains(target) {
+            return;
+        }
+        for rx in exports.iter_mut() {
+            if rx.name == target && !rx.compound_members.iter().any(|m| m == member) {
+                rx.compound_members.push(member.to_string());
+            }
+        }
+    };
+
+    // Form 1: `Target.Member = X;` top-level.
+    if let Ok(q) = Query::new(language, COMPOUND_ASSIGN_MEMBER_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&q, root, source);
+        while let Some(m) = matches.next() {
+            let mut target: Option<String> = None;
+            let mut member: Option<String> = None;
+            for cap in m.captures {
+                let cap_name = q.capture_names()[cap.index as usize];
+                let text = cap.node.utf8_text(source).ok().map(|s| s.to_string());
+                match cap_name {
+                    "target" => target = text,
+                    "member" => member = text,
+                    _ => {}
+                }
+            }
+            if let (Some(t), Some(mm)) = (target, member) {
+                attach(&t, &mm, exports);
+            }
+        }
+    }
+
+    // Form 3: `Object.assign(Target, { Member: X, ... })`.
+    // Guard with a runtime @obj == "Object" && @assign_prop == "assign" check.
+    if let Ok(q) = Query::new(language, COMPOUND_OBJECT_ASSIGN_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&q, root, source);
+        while let Some(m) = matches.next() {
+            let mut obj: Option<String> = None;
+            let mut assign_prop: Option<String> = None;
+            let mut target: Option<String> = None;
+            let mut members: Vec<String> = Vec::new();
+            for cap in m.captures {
+                let cap_name = q.capture_names()[cap.index as usize];
+                let text = cap.node.utf8_text(source).ok().map(|s| s.to_string());
+                match cap_name {
+                    "obj" => obj = text,
+                    "assign_prop" => assign_prop = text,
+                    "target" => target = text,
+                    "member" => {
+                        if let Some(t) = text {
+                            members.push(t);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if obj.as_deref() != Some("Object") || assign_prop.as_deref() != Some("assign") {
+                continue;
+            }
+            if let Some(t) = target {
+                for mm in members {
+                    attach(&t, &mm, exports);
+                }
+            }
+        }
+    }
 }
 
 /// Recursively expand namespace members, producing dotted names like A.B.baz.
@@ -2849,6 +3027,7 @@ fn expand_namespace_members(
                                     decl_kind: Some(DeclarationKind::Namespace),
                                     is_type_only: false,
                                     release_tag: None,
+                                    compound_members: Vec::new(),
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -2913,6 +3092,7 @@ fn expand_namespace_members(
                             decl_kind,
                             is_type_only: false,
                             release_tag: None,
+                            compound_members: Vec::new(),
                         });
                     }
                 }
@@ -2974,6 +3154,7 @@ fn emit_augmentation_members(
                     decl_kind: None,
                     is_type_only: false,
                     release_tag: None,
+                    compound_members: Vec::new(),
                 });
             }
         }
@@ -6412,6 +6593,102 @@ declare global {
             vec![false, true, true],
             "a is required, b? and c? are optional; got: {:?}",
             optionality
+        );
+    }
+
+    // ── Phase 18 ARCH-02: compound-component capture ────────────────────────
+
+    #[test]
+    fn test_arch02_compound_member_assignment_attaches() {
+        // Form 1: `Target.Member = X;` at top-level attaches Member to Target.
+        let src = br#"
+export const Menu = () => null;
+Menu.Item = () => null;
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).expect("parse");
+        let menu = exports
+            .iter()
+            .find(|e| e.name == "Menu")
+            .expect("Menu export missing");
+        assert!(
+            menu.compound_members.iter().any(|m| m == "Item"),
+            "ARCH-02 Form 1: expected 'Item' in compound_members, got {:?}",
+            menu.compound_members
+        );
+    }
+
+    #[test]
+    fn test_arch02_object_assign_compound_attaches() {
+        // Form 3: `Object.assign(Target, { Member: X, ... })` attaches all members.
+        let src = br#"
+export let Menu = {};
+Menu = Object.assign(Menu, { Button: 1, Items: 2, Item: 3 });
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).expect("parse");
+        let menu = exports
+            .iter()
+            .find(|e| e.name == "Menu")
+            .expect("Menu export missing");
+        assert!(
+            menu.compound_members.iter().any(|m| m == "Button"),
+            "ARCH-02 Form 3: expected 'Button'; got {:?}",
+            menu.compound_members
+        );
+        assert!(
+            menu.compound_members.iter().any(|m| m == "Items"),
+            "ARCH-02 Form 3: expected 'Items'; got {:?}",
+            menu.compound_members
+        );
+        assert!(
+            menu.compound_members.iter().any(|m| m == "Item"),
+            "ARCH-02 Form 3: expected 'Item'; got {:?}",
+            menu.compound_members
+        );
+    }
+
+    #[test]
+    fn test_arch02_conservative_no_attach_when_target_not_exported() {
+        // D-16 conservative: `Foo.Bar = X` where `Foo` is NOT an exported symbol
+        // must NOT attach Bar to anything. `Unrelated` should remain with empty
+        // compound_members.
+        let src = br#"
+const Foo = {};
+Foo.Bar = 42;
+export const Unrelated = 1;
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).expect("parse");
+        assert!(
+            exports.iter().find(|e| e.name == "Foo").is_none(),
+            "ARCH-02 D-16: unexported Foo must not appear in exports"
+        );
+        let unrelated = exports
+            .iter()
+            .find(|e| e.name == "Unrelated")
+            .expect("Unrelated missing");
+        assert!(
+            unrelated.compound_members.is_empty(),
+            "ARCH-02 D-16: Unrelated must not have compound_members; got {:?}",
+            unrelated.compound_members
+        );
+    }
+
+    #[test]
+    fn test_arch02_minified_target_not_in_exports_silent_noop() {
+        // Pitfall 6: minified target name (`Pe`) is not in the exports — the
+        // conservative attachment rule silently no-ops. `Menu` gets no members.
+        let src = br#"
+export const Menu = () => null;
+var qe = Object.assign(Pe, { Button: 1, Item: 2 });
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).expect("parse");
+        let menu = exports
+            .iter()
+            .find(|e| e.name == "Menu")
+            .expect("Menu export missing");
+        assert!(
+            menu.compound_members.is_empty(),
+            "ARCH-02 Pitfall 6: minified-target case must silently no-op; got {:?}",
+            menu.compound_members
         );
     }
 }

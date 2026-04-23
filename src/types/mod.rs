@@ -80,6 +80,12 @@ pub struct ExportSymbol {
     // Phase 17 fields:
     pub is_type_only: bool,              // TLF-07 — export type * vs export *
     pub release_tag: Option<ReleaseTag>, // META-04 — TSDoc release tag (populated in Plan 17-05)
+    /// ARCH-02 (Phase 18): compound-component members attached via
+    /// `Target.Member = X` or `Object.assign(Target, { Member: X })` patterns.
+    /// Populated during the compound-assignment second pass in `parse_exports`
+    /// (D-16 conservative: only when the target identifier is itself an exported
+    /// symbol in the same file).
+    pub compound_members: Vec<String>,
 }
 
 /// D-03 (Phase 18): SymbolSpace is a first-class key dimension — `export type Foo` and
@@ -408,6 +414,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
         assert_eq!(sym.name, "foo");
     }
@@ -449,6 +456,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);
@@ -514,6 +522,7 @@ mod tests {
             is_reexport: true,
             is_type_only: true,
             release_tag: None,
+            compound_members: Vec::new(),
         };
         assert!(sym.is_type_only);
     }
@@ -616,6 +625,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
         assert_eq!(sym.decl_kinds.len(), 2);
         assert!(sym.decl_kinds.contains(&DeclarationKind::Class));

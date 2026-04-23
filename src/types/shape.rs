@@ -291,6 +291,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());

@@ -1597,6 +1597,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
 
         let mut old_exports: ExportMap = HashMap::new();
@@ -1655,6 +1656,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         };
 
         let mut old_exports: ExportMap = HashMap::new();
@@ -1675,7 +1677,11 @@ mod tests {
 
     // ─── Phase 18 compare_exports ExportKey-iteration tests ─────────────────
 
-    fn make_basic_sym(name: &str, file: std::path::PathBuf, line: u32) -> crate::types::ExportSymbol {
+    fn make_basic_sym(
+        name: &str,
+        file: std::path::PathBuf,
+        line: u32,
+    ) -> crate::types::ExportSymbol {
         use crate::types::{ExportKind, ExportSymbol};
         ExportSymbol {
             name: name.to_string(),
@@ -1692,6 +1698,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            compound_members: Vec::new(),
         }
     }
 
@@ -1740,10 +1747,7 @@ mod tests {
             removed.message
         );
         // Added must reference ./sub in the qualifier
-        let added = findings
-            .iter()
-            .find(|f| f.rule == "export-added")
-            .unwrap();
+        let added = findings.iter().find(|f| f.rule == "export-added").unwrap();
         assert!(
             added.message.contains("./sub"),
             "ARCH-01: added message must qualify with `./sub`; got: `{}`",
@@ -1880,8 +1884,18 @@ mod tests {
         // (file, line, col, rule) — this validates the total-order comparator.
         for window in run_a.windows(2) {
             if window[0].severity == window[1].severity {
-                let a_tuple = (&window[0].file, window[0].line, window[0].col, window[0].rule);
-                let b_tuple = (&window[1].file, window[1].line, window[1].col, window[1].rule);
+                let a_tuple = (
+                    &window[0].file,
+                    window[0].line,
+                    window[0].col,
+                    window[0].rule,
+                );
+                let b_tuple = (
+                    &window[1].file,
+                    window[1].line,
+                    window[1].col,
+                    window[1].rule,
+                );
                 assert!(
                     a_tuple <= b_tuple,
                     "Warning 8: same-severity findings must be in total order; {:?} !<= {:?}",

@@ -71,6 +71,7 @@ fn make_export_sym(name: &str) -> ExportSymbol {
         is_reexport: false,
         is_type_only: false,
         release_tag: None,
+        compound_members: Vec::new(),
     }
 }
 
