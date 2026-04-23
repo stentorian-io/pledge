@@ -72,7 +72,7 @@ pub struct ExportSymbol {
     pub col: u32,
     pub type_signature: Option<String>,
     pub overloads: Vec<shape::TypeShape>, // replaces type_shape per D-06
-    pub decl_kind: Option<DeclarationKind>, // per D-03
+    pub decl_kinds: Vec<DeclarationKind>, // D-14 (Phase 18): Vec preserves declaration-merging hybrids like [Class, Namespace]
     pub type_guard_type: Option<String>,  // for REF-03 — guarded type name
     pub is_async: bool,                   // for BEH-01/BEH-02 — async detection
     pub is_generator: bool,               // for BEH-03 — generator detection
@@ -82,8 +82,72 @@ pub struct ExportSymbol {
     pub release_tag: Option<ReleaseTag>, // META-04 — TSDoc release tag (populated in Plan 17-05)
 }
 
+/// D-03 (Phase 18): SymbolSpace is a first-class key dimension — `export type Foo` and
+/// `export const Foo` get distinct map entries and diff independently against
+/// their own space.
+///
+/// Primary-assignment convention (per Phase 18 Research Open Q2):
+/// - `interface` / `type alias` / `export type { X }` -> `SymbolSpace::Type`
+/// - `const` / `let` / `var` / `function` / `default export` / `class` / `enum` -> `SymbolSpace::Value`
+/// - `namespace` -> `SymbolSpace::Namespace`
+///
+/// Rationale: consumers import values (`import { Foo } from 'pkg'`); class/enum
+/// are primarily accessed at the value level, and their namespace-like behavior
+/// is carried by `decl_kinds` on the merged symbol, not by the primary key space.
 #[allow(dead_code)]
-pub type ExportMap = HashMap<String, ExportSymbol>;
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum SymbolSpace {
+    Type,
+    Value,
+    Namespace,
+}
+
+/// D-01 (Phase 18): Composite key for ExportMap, preserving multi-subpath/condition/space identity.
+///
+/// Derived Hash/Eq means field-wise hashing of the composite — no manual impl needed.
+/// - `subpath`: canonical `"."` for root (D-02). Fallback entry points (main/module/
+///   types/typings/browser) all map to `"."`.
+/// - `condition`: `None` for fallback entry points; `Some("import"/"require"/"types"/...)`
+///   for conditional-export keys.
+/// - `space`: see SymbolSpace (D-03).
+/// - `name`: the exported symbol name, unchanged from the pre-Phase-18 flat key.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct ExportKey {
+    pub subpath: String,
+    pub condition: Option<String>,
+    pub space: SymbolSpace,
+    pub name: String,
+}
+
+impl ExportKey {
+    /// Root-subpath + no-condition + Value-space constructor — the common case
+    /// for tests and for fallback entry-point insertions. Per D-02 + D-03.
+    #[allow(dead_code)]
+    pub fn new_root_value(name: &str) -> Self {
+        ExportKey {
+            subpath: ".".to_string(),
+            condition: None,
+            space: SymbolSpace::Value,
+            name: name.to_string(),
+        }
+    }
+
+    /// Full constructor. Use when subpath, condition, or space differ from the
+    /// root-value defaults.
+    #[allow(dead_code)]
+    pub fn new(subpath: &str, condition: Option<&str>, space: SymbolSpace, name: &str) -> Self {
+        ExportKey {
+            subpath: subpath.to_string(),
+            condition: condition.map(|c| c.to_string()),
+            space,
+            name: name.to_string(),
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub type ExportMap = HashMap<ExportKey, ExportSymbol>;
 
 // ─── Class shape model ──────────────────────────────────────────────────────
 
@@ -337,7 +401,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: None,
+            decl_kinds: Vec::new(),
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -378,7 +442,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Function),
+            decl_kinds: vec![DeclarationKind::Function],
             type_guard_type: None,
             is_async: true,
             is_generator: true,
@@ -443,7 +507,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: None,
+            decl_kinds: Vec::new(),
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -476,5 +540,85 @@ mod tests {
         let _ = ReleaseTag::Deprecated;
         assert_eq!(ReleaseTag::Internal, ReleaseTag::Internal);
         assert_ne!(ReleaseTag::Internal, ReleaseTag::Public);
+    }
+
+    // ─── Phase 18: ExportKey, SymbolSpace, decl_kinds ───────────────────────
+
+    #[test]
+    fn test_export_key_new_root_value_canonical_shape() {
+        let k = ExportKey::new_root_value("foo");
+        assert_eq!(k.subpath, ".");
+        assert_eq!(k.condition, None);
+        assert_eq!(k.space, SymbolSpace::Value);
+        assert_eq!(k.name, "foo");
+    }
+
+    #[test]
+    fn test_export_key_hash_eq_same_key_equal() {
+        let a = ExportKey::new("./sub", Some("import"), SymbolSpace::Value, "foo");
+        let b = ExportKey::new("./sub", Some("import"), SymbolSpace::Value, "foo");
+        assert_eq!(a, b);
+        use std::collections::HashMap;
+        let mut m: HashMap<ExportKey, u32> = HashMap::new();
+        m.insert(a.clone(), 1);
+        m.insert(b, 2);
+        assert_eq!(m.len(), 1); // same key overwrites
+        assert_eq!(m.get(&a), Some(&2));
+    }
+
+    #[test]
+    fn test_export_key_subpath_distinguishes() {
+        let a = ExportKey::new(".", None, SymbolSpace::Value, "foo");
+        let b = ExportKey::new("./sub", None, SymbolSpace::Value, "foo");
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_export_key_space_distinguishes() {
+        let v = ExportKey::new(".", None, SymbolSpace::Value, "Foo");
+        let t = ExportKey::new(".", None, SymbolSpace::Type, "Foo");
+        assert_ne!(v, t);
+    }
+
+    #[test]
+    fn test_export_key_condition_distinguishes() {
+        let import = ExportKey::new(".", Some("import"), SymbolSpace::Value, "foo");
+        let require = ExportKey::new(".", Some("require"), SymbolSpace::Value, "foo");
+        assert_ne!(import, require);
+    }
+
+    #[test]
+    fn test_symbol_space_variants_derive_hash() {
+        use std::collections::HashSet;
+        let mut s: HashSet<SymbolSpace> = HashSet::new();
+        s.insert(SymbolSpace::Type);
+        s.insert(SymbolSpace::Value);
+        s.insert(SymbolSpace::Namespace);
+        s.insert(SymbolSpace::Value); // duplicate insert
+        assert_eq!(s.len(), 3);
+    }
+
+    #[test]
+    fn test_hybrid_decl_kinds_carries_multiple() {
+        // D-14: Vec<DeclarationKind> preserves hybrid identity (class+namespace).
+        let sym = ExportSymbol {
+            name: "User".to_string(),
+            kind: ExportKind::Named,
+            file: std::path::PathBuf::from("user.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: vec![DeclarationKind::Class, DeclarationKind::Namespace],
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+        };
+        assert_eq!(sym.decl_kinds.len(), 2);
+        assert!(sym.decl_kinds.contains(&DeclarationKind::Class));
+        assert!(sym.decl_kinds.contains(&DeclarationKind::Namespace));
     }
 }
