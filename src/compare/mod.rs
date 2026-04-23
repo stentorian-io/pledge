@@ -163,10 +163,29 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 });
                 continue;
             }
-            let message = if name == "default" {
-                "default export was removed".to_string()
+            // Phase 18: qualify message with subpath/condition when non-canonical
+            // to disambiguate multi-subpath / multi-condition exports.
+            let is_root_no_cond = key.subpath == "." && key.condition.is_none();
+            let qualifier = if is_root_no_cond {
+                String::new()
             } else {
-                format!("exported symbol `{}` was removed", name)
+                format!(
+                    " from {}{}",
+                    key.subpath,
+                    key.condition
+                        .as_deref()
+                        .map(|c| format!(" ({})", c))
+                        .unwrap_or_default()
+                )
+            };
+            let message = if name == "default" {
+                if is_root_no_cond {
+                    "default export was removed".to_string()
+                } else {
+                    format!("default export was removed{}", qualifier)
+                }
+            } else {
+                format!("exported symbol `{}` was removed{}", name, qualifier)
             };
             findings.push(Finding {
                 severity: Severity::Major,
@@ -206,13 +225,27 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 });
                 continue;
             }
+            // Phase 18: qualify message with subpath/condition when non-canonical
+            let is_root_no_cond = key.subpath == "." && key.condition.is_none();
+            let qualifier = if is_root_no_cond {
+                String::new()
+            } else {
+                format!(
+                    " at {}{}",
+                    key.subpath,
+                    key.condition
+                        .as_deref()
+                        .map(|c| format!(" ({})", c))
+                        .unwrap_or_default()
+                )
+            };
             findings.push(Finding {
                 severity: Severity::Minor,
                 rule: "export-added",
                 file: sym.file.clone(),
                 line: sym.line,
                 col: sym.col,
-                message: format!("exported symbol `{}` was added", name),
+                message: format!("exported symbol `{}` was added{}", name, qualifier),
             });
         }
     }
@@ -254,8 +287,17 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         }
     }
 
-    // Sort by severity: Major < Minor < Patch (derived Ord on Severity enum) per D-01
-    findings.sort_by(|a, b| a.severity.cmp(&b.severity));
+    // Phase 18 Warning 8: total-order sort so HashMap<ExportKey, _> iteration
+    // non-determinism never surfaces as Finding reorder between runs.
+    // Sort keys: (severity, file, line, col, rule).
+    findings.sort_by(|a, b| {
+        a.severity
+            .cmp(&b.severity)
+            .then_with(|| a.file.cmp(&b.file))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.col.cmp(&b.col))
+            .then_with(|| a.rule.cmp(b.rule))
+    });
 
     findings
 }
@@ -1169,21 +1211,40 @@ pub fn compare_structural_diff(
 pub fn first_publish_findings(exports: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = exports
         .iter()
-        .map(|(key, sym)| Finding {
-            severity: Severity::Minor,
-            rule: "export-added",
-            file: sym.file.clone(),
-            line: sym.line,
-            col: sym.col,
-            message: format!("exported symbol `{}` was added", key.name),
+        .map(|(key, sym)| {
+            // Phase 18: qualify with subpath/condition when non-canonical
+            let is_root_no_cond = key.subpath == "." && key.condition.is_none();
+            let qualifier = if is_root_no_cond {
+                String::new()
+            } else {
+                format!(
+                    " at {}{}",
+                    key.subpath,
+                    key.condition
+                        .as_deref()
+                        .map(|c| format!(" ({})", c))
+                        .unwrap_or_default()
+                )
+            };
+            Finding {
+                severity: Severity::Minor,
+                rule: "export-added",
+                file: sym.file.clone(),
+                line: sym.line,
+                col: sym.col,
+                message: format!("exported symbol `{}` was added{}", key.name, qualifier),
+            }
         })
         .collect();
 
+    // Phase 18 Warning 8: total-order sort on (severity, file, line, col, rule).
     findings.sort_by(|a, b| {
-        a.file
-            .cmp(&b.file)
+        a.severity
+            .cmp(&b.severity)
+            .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
             .then_with(|| a.col.cmp(&b.col))
+            .then_with(|| a.rule.cmp(b.rule))
     });
 
     findings
@@ -1610,6 +1671,225 @@ mod tests {
             "changing CJS function from sync to async should produce sync-to-async; got: {:?}",
             findings.iter().map(|f| f.rule).collect::<Vec<_>>()
         );
+    }
+
+    // ─── Phase 18 compare_exports ExportKey-iteration tests ─────────────────
+
+    fn make_basic_sym(name: &str, file: std::path::PathBuf, line: u32) -> crate::types::ExportSymbol {
+        use crate::types::{ExportKind, ExportSymbol};
+        ExportSymbol {
+            name: name.to_string(),
+            kind: ExportKind::Named,
+            file,
+            line,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: Vec::new(),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+        }
+    }
+
+    #[test]
+    fn test_arch01_different_subpaths_produce_separate_findings() {
+        // Phase 18 ARCH-01: same name at different subpaths must fan out to
+        // separate export-removed + export-added findings (no silent match).
+        use crate::types::{ExportKey, ExportMap, SymbolSpace};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let mut old: ExportMap = HashMap::new();
+        let mut new: ExportMap = HashMap::new();
+        old.insert(
+            ExportKey::new(".", None, SymbolSpace::Value, "foo"),
+            make_basic_sym("foo", PathBuf::from("a.ts"), 1),
+        );
+        new.insert(
+            ExportKey::new("./sub", None, SymbolSpace::Value, "foo"),
+            make_basic_sym("foo", PathBuf::from("b.ts"), 1),
+        );
+        let findings = compare_exports(&old, &new);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "export-removed")
+                .count(),
+            1,
+            "ARCH-01: exactly one export-removed for `foo` at `.`; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings.iter().filter(|f| f.rule == "export-added").count(),
+            1,
+            "ARCH-01: exactly one export-added for `foo` at `./sub`; got: {:?}",
+            findings
+        );
+        // Removed must reference the root `.` subpath in the message (canonical — no qualifier)
+        let removed = findings
+            .iter()
+            .find(|f| f.rule == "export-removed")
+            .unwrap();
+        assert!(
+            !removed.message.contains("./sub"),
+            "ARCH-01: removed message for root subpath should not qualify; got: `{}`",
+            removed.message
+        );
+        // Added must reference ./sub in the qualifier
+        let added = findings
+            .iter()
+            .find(|f| f.rule == "export-added")
+            .unwrap();
+        assert!(
+            added.message.contains("./sub"),
+            "ARCH-01: added message must qualify with `./sub`; got: `{}`",
+            added.message
+        );
+    }
+
+    #[test]
+    fn test_arch03_type_and_value_space_diff_independently() {
+        // Phase 18 ARCH-03: `export type Foo` and `export const Foo` coexist in
+        // different SymbolSpace buckets and diff independently.
+        use crate::types::{ExportKey, ExportMap, SymbolSpace};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let mut old: ExportMap = HashMap::new();
+        let mut new: ExportMap = HashMap::new();
+        old.insert(
+            ExportKey::new(".", None, SymbolSpace::Type, "Foo"),
+            make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
+        );
+        old.insert(
+            ExportKey::new(".", None, SymbolSpace::Value, "Foo"),
+            make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
+        );
+        // New: only value-space Foo
+        new.insert(
+            ExportKey::new(".", None, SymbolSpace::Value, "Foo"),
+            make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
+        );
+        let findings = compare_exports(&old, &new);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "export-removed")
+                .count(),
+            1,
+            "ARCH-03: exactly one export-removed for type-space Foo; got: {:?}",
+            findings
+        );
+        assert_eq!(
+            findings.iter().filter(|f| f.rule == "export-added").count(),
+            0,
+            "ARCH-03: value-space Foo present in both sides must NOT fire export-added; got: {:?}",
+            findings
+        );
+    }
+
+    #[test]
+    fn test_arch04_multi_file_same_name_diffed_independently() {
+        // Phase 18 ARCH-04: `User` from `./a.ts` at subpath `.` and `User` from
+        // `./b.ts` at subpath `./admin` are distinct keys; removing one does not
+        // collapse onto the other.
+        use crate::types::{ExportKey, ExportMap, SymbolSpace};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let mut old: ExportMap = HashMap::new();
+        let mut new: ExportMap = HashMap::new();
+        let user_root_key = ExportKey::new(".", None, SymbolSpace::Value, "User");
+        let user_admin_key = ExportKey::new("./admin", None, SymbolSpace::Value, "User");
+        old.insert(
+            user_root_key.clone(),
+            make_basic_sym("User", PathBuf::from("src/a.ts"), 1),
+        );
+        old.insert(
+            user_admin_key.clone(),
+            make_basic_sym("User", PathBuf::from("src/b.ts"), 1),
+        );
+        new.insert(
+            user_root_key,
+            make_basic_sym("User", PathBuf::from("src/a.ts"), 1),
+        );
+        // ./admin User removed.
+        let findings = compare_exports(&old, &new);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|f| f.rule == "export-removed")
+                .count(),
+            1,
+            "ARCH-04: exactly one export-removed for ./admin User; got: {:?}",
+            findings
+        );
+        let removed = findings
+            .iter()
+            .find(|f| f.rule == "export-removed")
+            .unwrap();
+        assert_eq!(
+            removed.file,
+            PathBuf::from("src/b.ts"),
+            "ARCH-04: removed finding must point to src/b.ts (admin subpath source); got: {:?}",
+            removed
+        );
+    }
+
+    #[test]
+    fn test_warning8_compare_exports_deterministic_total_order() {
+        // Phase 18 Warning 8: final sort must be total-order on
+        // (severity, file, line, col, rule) so HashMap iteration non-determinism
+        // never surfaces as Finding reorder.
+        use crate::types::{ExportKey, ExportMap, SymbolSpace};
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let mut old: ExportMap = HashMap::new();
+        let new: ExportMap = HashMap::new();
+        // 4 distinct ExportKeys, all removed → 4 Major findings.
+        for n in ["alpha", "beta", "gamma", "delta"] {
+            old.insert(
+                ExportKey::new(".", None, SymbolSpace::Value, n),
+                make_basic_sym(n, PathBuf::from(format!("{}.ts", n)), 1),
+            );
+        }
+
+        let run_a = compare_exports(&old, &new);
+        let run_b = compare_exports(&old, &new);
+
+        assert_eq!(
+            run_a.len(),
+            run_b.len(),
+            "Warning 8: two runs must produce equal-length Finding vecs"
+        );
+        for (a, b) in run_a.iter().zip(run_b.iter()) {
+            assert_eq!(a.rule, b.rule, "Warning 8: rule order must be stable");
+            assert_eq!(a.severity, b.severity);
+            assert_eq!(a.file, b.file);
+            assert_eq!(a.line, b.line);
+            assert_eq!(a.col, b.col);
+            assert_eq!(a.message, b.message);
+        }
+
+        // Stronger: findings of the same severity must be sorted by
+        // (file, line, col, rule) — this validates the total-order comparator.
+        for window in run_a.windows(2) {
+            if window[0].severity == window[1].severity {
+                let a_tuple = (&window[0].file, window[0].line, window[0].col, window[0].rule);
+                let b_tuple = (&window[1].file, window[1].line, window[1].col, window[1].rule);
+                assert!(
+                    a_tuple <= b_tuple,
+                    "Warning 8: same-severity findings must be in total order; {:?} !<= {:?}",
+                    a_tuple,
+                    b_tuple
+                );
+            }
+        }
     }
 }
 

@@ -484,6 +484,31 @@ mod tests {
         }
     }
 
+    /// Phase 18: helper for constructing symbols with multi-kind decl_kinds
+    /// (declaration-merging hybrids like [Class, Namespace]).
+    fn make_sym_multi(
+        name: &str,
+        kind: ExportKind,
+        decl_kinds: Vec<DeclarationKind>,
+    ) -> ExportSymbol {
+        ExportSymbol {
+            name: name.to_string(),
+            kind,
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds,
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+        }
+    }
+
     #[test]
     fn test_ref04_interface_to_type_alias() {
         let old = make_sym(
@@ -526,6 +551,81 @@ mod tests {
             &[],
         );
         assert!(findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER));
+    }
+
+    // ── Phase 18 Warning 4: REF-05 hybrid + empty-decl_kinds guard ──────────
+
+    #[test]
+    fn test_ref05_hybrid_class_namespace_does_not_fire() {
+        // Phase 18 D-14/D-16: class+namespace hybrid in new must NOT fire
+        // RULE_NAMESPACE_TO_OTHER — the namespace facet is preserved.
+        let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
+        let new = make_sym_multi(
+            "X",
+            ExportKind::Named,
+            vec![DeclarationKind::Class, DeclarationKind::Namespace],
+        );
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "X",
+            &PathBuf::from("x.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
+            "hybrid class+namespace must not fire RULE_NAMESPACE_TO_OTHER; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ref05_pure_namespace_to_class_fires() {
+        // Old: pure namespace. New: pure class (no namespace kind). Must fire REF-05.
+        let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
+        let new = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Class]);
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "X",
+            &PathBuf::from("x.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(
+            findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
+            "pure namespace→class must fire REF-05; got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_ref05_empty_new_decl_kinds_does_not_fire() {
+        // Warning 4: empty new.decl_kinds (e.g., re-export with unknown kind) is
+        // the pre-classification gap — pre-Phase-18 this was decl_kind: None and
+        // REF-05 did NOT fire. Must preserve that semantics.
+        let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
+        let new = make_sym_multi("X", ExportKind::Named, Vec::new());
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "X",
+            &PathBuf::from("x.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+        assert!(
+            !findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER),
+            "empty new.decl_kinds must NOT fire REF-05 (Warning 4 pre-classification-gap semantics); got: {:?}",
+            findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+        );
     }
 
     #[test]
