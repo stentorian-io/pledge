@@ -86,10 +86,19 @@ pub fn consolidate_namespace_moves(
             let mut all_shape_equal = true;
             for old_key in old_members {
                 let leaf = leaf_of(&old_key.name);
-                let new_key_match = new_members
-                    .iter()
-                    .find(|k| leaf_of(&k.name) == leaf)
-                    .expect("leaf existence ensured by leaves set equality");
+                // WR-03 fix: per PROJECT.md "warn-and-continue, never panic"
+                // policy, replace the load-bearing `.expect()` with a graceful
+                // break. The invariant (leaves-set equality + unique HashMap
+                // keys) guarantees the match exists today, but a future
+                // refactor that loosens grouping must degrade gracefully
+                // rather than panic the CLI.
+                let new_key_match = match new_members.iter().find(|k| leaf_of(&k.name) == leaf) {
+                    Some(k) => k,
+                    None => {
+                        all_shape_equal = false;
+                        break;
+                    }
+                };
                 let old_sym = match old.get(old_key) {
                     Some(s) => s,
                     None => {
