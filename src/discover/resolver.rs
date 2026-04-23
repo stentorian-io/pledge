@@ -560,7 +560,11 @@ pub fn collect_exports(
                             is_generator: false,
                             is_reexport: false,
                             is_type_only: false,
-                            release_tag: None,
+                            // META-06 (Phase 19): propagate the release_tag populated
+                            // by the comment_scan pass on the current file's RawExport.
+                            // Without this, `/** @deprecated */ export default foo`
+                            // loses its tag at insertion time.
+                            release_tag: export.release_tag,
                             compound_members: Vec::new(),
                         },
                     );
@@ -694,7 +698,11 @@ pub fn collect_exports(
                                         is_generator: false,
                                         is_reexport: false,
                                         is_type_only: false,
-                                        release_tag: None,
+                                        // META-06 (Phase 19): propagate the release_tag populated
+                                        // by the comment_scan pass on the current file's RawExport.
+                                        // Without this, a `/** @deprecated */ export { foo } from ...`
+                                        // loses its tag at the re-export boundary.
+                                        release_tag: export.release_tag.clone(),
                                         compound_members: Vec::new(),
                                     },
                                 );
