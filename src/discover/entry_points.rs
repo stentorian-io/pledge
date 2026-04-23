@@ -11,6 +11,11 @@ pub struct EntryPoint {
     /// The condition key from the exports map (e.g., "import", "require", "types"), or None
     /// when resolved from top-level `main`, `module`, or `types` fields.
     pub condition: Option<String>,
+    /// D-02 (Phase 18): Canonical subpath the entry point belongs to. Always `"."` for
+    /// root fallback (main/module/types/typings/browser) and for `exports: { ".": ... }`.
+    /// Set to the subpath key (e.g., `"./utils"`) when resolved from a non-root
+    /// subpath entry in the `exports` map.
+    pub subpath: String,
 }
 
 /// Resolve all entry points for a package rooted at `pkg_root`.
@@ -48,6 +53,7 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
                 results.push(EntryPoint {
                     path: abs,
                     condition: None,
+                    subpath: ".".to_string(),
                 });
                 // No break — all valid fields contribute entry points.
                 // The deduplication step below handles cases where multiple
@@ -60,6 +66,7 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
             results.push(EntryPoint {
                 path: pkg_root.join("index.js"),
                 condition: None,
+                subpath: ".".to_string(),
             });
         }
     }
@@ -87,6 +94,7 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
                                         results.push(EntryPoint {
                                             path: abs,
                                             condition: Some("typesVersions".to_string()),
+                                            subpath: ".".to_string(),
                                         });
                                     } else {
                                         // GAP-16-11: Wildcard path expansion.
@@ -120,6 +128,7 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
                                                                 condition: Some(
                                                                     "typesVersions".to_string(),
                                                                 ),
+                                                                subpath: ".".to_string(),
                                                             });
                                                         }
                                                     }
@@ -180,6 +189,7 @@ fn resolve_exports_value(
         value,
         base_path,
         condition,
+        ".",
         &mut warnings,
     ));
     // Non-standard value warnings are currently discarded here (caller doesn't thread warnings).
@@ -191,10 +201,14 @@ fn resolve_exports_value(
 /// `exports` field values (false, null, numeric, array-of-non-string).
 ///
 /// Returns the collected `EntryPoint`s. Warnings are appended to `warnings`.
+///
+/// Phase 18 D-02: `subpath` is threaded through recursion so every emitted EntryPoint
+/// carries its originating subpath (canonically `"."` for root).
 pub(crate) fn resolve_exports_value_with_warnings(
     value: &serde_json::Value,
     base_path: &Path,
     condition: Option<&str>,
+    subpath: &str,
     warnings: &mut Vec<String>,
 ) -> Vec<EntryPoint> {
     let mut results = Vec::new();
@@ -205,6 +219,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
             results.push(EntryPoint {
                 path,
                 condition: condition.map(|s| s.to_string()),
+                subpath: subpath.to_string(),
             });
         }
         serde_json::Value::Object(map) => {
@@ -214,17 +229,28 @@ pub(crate) fn resolve_exports_value_with_warnings(
                         // GAP-16-06: Subpath wildcard key like "./*" or "./features/*".
                         expand_subpath_wildcard(key, child, base_path, &mut results);
                     } else {
-                        // Subpath export like "./utils" — recurse without inheriting condition.
+                        // Subpath export like "./utils" — recurse with the subpath key,
+                        // preserving the inherited condition (Phase 18 D-02: subpath-key
+                        // recursion updates subpath; condition is preserved so that
+                        // condition-before-subpath and subpath-before-condition orderings
+                        // both produce correct (subpath, condition) pairs on leaves).
                         results.extend(resolve_exports_value_with_warnings(
-                            child, base_path, None, warnings,
+                            child,
+                            base_path,
+                            condition,
+                            key.as_str(),
+                            warnings,
                         ));
                     }
                 } else {
                     // Condition key like "import", "require", "types", "default".
+                    // Phase 18: preserve the current subpath — condition-key recursion
+                    // does NOT reset subpath context.
                     results.extend(resolve_exports_value_with_warnings(
                         child,
                         base_path,
                         Some(key.as_str()),
+                        subpath,
                         warnings,
                     ));
                 }
@@ -243,7 +269,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
                     continue;
                 }
                 results.extend(resolve_exports_value_with_warnings(
-                    item, base_path, condition, warnings,
+                    item, base_path, condition, subpath, warnings,
                 ));
             }
         }
@@ -282,8 +308,14 @@ pub(crate) fn resolve_exports_value_with_warnings(
 ///
 /// Scans the target directory for files matching the suffix and creates an EntryPoint for each.
 /// GAP-16-06.
+///
+/// Phase 18 D-02: `key` is the subpath-wildcard pattern (e.g., `"./*"`); the expanded
+/// entries carry the concrete subpath inferred from the matched filename where possible,
+/// falling back to the pattern key itself (e.g., `"./*"`). Downstream compare/dedup
+/// treats the pattern key as a per-expansion subpath — refinement to per-match concrete
+/// subpaths is deferred to Phase 18 Plan 2/4 integration.
 fn expand_subpath_wildcard(
-    _key: &str,
+    key: &str,
     value: &serde_json::Value,
     base_path: &Path,
     results: &mut Vec<EntryPoint>,
@@ -296,6 +328,7 @@ fn expand_subpath_wildcard(
             results.push(EntryPoint {
                 path,
                 condition: None,
+                subpath: key.to_string(),
             });
             continue;
         }
@@ -319,9 +352,27 @@ fn expand_subpath_wildcard(
                             file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                         // Check that the file matches the suffix pattern.
                         if suffix.is_empty() || file_name.ends_with(suffix) {
+                            // Phase 18: derive per-expansion concrete subpath when
+                            // possible. For key="./*" and a matched basename "alpha.js"
+                            // with suffix=".js", the concrete subpath is "./alpha".
+                            // Falls back to the pattern key ("./*") for patterns we
+                            // can't cleanly invert.
+                            let concrete_subpath = if key.contains('*') {
+                                // Strip the file suffix from file_name to recover
+                                // the wildcard slot's text.
+                                let stem = if !suffix.is_empty() && file_name.ends_with(suffix) {
+                                    &file_name[..file_name.len() - suffix.len()]
+                                } else {
+                                    file_name
+                                };
+                                key.replace('*', stem)
+                            } else {
+                                key.to_string()
+                            };
                             results.push(EntryPoint {
                                 path: file_path,
                                 condition: None,
+                                subpath: concrete_subpath,
                             });
                         }
                     }
@@ -644,7 +695,7 @@ mod tests {
     fn rob_03_exports_false_produces_warning_and_empty() {
         let v = serde_json::json!(false);
         let mut warnings: Vec<String> = Vec::new();
-        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
         assert!(
             res.is_empty(),
             "ROB-03: exports=false should produce empty results"
@@ -659,7 +710,7 @@ mod tests {
     fn rob_03_exports_null_produces_warning() {
         let v = serde_json::Value::Null;
         let mut warnings: Vec<String> = Vec::new();
-        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
         assert!(
             res.is_empty(),
             "ROB-03: exports=null should produce empty results"
@@ -674,12 +725,69 @@ mod tests {
     fn rob_03_exports_numeric_produces_warning() {
         let v = serde_json::json!(42);
         let mut warnings: Vec<String> = Vec::new();
-        let _ = resolve_exports_value_with_warnings(&v, Path::new("/"), None, &mut warnings);
+        let _ = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
         assert!(
             warnings
                 .iter()
                 .any(|w| w.contains("42") || w.contains("numeric")),
             "ROB-03: expected warning mentioning numeric value; got: {warnings:?}"
+        );
+    }
+
+    // ─── Phase 18: subpath threading (D-02) ──────────────────────────────────
+
+    #[test]
+    fn test_subpath_canonical_dot_for_main_fallback() {
+        let pkg_json = r#"{"name":"x","main":"./index.js"}"#;
+        let dir = make_pkg(pkg_json, &["index.js"]);
+        let eps = resolve_entry_points(dir.path()).unwrap();
+        assert!(
+            eps.iter().any(|e| e.subpath == "."),
+            "main-fallback must use canonical \".\" subpath; got: {eps:?}"
+        );
+    }
+
+    #[test]
+    fn test_subpath_preserved_across_condition_branch() {
+        // Two distinct subpaths, each wrapped under condition objects.
+        // Prior to Phase 18 the subpath-key recursion lost subpath context.
+        let pkg_json = r#"{
+            "name": "x",
+            "exports": {
+                "./a": { "import": "./a.mjs" },
+                "./b": { "import": "./b.mjs" }
+            }
+        }"#;
+        let dir = make_pkg(pkg_json, &["a.mjs", "b.mjs"]);
+        let eps = resolve_entry_points(dir.path()).unwrap();
+        let subpaths: Vec<&str> = eps.iter().map(|e| e.subpath.as_str()).collect();
+        assert!(
+            subpaths.contains(&"./a"),
+            "expected subpath './a', got {subpaths:?}"
+        );
+        assert!(
+            subpaths.contains(&"./b"),
+            "expected subpath './b', got {subpaths:?}"
+        );
+    }
+
+    #[test]
+    fn test_subpath_root_with_conditions() {
+        let pkg_json = r#"{
+            "name": "x",
+            "exports": {
+                ".": { "import": "./esm.js", "require": "./cjs.js" }
+            }
+        }"#;
+        let dir = make_pkg(pkg_json, &["esm.js", "cjs.js"]);
+        let eps = resolve_entry_points(dir.path()).unwrap();
+        assert!(
+            eps.iter().any(|e| e.subpath == "." && e.condition.as_deref() == Some("import")),
+            "expected (subpath=\".\", condition=Some(\"import\")); got: {eps:?}"
+        );
+        assert!(
+            eps.iter().any(|e| e.subpath == "." && e.condition.as_deref() == Some("require")),
+            "expected (subpath=\".\", condition=Some(\"require\")); got: {eps:?}"
         );
     }
 }

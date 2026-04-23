@@ -35,6 +35,8 @@ pub fn discover_exports(
             &mut warnings,
             0,
             tsconfig.as_ref(),
+            &entry.subpath,
+            entry.condition.as_deref(),
         )?;
     }
 
