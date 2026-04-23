@@ -1062,9 +1062,25 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
             if let (Some(lp), Some((name, line, col))) = (local_pos, alias_name_opt) {
                 alias_local_positions.insert(lp);
+                // INF-03 (Phase 18): tsup/esbuild ESM trailer
+                // `export { foo as default }`. The alias_name is the PUBLIC
+                // exported name — when it is the keyword `default`, the
+                // specifier is semantically a default-export, not a named
+                // export with name "default". Emit `RawExport { name:
+                // "default", kind: Default }` so downstream resolver keying
+                // treats this as the default export (the resolver's default
+                // path is keyed as `"default"` and carries distinct merge
+                // semantics). Non-"default" aliases preserve pre-Phase-18
+                // Named behavior — `export { foo as Baz }` remains a Named
+                // export with name "Baz".
+                let export_kind = if name == "default" {
+                    RawExportKind::Default
+                } else {
+                    RawExportKind::Named
+                };
                 exports.push(RawExport {
                     name,
-                    kind: RawExportKind::Named,
+                    kind: export_kind,
                     line,
                     col,
                     source: None,
@@ -7186,5 +7202,128 @@ export { foo } from './other';
         // decl_kind from ambient declare must NOT have leaked in.
         assert_eq!(foo.decl_kind, None);
         assert_eq!(foo.type_signature, None);
+    }
+
+    // ---------------------------------------------------------------------
+    // INF-03 (Phase 18): tsup/esbuild `export { foo as default }` ESM trailer
+    // dual-emission tests. When `alias_name == "default"` the NAMED_EXPORT_
+    // ALIAS_QUERY handler now emits `RawExportKind::Default` instead of
+    // `Named`. Dual emission (`export { foo, foo as default }`) fires both
+    // queries — NAMED_EXPORT_QUERY for foo and NAMED_EXPORT_ALIAS_QUERY for
+    // the default trailer.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_inf03_foo_as_default_trailer_emits_default_kind() {
+        let src = br#"
+const foo = 1;
+export { foo as default };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let default = exports
+            .iter()
+            .find(|e| matches!(e.kind, RawExportKind::Default))
+            .expect("expected a Default RawExport");
+        assert_eq!(default.name, "default");
+        // foo is NOT also emitted as a separate Named when only the alias
+        // trailer is present (no bare `foo` specifier in the export clause).
+        assert!(
+            !exports
+                .iter()
+                .any(|e| e.name == "foo" && matches!(e.kind, RawExportKind::Named)),
+            "foo alone should not be Named when only the alias trailer is present"
+        );
+    }
+
+    #[test]
+    fn test_inf03_dual_emission_foo_and_default() {
+        let src = br#"
+const foo = 1;
+export { foo, foo as default };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "foo" && matches!(e.kind, RawExportKind::Named)),
+            "expected Named foo (fires via NAMED_EXPORT_QUERY)"
+        );
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "default" && matches!(e.kind, RawExportKind::Default)),
+            "expected Default from `as default` trailer"
+        );
+    }
+
+    #[test]
+    fn test_inf03_non_default_alias_stays_named() {
+        let src = br#"
+const bar = 1;
+export { bar as Baz };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "Baz" && matches!(e.kind, RawExportKind::Named)),
+            "expected Baz as Named"
+        );
+        assert!(
+            !exports
+                .iter()
+                .any(|e| matches!(e.kind, RawExportKind::Default)),
+            "non-default alias must not emit a Default"
+        );
+    }
+
+    #[test]
+    fn test_inf03_source_default_plus_trailer_dedup() {
+        // Both source-form `export default foo` AND the trailer form
+        // `export { foo as default }`. Both produce a Default RawExport. The
+        // resolver pre-merge absorbs the duplicate via ExportKey ("default",
+        // space=Value) — tree_query.rs emits both and the resolver keeps one
+        // ExportMap entry.
+        let src = br#"
+const foo = 1;
+export default foo;
+export { foo as default };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let default_count = exports
+            .iter()
+            .filter(|e| matches!(e.kind, RawExportKind::Default))
+            .count();
+        assert!(
+            default_count >= 1,
+            "at least one Default must be emitted; got {default_count}"
+        );
+    }
+
+    #[test]
+    fn test_inf03_zod_style_trailer_with_variable_ref() {
+        // Real-package inspired: Zod 3.23.8 emits
+        //   declare const z: ...;
+        //   export { z as default, z };
+        // alongside ambient declare at the top. INF-02 links `z` (Named) to
+        // the ambient decl_kind; INF-03 emits an additional Default for the
+        // `as default` alias.
+        let src = br#"
+declare const z: { parse: (x: any) => any };
+export { z as default, z };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            exports
+                .iter()
+                .any(|e| e.name == "z" && matches!(e.kind, RawExportKind::Named)),
+            "expected Named z"
+        );
+        assert!(
+            exports
+                .iter()
+                .any(|e| matches!(e.kind, RawExportKind::Default)),
+            "expected Default from 'as default' trailer"
+        );
     }
 }
