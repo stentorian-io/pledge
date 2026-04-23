@@ -782,11 +782,13 @@ mod tests {
         let dir = make_pkg(pkg_json, &["esm.js", "cjs.js"]);
         let eps = resolve_entry_points(dir.path()).unwrap();
         assert!(
-            eps.iter().any(|e| e.subpath == "." && e.condition.as_deref() == Some("import")),
+            eps.iter()
+                .any(|e| e.subpath == "." && e.condition.as_deref() == Some("import")),
             "expected (subpath=\".\", condition=Some(\"import\")); got: {eps:?}"
         );
         assert!(
-            eps.iter().any(|e| e.subpath == "." && e.condition.as_deref() == Some("require")),
+            eps.iter()
+                .any(|e| e.subpath == "." && e.condition.as_deref() == Some("require")),
             "expected (subpath=\".\", condition=Some(\"require\")); got: {eps:?}"
         );
     }

@@ -126,7 +126,13 @@ pub fn compare_ref_changes(
     // - enum -> other: breaks member access pattern
     // - function -> variable: breaks call signatures if shape differs
     // REF-05 (namespace-to-other) is handled separately below.
-    if let (Some(old_kind), Some(new_kind)) = (&old_sym.decl_kind, &new_sym.decl_kind) {
+    //
+    // Phase 18 D-14: decl_kinds is now Vec<_>. We compare the "primary" kind
+    // (first element) for REF-04. The ref-05 check below uses set-membership
+    // semantics so hybrids like [Class, Namespace] don't spuriously fire.
+    if let (Some(old_kind), Some(new_kind)) =
+        (old_sym.decl_kinds.first(), new_sym.decl_kinds.first())
+    {
         if old_kind != new_kind
             && *old_kind != DeclarationKind::Unknown
             && *new_kind != DeclarationKind::Unknown
@@ -154,22 +160,28 @@ pub fn compare_ref_changes(
     }
 
     // REF-05: namespace-to-other
-    // Per D-05: old is Namespace, new is anything else
-    if let Some(DeclarationKind::Namespace) = &old_sym.decl_kind {
-        if let Some(new_kind) = &new_sym.decl_kind {
-            if *new_kind != DeclarationKind::Namespace {
-                findings.push(Finding {
-                    severity: Severity::Major,
-                    rule: RULE_NAMESPACE_TO_OTHER,
-                    file: file.to_path_buf(),
-                    line,
-                    col,
-                    message: format!(
-                        "namespace `{}` converted to {} -- breaks namespace augmentation",
-                        name, new_kind
-                    ),
-                });
-            }
+    // Phase 18 D-14 / D-16: fire when old carries Namespace in decl_kinds AND new
+    // carries at least one decl_kind AND none of new's decl_kinds is Namespace.
+    // This preserves REF-05 for pure namespace -> other transitions while
+    // allowing hybrid class+namespace / function+namespace to suppress REF-05
+    // when the namespace facet is preserved in the new symbol.
+    if old_sym.decl_kinds.contains(&DeclarationKind::Namespace)
+        && !new_sym.decl_kinds.is_empty()
+        && !new_sym.decl_kinds.contains(&DeclarationKind::Namespace)
+    {
+        // Use the primary (first) new kind for the message.
+        if let Some(new_kind) = new_sym.decl_kinds.first() {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_NAMESPACE_TO_OTHER,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "namespace `{}` converted to {} -- breaks namespace augmentation",
+                    name, new_kind
+                ),
+            });
         }
     }
 
@@ -215,8 +227,12 @@ pub fn compare_ref_changes(
     // REF-08: default-export-changed (kind change only)
     // Per D-09/D-10: two-tier analysis. Tier 1: kind changed -> always major.
     // Tier 2: same kind -> delegate to existing diff_types() (handled in compare_exports).
+    //
+    // Phase 18 D-14: use primary (first) decl_kind from the Vec.
     if old_sym.kind == ExportKind::Default {
-        if let (Some(old_kind), Some(new_kind)) = (&old_sym.decl_kind, &new_sym.decl_kind) {
+        if let (Some(old_kind), Some(new_kind)) =
+            (old_sym.decl_kinds.first(), new_sym.decl_kinds.first())
+        {
             if old_kind != new_kind {
                 ref_08_fired = true; // SEM-05: record that REF-08 fired for this symbol
                 findings.push(Finding {
@@ -458,7 +474,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind,
+            decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
             type_guard_type: None,
             is_async: false,
             is_generator: false,

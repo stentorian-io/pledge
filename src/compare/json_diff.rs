@@ -384,7 +384,9 @@ mod tests {
         // Identical subtrees still trigger it because the cap fires before per-key
         // comparison decides whether there are real differences.
         assert!(
-            findings.iter().any(|f| f.rule == RULE_JSON_COMPARISON_TRUNCATED),
+            findings
+                .iter()
+                .any(|f| f.rule == RULE_JSON_COMPARISON_TRUNCATED),
             "WR-02: depth cap should produce a truncation finding"
         );
     }
@@ -418,9 +420,7 @@ mod tests {
             Severity::Patch,
             "WR-02: truncation should be Patch severity"
         );
-        assert!(truncation[0]
-            .message
-            .contains("truncated at depth"));
+        assert!(truncation[0].message.contains("truncated at depth"));
     }
 
     #[test]

@@ -14,15 +14,15 @@ fn fixture_path(name: &str) -> PathBuf {
 fn test_discover_simple_js_exports() {
     let (exports, _warnings) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     assert!(
-        exports.contains_key("greet"),
+        exports.keys().any(|k| k.name == "greet"),
         "should find named export 'greet'"
     );
     assert!(
-        exports.contains_key("farewell"),
+        exports.keys().any(|k| k.name == "farewell"),
         "should find named export 'farewell'"
     );
     assert!(
-        exports.contains_key("default"),
+        exports.keys().any(|k| k.name == "default"),
         "should find default export"
     );
     assert_eq!(exports.len(), 3, "should find exactly 3 exports");
@@ -32,19 +32,19 @@ fn test_discover_simple_js_exports() {
 fn test_discover_typescript_exports() {
     let (exports, _warnings) = discover_exports(&fixture_path("ts-pkg")).unwrap();
     assert!(
-        exports.contains_key("VERSION"),
+        exports.keys().any(|k| k.name == "VERSION"),
         "should find const export 'VERSION'"
     );
     assert!(
-        exports.contains_key("Config"),
+        exports.keys().any(|k| k.name == "Config"),
         "should find interface export 'Config'"
     );
     assert!(
-        exports.contains_key("configure"),
+        exports.keys().any(|k| k.name == "configure"),
         "should find function export 'configure'"
     );
     assert!(
-        exports.contains_key("default"),
+        exports.keys().any(|k| k.name == "default"),
         "should find default export 'App'"
     );
 }
@@ -53,11 +53,11 @@ fn test_discover_typescript_exports() {
 fn test_discover_reexports() {
     let (exports, _warnings) = discover_exports(&fixture_path("reexport-pkg")).unwrap();
     assert!(
-        exports.contains_key("greet"),
+        exports.keys().any(|k| k.name == "greet"),
         "should find re-exported 'greet'"
     );
     assert!(
-        exports.contains_key("helper"),
+        exports.keys().any(|k| k.name == "helper"),
         "should find star re-exported 'helper'"
     );
 }
@@ -136,7 +136,8 @@ fn test_findings_sorted_by_severity() {
 #[test]
 fn test_finding_line_numbers_are_1_indexed() {
     let (exports, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
-    for (name, sym) in &exports {
+    for (key, sym) in &exports {
+        let name = &key.name;
         assert!(
             sym.line >= 1,
             "line for '{}' should be >= 1 (1-indexed), got {}",

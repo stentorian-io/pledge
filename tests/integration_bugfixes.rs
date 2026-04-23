@@ -22,8 +22,8 @@ use interlint::compare::{enum_diff, ref_diff};
 use interlint::discover::tree_query::{self, RawExportKind, SourceLanguage};
 use interlint::types::shape::{ParamShape, PrimitiveKind, TypeShape};
 use interlint::types::{
-    DeclarationKind, EnumMember, EnumShape, EnumValueKind, ExportKind, ExportMap, ExportSymbol,
-    Finding, Severity,
+    DeclarationKind, EnumMember, EnumShape, EnumValueKind, ExportKey, ExportKind, ExportMap,
+    ExportSymbol, Finding, Severity,
 };
 use std::path::PathBuf;
 
@@ -46,7 +46,7 @@ fn make_sym(name: &str, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind,
+        decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -65,7 +65,7 @@ fn make_fn_sym_with_overloads(name: &str, overloads: Vec<TypeShape>) -> ExportSy
         col: 1,
         type_signature: None,
         overloads,
-        decl_kind: Some(DeclarationKind::Function),
+        decl_kinds: vec![DeclarationKind::Function],
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -122,7 +122,7 @@ fn test_export_alias_detected_correctly() {
     let mut old_map = ExportMap::new();
     for raw in &old_exports {
         old_map.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -131,7 +131,7 @@ fn test_export_alias_detected_correctly() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: None,
+                decl_kinds: Vec::new(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -145,7 +145,7 @@ fn test_export_alias_detected_correctly() {
     let mut new_map = ExportMap::new();
     for raw in &new_exports {
         new_map.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -154,7 +154,7 @@ fn test_export_alias_detected_correctly() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: None,
+                decl_kinds: Vec::new(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,

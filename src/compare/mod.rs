@@ -137,8 +137,9 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     });
 
     // Removed exports (DET-01, DET-02)
-    for (name, sym) in &filtered_old {
-        if !filtered_new.contains_key(name) {
+    for (key, sym) in &filtered_old {
+        let name = key.name.as_str();
+        if !filtered_new.contains_key(key) {
             // META-03: route augmentation member keys to specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -179,8 +180,9 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     }
 
     // New exports (DET-03, DET-04, OUT-05): compatible additions reported as Minor
-    for (name, sym) in &filtered_new {
-        if !filtered_old.contains_key(name) {
+    for (key, sym) in &filtered_new {
+        let name = key.name.as_str();
+        if !filtered_old.contains_key(key) {
             // META-03: augmentation member additions also use specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -216,9 +218,9 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     }
 
     // META-04: Surface @deprecated symbols that exist in both old and new as Warning.
-    for (name, sym) in &filtered_new {
-        if matches!(sym.release_tag, Some(ReleaseTag::Deprecated))
-            && filtered_old.contains_key(name)
+    for (key, sym) in &filtered_new {
+        let name = key.name.as_str();
+        if matches!(sym.release_tag, Some(ReleaseTag::Deprecated)) && filtered_old.contains_key(key)
         {
             findings.push(Finding {
                 severity: Severity::Warning,
@@ -233,8 +235,9 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
 
     // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
     // Use first overload (primary signature) for type diff
-    for (name, old_sym) in &filtered_old {
-        if let Some(new_sym) = filtered_new.get(name) {
+    for (key, old_sym) in &filtered_old {
+        let name = key.name.as_str();
+        if let Some(new_sym) = filtered_new.get(key) {
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {
@@ -898,14 +901,18 @@ pub fn compare_structural_diff(
     // The union of old and new exported names ensures any symbol visible in either version
     // can be used as a normalization anchor. This set is passed to normalize_rollup_suffix
     // to gate $N stripping on names that are actually exported (Pitfall 10).
+    //
+    // Phase 18: keys are ExportKey composites; we project to `name` for the
+    // rollup-suffix matching code which operates on bare identifier strings.
     let exported_names: HashSet<String> = old_exports
         .keys()
         .chain(new_exports.keys())
-        .cloned()
+        .map(|k| k.name.clone())
         .collect();
 
-    for (name, old_sym) in old_exports {
-        let Some(new_sym) = new_exports.get(name) else {
+    for (key, old_sym) in old_exports {
+        let name = key.name.as_str();
+        let Some(new_sym) = new_exports.get(key) else {
             continue;
         };
 
@@ -1162,13 +1169,13 @@ pub fn compare_structural_diff(
 pub fn first_publish_findings(exports: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = exports
         .iter()
-        .map(|(name, sym)| Finding {
+        .map(|(key, sym)| Finding {
             severity: Severity::Minor,
             rule: "export-added",
             file: sym.file.clone(),
             line: sym.line,
             col: sym.col,
-            message: format!("exported symbol `{}` was added", name),
+            message: format!("exported symbol `{}` was added", key.name),
         })
         .collect();
 
@@ -1522,7 +1529,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Class),
+            decl_kinds: vec![DeclarationKind::Class],
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -1532,9 +1539,12 @@ mod tests {
         };
 
         let mut old_exports: ExportMap = HashMap::new();
-        old_exports.insert("default".to_string(), sym.clone());
+        old_exports.insert(
+            crate::types::ExportKey::new_root_value("default"),
+            sym.clone(),
+        );
         let mut new_exports: ExportMap = HashMap::new();
-        new_exports.insert("default".to_string(), sym);
+        new_exports.insert(crate::types::ExportKey::new_root_value("default"), sym);
 
         let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports);
         assert!(
@@ -1577,7 +1587,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Function),
+            decl_kinds: vec![DeclarationKind::Function],
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -1587,9 +1597,12 @@ mod tests {
         };
 
         let mut old_exports: ExportMap = HashMap::new();
-        old_exports.insert("default".to_string(), sym.clone());
+        old_exports.insert(
+            crate::types::ExportKey::new_root_value("default"),
+            sym.clone(),
+        );
         let mut new_exports_map: ExportMap = HashMap::new();
-        new_exports_map.insert("default".to_string(), sym);
+        new_exports_map.insert(crate::types::ExportKey::new_root_value("default"), sym);
 
         let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports_map);
         assert!(
@@ -1668,7 +1681,7 @@ mod sem_08_tests {
     #[test]
     fn sem_08_wr_01_dollar_n_mid_identifier_preserved() {
         let exp = set(&["Foo"]); // Foo is exported
-        // `Foo$1Bar` is a single JS-valid identifier — must NOT become `FooBar`.
+                                 // `Foo$1Bar` is a single JS-valid identifier — must NOT become `FooBar`.
         assert_eq!(
             normalize_rollup_suffix("Foo$1Bar | null", &exp),
             "Foo$1Bar | null"
@@ -1678,19 +1691,13 @@ mod sem_08_tests {
     #[test]
     fn sem_08_wr_01_dollar_n_mid_identifier_preserved_unexported_base() {
         let exp = set(&["Qux"]); // `price` not exported
-        assert_eq!(
-            normalize_rollup_suffix("price$2plus", &exp),
-            "price$2plus"
-        );
+        assert_eq!(normalize_rollup_suffix("price$2plus", &exp), "price$2plus");
     }
 
     #[test]
     fn sem_08_wr_01_dollar_n_mid_identifier_underscore_continuation() {
         let exp = set(&["Foo"]); // exported base
-        // Underscore as continuation char after `$N` — also mid-identifier, do not split.
-        assert_eq!(
-            normalize_rollup_suffix("Foo$1_tail", &exp),
-            "Foo$1_tail"
-        );
+                                 // Underscore as continuation char after `$N` — also mid-identifier, do not split.
+        assert_eq!(normalize_rollup_suffix("Foo$1_tail", &exp), "Foo$1_tail");
     }
 }

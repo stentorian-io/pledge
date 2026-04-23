@@ -17,7 +17,8 @@ use interlint::compare::subtype::{RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_MET
 use interlint::discover::resolver::resolve_module_path;
 use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
 use interlint::types::{
-    ClassMember, ClassMemberKind, ClassShape, ExportKind, ExportMap, ExportSymbol, Visibility,
+    ClassMember, ClassMemberKind, ClassShape, ExportKey, ExportKind, ExportMap, ExportSymbol,
+    Visibility,
 };
 use std::path::{Path, PathBuf};
 
@@ -63,7 +64,7 @@ fn make_export_sym(name: &str) -> ExportSymbol {
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind: None,
+        decl_kinds: Vec::new(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -76,7 +77,7 @@ fn make_export_sym(name: &str) -> ExportSymbol {
 fn map_from_names(names: &[&str]) -> ExportMap {
     let mut map = ExportMap::new();
     for &name in names {
-        map.insert(name.to_string(), make_export_sym(name));
+        map.insert(ExportKey::new_root_value(name), make_export_sym(name));
     }
     map
 }
@@ -165,12 +166,18 @@ fn test_type_only_export_removal_detected() {
 
     let mut old_map = ExportMap::new();
     for raw in &old_raw {
-        old_map.insert(raw.name.clone(), make_export_sym(&raw.name));
+        old_map.insert(
+            ExportKey::new_root_value(&raw.name),
+            make_export_sym(&raw.name),
+        );
     }
 
     let mut new_map = ExportMap::new();
     for raw in &new_raw {
-        new_map.insert(raw.name.clone(), make_export_sym(&raw.name));
+        new_map.insert(
+            ExportKey::new_root_value(&raw.name),
+            make_export_sym(&raw.name),
+        );
     }
 
     let findings = compare_exports(&old_map, &new_map);

@@ -284,7 +284,7 @@ mod tests {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: None,
+            decl_kinds: Vec::new(),
             type_guard_type: None,
             is_async: false,
             is_generator: false,

@@ -19,7 +19,7 @@ use interlint::compare::compare_exports;
 use interlint::compare::compare_structural_diff;
 use interlint::discover::resolver::resolve_module_path;
 use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
-use interlint::types::{DeclarationKind, ExportKind, ExportMap, ExportSymbol, Severity};
+use interlint::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, Severity};
 use std::path::{Path, PathBuf};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32) -> ExportSymbol {
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind: None,
+        decl_kinds: Vec::new(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -64,7 +64,7 @@ fn test_ambient_class_removal_detected() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Foo".to_string(),
+        ExportKey::new_root_value("Foo"),
         ExportSymbol {
             name: "Foo".to_string(),
             kind: ExportKind::Named,
@@ -73,7 +73,7 @@ fn test_ambient_class_removal_detected() {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Class),
+            decl_kinds: vec![DeclarationKind::Class],
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -85,7 +85,7 @@ fn test_ambient_class_removal_detected() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Foo".to_string(),
+        ExportKey::new_root_value("Foo"),
         ExportSymbol {
             name: "Foo".to_string(),
             kind: ExportKind::Named,
@@ -94,7 +94,7 @@ fn test_ambient_class_removal_detected() {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Class),
+            decl_kinds: vec![DeclarationKind::Class],
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -183,17 +183,17 @@ fn test_destructured_pair_removal_detected() {
     // Removing a destructured pair export should be detected by compare_exports
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "renamed".to_string(),
+        ExportKey::new_root_value("renamed"),
         make_export_sym("renamed", test_file(), 1),
     );
     old_exports.insert(
-        "other".to_string(),
+        ExportKey::new_root_value("other"),
         make_export_sym("other", test_file(), 1),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "renamed".to_string(),
+        ExportKey::new_root_value("renamed"),
         make_export_sym("renamed", test_file(), 1),
     );
     // "other" removed
@@ -379,11 +379,20 @@ fn test_array_destructured_rest_captured() {
 fn test_array_destructured_removal_detected() {
     // Removing an array-destructured export should be detected
     let mut old_exports = ExportMap::new();
-    old_exports.insert("a".to_string(), make_export_sym("a", test_file(), 1));
-    old_exports.insert("b".to_string(), make_export_sym("b", test_file(), 1));
+    old_exports.insert(
+        ExportKey::new_root_value("a"),
+        make_export_sym("a", test_file(), 1),
+    );
+    old_exports.insert(
+        ExportKey::new_root_value("b"),
+        make_export_sym("b", test_file(), 1),
+    );
 
     let mut new_exports = ExportMap::new();
-    new_exports.insert("a".to_string(), make_export_sym("a", test_file(), 1));
+    new_exports.insert(
+        ExportKey::new_root_value("a"),
+        make_export_sym("a", test_file(), 1),
+    );
     // b removed
 
     let findings = compare_exports(&old_exports, &new_exports);
@@ -413,7 +422,7 @@ fn test_structural_diff_with_file_move() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         ExportSymbol {
             name: "Config".to_string(),
             kind: ExportKind::Named,
@@ -422,7 +431,7 @@ fn test_structural_diff_with_file_move() {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Class),
+            decl_kinds: vec![DeclarationKind::Class],
             type_guard_type: None,
             is_async: false,
             is_generator: false,
@@ -434,7 +443,7 @@ fn test_structural_diff_with_file_move() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         ExportSymbol {
             name: "Config".to_string(),
             kind: ExportKind::Named,
@@ -443,7 +452,7 @@ fn test_structural_diff_with_file_move() {
             col: 1,
             type_signature: None,
             overloads: Vec::new(),
-            decl_kind: Some(DeclarationKind::Class),
+            decl_kinds: vec![DeclarationKind::Class],
             type_guard_type: None,
             is_async: false,
             is_generator: false,

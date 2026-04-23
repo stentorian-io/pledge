@@ -56,13 +56,15 @@ pub async fn enrich_exports(
         Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),
     };
 
-    // Step 3: group exports by file path (collect symbol names per file)
-    let mut file_groups: HashMap<PathBuf, Vec<String>> = HashMap::new();
-    for (name, symbol) in exports.iter() {
+    // Step 3: group exports by file path (collect full ExportKeys per file — Phase 18 D-01).
+    // The ExportKey is retained through hover dispatch so the write-back can target
+    // the correct (subpath, condition, space, name) bucket rather than only by name.
+    let mut file_groups: HashMap<PathBuf, Vec<crate::types::ExportKey>> = HashMap::new();
+    for (key, symbol) in exports.iter() {
         file_groups
             .entry(symbol.file.clone())
             .or_default()
-            .push(name.clone());
+            .push(key.clone());
     }
 
     // Step 4: iterate files, send hover requests; respect total budget (60s per D-06)
@@ -70,7 +72,7 @@ pub async fn enrich_exports(
     let total_budget = std::time::Duration::from_secs(60);
 
     // Collect file list first so we can process without holding borrow on exports
-    let file_list: Vec<(PathBuf, Vec<String>)> = file_groups.into_iter().collect();
+    let file_list: Vec<(PathBuf, Vec<crate::types::ExportKey>)> = file_groups.into_iter().collect();
 
     // ROB-02: Track consecutive LSP request failures. If the session crashes mid-run
     // (e.g., tsserver OOM, SIGKILL, or IPC channel closed), hover requests will fail
@@ -79,7 +81,7 @@ pub async fn enrich_exports(
     const CRASH_THRESHOLD: usize = 3;
     let mut consecutive_failures: usize = 0;
 
-    for (rel_file_path, symbol_names) in &file_list {
+    for (rel_file_path, symbol_keys) in &file_list {
         if budget_start.elapsed() >= total_budget {
             tracing::warn!(
                 "LSP total budget (60s) exceeded; remaining symbols will lack type info"
@@ -94,12 +96,16 @@ pub async fn enrich_exports(
             pkg_root.join(rel_file_path)
         };
 
-        // Build hover-info list: (name, line, col) for each symbol in this file
-        let hover_inputs: Vec<hover::SymbolHoverInput> = symbol_names
+        // Build hover-info list: (name, line, col) for each symbol in this file.
+        // Phase 18: the LSP is positional (file + line + col), so we pass the
+        // ExportKey's name field across the boundary and match names back on the
+        // write-back side. See the results loop below for the name->all-keys
+        // multi-update semantics that preserve first-write-wins on type_signature.
+        let hover_inputs: Vec<hover::SymbolHoverInput> = symbol_keys
             .iter()
-            .filter_map(|name| {
-                exports.get(name).map(|s| hover::SymbolHoverInput {
-                    name: name.clone(),
+            .filter_map(|key| {
+                exports.get(key).map(|s| hover::SymbolHoverInput {
+                    name: key.name.clone(),
                     line: s.line,
                     col: s.col,
                 })
@@ -137,12 +143,24 @@ pub async fn enrich_exports(
             }
         };
 
-        // Apply results back to exports
+        // Apply results back to exports.
+        // Phase 18: the hover result is keyed only by name (LSP protocol boundary),
+        // so we re-key through the file's ExportKeys. A single hover response
+        // legitimately applies to every ExportKey at that (file, line, col)
+        // position; matching by name covers the common case. Guarding on
+        // `is_none()` / `is_empty()` preserves the pre-Phase-18 first-write-wins
+        // semantic for type_signature on the same key.
         for (name, type_signature, overloads) in results {
-            if let Some(symbol) = exports.get_mut(&name) {
-                symbol.type_signature = type_signature;
-                if !overloads.is_empty() {
-                    symbol.overloads = overloads;
+            for key in symbol_keys {
+                if key.name == name {
+                    if let Some(symbol) = exports.get_mut(key) {
+                        if symbol.type_signature.is_none() {
+                            symbol.type_signature = type_signature.clone();
+                        }
+                        if !overloads.is_empty() && symbol.overloads.is_empty() {
+                            symbol.overloads = overloads.clone();
+                        }
+                    }
                 }
             }
         }

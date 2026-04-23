@@ -12,7 +12,7 @@
 use interlint::compare::compare_exports;
 use interlint::compare::compare_structural_diff;
 use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-use interlint::types::{DeclarationKind, ExportKind, ExportMap, ExportSymbol, Severity};
+use interlint::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, Severity};
 use std::path::PathBuf;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ fn make_export_sym(
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind,
+        decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -54,7 +54,7 @@ fn make_default_export_sym(
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind,
+        decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -83,7 +83,7 @@ fn test_arrow_function_identified_as_function() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "add".to_string(),
+        ExportKey::new_root_value("add"),
         make_export_sym(
             "add",
             PathBuf::from("index.ts"),
@@ -94,7 +94,7 @@ fn test_arrow_function_identified_as_function() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "add".to_string(),
+        ExportKey::new_root_value("add"),
         make_export_sym(
             "add",
             PathBuf::from("index.ts"),
@@ -133,7 +133,7 @@ fn test_arrow_function_async_to_sync() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "fetch".to_string(),
+        ExportKey::new_root_value("fetch"),
         make_export_sym(
             "fetch",
             PathBuf::from("index.ts"),
@@ -144,7 +144,7 @@ fn test_arrow_function_async_to_sync() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "fetch".to_string(),
+        ExportKey::new_root_value("fetch"),
         make_export_sym(
             "fetch",
             PathBuf::from("index.ts"),
@@ -183,7 +183,7 @@ fn test_function_expression_identified_as_function() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "handler".to_string(),
+        ExportKey::new_root_value("handler"),
         make_export_sym(
             "handler",
             PathBuf::from("index.ts"),
@@ -194,7 +194,7 @@ fn test_function_expression_identified_as_function() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "handler".to_string(),
+        ExportKey::new_root_value("handler"),
         make_export_sym(
             "handler",
             PathBuf::from("index.ts"),
@@ -246,7 +246,7 @@ fn test_anonymous_default_function_async_to_sync() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(
             PathBuf::from("index.ts"),
             1,
@@ -256,7 +256,7 @@ fn test_anonymous_default_function_async_to_sync() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(
             PathBuf::from("index.ts"),
             1,
@@ -290,13 +290,13 @@ fn test_anonymous_default_class_method_removed() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(PathBuf::from("index.ts"), 1, Some(DeclarationKind::Class)),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(PathBuf::from("index.ts"), 1, Some(DeclarationKind::Class)),
     );
 
@@ -328,7 +328,7 @@ fn test_namespace_member_removed() {
     let mut old_exports = ExportMap::new();
     for raw in &old_exports_raw {
         old_exports.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -337,7 +337,7 @@ fn test_namespace_member_removed() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: raw.decl_kind.clone(),
+                decl_kinds: raw.decl_kind.clone().map(|k| vec![k]).unwrap_or_default(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -351,7 +351,7 @@ fn test_namespace_member_removed() {
     let mut new_exports = ExportMap::new();
     for raw in &new_exports_raw {
         new_exports.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -360,7 +360,7 @@ fn test_namespace_member_removed() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: raw.decl_kind.clone(),
+                decl_kinds: raw.decl_kind.clone().map(|k| vec![k]).unwrap_or_default(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -373,7 +373,7 @@ fn test_namespace_member_removed() {
 
     // Verify that parse_exports produced "Foo.bar" for old source
     assert!(
-        old_exports.contains_key("Foo.bar"),
+        old_exports.contains_key(&ExportKey::new_root_value("Foo.bar")),
         "old exports should contain 'Foo.bar'; got: {:?}",
         old_exports.keys().collect::<Vec<_>>()
     );
@@ -406,7 +406,7 @@ fn test_namespace_member_added() {
     let mut old_exports = ExportMap::new();
     for raw in &old_exports_raw {
         old_exports.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -415,7 +415,7 @@ fn test_namespace_member_added() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: raw.decl_kind.clone(),
+                decl_kinds: raw.decl_kind.clone().map(|k| vec![k]).unwrap_or_default(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -429,7 +429,7 @@ fn test_namespace_member_added() {
     let mut new_exports = ExportMap::new();
     for raw in &new_exports_raw {
         new_exports.insert(
-            raw.name.clone(),
+            ExportKey::new_root_value(&raw.name),
             ExportSymbol {
                 name: raw.name.clone(),
                 kind: ExportKind::Named,
@@ -438,7 +438,7 @@ fn test_namespace_member_added() {
                 col: raw.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: raw.decl_kind.clone(),
+                decl_kinds: raw.decl_kind.clone().map(|k| vec![k]).unwrap_or_default(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -451,7 +451,7 @@ fn test_namespace_member_added() {
 
     // Verify parse_exports produced "Foo.bar" for new source
     assert!(
-        new_exports.contains_key("Foo.bar"),
+        new_exports.contains_key(&ExportKey::new_root_value("Foo.bar")),
         "new exports should contain 'Foo.bar'; got: {:?}",
         new_exports.keys().collect::<Vec<_>>()
     );
@@ -505,7 +505,7 @@ fn test_declaration_merging_interface_member_removed() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Foo".to_string(),
+        ExportKey::new_root_value("Foo"),
         make_export_sym(
             "Foo",
             PathBuf::from("index.ts"),
@@ -516,7 +516,7 @@ fn test_declaration_merging_interface_member_removed() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Foo".to_string(),
+        ExportKey::new_root_value("Foo"),
         make_export_sym(
             "Foo",
             PathBuf::from("index.ts"),
@@ -556,7 +556,7 @@ fn test_declaration_merging_collects_all_members() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -567,7 +567,7 @@ fn test_declaration_merging_collects_all_members() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -607,7 +607,7 @@ fn test_interface_member_removed_finding() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -618,7 +618,7 @@ fn test_interface_member_removed_finding() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -657,7 +657,7 @@ fn test_interface_member_added_required() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -668,7 +668,7 @@ fn test_interface_member_added_required() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Config".to_string(),
+        ExportKey::new_root_value("Config"),
         make_export_sym(
             "Config",
             PathBuf::from("index.ts"),
@@ -708,7 +708,7 @@ fn test_interface_method_param_count_changed() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Handler".to_string(),
+        ExportKey::new_root_value("Handler"),
         make_export_sym(
             "Handler",
             PathBuf::from("index.ts"),
@@ -719,7 +719,7 @@ fn test_interface_method_param_count_changed() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Handler".to_string(),
+        ExportKey::new_root_value("Handler"),
         make_export_sym(
             "Handler",
             PathBuf::from("index.ts"),
@@ -755,7 +755,7 @@ fn test_interface_member_removed_is_major() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "Api".to_string(),
+        ExportKey::new_root_value("Api"),
         make_export_sym(
             "Api",
             PathBuf::from("index.ts"),
@@ -766,7 +766,7 @@ fn test_interface_member_removed_is_major() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "Api".to_string(),
+        ExportKey::new_root_value("Api"),
         make_export_sym(
             "Api",
             PathBuf::from("index.ts"),

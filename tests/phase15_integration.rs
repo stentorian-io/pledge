@@ -18,7 +18,7 @@ use interlint::compare::compare_exports_map_diff;
 use interlint::compare::compare_structural_diff;
 use interlint::compare::metadata::compare_metadata;
 use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-use interlint::types::{DeclarationKind, ExportKind, ExportMap, ExportSymbol};
+use interlint::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol};
 use std::path::PathBuf;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -37,7 +37,7 @@ fn make_export_sym(
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind,
+        decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -60,7 +60,7 @@ fn make_default_export_sym(
         col: 1,
         type_signature: None,
         overloads: Vec::new(),
-        decl_kind,
+        decl_kinds: decl_kind.map(|k| vec![k]).unwrap_or_default(),
         type_guard_type: None,
         is_async: false,
         is_generator: false,
@@ -74,7 +74,7 @@ fn raw_exports_to_map(raw: Vec<interlint::discover::tree_query::RawExport>) -> E
     let mut map = ExportMap::new();
     for e in raw {
         map.insert(
-            e.name.clone(),
+            ExportKey::new_root_value(&e.name),
             ExportSymbol {
                 name: e.name,
                 kind: ExportKind::Named,
@@ -83,7 +83,7 @@ fn raw_exports_to_map(raw: Vec<interlint::discover::tree_query::RawExport>) -> E
                 col: e.col,
                 type_signature: None,
                 overloads: Vec::new(),
-                decl_kind: e.decl_kind,
+                decl_kinds: e.decl_kind.map(|k| vec![k]).unwrap_or_default(),
                 type_guard_type: None,
                 is_async: false,
                 is_generator: false,
@@ -114,13 +114,13 @@ fn test_gap15_01_cjs_class_method_removed() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(PathBuf::from("index.js"), 1, Some(DeclarationKind::Class)),
     );
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(PathBuf::from("index.js"), 1, Some(DeclarationKind::Class)),
     );
 
@@ -151,7 +151,7 @@ fn test_gap15_01_cjs_function_params() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(
             PathBuf::from("index.js"),
             1,
@@ -161,7 +161,7 @@ fn test_gap15_01_cjs_function_params() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "default".to_string(),
+        ExportKey::new_root_value("default"),
         make_default_export_sym(
             PathBuf::from("index.js"),
             1,
@@ -201,7 +201,7 @@ fn test_gap15_01_cjs_exports_handler_async() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "handler".to_string(),
+        ExportKey::new_root_value("handler"),
         make_export_sym(
             "handler",
             PathBuf::from("index.js"),
@@ -212,7 +212,7 @@ fn test_gap15_01_cjs_exports_handler_async() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "handler".to_string(),
+        ExportKey::new_root_value("handler"),
         make_export_sym(
             "handler",
             PathBuf::from("index.js"),
@@ -473,7 +473,7 @@ fn test_gap15_04_tsconfig_alias_resolution() {
     // If tsconfig alias resolved, 'helper' should appear in the export map
     let (export_map, _warnings) = result.unwrap();
     assert!(
-        export_map.contains_key("helper"),
+        export_map.contains_key(&ExportKey::new_root_value("helper")),
         "tsconfig alias @/utils should resolve to src/utils.ts and export 'helper'; got: {:?}",
         export_map.keys().collect::<Vec<_>>()
     );
@@ -509,7 +509,7 @@ fn test_gap15_05_external_reexport_synthetic_key() {
 
     // The export map should contain *<lodash> for the external re-export
     assert!(
-        map.contains_key("*<lodash>"),
+        map.contains_key(&ExportKey::new_root_value("*<lodash>")),
         "export * from 'lodash' should produce synthetic *<lodash> entry; got: {:?}",
         map.keys().collect::<Vec<_>>()
     );
@@ -553,7 +553,7 @@ fn test_gap15_05_external_reexport_removal() {
 
     // Verify the synthetic key is present in old
     assert!(
-        old_map.contains_key("*<lodash>"),
+        old_map.contains_key(&ExportKey::new_root_value("*<lodash>")),
         "old exports should contain *<lodash>; got: {:?}",
         old_map.keys().collect::<Vec<_>>()
     );
@@ -604,7 +604,7 @@ fn test_gap15_05_external_reexport_is_reexport_flag() {
     );
     let (map, _warnings) = result.unwrap();
 
-    let lodash_entry = map.get("*<lodash>");
+    let lodash_entry = map.get(&ExportKey::new_root_value("*<lodash>"));
     assert!(
         lodash_entry.is_some(),
         "discover_exports should produce *<lodash> for external re-export; got: {:?}",
@@ -663,7 +663,7 @@ fn test_gap15_06_declare_module_removal() {
 
     // Verify old has augment:express
     assert!(
-        old_map.contains_key("augment:express"),
+        old_map.contains_key(&ExportKey::new_root_value("augment:express")),
         "old exports should contain augment:express; got: {:?}",
         old_map.keys().collect::<Vec<_>>()
     );
@@ -717,7 +717,7 @@ fn test_gap15_07_const_type_param_removed() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "foo".to_string(),
+        ExportKey::new_root_value("foo"),
         make_export_sym(
             "foo",
             PathBuf::from("index.ts"),
@@ -728,7 +728,7 @@ fn test_gap15_07_const_type_param_removed() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "foo".to_string(),
+        ExportKey::new_root_value("foo"),
         make_export_sym(
             "foo",
             PathBuf::from("index.ts"),
@@ -762,7 +762,7 @@ fn test_gap15_07_const_type_param_present_no_change() {
 
     let mut old_exports = ExportMap::new();
     old_exports.insert(
-        "foo".to_string(),
+        ExportKey::new_root_value("foo"),
         make_export_sym(
             "foo",
             PathBuf::from("index.ts"),
@@ -773,7 +773,7 @@ fn test_gap15_07_const_type_param_present_no_change() {
 
     let mut new_exports = ExportMap::new();
     new_exports.insert(
-        "foo".to_string(),
+        ExportKey::new_root_value("foo"),
         make_export_sym(
             "foo",
             PathBuf::from("index.ts"),
