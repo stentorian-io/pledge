@@ -6658,7 +6658,7 @@ export const Unrelated = 1;
 "#;
         let exports = parse_exports(src, SourceLanguage::TypeScript).expect("parse");
         assert!(
-            exports.iter().find(|e| e.name == "Foo").is_none(),
+            !exports.iter().any(|e| e.name == "Foo"),
             "ARCH-02 D-16: unexported Foo must not appear in exports"
         );
         let unrelated = exports
