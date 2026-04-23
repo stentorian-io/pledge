@@ -47,6 +47,7 @@ fn make_property(name: &str, is_readonly: bool) -> ClassMember {
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }
 }
 
@@ -63,6 +64,7 @@ fn make_method(name: &str, param_count: usize, type_signature: Option<&str>) -> 
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }
 }
 

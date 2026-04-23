@@ -56,7 +56,9 @@ pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
 /// Return the tree-sitter `Language` handle for the given `SourceLanguage`.
 ///
 /// Uses the non-deprecated `LANGUAGE_TYPESCRIPT` / `LANGUAGE_TSX` / `LANGUAGE` constants.
-fn get_language(lang: &SourceLanguage) -> tree_sitter::Language {
+///
+/// Phase 19: made `pub(super)` so `comment_scan.rs` can call it.
+pub(super) fn get_language(lang: &SourceLanguage) -> tree_sitter::Language {
     match lang {
         SourceLanguage::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
@@ -3495,7 +3497,7 @@ fn emit_augmentation_members(
 /// `/** ... */` doc comment.
 ///
 /// Returns the first recognized release tag found: @internal, @alpha,
-/// @experimental, @deprecated, or @public. Order defines priority.
+/// @beta, @deprecated, or @public. Order defines priority.
 pub fn extract_release_tag(
     decl_node: tree_sitter::Node,
     source: &[u8],
@@ -3520,8 +3522,8 @@ pub fn extract_release_tag(
     if text.contains("@alpha") {
         return Some(crate::types::ReleaseTag::Alpha);
     }
-    if text.contains("@experimental") {
-        return Some(crate::types::ReleaseTag::Experimental);
+    if text.contains("@beta") {
+        return Some(crate::types::ReleaseTag::Beta);
     }
     if text.contains("@deprecated") {
         return Some(crate::types::ReleaseTag::Deprecated);
@@ -3845,6 +3847,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                                             is_optional: is_opt_param,
                                             is_accessor: false,
                                             this_param_type: None,
+                                            decorators: Vec::new(),
                                         });
                                     }
                                 }
@@ -3865,6 +3868,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             "public_field_definition" => {
@@ -3908,6 +3912,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             "abstract_method_signature" => {
@@ -3932,6 +3937,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             // BUG-13-01: .d.ts ambient class members use method_signature /
@@ -3967,6 +3973,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             "property_signature" => {
@@ -4002,6 +4009,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             _ => {}
@@ -4103,6 +4111,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         implements_list,
         type_params,
         constructor_param_optionality,
+        decorators: Vec::new(),
     }
 }
 
@@ -4571,6 +4580,7 @@ pub fn parse_interface_members(
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             "property_signature" => {
@@ -4615,6 +4625,7 @@ pub fn parse_interface_members(
                     is_optional,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             "call_signature" => {
@@ -4633,6 +4644,7 @@ pub fn parse_interface_members(
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
+                    decorators: Vec::new(),
                 });
             }
             _ => {}
@@ -6647,6 +6659,20 @@ declare global {
             e.release_tag,
             Some(crate::types::ReleaseTag::Deprecated),
             "META-04: @deprecated tag should be extracted; got: {:?}",
+            e.release_tag
+        );
+    }
+
+    #[test]
+    fn meta_04_beta_tag_extracted() {
+        // Phase 19 META-06: @beta replaces @experimental in the 5-tag set.
+        let source = b"/** @beta */\nexport function previewFoo() {}";
+        let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
+        let e = exports.iter().find(|e| e.name == "previewFoo").unwrap();
+        assert_eq!(
+            e.release_tag,
+            Some(crate::types::ReleaseTag::Beta),
+            "META-06: @beta tag should be extracted; got: {:?}",
             e.release_tag
         );
     }

@@ -407,6 +407,17 @@ pub const RULE_BARREL_UNRESOLVABLE: &str = "barrel-unresolvable"; // META-05
 pub const RULE_AUGMENT_GLOBAL_CHANGED: &str = "augment-global-changed"; // META-03 (global)
 pub const RULE_AUGMENT_MODULE_CHANGED: &str = "augment-module-changed"; // META-03 (module)
 
+// ─── Phase 19 INF-05: triple-slash directive diff rules ───────────────────
+pub const RULE_DIRECTIVE_ADDED: &str = "directive-added"; // INF-05 Major
+pub const RULE_DIRECTIVE_REMOVED: &str = "directive-removed"; // INF-05 Major
+pub const RULE_DIRECTIVE_CHANGED: &str = "directive-changed"; // INF-05 Major
+pub const RULE_DIRECTIVE_REORDERED: &str = "directive-reordered"; // INF-05 Minor (post-research decision D-04)
+
+// ─── Phase 19 CLS-10: stage-3 decorator diff rules ────────────────────────
+pub const RULE_DECORATOR_ADDED: &str = "decorator-added"; // CLS-10 Major
+pub const RULE_DECORATOR_REMOVED: &str = "decorator-removed"; // CLS-10 Major
+pub const RULE_DECORATOR_ARGUMENTS_CHANGED: &str = "decorator-arguments-changed"; // CLS-10 Major
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]

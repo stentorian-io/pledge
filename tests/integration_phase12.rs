@@ -41,6 +41,7 @@ fn make_member(name: &str, kind: ClassMemberKind, vis: Visibility) -> ClassMembe
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }
 }
 
@@ -52,6 +53,7 @@ fn make_class(members: Vec<ClassMember>) -> ClassShape {
         implements_list: vec![],
         type_params: vec![],
         constructor_param_optionality: vec![],
+        decorators: Vec::new(),
     }
 }
 

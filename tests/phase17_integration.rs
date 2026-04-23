@@ -44,6 +44,7 @@ fn make_property(name: &str, is_optional: bool, is_readonly: bool) -> ClassMembe
         is_optional,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }
 }
 
@@ -74,6 +75,7 @@ fn make_class(members: Vec<ClassMember>, ctor_optionality: Vec<bool>) -> ClassSh
         implements_list: vec![],
         type_params: vec![],
         constructor_param_optionality: ctor_optionality,
+        decorators: Vec::new(),
     }
 }
 
@@ -551,6 +553,7 @@ fn sem_01_loosening_constraint_no_tightening_finding() {
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }];
     let new = vec![ClassMember {
         name: "fn".to_string(),
@@ -564,6 +567,7 @@ fn sem_01_loosening_constraint_no_tightening_finding() {
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     }];
     let findings = compare_interface_members(&old, &new, "Iface", &test_file(), 1, 1);
     assert!(

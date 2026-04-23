@@ -190,6 +190,8 @@ pub struct ClassMember {
     pub is_optional: bool, // TLF-02/IFT-01 — replaces type_signature=="optional" stopgap
     pub is_accessor: bool, // TLF-06 — TS 4.9 accessor modifier
     pub this_param_type: Option<String>, // TLF-03 — this parameter type annotation
+    // Phase 19 CLS-10 foundation (Plan 01):
+    pub decorators: Vec<DecoratorSpec>, // CLS-10 — populated by extract_decorators in Plan 03
 }
 
 #[allow(dead_code)]
@@ -201,6 +203,8 @@ pub struct ClassShape {
     pub implements_list: Vec<String>,
     pub type_params: Vec<TypeParam>,
     pub constructor_param_optionality: Vec<bool>, // IFT-03 — per-position optional flag for constructor params
+    // Phase 19 CLS-10 foundation (Plan 01):
+    pub decorators: Vec<DecoratorSpec>, // CLS-10 — class-level decorators; populated by Plan 03
 }
 
 // ─── Enum shape model ───────────────────────────────────────────────────────
@@ -240,17 +244,30 @@ pub enum Variance {
     InOut,
 }
 
-/// META-04: TSDoc release tag extracted from `@internal`, `@alpha`, `@experimental`,
-/// `@public`, `@deprecated` tags in block comments adjacent to exported symbols.
-/// Stubbed here; populated by Plan 17-05.
+/// META-04 / META-06 (Phase 19): TSDoc release tag extracted from `@internal`,
+/// `@alpha`, `@beta`, `@public`, `@deprecated` tags in block comments adjacent
+/// to exported symbols. Populated by the comment_scan post-process pass at
+/// resolver insertion (src/discover/resolver.rs:~420).
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReleaseTag {
     Internal,
     Alpha,
-    Experimental,
+    Beta,
     Public,
     Deprecated,
+}
+
+/// CLS-10 (Phase 19): a single decorator on a class, method, field, or parameter.
+/// `name` is the decorator's primary identifier (for `@ns.foo` takes the last
+/// member). `args` is the source-text bytes of the `arguments` field of the
+/// decorator's call_expression child, or None for bare decorators like `@Component`.
+/// Populated by `src/discover/tree_query.rs::extract_decorators` in Plan 03.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DecoratorSpec {
+    pub name: String,
+    pub args: Option<String>,
 }
 
 /// TLF-01: Interface construct signature shape (`new (params): ReturnType`).
@@ -318,6 +335,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         };
         let shape = ClassShape {
             members: vec![member],
@@ -326,6 +344,7 @@ mod tests {
             implements_list: vec!["IFoo".to_string()],
             type_params: vec![],
             constructor_param_optionality: vec![],
+            decorators: Vec::new(),
         };
         assert_eq!(shape.members.len(), 1);
         assert!(!shape.is_abstract);
@@ -487,6 +506,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         };
         assert!(!m.is_accessor);
         assert!(!m.is_optional);
@@ -544,11 +564,26 @@ mod tests {
     fn tlf_release_tag_variants_exist() {
         let _ = ReleaseTag::Internal;
         let _ = ReleaseTag::Alpha;
-        let _ = ReleaseTag::Experimental;
+        let _ = ReleaseTag::Beta;
         let _ = ReleaseTag::Public;
         let _ = ReleaseTag::Deprecated;
         assert_eq!(ReleaseTag::Internal, ReleaseTag::Internal);
         assert_ne!(ReleaseTag::Internal, ReleaseTag::Public);
+    }
+
+    #[test]
+    fn cls_10_decorator_spec_construction() {
+        let d = DecoratorSpec {
+            name: "Component".to_string(),
+            args: None,
+        };
+        assert_eq!(d.name, "Component");
+        assert_eq!(d.args, None);
+        let d2 = DecoratorSpec {
+            name: "Route".to_string(),
+            args: Some("('/users')".to_string()),
+        };
+        assert_eq!(d2.args.as_deref(), Some("('/users')"));
     }
 
     // ─── Phase 18: ExportKey, SymbolSpace, decl_kinds ───────────────────────

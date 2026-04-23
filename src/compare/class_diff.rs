@@ -348,6 +348,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -360,6 +361,7 @@ mod tests {
             implements_list: vec![],
             type_params: vec![],
             constructor_param_optionality: vec![],
+            decorators: Vec::new(),
         }
     }
 
@@ -854,6 +856,7 @@ mod tests {
             implements_list: vec![],
             type_params: vec![],
             constructor_param_optionality: optionality,
+            decorators: Vec::new(),
         }
     }
 

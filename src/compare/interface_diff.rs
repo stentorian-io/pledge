@@ -343,6 +343,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -359,6 +360,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -375,6 +377,7 @@ mod tests {
             is_optional: true,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -510,6 +513,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -583,6 +587,7 @@ mod tests {
             is_optional: false,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 
@@ -727,6 +732,7 @@ mod tests {
             is_optional,
             is_accessor: false,
             this_param_type: None,
+            decorators: Vec::new(),
         }
     }
 

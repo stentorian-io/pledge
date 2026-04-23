@@ -268,6 +268,7 @@ fn test_cls_07_static_type_changed() {
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     };
     let new_member = ClassMember {
         name: "val".to_string(),
@@ -281,6 +282,7 @@ fn test_cls_07_static_type_changed() {
         is_optional: false,
         is_accessor: false,
         this_param_type: None,
+        decorators: Vec::new(),
     };
 
     let old_shape = ClassShape {
@@ -290,6 +292,7 @@ fn test_cls_07_static_type_changed() {
         implements_list: vec![],
         type_params: vec![],
         constructor_param_optionality: vec![],
+        decorators: Vec::new(),
     };
     let new_shape = ClassShape {
         members: vec![new_member],
@@ -298,6 +301,7 @@ fn test_cls_07_static_type_changed() {
         implements_list: vec![],
         type_params: vec![],
         constructor_param_optionality: vec![],
+        decorators: Vec::new(),
     };
 
     let findings =

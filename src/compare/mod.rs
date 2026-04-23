@@ -4,6 +4,7 @@ pub mod asset_diff;
 pub mod behavior_diff;
 pub mod class_diff;
 pub mod css_diff;
+pub mod directive_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
@@ -153,21 +154,21 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap, pkg_root: &Path) -> Vec
 fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
-    // META-04: Filter symbols marked as non-public release tags before comparison.
-    // Symbols tagged @internal, @alpha, or @experimental are considered non-public
-    // and must not fire export-removed/export-added findings.
+    // META-04 / META-06 (Phase 19): Filter non-public release tags before comparison.
+    // Symbols tagged @internal, @alpha, or @beta are considered non-public per the
+    // locked v0.3 Phase 19 decision (D-01); only @public and no-tag remain comparable.
     let mut filtered_old = old.clone();
     filtered_old.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
-            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Experimental)
+            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Beta)
         )
     });
     let mut filtered_new = new.clone();
     filtered_new.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
-            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Experimental)
+            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Beta)
         )
     });
 
