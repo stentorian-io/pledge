@@ -410,10 +410,13 @@ fn extract_declaration(
     name: &str,
     hint_line: u32,
 ) -> Option<ExtractedDecl> {
+    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX — strict superset
+    // of LANGUAGE_TYPESCRIPT so every TS query still parses identically.
     let ts_lang: tree_sitter::Language = match lang {
         tree_query::SourceLanguage::TypeScript => {
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
         }
+        tree_query::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
     };
 
@@ -812,10 +815,13 @@ fn collect_overload_shapes(
     lang: &tree_query::SourceLanguage,
     name: &str,
 ) -> Vec<crate::types::shape::TypeShape> {
+    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX so overload
+    // signatures in JSX-bearing .tsx files are still discoverable.
     let ts_lang: tree_sitter::Language = match lang {
         tree_query::SourceLanguage::TypeScript => {
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
         }
+        tree_query::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
     };
     let mut parser = tree_sitter::Parser::new();
@@ -863,10 +869,13 @@ fn collect_interface_members(
     lang: &tree_query::SourceLanguage,
     name: &str,
 ) -> Vec<crate::types::ClassMember> {
+    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX so merged-
+    // interface members declared in JSX-bearing .tsx files are still collected.
     let ts_lang: tree_sitter::Language = match lang {
         tree_query::SourceLanguage::TypeScript => {
             tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
         }
+        tree_query::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
     };
     let mut parser = tree_sitter::Parser::new();

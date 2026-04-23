@@ -13,8 +13,16 @@ use crate::types::DeclarationKind;
 
 /// Which grammar should be used to parse a source file.
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLanguage {
     TypeScript,
+    /// INF-01 (Phase 18): JSX-bearing TypeScript files (`.tsx`) — routed to
+    /// `tree_sitter_typescript::LANGUAGE_TSX`. TSX is a strict superset of
+    /// LANGUAGE_TYPESCRIPT so every TypeScript query compiles and matches
+    /// identically on TSX source. Pre-Phase-18 `.tsx` was routed to
+    /// LANGUAGE_TYPESCRIPT and produced ERROR nodes on any JSX body,
+    /// suppressing export discovery.
+    TypeScriptTsx,
     JavaScript,
 }
 
@@ -26,6 +34,8 @@ pub enum SourceLanguage {
 pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
     let ext = path.extension()?.to_str()?;
     // Check for compound extensions like `.d.ts`, `.d.mts`, `.d.cts`.
+    // Declaration files are pure type surface — no JSX — routed to standard
+    // TypeScript grammar (NOT TypeScriptTsx).
     let file_name = path.file_name()?.to_str().unwrap_or("");
     if file_name.ends_with(".d.ts")
         || file_name.ends_with(".d.mts")
@@ -34,7 +44,10 @@ pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
         return Some(SourceLanguage::TypeScript);
     }
     match ext {
-        "ts" | "tsx" | "mts" | "cts" => Some(SourceLanguage::TypeScript),
+        // INF-01 (Phase 18): `.tsx` routes to LANGUAGE_TSX — a strict superset
+        // of LANGUAGE_TYPESCRIPT that handles JSX expression syntax.
+        "tsx" => Some(SourceLanguage::TypeScriptTsx),
+        "ts" | "mts" | "cts" => Some(SourceLanguage::TypeScript),
         "js" | "mjs" | "cjs" | "jsx" => Some(SourceLanguage::JavaScript),
         _ => None,
     }
@@ -42,10 +55,11 @@ pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
 
 /// Return the tree-sitter `Language` handle for the given `SourceLanguage`.
 ///
-/// Uses the non-deprecated `LANGUAGE_TYPESCRIPT` / `LANGUAGE` constants.
+/// Uses the non-deprecated `LANGUAGE_TYPESCRIPT` / `LANGUAGE_TSX` / `LANGUAGE` constants.
 fn get_language(lang: &SourceLanguage) -> tree_sitter::Language {
     match lang {
         SourceLanguage::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
         SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
     }
 }
@@ -923,7 +937,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Processing order: alias forms first (to set type_only_alias_local_positions),
     // then non-alias forms (skipping positions handled by alias queries).
     // We also skip positions already in reexport_positions to avoid double-counting.
-    if matches!(lang, SourceLanguage::TypeScript) {
+    // INF-01 (Phase 18): TypeScriptTsx included — TSX is a strict superset; every TS query matches identically.
+    if matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
         let mut type_only_alias_local_positions: std::collections::HashSet<(u32, u32)> =
             std::collections::HashSet::new();
 
@@ -1179,7 +1197,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // --- Export assignment (`export = Foo`, TypeScript only) -----------------
     // CommonJS-style TypeScript default export. Produces a "default" entry.
     // Only emit if no default export already exists at this position.
-    if matches!(lang, SourceLanguage::TypeScript) {
+    // INF-01 (Phase 18): TypeScriptTsx included — `export = Foo` is TS syntax
+    // the TSX grammar also parses.
+    if matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
         if let Ok(query) = Query::new(&language, EXPORT_ASSIGNMENT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
@@ -1218,8 +1241,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // "default" keyword child in the parent export_statement node) — those are
     // handled by the default export queries above.
     {
+        // INF-01 (Phase 18): TypeScriptTsx shares DECL_EXPORT_QUERY_TS with
+        // TypeScript — TSX is a strict superset of LANGUAGE_TYPESCRIPT's query
+        // surface.
         let decl_query_str = match lang {
-            SourceLanguage::TypeScript => DECL_EXPORT_QUERY_TS,
+            SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx => DECL_EXPORT_QUERY_TS,
             SourceLanguage::JavaScript => DECL_EXPORT_QUERY_JS,
         };
         let query =
@@ -1284,7 +1310,13 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // In .d.ts files and `declare` blocks, declarations are wrapped in
     // `ambient_declaration`. The existing DECL_EXPORT_QUERY_TS doesn't match
     // through this wrapper.
-    if matches!(lang, SourceLanguage::TypeScript) {
+    // INF-01 (Phase 18): TypeScriptTsx included — ambient declarations also
+    // appear in `.tsx` source (e.g., `declare global { ... }` inside a JSX-
+    // bearing component file).
+    if matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
         if let Ok(query) = Query::new(&language, AMBIENT_DECL_EXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
@@ -1736,7 +1768,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // If the grammar parses them correctly (future grammar version), the existing
     // DECL_EXPORT_QUERY_TS will catch them as lexical_declaration/variable_declarator.
     // This is graceful degradation — if neither heuristic fires, it's a silent no-op.
-    if matches!(lang, SourceLanguage::TypeScript) {
+    // INF-01 (Phase 18): TypeScriptTsx included — `using`/`await using` is TS 5.2
+    // syntax that TSX also accepts.
+    if matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
         let mut walk_cursor = root.walk();
         for top_child in root.children(&mut walk_cursor) {
             if top_child.kind() == "export_statement" || top_child.kind() == "ERROR" {
@@ -2174,7 +2211,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Module augmentations extend external package types — their removal breaks consumers.
     // Emitted with synthetic `augment:<module>` key (or `augment:global`) so the existing
     // export-removed detection handles their removal without extra code.
-    if matches!(lang, SourceLanguage::TypeScript) {
+    // INF-01 (Phase 18): TypeScriptTsx included — module augmentation is TS
+    // syntax that TSX also parses.
+    if matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
         // declare module 'express' { ... }
         if let Ok(query) = Query::new(&language, DECLARE_MODULE_AUGMENTATION_QUERY_TS) {
             let mut cursor = QueryCursor::new();
@@ -6689,6 +6731,95 @@ var qe = Object.assign(Pe, { Button: 1, Item: 2 });
             menu.compound_members.is_empty(),
             "ARCH-02 Pitfall 6: minified-target case must silently no-op; got {:?}",
             menu.compound_members
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // INF-01 (Phase 18): .tsx → LANGUAGE_TSX grammar routing tests
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_inf01_tsx_routes_to_typescript_tsx() {
+        let p = std::path::PathBuf::from("/x/foo.tsx");
+        assert!(matches!(
+            language_for_file(&p),
+            Some(SourceLanguage::TypeScriptTsx)
+        ));
+    }
+
+    #[test]
+    fn test_inf01_d_ts_still_typescript() {
+        // Declaration files are pure type surface (no JSX) — must stay on the
+        // standard TypeScript grammar regardless of the `.tsx` → LANGUAGE_TSX
+        // routing.
+        let p = std::path::PathBuf::from("/x/foo.d.ts");
+        assert!(matches!(
+            language_for_file(&p),
+            Some(SourceLanguage::TypeScript)
+        ));
+    }
+
+    #[test]
+    fn test_inf01_ts_still_typescript() {
+        let p = std::path::PathBuf::from("/x/foo.ts");
+        assert!(matches!(
+            language_for_file(&p),
+            Some(SourceLanguage::TypeScript)
+        ));
+    }
+
+    #[test]
+    fn test_inf01_jsx_still_javascript() {
+        // `.jsx` is JavaScript-JSX; it stays on the JavaScript grammar because
+        // tree-sitter-javascript parses JSX natively. Only `.tsx` needs the TSX
+        // TypeScript grammar variant.
+        let p = std::path::PathBuf::from("/x/foo.jsx");
+        assert!(matches!(
+            language_for_file(&p),
+            Some(SourceLanguage::JavaScript)
+        ));
+    }
+
+    #[test]
+    fn test_inf01_tsx_jsx_body_discovers_export() {
+        // TSX grammar must handle JSX in export body without producing ERROR
+        // nodes that suppress export discovery. Pre-INF-01, `.tsx` routed to
+        // LANGUAGE_TYPESCRIPT which emits ERROR nodes for JSX expressions and
+        // silently dropped the surrounding exports.
+        let src = br#"
+export const Comp = () => <div>hi</div>;
+export interface Props { children: string }
+"#;
+        let exports =
+            parse_exports(src, SourceLanguage::TypeScriptTsx).expect("parse must succeed");
+        assert!(
+            exports.iter().any(|e| e.name == "Comp"),
+            "expected Comp in exports, got {:?}",
+            exports.iter().map(|e| &e.name).collect::<Vec<_>>()
+        );
+        assert!(
+            exports.iter().any(|e| e.name == "Props"),
+            "expected Props in exports"
+        );
+    }
+
+    #[test]
+    fn test_inf01_tsx_same_queries_match_as_ts() {
+        // Strict-superset property: every TypeScript query matches identically
+        // on TSX grammar for source containing no JSX. If this regresses, every
+        // matches!() dispatch site that was widened would start silently
+        // dropping exports under the TypeScriptTsx arm.
+        let src = br#"
+export function foo(x: number): string { return ""; }
+export class Bar<T> { method(a: T): T { return a; } }
+"#;
+        let ts = parse_exports(src, SourceLanguage::TypeScript).expect("TS parse");
+        let tsx = parse_exports(src, SourceLanguage::TypeScriptTsx).expect("TSX parse");
+        let ts_names: std::collections::HashSet<_> = ts.iter().map(|e| e.name.clone()).collect();
+        let tsx_names: std::collections::HashSet<_> = tsx.iter().map(|e| e.name.clone()).collect();
+        assert_eq!(
+            ts_names, tsx_names,
+            "TSX grammar should be strict superset — same exports discovered"
         );
     }
 }
