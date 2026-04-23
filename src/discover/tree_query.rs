@@ -111,6 +111,14 @@ pub struct RawExport {
     /// D-16 conservative: only populated when Target is itself an exported
     /// symbol in the same file.
     pub compound_members: Vec<String>,
+    /// INF-02 (Phase 18): type annotation text extracted from a matching
+    /// `declare` statement in the same file (rollup-plugin-dts / api-extractor
+    /// bundle pattern: `declare const foo: T; ... export { foo };`). Populated
+    /// during `parse_exports` Pass 1 by lookup against the file-scope ambient-
+    /// declaration sidecar map. `None` for source-form exports where no
+    /// `declare` statement precedes the `export { foo }` specifier and for
+    /// re-exports where the symbol comes from another module.
+    pub type_signature: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -680,6 +688,177 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
 "#;
 
 // ---------------------------------------------------------------------------
+// INF-02 (Phase 18): rollup-plugin-dts / api-extractor split-declaration
+// capture queries.
+//
+// rollup-plugin-dts and api-extractor emit bundle output of the shape:
+//     declare const foo: T;
+//     ...
+//     export { foo };
+// where the `declare` and the `export { foo }` are SIBLING top-level nodes —
+// the `declare` carries the type signature and decl_kind, the `export { foo }`
+// is the public re-surface. A single-pass parse_exports treats the plain
+// `export { foo }` as a typeless Named export because its decl_kind comes
+// from the export_statement's `declaration:` field which is empty for these
+// export-specifier forms. INF-02 restores the identity by running a Pass 1
+// over all top-level `ambient_declaration` nodes, building a file-scope
+// sidecar HashMap<name, (DeclarationKind, Option<type_signature>)>, and a
+// post-process link pass enriches each Named non-re-export RawExport by
+// lookup.
+// ---------------------------------------------------------------------------
+
+/// INF-02 Pass 1 / form A: `declare const/let X: T;` — variables with a type annotation.
+/// The `type:` field captures the type-annotation text including the leading colon.
+const AMBIENT_CONST_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (lexical_declaration
+      (variable_declarator
+        name: (identifier) @decl_name
+        type: (type_annotation) @decl_type))))
+"#;
+
+/// INF-02 Pass 1 / form B: `declare function X(...): T;` — function signatures.
+/// Whole-node text is used as a coarse type_signature stand-in (minus the trailing `;`).
+const AMBIENT_FUNCTION_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (function_signature
+      name: (identifier) @decl_name) @decl_node))
+"#;
+
+/// INF-02 Pass 1 / form C: `declare class X { ... }` — class declarations.
+const AMBIENT_CLASS_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (class_declaration
+      name: (type_identifier) @decl_name)))
+"#;
+
+/// INF-02 Pass 1 / form D: `declare interface X { ... }` — interface declarations.
+const AMBIENT_INTERFACE_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (interface_declaration
+      name: (type_identifier) @decl_name)))
+"#;
+
+/// INF-02 Pass 1 / form E: `declare type X = ...;` — type alias declarations.
+const AMBIENT_TYPE_ALIAS_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (type_alias_declaration
+      name: (type_identifier) @decl_name)))
+"#;
+
+/// INF-02 Pass 1 / form F: `declare enum X { ... }` — enum declarations.
+const AMBIENT_ENUM_DECL_QUERY: &str = r#"
+(program
+  (ambient_declaration
+    (enum_declaration
+      name: (identifier) @decl_name)))
+"#;
+
+/// INF-02 Pass 1: build a file-scope sidecar of top-level `declare` statements so that
+/// Pass 2 (the existing export-statement processing) can enrich `export { foo }`
+/// entries with the matching declare site's decl_kind and type_signature.
+///
+/// rollup-plugin-dts and api-extractor ship declare + export as sibling top-level
+/// nodes; the existing parse_exports treats the plain `export { foo }` as a
+/// typeless re-export. INF-02 restores the type identity by lookup.
+///
+/// On duplicate name (rare — same identifier declared twice), first-seen wins
+/// per Phase 18 Research Pitfall 5 (entry().or_insert semantics).
+///
+/// Query-compile failures are handled gracefully per Phase 17 key decision: each
+/// AMBIENT_*_DECL_QUERY is wrapped in `if let Ok(q)` and a failing query silently
+/// skips that pattern.
+fn collect_ambient_decls(
+    root: tree_sitter::Node<'_>,
+    source: &[u8],
+    lang: &SourceLanguage,
+) -> std::collections::HashMap<String, (DeclarationKind, Option<String>)> {
+    use std::collections::HashMap;
+    let mut decls: HashMap<String, (DeclarationKind, Option<String>)> = HashMap::new();
+    let language = get_language(lang);
+
+    // Tuple element semantics:
+    //   (query_str, kind, capture_type)
+    // where `capture_type = true` means the query exposes a `@decl_type` capture
+    // (variable/type-annotation form) whose text becomes the type_signature.
+    // Otherwise `@decl_node` whole-node text (minus trailing `;`) is used as the
+    // type_signature stand-in for function signatures; for class/interface/
+    // enum/type-alias the type_signature stays None (name + decl_kind alone is
+    // enough for downstream identity — downstream consumers care most about
+    // the variable-type case).
+    let queries = [
+        (AMBIENT_CONST_DECL_QUERY, DeclarationKind::Variable, true),
+        (
+            AMBIENT_FUNCTION_DECL_QUERY,
+            DeclarationKind::Function,
+            false,
+        ),
+        (AMBIENT_CLASS_DECL_QUERY, DeclarationKind::Class, false),
+        (
+            AMBIENT_INTERFACE_DECL_QUERY,
+            DeclarationKind::Interface,
+            false,
+        ),
+        (
+            AMBIENT_TYPE_ALIAS_DECL_QUERY,
+            DeclarationKind::TypeAlias,
+            false,
+        ),
+        (AMBIENT_ENUM_DECL_QUERY, DeclarationKind::Enum, false),
+    ];
+
+    for (query_str, kind, capture_type) in queries {
+        let Ok(q) = Query::new(&language, query_str) else {
+            continue;
+        };
+        let mut cursor = QueryCursor::new();
+        let mut matches_iter = cursor.matches(&q, root, source);
+        let capture_names = q.capture_names();
+        while let Some(m) = matches_iter.next() {
+            let mut name: Option<String> = None;
+            let mut type_text: Option<String> = None;
+            let mut decl_node_text: Option<String> = None;
+            for cap in m.captures {
+                let cap_name = capture_names[cap.index as usize];
+                let text = cap.node.utf8_text(source).ok().map(|s| s.to_string());
+                match cap_name {
+                    "decl_name" => name = text,
+                    "decl_type" => {
+                        // `type_annotation` node text includes the leading `:` and any
+                        // leading whitespace — trim so callers see the bare type.
+                        type_text = text.map(|t| t.trim_start_matches(':').trim().to_string())
+                    }
+                    "decl_node" => decl_node_text = text,
+                    _ => {}
+                }
+            }
+            if let Some(n) = name {
+                let type_sig = if capture_type {
+                    type_text
+                } else {
+                    // Function signature: use full node text (minus trailing `;`)
+                    // as a coarse type_signature. `None` for class/interface/
+                    // enum/type-alias (kind alone conveys identity).
+                    match kind {
+                        DeclarationKind::Function => {
+                            decl_node_text.map(|s| s.trim_end_matches(';').trim().to_string())
+                        }
+                        _ => None,
+                    }
+                };
+                decls.entry(n).or_insert((kind.clone(), type_sig));
+            }
+        }
+    }
+    decls
+}
+
+// ---------------------------------------------------------------------------
 // Declaration kind mapping
 // ---------------------------------------------------------------------------
 
@@ -721,6 +900,14 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
 
     let root = tree.root_node();
     let mut exports: Vec<RawExport> = Vec::new();
+
+    // INF-02 Pass 1 (Phase 18): collect top-level `declare` statements keyed by
+    // identifier. The resulting sidecar is consulted post-collection by the
+    // link-pass below to enrich rollup-plugin-dts / api-extractor split
+    // declarations (`declare const foo: T; ... export { foo };`) with the
+    // declare-site decl_kind and type_signature. Empty HashMap for non-TS or
+    // TS files without ambient declarations — link-pass no-ops.
+    let ambient_decls = collect_ambient_decls(root, source, &lang);
 
     // --- Named exports (no `from` clause) ------------------------------------
     // We run the named re-export query first to collect (name, source) pairs,
@@ -771,6 +958,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -803,6 +991,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 is_type_only: false,
                                 release_tag: None,
                                 compound_members: Vec::new(),
+                                type_signature: None,
                             });
                         }
                     }
@@ -833,6 +1022,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -882,6 +1072,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -925,6 +1116,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         is_type_only: false,
                         release_tag: None,
                         compound_members: Vec::new(),
+                        type_signature: None,
                     });
                 }
             }
@@ -982,6 +1174,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1026,6 +1219,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         is_type_only: false,
                         release_tag: None,
                         compound_members: Vec::new(),
+                        type_signature: None,
                     });
                 }
             }
@@ -1070,6 +1264,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                         }
@@ -1122,6 +1317,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1154,6 +1350,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -1188,6 +1385,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         is_type_only: false,
                         release_tag: None,
                         compound_members: Vec::new(),
+                        type_signature: None,
                     });
                 }
             }
@@ -1226,6 +1424,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1300,6 +1499,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         is_type_only: false,
                         release_tag,
                         compound_members: Vec::new(),
+                        type_signature: None,
                     });
                 }
             }
@@ -1370,6 +1570,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1404,6 +1605,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1432,6 +1634,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1502,6 +1705,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1555,6 +1759,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1607,6 +1812,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -1655,6 +1861,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -1681,6 +1888,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1709,6 +1917,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -1750,6 +1959,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                         }
@@ -1813,6 +2023,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             is_type_only: false,
                                             release_tag: None,
                                             compound_members: Vec::new(),
+                                            type_signature: None,
                                         });
                                     }
                                 }
@@ -1863,6 +2074,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         is_type_only: false,
                                         release_tag: None,
                                         compound_members: Vec::new(),
+                                        type_signature: None,
                                     });
                                 }
                             }
@@ -1904,6 +2116,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         is_type_only: false,
                                         release_tag: None,
                                         compound_members: Vec::new(),
+                                        type_signature: None,
                                     });
                                 }
                             }
@@ -1944,6 +2157,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         is_type_only: false,
                                         release_tag: None,
                                         compound_members: Vec::new(),
+                                        type_signature: None,
                                     });
                                 }
                             }
@@ -1985,6 +2199,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 is_type_only: false,
                                 release_tag: None,
                                 compound_members: Vec::new(),
+                                type_signature: None,
                             });
                         }
                     }
@@ -2022,6 +2237,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 is_type_only: false,
                                 release_tag: None,
                                 compound_members: Vec::new(),
+                                type_signature: None,
                             });
                         }
                     }
@@ -2071,6 +2287,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                         }
@@ -2111,6 +2328,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                         }
@@ -2171,6 +2389,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 is_type_only: false,
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
+                                                type_signature: None,
                                             });
                                         }
                                     }
@@ -2192,6 +2411,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     is_type_only: false,
                                                     release_tag: None,
                                                     compound_members: Vec::new(),
+                                                    type_signature: None,
                                                 });
                                             }
                                         }
@@ -2254,6 +2474,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                     // META-03: emit synthetic keys for each top-level member in the body.
@@ -2305,6 +2526,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             is_type_only: false,
                                             release_tag: None,
                                             compound_members: Vec::new(),
+                                            type_signature: None,
                                         });
                                     }
                                     // META-03: emit synthetic keys for top-level members.
@@ -2435,6 +2657,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 is_type_only: false,
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
+                                                type_signature: None,
                                             });
                                         }
                                     }
@@ -2458,6 +2681,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             is_type_only: false,
                                             release_tag: None,
                                             compound_members: Vec::new(),
+                                            type_signature: None,
                                         });
                                     }
                                 }
@@ -2521,6 +2745,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 is_type_only: false,
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
+                                                type_signature: None,
                                             });
                                         }
                                     }
@@ -2577,6 +2802,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                         }
@@ -2684,6 +2910,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -2761,6 +2988,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             is_type_only: false,
                                             release_tag: None,
                                             compound_members: Vec::new(),
+                                            type_signature: None,
                                         });
                                     }
                                 }
@@ -2804,6 +3032,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         is_type_only: false,
                                                         release_tag: None,
                                                         compound_members: Vec::new(),
+                                                        type_signature: None,
                                                     });
                                                 }
                                             }
@@ -2851,6 +3080,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         is_type_only: false,
                                                         release_tag: None,
                                                         compound_members: Vec::new(),
+                                                        type_signature: None,
                                                     });
                                                 }
                                             }
@@ -2874,6 +3104,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     is_type_only: false,
                                                     release_tag: None,
                                                     compound_members: Vec::new(),
+                                                    type_signature: None,
                                                 });
                                             }
                                         }
@@ -2924,6 +3155,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 is_type_only: false,
                                 release_tag: None,
                                 compound_members: Vec::new(),
+                                type_signature: None,
                             });
                         }
                     }
@@ -2942,6 +3174,37 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Per D-16 conservative: members attach ONLY when the target identifier is
     // itself an exported symbol discovered by the first pass.
     attach_compound_members(root, source, &language, &mut exports);
+
+    // INF-02 link-pass (Phase 18): for each Named (non-re-export) RawExport,
+    // look up the matching declare-site in the file-scope ambient sidecar
+    // built in Pass 1. When found, enrich decl_kind and type_signature when
+    // the export's own values are None. This restores type identity for
+    // rollup-plugin-dts / api-extractor bundle output where `export { foo }`
+    // appears without inline declaration context.
+    //
+    // Guards:
+    // - Only `RawExportKind::Named` entries — Default/StarReexport/NamedReexport
+    //   are excluded because their identity does not come from a local declare.
+    // - Skip when `rx.source.is_some()` — re-exports (`export { foo } from ...`)
+    //   carry an external origin; the sidecar's local declare must NOT leak in.
+    // - Skip when `rx.compound_members` is populated on a hybrid target (N/A —
+    //   compound_members is orthogonal to the declare-linking pathway).
+    for rx in exports.iter_mut() {
+        if !matches!(rx.kind, RawExportKind::Named) {
+            continue;
+        }
+        if rx.source.is_some() {
+            continue;
+        }
+        if let Some((kind, type_sig)) = ambient_decls.get(&rx.name) {
+            if rx.decl_kind.is_none() {
+                rx.decl_kind = Some(kind.clone());
+            }
+            if rx.type_signature.is_none() && type_sig.is_some() {
+                rx.type_signature = type_sig.clone();
+            }
+        }
+    }
 
     Ok(exports)
 }
@@ -3070,6 +3333,7 @@ fn expand_namespace_members(
                                     is_type_only: false,
                                     release_tag: None,
                                     compound_members: Vec::new(),
+                                    type_signature: None,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -3135,6 +3399,7 @@ fn expand_namespace_members(
                             is_type_only: false,
                             release_tag: None,
                             compound_members: Vec::new(),
+                            type_signature: None,
                         });
                     }
                 }
@@ -3197,6 +3462,7 @@ fn emit_augmentation_members(
                     is_type_only: false,
                     release_tag: None,
                     compound_members: Vec::new(),
+                    type_signature: None,
                 });
             }
         }
@@ -6821,5 +7087,104 @@ export class Bar<T> { method(a: T): T { return a; } }
             ts_names, tsx_names,
             "TSX grammar should be strict superset — same exports discovered"
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // INF-02 (Phase 18): rollup-plugin-dts / api-extractor split-declaration
+    // linking tests. Pass 1 collects ambient declare statements; link-pass
+    // enriches Named non-re-export RawExports with decl_kind + type_signature.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn test_inf02_declare_const_link_to_export_populates_type_signature() {
+        let src = br#"
+declare const foo: number;
+export { foo };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "foo")
+            .expect("foo missing");
+        assert_eq!(foo.decl_kind, Some(DeclarationKind::Variable));
+        assert!(
+            foo.type_signature.is_some(),
+            "type_signature should be populated from declare site"
+        );
+        assert!(
+            foo.type_signature.as_ref().unwrap().contains("number"),
+            "got type_signature: {:?}",
+            foo.type_signature
+        );
+    }
+
+    #[test]
+    fn test_inf02_declare_function_link_to_export_populates_decl_kind() {
+        let src = br#"
+declare function bar(x: number): string;
+export { bar };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let bar = exports
+            .iter()
+            .find(|e| e.name == "bar")
+            .expect("bar missing");
+        assert_eq!(bar.decl_kind, Some(DeclarationKind::Function));
+        assert!(
+            bar.type_signature.is_some(),
+            "function declare should set type_signature to the signature text"
+        );
+    }
+
+    #[test]
+    fn test_inf02_declare_class_link_to_export_populates_decl_kind() {
+        let src = br#"
+declare class Baz { x: number; }
+export { Baz };
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let baz = exports
+            .iter()
+            .find(|e| e.name == "Baz")
+            .expect("Baz missing");
+        assert_eq!(baz.decl_kind, Some(DeclarationKind::Class));
+    }
+
+    #[test]
+    fn test_inf02_declare_without_export_is_not_public() {
+        // Orphan declare statement — no export — must NOT produce a RawExport.
+        // The ambient sidecar records it, but without a matching export the
+        // link-pass has nothing to enrich.
+        let src = br#"
+declare const internal: number;
+export const unrelated = 1;
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        assert!(
+            !exports.iter().any(|e| e.name == "internal"),
+            "declare-without-export must not appear as an export"
+        );
+        assert!(exports.iter().any(|e| e.name == "unrelated"));
+    }
+
+    #[test]
+    fn test_inf02_reexport_not_affected_by_local_declare() {
+        // If the export is `export { foo } from './other'` (re-export with
+        // `from`), the local ambient declare must NOT leak into the exported
+        // symbol — the symbol's identity comes from ./other. The INF-02
+        // link-pass explicitly skips entries where `rx.source.is_some()`.
+        let src = br#"
+declare const foo: number;
+export { foo } from './other';
+"#;
+        let exports = parse_exports(src, SourceLanguage::TypeScript).unwrap();
+        let foo = exports
+            .iter()
+            .find(|e| e.name == "foo")
+            .expect("foo missing");
+        assert_eq!(foo.kind, RawExportKind::NamedReexport);
+        // decl_kind from ambient declare must NOT have leaked in.
+        assert_eq!(foo.decl_kind, None);
+        assert_eq!(foo.type_signature, None);
     }
 }

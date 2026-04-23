@@ -446,7 +446,12 @@ pub fn collect_exports(
                     merge_hybrid(
                         existing,
                         export.decl_kind.clone(),
-                        None,
+                        // INF-02 (Phase 18): forward declare-site type signature
+                        // through the merge path as well — if the first-seen
+                        // symbol was typeless and a later declaration-merge
+                        // partner carries the declare type, the merged symbol
+                        // adopts it per merge_hybrid's None->Some upgrade rule.
+                        export.type_signature.clone(),
                         export.release_tag.clone(),
                     );
                     // ARCH-02 (Phase 18): merge compound_members into existing symbol
@@ -465,7 +470,11 @@ pub fn collect_exports(
                             file: rel_path.clone(),
                             line: export.line,
                             col: export.col,
-                            type_signature: None,
+                            // INF-02 (Phase 18): carry the declare-site type
+                            // signature linked during parse_exports' INF-02
+                            // link-pass. None for source-form exports where
+                            // no ambient declare preceded the export specifier.
+                            type_signature: export.type_signature,
                             overloads: Vec::new(),
                             decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), // D-14
                             type_guard_type: None,
@@ -494,7 +503,15 @@ pub fn collect_exports(
                     name: "default".to_string(),
                 };
                 if let Some(existing) = map.get_mut(&key) {
-                    merge_hybrid(existing, export.decl_kind.clone(), None, None);
+                    merge_hybrid(
+                        existing,
+                        export.decl_kind.clone(),
+                        // INF-02 (Phase 18): carry declare-site signature
+                        // through default-export merge path for symmetry with
+                        // Named.
+                        export.type_signature.clone(),
+                        None,
+                    );
                 } else {
                     map.insert(
                         key,
@@ -504,7 +521,11 @@ pub fn collect_exports(
                             file: rel_path.clone(),
                             line: export.line,
                             col: export.col,
-                            type_signature: None,
+                            // INF-02 (Phase 18): default-export carries the
+                            // declare-site type signature when the INF-03
+                            // trailer (`export { foo as default }`) linked the
+                            // default to a local `declare const foo: T`.
+                            type_signature: export.type_signature,
                             overloads: Vec::new(),
                             decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), // D-14
                             type_guard_type: None,
