@@ -236,16 +236,17 @@ fn group_depth1_dotted<'a>(
 /// preserving consumer impact semantics (A.B.x → A.D.x breaks dotted-path
 /// consumers regardless of minor type tweaks), so we require decl_kinds to
 /// match and type_signature to match when BOTH sides provide one.
+///
+/// WR-02 fix: use HashSet-based comparison so duplicate decl_kinds (e.g.,
+/// `[Class, Class]` vs `[Class, Namespace]`) are not falsely reported equal.
+/// In production, `merge_hybrid` (resolver.rs) dedups on insertion, so
+/// decl_kinds is effectively a set; this makes the local structural
+/// guarantee explicit rather than relying on an external invariant.
 fn shape_equal(old_sym: &ExportSymbol, new_sym: &ExportSymbol) -> bool {
-    // Both must carry the same set of DeclarationKinds (Vec<_>, order-insensitive).
-    if old_sym.decl_kinds.len() != new_sym.decl_kinds.len() {
+    let old_kinds: HashSet<&DeclarationKind> = old_sym.decl_kinds.iter().collect();
+    let new_kinds: HashSet<&DeclarationKind> = new_sym.decl_kinds.iter().collect();
+    if old_kinds != new_kinds {
         return false;
-    }
-    // Simple order-insensitive comparison: each old kind appears in new.
-    for k in &old_sym.decl_kinds {
-        if !new_sym.decl_kinds.contains(k) {
-            return false;
-        }
     }
     // Type signature when present on both sides must match.
     match (&old_sym.type_signature, &new_sym.type_signature) {
@@ -254,7 +255,6 @@ fn shape_equal(old_sym: &ExportSymbol, new_sym: &ExportSymbol) -> bool {
     }
     // Other fields intentionally ignored — async/generator/release_tag changes
     // are reported by their own rules.
-    let _ = DeclarationKind::Unknown; // silence unused-import warning in some builds
     true
 }
 

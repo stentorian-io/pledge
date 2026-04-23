@@ -35,7 +35,7 @@ pub enum ExportKind {
 /// Orthogonal to ExportKind (Named|Default) which tracks the export mechanism.
 /// Per D-03/D-04.
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DeclarationKind {
     Function,
     Class,
