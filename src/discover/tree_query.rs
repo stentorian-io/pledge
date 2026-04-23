@@ -3534,6 +3534,107 @@ pub fn extract_release_tag(
     None
 }
 
+/// CLS-10 (Phase 19): Extract `DecoratorSpec` values from the `decorator`
+/// children of a given AST node, and from preceding-sibling `decorator` nodes.
+///
+/// Per CONTEXT D-03 (AST-direct, no comment-scan): decorators are first-class
+/// AST nodes in both tree-sitter-typescript 0.23.2 and tree-sitter-javascript
+/// 0.25.0.
+///
+/// The caller passes the node that MIGHT carry decorators — this is
+/// grammar-and-position-specific:
+///  - For class-level decorators (TypeScript): pass the `class_declaration`,
+///    `abstract_class_declaration`, or the `export_statement` that wraps the
+///    class (decorators can land on either the export_statement or the inner
+///    class node in TS).
+///  - For class-level decorators (JavaScript): pass the `class_declaration`
+///    or the `export_statement`.
+///  - For method decorators: pass the `method_definition` node (JS grammar
+///    stores decorators directly on it; TS grammar sometimes puts them on
+///    the preceding `class_body` child — handle both by walking preceding
+///    siblings as a fallback).
+///  - For field decorators: pass the `public_field_definition` (TS) or
+///    `field_definition` (JS).
+///  - For parameter decorators: pass the `required_parameter` or
+///    `optional_parameter` node.
+///
+/// The implementation scans BOTH direct children (JS pattern) AND preceding
+/// siblings that are `decorator` nodes (TS pattern). This is robust across
+/// both grammars.
+pub fn extract_decorators(
+    node: tree_sitter::Node<'_>,
+    source: &[u8],
+) -> Vec<crate::types::DecoratorSpec> {
+    let mut out: Vec<crate::types::DecoratorSpec> = Vec::new();
+
+    // Pattern 1: direct children — e.g. class_declaration has `decorator`
+    // as a direct child in both TS and JS grammars.
+    for i in 0..node.child_count() as u32 {
+        let child = match node.child(i) {
+            Some(c) => c,
+            None => continue,
+        };
+        if child.kind() == "decorator" {
+            if let Some(spec) = decorator_node_to_spec(child, source) {
+                out.push(spec);
+            }
+        }
+    }
+
+    // Pattern 2: preceding siblings — TS grammar sometimes emits
+    // `decorator` as a sibling directly before a `method_definition` or
+    // `public_field_definition` inside `class_body`.
+    let mut cursor = node;
+    while let Some(prev) = cursor.prev_named_sibling() {
+        if prev.kind() != "decorator" {
+            break;
+        }
+        if let Some(spec) = decorator_node_to_spec(prev, source) {
+            // Prepend to preserve source order (we're walking backwards).
+            out.insert(0, spec);
+        }
+        cursor = prev;
+    }
+
+    out
+}
+
+/// Convert a single `decorator` AST node to a DecoratorSpec.
+fn decorator_node_to_spec(
+    decorator_node: tree_sitter::Node<'_>,
+    source: &[u8],
+) -> Option<crate::types::DecoratorSpec> {
+    // decorator's meaningful child is the first named child (identifier /
+    // call_expression / member_expression / parenthesized_expression).
+    // Node-types.json confirms no `field` name; we walk children.
+    let inner = (0..decorator_node.child_count() as u32)
+        .filter_map(|i| decorator_node.child(i))
+        .find(|c| c.is_named())?;
+
+    match inner.kind() {
+        "call_expression" => {
+            // @Route('/users') — name from `function` field, args from `arguments` field.
+            let fn_node = inner.child_by_field_name("function")?;
+            let name = fn_node.utf8_text(source).ok()?.to_string();
+            let args = inner
+                .child_by_field_name("arguments")
+                .and_then(|a| a.utf8_text(source).ok().map(|s| s.to_string()));
+            Some(crate::types::DecoratorSpec { name, args })
+        }
+        "identifier" | "member_expression" => {
+            // @Component or @ns.foo — name is the source text, no args.
+            let name = inner.utf8_text(source).ok()?.to_string();
+            Some(crate::types::DecoratorSpec { name, args: None })
+        }
+        "parenthesized_expression" => {
+            // @(expr) — rare; best effort.
+            let name = inner.utf8_text(source).ok()?.to_string();
+            Some(crate::types::DecoratorSpec { name, args: None })
+        }
+        _ => None,
+    }
+}
+
 /// Walk up the tree from a declaration node to the nearest program-level
 /// statement wrapper (`export_statement` or `ambient_declaration`), returning
 /// that node. If no such ancestor is found (the node itself is at program level),
@@ -3847,7 +3948,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                                             is_optional: is_opt_param,
                                             is_accessor: false,
                                             this_param_type: None,
-                                            decorators: Vec::new(),
+                                            // CLS-10 (Phase 19): parameter-property decorators
+                                            // live on the required_parameter/optional_parameter node.
+                                            decorators: extract_decorators(param, source),
                                         });
                                     }
                                 }
@@ -3868,7 +3971,11 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
-                    decorators: Vec::new(),
+                    // CLS-10 (Phase 19): method decorators attach to the
+                    // method_definition node in JS, or appear as preceding
+                    // decorator siblings inside class_body in TS. extract_decorators
+                    // handles both patterns.
+                    decorators: extract_decorators(child, source),
                 });
             }
             "public_field_definition" => {
@@ -3912,7 +4019,10 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
-                    decorators: Vec::new(),
+                    // CLS-10 (Phase 19): field decorators attach to the
+                    // public_field_definition node in TS, or appear as
+                    // preceding decorator siblings in class_body.
+                    decorators: extract_decorators(child, source),
                 });
             }
             "abstract_method_signature" => {
@@ -3937,7 +4047,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    decorators: Vec::new(),
+                    // CLS-10 (Phase 19): abstract-method decorators.
+                    decorators: extract_decorators(child, source),
                 });
             }
             // BUG-13-01: .d.ts ambient class members use method_signature /
@@ -3973,7 +4084,9 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    decorators: Vec::new(),
+                    // CLS-10 (Phase 19): ambient method_signature decorators
+                    // (rare in .d.ts but harmless to extract).
+                    decorators: extract_decorators(child, source),
                 });
             }
             "property_signature" => {
@@ -4009,7 +4122,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    decorators: Vec::new(),
+                    // CLS-10 (Phase 19): ambient property_signature decorators.
+                    decorators: extract_decorators(child, source),
                 });
             }
             _ => {}
@@ -4067,6 +4181,23 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
     let type_params = parse_type_params(source, decl_node);
     let members = parse_class_members(source, decl_node);
 
+    // CLS-10 (Phase 19): Extract class-level decorators. In TS, decorators can
+    // appear directly on the class_declaration/abstract_class_declaration OR on
+    // the parent export_statement wrapper — check both and concatenate preserving
+    // source order.
+    let class_decorators: Vec<crate::types::DecoratorSpec> = {
+        let mut decs = extract_decorators(decl_node, source);
+        if let Some(parent) = decl_node.parent() {
+            if parent.kind() == "export_statement" {
+                let mut parent_decs = extract_decorators(parent, source);
+                // Parent-level decorators appear BEFORE the class body in source order.
+                parent_decs.extend(decs);
+                decs = parent_decs;
+            }
+        }
+        decs
+    };
+
     // IFT-03: Extract per-position constructor param optionality.
     // Find the class_body, scan for the constructor method_definition, then
     // call extract_param_optionality on it.
@@ -4111,7 +4242,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         implements_list,
         type_params,
         constructor_param_optionality,
-        decorators: Vec::new(),
+        decorators: class_decorators,
     }
 }
 
@@ -7351,5 +7482,95 @@ export { z as default, z };
                 .any(|e| matches!(e.kind, RawExportKind::Default)),
             "expected Default from 'as default' trailer"
         );
+    }
+
+    // ── Phase 19 CLS-10: decorator AST extraction ─────────────────────────────
+
+    fn find_first_node_of_kind<'a>(
+        root: tree_sitter::Node<'a>,
+        kind: &str,
+    ) -> Option<tree_sitter::Node<'a>> {
+        if root.kind() == kind {
+            return Some(root);
+        }
+        let mut cursor = root.walk();
+        for child in root.named_children(&mut cursor) {
+            if let Some(found) = find_first_node_of_kind(child, kind) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    /// Extract the combined class-level decorators: those directly on the
+    /// class_declaration plus those on an enclosing export_statement parent.
+    /// Matches the logic inside `parse_class_shape`.
+    fn combined_class_decs(source: &[u8]) -> Vec<crate::types::DecoratorSpec> {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&get_language(&SourceLanguage::TypeScript))
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let root = tree.root_node();
+        let class_node = find_first_node_of_kind(root, "class_declaration")
+            .expect("class_declaration must exist in source");
+        let mut decs = extract_decorators(class_node, source);
+        if let Some(parent) = class_node.parent() {
+            if parent.kind() == "export_statement" {
+                let mut parent_decs = extract_decorators(parent, source);
+                parent_decs.extend(decs);
+                decs = parent_decs;
+            }
+        }
+        decs
+    }
+
+    #[test]
+    fn cls_10_class_decorator_identifier_form() {
+        let source = b"@Component\nexport class Foo {}\n";
+        let decs = combined_class_decs(source);
+        assert!(
+            decs.iter()
+                .any(|d| d.name == "Component" && d.args.is_none()),
+            "@Component should be extracted; got {:?}",
+            decs
+        );
+    }
+
+    #[test]
+    fn cls_10_class_decorator_call_expression_form() {
+        let source = b"@Route('/users')\nexport class UserController {}\n";
+        let decs = combined_class_decs(source);
+        let route = decs.iter().find(|d| d.name == "Route");
+        assert!(
+            route.is_some(),
+            "Route decorator should be extracted; decs = {:?}",
+            decs
+        );
+        let args = route.unwrap().args.as_deref().unwrap_or("");
+        assert!(
+            args.contains("'/users'"),
+            "args should include '/users'; got {:?}",
+            args
+        );
+    }
+
+    #[test]
+    fn cls_10_member_expression_form() {
+        let source = b"@ns.log\nexport class X {}\n";
+        let decs = combined_class_decs(source);
+        assert!(
+            decs.iter()
+                .any(|d| d.name == "ns.log" && d.args.is_none()),
+            "ns.log member_expression decorator should be extracted; decs = {:?}",
+            decs
+        );
+    }
+
+    #[test]
+    fn cls_10_no_decorators_is_empty() {
+        let source = b"export class Plain {}\n";
+        let decs = combined_class_decs(source);
+        assert!(decs.is_empty(), "plain class should have no decorators; got {:?}", decs);
     }
 }
