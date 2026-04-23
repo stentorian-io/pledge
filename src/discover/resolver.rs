@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
+use super::comment_scan::CommentIndex;
 use super::tree_query::{language_for_file, parse_exports, RawExportKind};
 use crate::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace};
 
@@ -407,7 +408,7 @@ pub fn collect_exports(
 
     // ROB-01: parse_exports Err is treated as a per-file warning rather than a
     // global error — this keeps analysis running on remaining files.
-    let raw_exports = match parse_exports(&source, lang) {
+    let mut raw_exports = match parse_exports(&source, lang) {
         Ok(rx) => rx,
         Err(e) => {
             warnings.push(ResolveWarning::new(format!(
@@ -418,6 +419,32 @@ pub fn collect_exports(
             return Ok(());
         }
     };
+
+    // META-06 (Phase 19): backfill release_tag on every RawExport uniformly.
+    // Single populate pass using the CommentIndex sidecar — avoids editing
+    // all 48 RawExport construction sites in tree_query.rs. Idempotent:
+    // existing populated tags from DECL_EXPORT_QUERY (tree_query.rs:1505)
+    // and AMBIENT_DECL_EXPORT_QUERY (tree_query.rs:1575) are preserved
+    // via the `is_none()` guard.
+    //
+    // The comment_scan pass re-parses the source to own a Tree; tree-sitter
+    // parsing is iterative and fast so the duplicate parse is acceptable
+    // for Phase 19 (future optimization: thread the Tree from parse_exports).
+    {
+        let language = super::tree_query::get_language(&lang);
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&language).is_ok() {
+            if let Some(tree) = parser.parse(&source, None) {
+                let comment_index = CommentIndex::build(&tree, &source, lang);
+                for rx in raw_exports.iter_mut() {
+                    if rx.release_tag.is_none() {
+                        rx.release_tag =
+                            comment_index.release_tag_for_export_at(rx.line, rx.col);
+                    }
+                }
+            }
+        }
+    }
 
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
     // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
