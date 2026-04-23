@@ -18,17 +18,13 @@
 //! same (subpath, condition, space) bucket.
 //!
 //! Warning 9: suppression of the base `export-removed` / `export-added`
-//! findings is guarded by explicit rule identity AND message substring AND
-//! file path. Future rules with similar message shapes cannot be accidentally
-//! swallowed.
-//!
-//! TODO(phase-19): current message-substring match is a known soft spot.
-//! Future improvement: structural-key-based suppression — track the exact
-//! ExportKey pairs being coalesced and filter findings whose
-//! `(rule, file, line, col)` matches a coalesced key's
-//! `(rule, old_sym.file, old_sym.line, old_sym.col)`.
+//! findings is guarded by explicit rule identity AND structural
+//! (file, line, col) position match against an `ExportSymbol` belonging to
+//! a consolidated namespace-move pair (see WR-01 fix). Future rules with
+//! similar message shapes cannot be accidentally swallowed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 use crate::compare::subtype::RULE_NAMESPACE_MEMBER_MOVED;
 use crate::types::{DeclarationKind, ExportKey, ExportMap, ExportSymbol, Finding, Severity};
@@ -123,9 +119,23 @@ pub fn consolidate_namespace_moves(
         }
     }
 
-    // Warning 9: rule-type-guarded suppression. Only export-removed /
-    // export-added are eligible; future rules with similar message shapes are
-    // protected by the explicit rule identity check.
+    // WR-01 fix: Structural (file, line, col) HashSet for suppression.
+    // Eliminates the fragile message-substring dependency (see TODO at top
+    // of file) — a Finding is suppressed iff its exact source position
+    // matches an `old_sym` (for removals) or `new_sym` (for additions) of a
+    // consolidated namespace-move pair.
+    //
+    // Warning 9: still rule-type-guarded. Only export-removed / export-added
+    // are eligible for suppression.
+    let suppress_removed_positions: HashSet<(PathBuf, u32, u32)> = moved_pairs
+        .iter()
+        .filter_map(|(ok, _)| old.get(ok).map(|s| (s.file.clone(), s.line, s.col)))
+        .collect();
+    let suppress_added_positions: HashSet<(PathBuf, u32, u32)> = moved_pairs
+        .iter()
+        .filter_map(|(_, nk)| new.get(nk).map(|s| (s.file.clone(), s.line, s.col)))
+        .collect();
+
     let mut result: Vec<Finding> = base_findings
         .into_iter()
         .filter(|f| {
@@ -133,17 +143,9 @@ pub fn consolidate_namespace_moves(
                 return true;
             }
             let is_suppressed_removal = f.rule == "export-removed"
-                && moved_pairs.iter().any(|(ok, _)| {
-                    let msg_contains = f.message.contains(&format!("`{}`", ok.name));
-                    let file_matches = old.get(ok).map(|s| s.file == f.file).unwrap_or(false);
-                    msg_contains && file_matches
-                });
+                && suppress_removed_positions.contains(&(f.file.clone(), f.line, f.col));
             let is_suppressed_addition = f.rule == "export-added"
-                && moved_pairs.iter().any(|(_, nk)| {
-                    let msg_contains = f.message.contains(&format!("`{}`", nk.name));
-                    let file_matches = new.get(nk).map(|s| s.file == f.file).unwrap_or(false);
-                    msg_contains && file_matches
-                });
+                && suppress_added_positions.contains(&(f.file.clone(), f.line, f.col));
             !(is_suppressed_removal || is_suppressed_addition)
         })
         .collect();

@@ -13,11 +13,13 @@
 //! add/remove path.
 //!
 //! Warning 9: suppression of the base `export-removed` / `export-added`
-//! findings is guarded by explicit rule identity AND message substring AND
-//! file path. Future rules with similar message shapes cannot be accidentally
-//! swallowed by the filter.
+//! findings is guarded by explicit rule identity AND structural
+//! (file, line, col) position match against the symbols participating in a
+//! coalesced pair (see WR-01 fix). Future rules with similar message shapes
+//! cannot be accidentally swallowed by the filter.
 
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::compare::subtype::RULE_EXPORT_RENAMED;
 use crate::discover::tree_query::{language_for_file, SourceLanguage};
@@ -105,25 +107,31 @@ pub fn coalesce_renames(
         }
     }
 
-    // Warning 9: rule-type-guarded suppression. Only `export-removed` and
-    // `export-added` findings are eligible for suppression by this post-pass;
-    // future rules with similar message shapes are protected by the explicit
-    // rule identity check.
+    // WR-01 fix: Structural (file, line, col) HashSet for suppression. Eliminates
+    // the fragile message-substring dependency — a Finding is suppressed iff its
+    // exact source position matches that of an `old_sym` (for removals) or an
+    // `new_sym` (for additions) participating in a coalesced pair.
+    //
+    // Warning 9: still rule-type-guarded. Only `export-removed` and
+    // `export-added` findings are eligible for suppression by this post-pass.
+    let suppress_removed_positions: HashSet<(PathBuf, u32, u32)> = coalesced
+        .iter()
+        .filter_map(|(old_key, _, _, _, _)| {
+            old.get(old_key).map(|s| (s.file.clone(), s.line, s.col))
+        })
+        .collect();
+    let suppress_added_positions: HashSet<(PathBuf, u32, u32)> = coalesced
+        .iter()
+        .map(|(_, _, new_file, line, col)| (new_file.clone(), *line, *col))
+        .collect();
+
     let mut result: Vec<Finding> = base_findings
         .into_iter()
         .filter(|f| {
             let is_suppressed_removal = f.rule == "export-removed"
-                && coalesced.iter().any(|(old_key, _, _, _, _)| {
-                    let msg_contains = f.message.contains(&format!("`{}`", old_key.name));
-                    let file_matches = old.get(old_key).map(|s| s.file == f.file).unwrap_or(false);
-                    msg_contains && file_matches
-                });
+                && suppress_removed_positions.contains(&(f.file.clone(), f.line, f.col));
             let is_suppressed_addition = f.rule == "export-added"
-                && coalesced.iter().any(|(_, new_key, new_file, _, _)| {
-                    let msg_contains = f.message.contains(&format!("`{}`", new_key.name));
-                    let file_matches = &f.file == new_file;
-                    msg_contains && file_matches
-                });
+                && suppress_added_positions.contains(&(f.file.clone(), f.line, f.col));
             !(is_suppressed_removal || is_suppressed_addition)
         })
         .collect();
