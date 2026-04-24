@@ -4,7 +4,7 @@
 //! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
 
 use crate::types::shape::{
-    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TypeShape,
+    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TemplatePart, TypeShape,
 };
 use std::collections::BTreeMap;
 
@@ -864,6 +864,123 @@ impl<'a> TypeParser<'a> {
         }
         Some(&self.input[start..self.pos])
     }
+}
+
+// ---------------------------------------------------------------------------
+// REF-09 (Phase 20): template-literal index-signature helpers
+// ---------------------------------------------------------------------------
+//
+// These helpers are intentionally NOT wired into `parse_type_string` — they
+// are called only from the REF-09 comparator in `src/compare/ref_diff.rs`
+// and `src/compare/interface_diff.rs`. Keeping them dormant in the main
+// parser path preserves existing LSP hover round-trip behavior and leaves
+// `TypeShape::Template` unproduced from the normal parse flow.
+
+/// REF-09 (Phase 20): parse an index-signature `key_type_text` if it is a
+/// template-literal type like `` `on${string}` ``. Returns `None` for
+/// non-template inputs; caller falls back to the REF-07 string-equality
+/// path. Intentionally NOT wired into `parse_type_string` — existing LSP
+/// hover round-trips stay unchanged.
+pub fn parse_template_literal_type(input: &str) -> Option<Vec<TemplatePart>> {
+    let trimmed = input.trim();
+    let inner = trimmed.strip_prefix('`')?.strip_suffix('`')?;
+    if inner.is_empty() {
+        return Some(vec![TemplatePart::Literal(String::new())]);
+    }
+    let mut parts: Vec<TemplatePart> = Vec::new();
+    let mut remainder = inner;
+    while let Some(ph_start) = remainder.find("${") {
+        // Append any literal segment that precedes the ${.
+        if ph_start > 0 {
+            parts.push(TemplatePart::Literal(remainder[..ph_start].to_string()));
+        }
+        // Find matching } — shallow scan (template-literal types don't
+        // nest placeholders in standard TS as of 4.4). If no close }, bail.
+        let after_open = &remainder[ph_start + 2..];
+        let ph_end = after_open.find('}')?;
+        let placeholder_text = &after_open[..ph_end];
+        let placeholder_shape = parse_type_string(placeholder_text);
+        parts.push(TemplatePart::Placeholder(Box::new(placeholder_shape)));
+        remainder = &after_open[ph_end + 1..];
+    }
+    // Append any trailing literal.
+    if !remainder.is_empty() {
+        parts.push(TemplatePart::Literal(remainder.to_string()));
+    }
+    if parts.is_empty() {
+        parts.push(TemplatePart::Literal(String::new()));
+    }
+    Some(parts)
+}
+
+/// REF-09 (Phase 20): pattern-subset direction between two template-literal
+/// patterns. Conservative prefix-extension algorithm — any ambiguous case
+/// returns `Unrelated` so the caller can emit a conservative Major finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternDirection {
+    /// Patterns are identical.
+    Equal,
+    /// New is strictly narrower than old (new's literal prefix extends old's).
+    Narrowing,
+    /// New is strictly wider than old (old's literal prefix extends new's).
+    Widening,
+    /// Neither side's literal prefix extends the other — conservative Major.
+    Unrelated,
+}
+
+/// REF-09 (Phase 20): compute the pattern-subset relation between two
+/// template-literal patterns. Concatenates the literal segments of each
+/// side and compares for prefix-extension; placeholder types must agree
+/// structurally (any mismatch -> `Unrelated`).
+pub fn compare_template_literal_patterns(
+    old: &[TemplatePart],
+    new: &[TemplatePart],
+) -> PatternDirection {
+    if old == new {
+        return PatternDirection::Equal;
+    }
+    let old_placeholders = collect_placeholders(old);
+    let new_placeholders = collect_placeholders(new);
+    // Require placeholder-type agreement (structural equality). Any
+    // divergence -> Unrelated (conservative Major).
+    if old_placeholders != new_placeholders {
+        return PatternDirection::Unrelated;
+    }
+    let old_lits = concat_literals(old);
+    let new_lits = concat_literals(new);
+    if old_lits == new_lits {
+        // Placeholders agreed, literals concatenate to the same string —
+        // patterns are effectively equal even if the Part vec differs
+        // slightly (e.g. trailing-empty-literal variance).
+        return PatternDirection::Equal;
+    }
+    if new_lits.starts_with(&old_lits) {
+        PatternDirection::Narrowing // new has extra literal prefix -> narrower
+    } else if old_lits.starts_with(&new_lits) {
+        PatternDirection::Widening // old had extra literal prefix -> new is wider
+    } else {
+        PatternDirection::Unrelated
+    }
+}
+
+fn concat_literals(parts: &[TemplatePart]) -> String {
+    let mut out = String::new();
+    for p in parts {
+        if let TemplatePart::Literal(s) = p {
+            out.push_str(s);
+        }
+    }
+    out
+}
+
+fn collect_placeholders(parts: &[TemplatePart]) -> Vec<&TypeShape> {
+    parts
+        .iter()
+        .filter_map(|p| match p {
+            TemplatePart::Placeholder(shape) => Some(shape.as_ref()),
+            _ => None,
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
