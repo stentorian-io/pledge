@@ -162,6 +162,26 @@ impl ExportKey {
 /// `.clone`, `for (k, v) in &map`, etc.) working without change.
 ///
 /// Files with no directives are absent from the map.
+///
+/// # Invariants (WR-01, Phase 19 review)
+///
+/// - `inner` maps by `ExportKey` (subpath/condition/space/name) — per-symbol.
+/// - `directives` maps by source-file `PathBuf` — per-file.
+///
+/// The two maps are independently keyed; mutating one does NOT require a
+/// matching mutation on the other. A file can appear in `directives` with
+/// zero corresponding `ExportSymbol`s (pure-directive file, e.g. a rollup
+/// chunk that only contains `/// <reference />`), and a file can back
+/// symbols in `inner` without any directives. Callers reaching through
+/// `Deref`/`DerefMut` to mutate the inner `HashMap` therefore never need
+/// to touch `directives`, and vice versa: the two maps cannot drift
+/// because they index different keys.
+///
+/// The `From<HashMap<ExportKey, ExportSymbol>>` impl intentionally
+/// constructs with `directives: BTreeMap::new()`. Test-only constructions
+/// that go through `From` are accepting "no directive coverage" as an
+/// explicit design choice; production discovery always populates
+/// `directives` via `map.directives.insert(...)` in the resolver.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ExportMap {
