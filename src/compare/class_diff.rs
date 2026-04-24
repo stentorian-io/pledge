@@ -557,10 +557,21 @@ pub fn compare_class_shapes(
     // diff decorators for members present on both sides — decorator-only
     // findings on a removed/added member would duplicate class-method-removed
     // (CLS-03) / class-method-added noise.
+    //
+    // Approach A private filter (CLS-11 / Phase 21): skip `#`-prefixed private
+    // members on BOTH sides — decorator churn on `@log #count` is not
+    // consumer-observable and must not leak into public-surface findings.
     {
-        let old_by_name: std::collections::HashMap<&str, &ClassMember> =
-            old.members.iter().map(|m| (m.name.as_str(), m)).collect();
+        let old_by_name: std::collections::HashMap<&str, &ClassMember> = old
+            .members
+            .iter()
+            .filter(|m| !m.is_private)
+            .map(|m| (m.name.as_str(), m))
+            .collect();
         for new_member in &new.members {
+            if new_member.is_private {
+                continue;
+            }
             if let Some(old_member) = old_by_name.get(new_member.name.as_str()) {
                 let owner = format!(
                     "{} `{}.{}`",
