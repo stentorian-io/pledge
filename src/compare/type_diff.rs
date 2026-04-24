@@ -15,9 +15,9 @@ use super::subtype::{
     RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED, RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
     RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
     RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
-    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE,
+    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE, RULE_UNION_VARIANT_ADDED,
 };
-use crate::types::shape::{ParamShape, TypeShape};
+use crate::types::shape::{FieldShape, ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
 
 const MAX_DEPTH: usize = 20;
@@ -70,6 +70,89 @@ pub fn diff_types(
 
     diff_recursive(old, new, symbol_name, "", file, line, col, 0, &mut findings);
     findings
+}
+
+/// BEH-06 (Phase 20): Heuristic — is this union of `TypeShape`s a
+/// discriminated (tagged) union? Returns the discriminant property name
+/// if so, `None` otherwise.
+///
+/// Locked heuristic (v0.3-decisions.md Phase 20):
+///   "union of object types where >=1 property has literal type AND that
+///    property name is present in every variant".
+///
+/// Algorithm:
+/// 1. Require every member to be `TypeShape::Object`. Non-object unions
+///    (primitives, literals alone, generics) are plain unions.
+/// 2. From the first member, collect every property name whose value is
+///    a `TypeShape::Literal(...)` — these are candidate discriminants.
+/// 3. Walk the candidates in deterministic BTreeMap order; the first one
+///    that appears as a literal-typed field in *every* other member wins
+///    (the canonical TS tagged-union shape).
+/// 4. If no candidate satisfies every-variant presence, return None.
+pub(crate) fn is_discriminated_union(members: &[TypeShape]) -> Option<String> {
+    // All members must be Object. `collect::<Option<Vec<_>>>()` short-
+    // circuits to None on the first non-Object member.
+    let all_objects: Vec<&std::collections::BTreeMap<String, FieldShape>> = members
+        .iter()
+        .map(|m| match m {
+            TypeShape::Object(fields) => Some(fields),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if all_objects.is_empty() {
+        return None;
+    }
+    // Candidate discriminant properties from the first member: names
+    // whose field.shape is `TypeShape::Literal`. BTreeMap iteration is
+    // in sorted order, so candidate selection is deterministic.
+    let candidate_props: Vec<&String> = all_objects[0]
+        .iter()
+        .filter(|(_, f)| matches!(f.shape, TypeShape::Literal(_)))
+        .map(|(k, _)| k)
+        .collect();
+    for cand in candidate_props {
+        let present_everywhere = all_objects.iter().all(|obj| {
+            obj.get(cand)
+                .map(|f| matches!(f.shape, TypeShape::Literal(_)))
+                .unwrap_or(false)
+        });
+        if present_everywhere {
+            return Some(cand.clone());
+        }
+    }
+    None
+}
+
+/// BEH-06 (Phase 20): Given two discriminated unions confirmed to share
+/// the same discriminant property name and to be in the widening
+/// direction (old \subseteq new), return the literal discriminant values
+/// present in `new` but absent from `old`. Each returned string is a
+/// human-readable rendering of the literal (e.g. `` `"circle"` ``, `42`,
+/// `true`) produced by `format_type`.
+pub(crate) fn added_discriminant_values(
+    discriminant: &str,
+    old_members: &[TypeShape],
+    new_members: &[TypeShape],
+) -> Vec<String> {
+    fn disc_lit(member: &TypeShape, disc: &str) -> Option<String> {
+        if let TypeShape::Object(fields) = member {
+            if let Some(f) = fields.get(disc) {
+                if matches!(f.shape, TypeShape::Literal(_)) {
+                    return Some(format_type(&f.shape));
+                }
+            }
+        }
+        None
+    }
+    let old_values: std::collections::HashSet<String> = old_members
+        .iter()
+        .filter_map(|m| disc_lit(m, discriminant))
+        .collect();
+    new_members
+        .iter()
+        .filter_map(|m| disc_lit(m, discriminant))
+        .filter(|v| !old_values.contains(v))
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -347,8 +430,57 @@ fn diff_recursive(
             }
         }
 
-        // Both Union — use subtype checker for variance-aware comparison
-        (TypeShape::Union(_), TypeShape::Union(_)) => {
+        // Both Union — use subtype checker for variance-aware comparison.
+        //
+        // BEH-06 (Phase 20): BEFORE the plain-union subtype check, detect
+        // discriminated-union widening — variants added to an exported
+        // discriminated (tagged) union. Per the locked v0.3 decision, this
+        // fires Warning `union-variant-added` (mirroring BEH-04
+        // `enum-member-added`) because an exhaustive-switch consumer will
+        // break at runtime even though the type is structurally widened.
+        //
+        // Scope guard: only discriminated unions — plain-union widening
+        // (e.g. `number | boolean` -> `number | boolean | string`) keeps
+        // its existing compatible-widening behavior (no finding).
+        (TypeShape::Union(old_members), TypeShape::Union(new_members)) => {
+            if let (Some(old_disc), Some(new_disc)) = (
+                is_discriminated_union(old_members),
+                is_discriminated_union(new_members),
+            ) {
+                if old_disc == new_disc && is_subtype_of(&old_n, &new_n, depth + 1) {
+                    // Widening direction confirmed (old ⊆ new) with a
+                    // shared discriminant — fire one Warning per added
+                    // variant, keyed by discriminant literal value.
+                    let added = added_discriminant_values(&old_disc, old_members, new_members);
+                    let display = make_display_name(symbol_name, field_path);
+                    for added_value in &added {
+                        findings.push(Finding {
+                            severity: Severity::Warning,
+                            rule: RULE_UNION_VARIANT_ADDED,
+                            file: file.to_path_buf(),
+                            line,
+                            col,
+                            message: format!(
+                                "discriminated union variant {} was added to `{}` -- may break exhaustive switch statements on `{}`",
+                                added_value, display, old_disc,
+                            ),
+                        });
+                    }
+                    // BEH-06 handled — do NOT fall through to the plain-union
+                    // subtype check (otherwise widening would emit nothing
+                    // AND we would miss the Warning).
+                    if !added.is_empty() {
+                        return;
+                    }
+                    // Discriminated & widening but zero added values — this
+                    // can happen when variants change shape without changing
+                    // the discriminant value set. Let the plain-union path
+                    // below handle that (it will be a subtype relationship
+                    // so no finding fires; any field-level diffs would have
+                    // already been caught if the values were non-disjoint).
+                }
+            }
+
             if !is_subtype_of(&old_n, &new_n, depth + 1) {
                 // Old union is not a subtype of new union — some members were removed/narrowed
                 let display = make_display_name(symbol_name, field_path);
@@ -365,7 +497,9 @@ fn diff_recursive(
                     ),
                 });
             }
-            // If old is a subtype of new, the union was widened (safe) — no finding
+            // If old is a subtype of new (and not a discriminated widening
+            // handled above), the union was widened in a plain-union sense —
+            // compatible, no finding.
         }
 
         // Both Intersection — adding a member narrows the type (breaking)
@@ -2292,5 +2426,92 @@ mod tests {
                 .map(|f| (f.rule, f.severity.clone()))
                 .collect::<Vec<_>>()
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // BEH-06 (Phase 20): `is_discriminated_union` heuristic unit tests
+    // ---------------------------------------------------------------------
+
+    fn field(shape: TypeShape) -> FieldShape {
+        FieldShape {
+            optional: false,
+            readonly: false,
+            shape,
+        }
+    }
+
+    fn obj_kind(kind_literal: &str, extra_field: &str, extra_shape: TypeShape) -> TypeShape {
+        let mut fields = BTreeMap::new();
+        fields.insert(
+            "kind".to_string(),
+            field(TypeShape::Literal(LiteralKind::String(
+                kind_literal.to_string(),
+            ))),
+        );
+        fields.insert(extra_field.to_string(), field(extra_shape));
+        TypeShape::Object(fields)
+    }
+
+    #[test]
+    fn beh_06_is_disc_union_two_kinds_returns_kind() {
+        let members = vec![
+            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
+        ];
+        assert_eq!(
+            is_discriminated_union(&members),
+            Some("kind".to_string()),
+            "all-object union with shared `kind` literal discriminant should match"
+        );
+    }
+
+    #[test]
+    fn beh_06_is_disc_union_primitives_returns_none() {
+        let members = vec![
+            TypeShape::Primitive(PrimitiveKind::String),
+            TypeShape::Primitive(PrimitiveKind::Number),
+        ];
+        assert_eq!(
+            is_discriminated_union(&members),
+            None,
+            "plain-primitive union must not qualify as discriminated"
+        );
+    }
+
+    #[test]
+    fn beh_06_is_disc_union_missing_kind_in_one_returns_none() {
+        let mut fields_a = BTreeMap::new();
+        fields_a.insert(
+            "kind".to_string(),
+            field(TypeShape::Literal(LiteralKind::String("a".to_string()))),
+        );
+        let mut fields_b = BTreeMap::new();
+        fields_b.insert(
+            "other".to_string(),
+            field(TypeShape::Primitive(PrimitiveKind::Number)),
+        );
+        let members = vec![TypeShape::Object(fields_a), TypeShape::Object(fields_b)];
+        assert_eq!(
+            is_discriminated_union(&members),
+            None,
+            "discriminant missing in one variant must disqualify"
+        );
+    }
+
+    #[test]
+    fn beh_06_added_discriminant_values_reports_new_variants() {
+        let old = vec![
+            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
+        ];
+        let new = vec![
+            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind("triangle", "base", TypeShape::Primitive(PrimitiveKind::Number)),
+        ];
+        let added = added_discriminant_values("kind", &old, &new);
+        assert_eq!(added.len(), 1, "exactly one variant added; got: {added:?}");
+        // `format_type` renders string literals as `"literal"`
+        assert_eq!(added[0], "\"triangle\"");
     }
 }
