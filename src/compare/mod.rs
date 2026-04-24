@@ -323,6 +323,28 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         }
     }
 
+    // INF-05 (Phase 19): triple-slash directive diffs per source file.
+    // Iterate the union of keys from old.directives and new.directives and
+    // feed each per-file directive list pair through compare_directives.
+    // Directives are a file-level concept, not per-symbol, so we read from
+    // the unfiltered maps (the @internal/@alpha/@beta filter that preceded
+    // this block strips SYMBOLS; directives are unrelated to release tags).
+    {
+        let all_files: std::collections::BTreeSet<&std::path::PathBuf> = old
+            .directives
+            .keys()
+            .chain(new.directives.keys())
+            .collect();
+        let empty_vec: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
+        for file in all_files {
+            let old_dirs = old.directives.get(file).unwrap_or(&empty_vec).as_slice();
+            let new_dirs = new.directives.get(file).unwrap_or(&empty_vec).as_slice();
+            findings.extend(crate::compare::directive_diff::compare_directives(
+                old_dirs, new_dirs, file,
+            ));
+        }
+    }
+
     // Warning 10 (Blocker 1 fix, Phase 18): NO sort here — the public
     // `compare_exports` wrapper performs the single total-order sort after
     // IDN-01 + IDN-02 post-passes. Sorting here would mean double-sort.
@@ -1602,7 +1624,6 @@ mod tests {
         // REQ-15-01: module.exports = class { method() {} } with method removed
         // should produce class-method-removed finding via compare_structural_diff
         use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
-        use std::collections::HashMap;
 
         let tmp = tempfile::tempdir().expect("tempdir");
         let old_dir = tmp.path().join("old");
@@ -1657,7 +1678,6 @@ mod tests {
         // REQ-15-01: module.exports = function(a, b) {} changing to async function
         // should produce async-to-sync / sync-to-async finding
         use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
-        use std::collections::HashMap;
 
         let tmp = tempfile::tempdir().expect("tempdir");
         let old_dir = tmp.path().join("old");
@@ -1743,7 +1763,6 @@ mod tests {
         // Phase 18 ARCH-01: same name at different subpaths must fan out to
         // separate export-removed + export-added findings (no silent match).
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
         let mut old: ExportMap = ExportMap::new();
@@ -1796,7 +1815,6 @@ mod tests {
         // Phase 18 ARCH-03: `export type Foo` and `export const Foo` coexist in
         // different SymbolSpace buckets and diff independently.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
         let mut old: ExportMap = ExportMap::new();
@@ -1838,7 +1856,6 @@ mod tests {
         // `./b.ts` at subpath `./admin` are distinct keys; removing one does not
         // collapse onto the other.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
         let mut old: ExportMap = ExportMap::new();
@@ -1886,7 +1903,6 @@ mod tests {
         // (severity, file, line, col, rule) so HashMap iteration non-determinism
         // never surfaces as Finding reorder.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
-        use std::collections::HashMap;
         use std::path::PathBuf;
 
         let mut old: ExportMap = ExportMap::new();
