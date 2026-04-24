@@ -33,7 +33,6 @@ use crate::types::{Finding, Severity};
 /// All findings are reported at `(line 1, col 1)` of `file`. Directives
 /// are a file-level concept and we intentionally do not track per-directive
 /// line/col beyond the `start_byte` used for ordering.
-#[allow(dead_code)]
 pub fn compare_directives(
     old: &[DirectiveRecord],
     new: &[DirectiveRecord],
