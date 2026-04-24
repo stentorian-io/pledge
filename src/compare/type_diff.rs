@@ -15,7 +15,9 @@ use super::subtype::{
     RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED, RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
     RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
     RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
-    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE, RULE_UNION_VARIANT_ADDED,
+    RULE_TUPLE_LABEL_ADDED, RULE_TUPLE_LABEL_DROPPED, RULE_TUPLE_LABEL_RENAMED,
+    RULE_TUPLE_LABEL_REORDERED, RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE,
+    RULE_UNION_VARIANT_ADDED,
 };
 use crate::types::shape::{FieldShape, ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -391,9 +393,14 @@ fn diff_recursive(
             }
         }
 
-        // Both Tuple — compare element counts and diff each position
+        // Both Tuple — compare element counts, diff each position, and emit
+        // REF-10 label-family findings (rename/reorder/drop/add).
         (TypeShape::Tuple(old_elems), TypeShape::Tuple(new_elems)) => {
             if old_elems.len() != new_elems.len() {
+                // Length change dominates — existing RULE_TYPE_INCOMPATIBLE
+                // finding. REF-10 label findings are SUPPRESSED when length
+                // differs: length change already signals breaking, and
+                // label findings at now-misaligned positions would be noise.
                 let display = make_display_name(symbol_name, field_path);
                 findings.push(Finding {
                     severity: Severity::Major,
@@ -408,10 +415,47 @@ fn diff_recursive(
                     ),
                 });
             } else {
-                // REF-10 (Phase 22): label-semantics extension landed in
-                // Task 2. Task 1 keeps the label-blind structural recursion
-                // below; the per-position label comparison + reorder pre-pass
-                // are appended by `src/compare/type_diff.rs` in Task 2.
+                // REF-10 pre-pass: detect reorder (same label multiset,
+                // different positions) and emit ONE Major
+                // tuple-label-reordered, skipping per-position rename
+                // emission. Labels must be Some() on BOTH sides for the
+                // reorder detector to fire — missing labels use the
+                // per-position drop/add path instead.
+                let old_labels: Vec<Option<&String>> =
+                    old_elems.iter().map(|e| e.label.as_ref()).collect();
+                let new_labels: Vec<Option<&String>> =
+                    new_elems.iter().map(|e| e.label.as_ref()).collect();
+
+                let reorder_detected = {
+                    let all_old_labeled = old_labels.iter().all(|l| l.is_some());
+                    let all_new_labeled = new_labels.iter().all(|l| l.is_some());
+                    if all_old_labeled && all_new_labeled {
+                        let mut old_sorted: Vec<&String> =
+                            old_labels.iter().filter_map(|l| *l).collect();
+                        let mut new_sorted: Vec<&String> =
+                            new_labels.iter().filter_map(|l| *l).collect();
+                        old_sorted.sort();
+                        new_sorted.sort();
+                        old_sorted == new_sorted && old_labels != new_labels
+                    } else {
+                        false
+                    }
+                };
+
+                if reorder_detected {
+                    let display = make_display_name(symbol_name, field_path);
+                    findings.push(Finding {
+                        severity: Severity::Major,
+                        rule: RULE_TUPLE_LABEL_REORDERED,
+                        file: file.to_path_buf(),
+                        line,
+                        col,
+                        message: format!(
+                            "tuple labels on type `{display}` were reordered — positional destructuring on the consumer side will bind different values"
+                        ),
+                    });
+                }
+
                 for (i, (old_elem, new_elem)) in old_elems.iter().zip(new_elems.iter()).enumerate()
                 {
                     let idx_path = if field_path.is_empty() {
@@ -419,6 +463,7 @@ fn diff_recursive(
                     } else {
                         format!("{field_path}[{i}]")
                     };
+                    // Recurse on shape (label-blind structural diff).
                     diff_recursive(
                         &old_elem.shape,
                         &new_elem.shape,
@@ -430,6 +475,54 @@ fn diff_recursive(
                         depth + 1,
                         findings,
                     );
+
+                    // Skip per-position label findings when the reorder
+                    // pre-pass already fired — label change is accounted for
+                    // by the single RULE_TUPLE_LABEL_REORDERED finding.
+                    if reorder_detected {
+                        continue;
+                    }
+
+                    let display = make_display_name(symbol_name, field_path);
+                    match (&old_elem.label, &new_elem.label) {
+                        (Some(a), Some(b)) if a != b => {
+                            findings.push(Finding {
+                                severity: Severity::Minor,
+                                rule: RULE_TUPLE_LABEL_RENAMED,
+                                file: file.to_path_buf(),
+                                line,
+                                col,
+                                message: format!(
+                                    "tuple element at position {i} on type `{display}` was relabeled (`{a}` -> `{b}`)"
+                                ),
+                            });
+                        }
+                        (Some(a), None) => {
+                            findings.push(Finding {
+                                severity: Severity::Major,
+                                rule: RULE_TUPLE_LABEL_DROPPED,
+                                file: file.to_path_buf(),
+                                line,
+                                col,
+                                message: format!(
+                                    "tuple element at position {i} on type `{display}` lost its label (`{a}`)"
+                                ),
+                            });
+                        }
+                        (None, Some(b)) => {
+                            findings.push(Finding {
+                                severity: Severity::Minor,
+                                rule: RULE_TUPLE_LABEL_ADDED,
+                                file: file.to_path_buf(),
+                                line,
+                                col,
+                                message: format!(
+                                    "tuple element at position {i} on type `{display}` gained a label (`{b}`)"
+                                ),
+                            });
+                        }
+                        _ => {}
+                    }
                 }
             }
         }
