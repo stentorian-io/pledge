@@ -11,10 +11,14 @@ use crate::types::{DeclarationKind, ExportKind, ExportSymbol, Finding, Severity}
 
 use super::subtype::{
     is_subtype_of, RULE_ASSERTION_WIDENED, RULE_DECLARATION_KIND_CHANGED,
-    RULE_DEFAULT_EXPORT_CHANGED, RULE_INDEX_SIGNATURE_CHANGED, RULE_NAMESPACE_TO_OTHER,
-    RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED, RULE_THIS_PARAM_CHANGED,
-    RULE_TYPE_GUARD_WIDENED,
+    RULE_DEFAULT_EXPORT_CHANGED, RULE_INDEX_SIGNATURE_CHANGED,
+    RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED, RULE_NAMESPACE_TO_OTHER, RULE_OVERLOAD_REMOVED,
+    RULE_REST_PARAM_NARROWED, RULE_THIS_PARAM_CHANGED, RULE_TYPE_GUARD_WIDENED,
 };
+use crate::types::parser::{
+    compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+};
+use std::collections::HashSet;
 
 /// Compare two ExportSymbols for Phase 8 REF rules.
 ///
@@ -185,9 +189,40 @@ pub fn compare_ref_changes(
         }
     }
 
+    // REF-09 (Phase 20): template-literal index-signature key pattern diff.
+    // Runs BEFORE the REF-07 string-equality path so its matched-key sets
+    // can suppress the REF-07 "removed + added" pair that would otherwise
+    // fire for the same pattern transition.
+    //
+    // Dedup guard: for interface symbols, `compare_interface_index_signatures`
+    // already fires REF-09 via the same shared helper. Running it here too
+    // would double-fire. We still populate `ref09_matched_old` for interfaces
+    // (so the REF-07 string-equality path below can still skip template-
+    // literal keys that the interface-level pass will match), but discard
+    // the findings to avoid duplication.
+    let is_interface_sym = old_sym
+        .decl_kinds
+        .first()
+        .map(|k| k == &DeclarationKind::Interface)
+        .unwrap_or(false)
+        || new_sym
+            .decl_kinds
+            .first()
+            .map(|k| k == &DeclarationKind::Interface)
+            .unwrap_or(false);
+    let (ref09_matched_old, ref09_matched_new, ref09_findings) =
+        diff_template_literal_key_pairs(old_index_sigs, new_index_sigs, name, file, line, col);
+    if !is_interface_sym {
+        findings.extend(ref09_findings);
+    }
+
     // REF-07: index-signature-changed
     // Compare index signatures by key type. For each old sig, check new.
     for old_sig in old_index_sigs {
+        // REF-09 suppression: if REF-09 already fired for this key, skip REF-07.
+        if ref09_matched_old.contains(old_sig.key_type_text.as_str()) {
+            continue;
+        }
         let matching_new = new_index_sigs
             .iter()
             .find(|ns| ns.key_type_text == old_sig.key_type_text);
@@ -223,6 +258,9 @@ pub fn compare_ref_changes(
             _ => {} // unchanged
         }
     }
+    // Silence unused-var warning when ref09_matched_new isn't consumed in this
+    // function body (only ref09_matched_old is used by the REF-07 loop above).
+    let _ = &ref09_matched_new;
 
     // REF-08: default-export-changed (kind change only)
     // Per D-09/D-10: two-tier analysis. Tier 1: kind changed -> always major.
@@ -257,6 +295,107 @@ pub fn compare_ref_changes(
     }
 
     findings
+}
+
+/// REF-09 (Phase 20): detect narrowing/widening transitions between two
+/// template-literal index signatures. Called from both `compare_ref_changes`
+/// (type-alias level) and `compare_interface_index_signatures` (interface
+/// level). Returns the set of old/new key-type texts that were matched
+/// (so callers can suppress REF-07 for them) and the findings emitted.
+///
+/// Algorithm per key_type_text that starts with a backtick:
+///   1. Find the best matching new sig whose key_type_text also starts with
+///      a backtick (bijective pairing by first-come-first-served).
+///   2. Parse both via `parse_template_literal_type`.
+///   3. Compare via `compare_template_literal_patterns`.
+///   4. Emit `index-signature-key-pattern-changed` — Major for Narrowing,
+///      Minor for Widening, conservative Major for Unrelated, none for
+///      Equal.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn diff_template_literal_key_pairs<'a>(
+    old_sigs: &'a [IndexSignature],
+    new_sigs: &'a [IndexSignature],
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> (HashSet<&'a str>, HashSet<&'a str>, Vec<Finding>) {
+    let mut matched_old: HashSet<&str> = HashSet::new();
+    let mut matched_new: HashSet<&str> = HashSet::new();
+    let mut findings: Vec<Finding> = Vec::new();
+
+    for old_sig in old_sigs {
+        if !old_sig.key_type_text.trim_start().starts_with('`') {
+            continue;
+        }
+        let old_parts = match parse_template_literal_type(&old_sig.key_type_text) {
+            Some(p) => p,
+            None => continue,
+        };
+        // Bijective pairing — first new sig whose key is a template-literal
+        // AND is not yet matched. Allows multiple template-literal keys on
+        // the same symbol to be paired up, though this is uncommon.
+        let new_match = new_sigs.iter().find(|ns| {
+            ns.key_type_text.trim_start().starts_with('`')
+                && !matched_new.contains(ns.key_type_text.as_str())
+                && parse_template_literal_type(&ns.key_type_text).is_some()
+        });
+        let new_sig = match new_match {
+            Some(ns) => ns,
+            None => continue,
+        };
+        let new_parts = match parse_template_literal_type(&new_sig.key_type_text) {
+            Some(p) => p,
+            None => continue,
+        };
+        matched_old.insert(old_sig.key_type_text.as_str());
+        matched_new.insert(new_sig.key_type_text.as_str());
+        let direction = compare_template_literal_patterns(&old_parts, &new_parts);
+        match direction {
+            PatternDirection::Equal => {} // no finding
+            PatternDirection::Narrowing => {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "template-literal index signature key pattern narrowed on `{}` (was `{}`, now `{}`)",
+                        symbol_name, old_sig.key_type_text, new_sig.key_type_text
+                    ),
+                });
+            }
+            PatternDirection::Widening => {
+                findings.push(Finding {
+                    severity: Severity::Minor,
+                    rule: RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "template-literal index signature key pattern widened on `{}` (was `{}`, now `{}`)",
+                        symbol_name, old_sig.key_type_text, new_sig.key_type_text
+                    ),
+                });
+            }
+            PatternDirection::Unrelated => {
+                // Conservative Major fallback per RESEARCH §REF-09 Open Question 3.
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "template-literal index signature key pattern changed on `{}` (was `{}`, now `{}`)",
+                        symbol_name, old_sig.key_type_text, new_sig.key_type_text
+                    ),
+                });
+            }
+        }
+    }
+    (matched_old, matched_new, findings)
 }
 
 /// Count the number of required (non-optional) parameters in a TypeShape::Function.

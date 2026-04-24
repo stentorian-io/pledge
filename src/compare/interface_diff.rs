@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use super::ref_diff::diff_template_literal_key_pairs;
 use super::subtype::{
     RULE_CONSTRUCT_SIGNATURE_REMOVED, RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED,
     RULE_INTERFACE_INDEX_SIGNATURE_CHANGED, RULE_INTERFACE_MEMBER_ADDED,
@@ -244,7 +245,20 @@ pub fn compare_interface_index_signatures(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
+    // REF-09 (Phase 20): template-literal index-signature key pattern diff.
+    // Runs BEFORE the REF-07-twin string-equality path so its matched-key
+    // sets can suppress the "removed" + "added" pair that would otherwise
+    // fire for the same pattern transition.
+    let (ref09_matched_old, ref09_matched_new, ref09_findings) =
+        diff_template_literal_key_pairs(old_sigs, new_sigs, symbol_name, file, line, col);
+    findings.extend(ref09_findings);
+
     for old_sig in old_sigs {
+        // REF-09 suppression: if REF-09 already fired for this key, skip
+        // the interface-level string-equality path.
+        if ref09_matched_old.contains(old_sig.key_type_text.as_str()) {
+            continue;
+        }
         let matching_new = new_sigs
             .iter()
             .find(|ns| ns.key_type_text == old_sig.key_type_text);
@@ -278,6 +292,10 @@ pub fn compare_interface_index_signatures(
             _ => {}
         }
     }
+    // Silence unused-var: only ref09_matched_old is consumed by the loop above;
+    // ref09_matched_new would be used if an "added-new-sig" path existed (the
+    // current function only iterates old_sigs, matching the pre-REF-09 shape).
+    let _ = &ref09_matched_new;
 
     findings
 }
