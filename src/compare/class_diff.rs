@@ -580,6 +580,29 @@ pub fn compare_class_shapes(
         }
     }
 
+    // ── CLS-12 (Phase 21): class static initialization block limitation ─────
+    // When either old or new had a computed-key assignment (`Foo[x] = ...`)
+    // in a `static { ... }` block, surface a `limitation:` annotation so
+    // consumers know dynamic-key members are not diffed. No new rule-ID —
+    // host as Severity::Minor under RULE_CLASS_STATIC_TYPE_CHANGED with the
+    // limitation-id embedded in the message. TYPE-01
+    // `limitation: satisfies-narrowed-type-not-verified` precedent. Phase 25
+    // DOC-01 will elevate `limitation:` messages to Severity::Info
+    // project-wide.
+    if old.has_dynamic_static_key || new.has_dynamic_static_key {
+        findings.push(Finding {
+            severity: Severity::Minor,
+            rule: RULE_CLASS_STATIC_TYPE_CHANGED,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "static initialization block on class `{}` contains dynamic-key assignment(s) \u{2014} members behind computed keys are not diffed (limitation: dynamic-static-member-key)",
+                symbol_name,
+            ),
+        });
+    }
+
     findings
 }
 

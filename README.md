@@ -72,6 +72,8 @@ A field rename within the private space (`#foo` → `#bar`) is deliberately sile
 
 See `docs/rules/class-field-visibility-transition.md` for matching heuristic, limitations, and decorator interaction.
 
+CLS-12 (class static initialization block member extraction) reuses the existing `class-method-removed` rule-ID for removed static-block assignments (`class Foo { static { Foo.bar = 1 } }` — removing `Foo.bar` fires Major `class-method-removed` with the `static property` noun) and surfaces the `limitation: dynamic-static-member-key` annotation under the existing `class-static-type-changed` rule-ID for subscript-expression LHS (`Foo[x] = ...`). See [docs/rules/class-static-block.md](docs/rules/class-static-block.md).
+
 ## Development Setup
 
 ### Prerequisites
