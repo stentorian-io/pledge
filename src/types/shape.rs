@@ -115,6 +115,27 @@ pub enum TypeShape {
     },
     /// Template literal types: `` `prefix_${T}` ``
     Template(Vec<TemplatePart>),
+    /// TYPE-01 (Phase 20): value-level `X satisfies T`. `constraint` is the
+    /// RHS `T`; `narrowed` is the LSP-derived narrowed type of the value
+    /// (`None` in degraded mode — carries
+    /// `limitation: satisfies-narrowed-type-not-verified` in its finding).
+    Satisfies {
+        constraint: Box<TypeShape>,
+        narrowed: Option<Box<TypeShape>>,
+    },
+    /// TYPE-02 (Phase 20): `infer U extends C` — structured so the
+    /// constraint is a diff-visible child. Replaces the pre-Phase-20 path
+    /// that flattened `infer U` into `TypeShape::TypeParam("infer U")`
+    /// and dropped the `extends` clause. Produced by Plan 20-02's parser
+    /// extension; diff-consumed by Plan 20-02's `type_diff.rs` branch.
+    InferExtends {
+        name: std::string::String,
+        constraint: Box<TypeShape>,
+    },
+    /// GEN-07 (Phase 20): `NoInfer<T>` wrapper — canonical form so diff
+    /// engines observe wrapper-vs-unwrapped at a position without string
+    /// parsing. Produced by Plan 20-03's `parse_generic` extension.
+    NoInferWrap(Box<TypeShape>),
     /// Fallback for unparseable types — carries raw text.
     /// Comparison treats two Opaque values as incomparable unless identical.
     Opaque(std::string::String),
@@ -201,6 +222,15 @@ impl TypeShape {
                 base: Box::new(base.normalize()),
                 index: Box::new(index.normalize()),
             },
+            TypeShape::Satisfies { constraint, narrowed } => TypeShape::Satisfies {
+                constraint: Box::new(constraint.normalize()),
+                narrowed: narrowed.map(|n| Box::new(n.normalize())),
+            },
+            TypeShape::InferExtends { name, constraint } => TypeShape::InferExtends {
+                name,
+                constraint: Box::new(constraint.normalize()),
+            },
+            TypeShape::NoInferWrap(inner) => TypeShape::NoInferWrap(Box::new(inner.normalize())),
             // Primitive, Literal, TypeParam, Template, Opaque — already canonical
             other => other,
         }
@@ -291,10 +321,55 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());
+    }
+
+    #[test]
+    fn type_shape_satisfies_normalize_recurses() {
+        let shape = TypeShape::Satisfies {
+            constraint: Box::new(TypeShape::Union(vec![
+                TypeShape::Primitive(PrimitiveKind::String),
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ])),
+            narrowed: None,
+        }
+        .normalize();
+        match shape {
+            TypeShape::Satisfies {
+                constraint,
+                narrowed,
+            } => {
+                assert!(narrowed.is_none());
+                // Inner union must be sorted by normalize()
+                if let TypeShape::Union(members) = *constraint {
+                    assert_eq!(members.len(), 2);
+                } else {
+                    panic!("expected Union inside Satisfies.constraint");
+                }
+            }
+            _ => panic!("expected TypeShape::Satisfies"),
+        }
+    }
+
+    #[test]
+    fn type_shape_infer_extends_normalize_stable() {
+        let shape = TypeShape::InferExtends {
+            name: "U".to_string(),
+            constraint: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
+        };
+        let normalized = shape.clone().normalize();
+        assert_eq!(shape, normalized);
+    }
+
+    #[test]
+    fn type_shape_noinfer_wrap_normalize_stable() {
+        let shape = TypeShape::NoInferWrap(Box::new(TypeShape::Primitive(PrimitiveKind::String)));
+        let normalized = shape.clone().normalize();
+        assert_eq!(shape, normalized);
     }
 
     #[test]

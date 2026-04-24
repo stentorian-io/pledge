@@ -80,6 +80,14 @@ pub struct ExportSymbol {
     // Phase 17 fields:
     pub is_type_only: bool,              // TLF-07 — export type * vs export *
     pub release_tag: Option<ReleaseTag>, // META-04 — TSDoc release tag (populated in Plan 17-05)
+    /// TYPE-01 (Phase 20): captured `satisfies T` form of the exported value.
+    /// Populated during the resolver post-parse populate pass from
+    /// `extract_satisfies_types`; LSP hover enrichment fills the optional
+    /// `narrowed` slot inside. `None` when the export has no `satisfies`
+    /// clause. Diff engine compares this field in
+    /// `type_diff.rs::diff_satisfies_types`; transition from Some→None
+    /// fires Minor `type-narrowing-widened`.
+    pub satisfies_type: Option<shape::TypeShape>,
     /// ARCH-02 (Phase 18): compound-component members attached via
     /// `Target.Member = X` or `Object.assign(Target, { Member: X })` patterns.
     /// Populated during the compound-assignment second pass in `parse_exports`
@@ -530,6 +538,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         };
         assert_eq!(sym.name, "foo");
@@ -572,6 +581,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         };
         assert!(sym.is_async);
@@ -639,6 +649,7 @@ mod tests {
             is_reexport: true,
             is_type_only: true,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         };
         assert!(sym.is_type_only);
@@ -757,6 +768,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         };
         assert_eq!(sym.decl_kinds.len(), 2);

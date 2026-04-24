@@ -655,6 +655,7 @@ fn sem_04_generator_removed_is_major_severity() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let new_sym = ExportSymbol {
@@ -672,6 +673,7 @@ fn sem_04_generator_removed_is_major_severity() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let findings = compare_behavior(&old_sym, &new_sym, "gen", &file, 1, 0);
@@ -715,6 +717,7 @@ fn sem_05_ref_04_suppressed_when_ref_08_fires() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let new_sym = ExportSymbol {
@@ -732,6 +735,7 @@ fn sem_05_ref_04_suppressed_when_ref_08_fires() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let findings = compare_ref_changes(&old_sym, &new_sym, "default", &file, 1, 0, &[], &[]);
@@ -823,6 +827,7 @@ fn sem_07_unmatched_overload_fires_removed() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let new_sym = ExportSymbol {
@@ -840,6 +845,7 @@ fn sem_07_unmatched_overload_fires_removed() {
         is_type_only: false,
         type_signature: None,
         type_guard_type: None,
+        satisfies_type: None,
         compound_members: Vec::new(),
     };
     let findings = compare_ref_changes(&old_sym, &new_sym, "myFn", &file, 1, 0, &[], &[]);

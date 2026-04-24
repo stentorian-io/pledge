@@ -525,6 +525,7 @@ pub fn collect_exports(
                             is_reexport: false,
                             is_type_only: false,
                             release_tag: export.release_tag, // META-04: propagate TSDoc release tag
+                            satisfies_type: None,
                             // ARCH-02 (Phase 18): propagate compound-component members
                             // from the RawExport (populated by attach_compound_members).
                             compound_members: export.compound_members,
@@ -580,6 +581,7 @@ pub fn collect_exports(
                             // Without this, `/** @deprecated */ export default foo`
                             // loses its tag at insertion time.
                             release_tag: export.release_tag,
+                            satisfies_type: None,
                             compound_members: Vec::new(),
                         },
                     );
@@ -645,6 +647,7 @@ pub fn collect_exports(
                                             is_reexport: true,
                                             is_type_only: false,
                                             release_tag: None,
+                                            satisfies_type: None,
                                             compound_members: Vec::new(),
                                         },
                                     );
@@ -718,6 +721,7 @@ pub fn collect_exports(
                                         // Without this, a `/** @deprecated */ export { foo } from ...`
                                         // loses its tag at the re-export boundary.
                                         release_tag: export.release_tag.clone(),
+                                        satisfies_type: None,
                                         compound_members: Vec::new(),
                                     },
                                 );
@@ -756,6 +760,7 @@ pub fn collect_exports(
                                             is_reexport: true,
                                             is_type_only: false,
                                             release_tag: None,
+                                            satisfies_type: None,
                                             compound_members: Vec::new(),
                                         },
                                     );
@@ -1355,6 +1360,7 @@ mod tests {
                 is_reexport: true,
                 is_type_only: false,
                 release_tag: None,
+                satisfies_type: None,
                 compound_members: Vec::new(),
             },
         );
@@ -1796,6 +1802,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         }
     }

@@ -418,6 +418,13 @@ pub const RULE_DECORATOR_ADDED: &str = "decorator-added"; // CLS-10 Major
 pub const RULE_DECORATOR_REMOVED: &str = "decorator-removed"; // CLS-10 Major
 pub const RULE_DECORATOR_ARGUMENTS_CHANGED: &str = "decorator-arguments-changed"; // CLS-10 Major
 
+// ─── Phase 20: TS type-system features ──────────────────────────────────────
+pub const RULE_TYPE_NARROWING_WIDENED: &str = "type-narrowing-widened"; // TYPE-01 Minor
+pub const RULE_INFER_EXTENDS_CONSTRAINT_CHANGED: &str = "infer-extends-constraint-changed"; // TYPE-02 Major
+pub const RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED: &str = "generic-inference-constraint-removed"; // GEN-07 Minor
+pub const RULE_UNION_VARIANT_ADDED: &str = "union-variant-added"; // BEH-06 Warning
+pub const RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED: &str = "index-signature-key-pattern-changed"; // REF-09 Major (narrowing) / Minor (widening)
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1028,5 +1035,24 @@ mod tests {
         assert_eq!(RULE_BARREL_UNRESOLVABLE, "barrel-unresolvable");
         assert_eq!(RULE_AUGMENT_GLOBAL_CHANGED, "augment-global-changed");
         assert_eq!(RULE_AUGMENT_MODULE_CHANGED, "augment-module-changed");
+    }
+
+    // ── Phase 20: TS type-system features rule constant values ───────────────
+    #[test]
+    fn phase20_type_system_rule_constant_values() {
+        assert_eq!(RULE_TYPE_NARROWING_WIDENED, "type-narrowing-widened");
+        assert_eq!(
+            RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
+            "infer-extends-constraint-changed"
+        );
+        assert_eq!(
+            RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED,
+            "generic-inference-constraint-removed"
+        );
+        assert_eq!(RULE_UNION_VARIANT_ADDED, "union-variant-added");
+        assert_eq!(
+            RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
+            "index-signature-key-pattern-changed"
+        );
     }
 }

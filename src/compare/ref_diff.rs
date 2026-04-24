@@ -481,6 +481,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         }
     }
@@ -507,6 +508,7 @@ mod tests {
             is_reexport: false,
             is_type_only: false,
             release_tag: None,
+            satisfies_type: None,
             compound_members: Vec::new(),
         }
     }
