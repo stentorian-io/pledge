@@ -1395,4 +1395,45 @@ mod tests {
             result
         );
     }
+
+    // ─── Phase 20 TYPE-02: `infer U extends C` constraint on inferred type ───
+
+    // Backward compatibility: `infer U` with no trailing extends still
+    // produces the legacy TypeShape::TypeParam("infer U") form so existing
+    // consumers/diff engines don't regress.
+    #[test]
+    fn type_02_infer_without_extends_backward_compat() {
+        let shape = parse_type_string("infer U");
+        assert_eq!(shape, TypeShape::TypeParam("infer U".to_string()));
+    }
+
+    // `infer U extends string` should now parse into the dedicated
+    // TypeShape::InferExtends variant (landed by Plan 20-01) whose
+    // constraint is Primitive(String).
+    #[test]
+    fn type_02_infer_extends_string_produces_infer_extends_variant() {
+        let shape = parse_type_string("infer U extends string");
+        match shape {
+            TypeShape::InferExtends { name, constraint } => {
+                assert_eq!(name, "U");
+                assert_eq!(*constraint, TypeShape::Primitive(PrimitiveKind::String));
+            }
+            other => panic!("expected InferExtends, got {:?}", other),
+        }
+    }
+
+    // Same shape as the previous test but with a different primitive
+    // constraint — confirms the parser captures the constraint faithfully
+    // rather than hardcoding a specific type.
+    #[test]
+    fn type_02_infer_extends_number_produces_infer_extends_variant() {
+        let shape = parse_type_string("infer U extends number");
+        match shape {
+            TypeShape::InferExtends { name, constraint } => {
+                assert_eq!(name, "U");
+                assert_eq!(*constraint, TypeShape::Primitive(PrimitiveKind::Number));
+            }
+            other => panic!("expected InferExtends, got {:?}", other),
+        }
+    }
 }
