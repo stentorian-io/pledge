@@ -423,4 +423,66 @@ mod tests {
         let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
         assert_eq!(idx.comments_len(), 2);
     }
+
+    // IN-02 (Phase 19 re-review): lock in the "silently drop malformed
+    // directive" contract. `parse_directive_body` is deliberately permissive
+    // — it mirrors the TypeScript compiler's behavior of dropping any
+    // directive whose body fails to parse cleanly, rather than emitting a
+    // partial record or a noisy warning. These tests fail-fast if a future
+    // refactor flips the contract to panic, warn, or produce a partial parse.
+
+    #[test]
+    fn inf_05_malformed_directive_unterminated_quote_silently_skipped() {
+        // Opening quote on `path=` is never closed, so the body is malformed.
+        // Expected: zero directives extracted, no panic.
+        let source = b"/// <reference path=\"unterminated />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        assert_eq!(
+            idx.extract_directives().len(),
+            0,
+            "malformed directive (unterminated quote) must be silently dropped"
+        );
+    }
+
+    #[test]
+    fn inf_05_malformed_directive_missing_gt_silently_skipped() {
+        // No closing `>` on the directive body — entire directive is dropped.
+        let source = b"/// <reference path=\"./x.ts\" /\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        assert_eq!(
+            idx.extract_directives().len(),
+            0,
+            "malformed directive (missing '>') must be silently dropped"
+        );
+    }
+
+    #[test]
+    fn inf_05_partial_parse_drops_whole_directive() {
+        // `types="node"` parses fine, but the next attribute has no closing
+        // quote. Current contract: the entire directive returns None; no
+        // partial record with only the first attribute is emitted.
+        let source = b"/// <reference types=\"node\" path=\"missing />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        assert_eq!(
+            idx.extract_directives().len(),
+            0,
+            "partial-parse failure (mid-body unterminated quote) must drop the entire directive, not emit a partial record"
+        );
+    }
+
+    #[test]
+    fn inf_05_non_identifier_name_silently_skipped() {
+        // Directive name contains a character outside [A-Za-z0-9-]: rejected.
+        let source = b"/// <ref.bad path=\"./x.ts\" />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        assert_eq!(
+            idx.extract_directives().len(),
+            0,
+            "directive with non-identifier name must be silently dropped"
+        );
+    }
 }
