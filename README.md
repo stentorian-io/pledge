@@ -61,6 +61,17 @@ Phase 20 also introduces two informational limitations surfaced in finding messa
 
 See `docs/rules/type-narrowing.md`, `docs/rules/infer-extends.md`, `docs/rules/noinfer-wrapper.md`, `docs/rules/union-variant-added.md`, and `docs/rules/template-index-signature.md` for per-rule detail.
 
+### Phase 21 rule-IDs (class-surface completion)
+
+| Rule ID | Severity | Trigger |
+|---------|----------|---------|
+| `class-field-made-private` | Major | CLS-11 — public `foo` on an exported class becomes private `#foo` (ES2022); consumers referencing the member will break |
+| `class-field-made-public` | Minor | CLS-11 — private `#foo` on an exported class becomes public `foo`; previously-hidden surface is now observable |
+
+A field rename within the private space (`#foo` → `#bar`) is deliberately silent — consumers cannot observe private fields, so a private-space rename is not an API change. A class that legally has BOTH public `foo` AND private `#foo` on both sides also fires no CLS-11 findings (the collision guard detects that both bare names exist on both sides).
+
+See `docs/rules/class-field-visibility-transition.md` for matching heuristic, limitations, and decorator interaction.
+
 ## Development Setup
 
 ### Prerequisites

@@ -11,7 +11,7 @@
 //   CLS-08: Readonly modifier added or removed (class-readonly-changed)
 //   CLS-09: Interface removed from implements list (class-implements-removed)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use super::subtype::{
@@ -22,6 +22,8 @@ use super::subtype::{
     RULE_CLASS_STATIC_TYPE_CHANGED, RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
     // CLS-10 (Phase 19) — stage-3 decorator diff rule-IDs:
     RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
+    // CLS-11 (Phase 21) — public↔private visibility transition:
+    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_CLASS_FIELD_MADE_PUBLIC,
 };
 use crate::types::{ClassMember, ClassMemberKind, ClassShape, DecoratorSpec, Finding, Severity, Visibility};
 
@@ -215,15 +217,109 @@ pub fn compare_class_shapes(
     }
 
     // ── Member-level comparisons ─────────────────────────────────────────────
-    // Build name-keyed maps for O(1) lookup.
-    let old_members: HashMap<&str, &ClassMember> =
-        old.members.iter().map(|m| (m.name.as_str(), m)).collect();
-    let new_members: HashMap<&str, &ClassMember> =
-        new.members.iter().map(|m| (m.name.as_str(), m)).collect();
+    // CLS-11 (Phase 21): filter out `#`-prefixed private members from the
+    // public-surface comparison maps. Private members are diffed in the
+    // dedicated public↔private transition pass below; including them here
+    // would let a rename-in-private-space (`#foo` → `#bar`) leak as a
+    // spurious CLS-03 `class-method-removed`. Approach A per 21-PATTERNS.md.
+    let old_members: HashMap<&str, &ClassMember> = old
+        .members
+        .iter()
+        .filter(|m| !m.is_private)
+        .map(|m| (m.name.as_str(), m))
+        .collect();
+    let new_members: HashMap<&str, &ClassMember> = new
+        .members
+        .iter()
+        .filter(|m| !m.is_private)
+        .map(|m| (m.name.as_str(), m))
+        .collect();
+
+    // ── CLS-11 (Phase 21): public↔private visibility transition ──────────────
+    // Pair old public members with new private members (and vice versa) by
+    // name-modulo-`#`. Fires Major `class-field-made-private` on public-to-
+    // private transitions (consumers referring to `repo.cache` now break) and
+    // Minor `class-field-made-public` on private-to-public transitions (new
+    // surface exposed). Risk 2: silent when the same bare name exists on BOTH
+    // the public AND private bucket on the SAME side (class has both `foo`
+    // and `#foo` simultaneously — distinct runtime slots; no transition).
+    fn bare_member_name(m: &ClassMember) -> &str {
+        m.name.strip_prefix('#').unwrap_or(&m.name)
+    }
+    let old_pub: Vec<&ClassMember> = old.members.iter().filter(|m| !m.is_private).collect();
+    let old_priv: Vec<&ClassMember> = old.members.iter().filter(|m| m.is_private).collect();
+    let new_pub: Vec<&ClassMember> = new.members.iter().filter(|m| !m.is_private).collect();
+    let new_priv: Vec<&ClassMember> = new.members.iter().filter(|m| m.is_private).collect();
+
+    let old_pub_names: HashSet<&str> = old_pub.iter().map(|m| bare_member_name(m)).collect();
+    let old_priv_names: HashSet<&str> = old_priv.iter().map(|m| bare_member_name(m)).collect();
+    let new_pub_names: HashSet<&str> = new_pub.iter().map(|m| bare_member_name(m)).collect();
+    let new_priv_names: HashSet<&str> = new_priv.iter().map(|m| bare_member_name(m)).collect();
+
+    let mut transitioned_bare: HashSet<String> = HashSet::new();
+
+    // Direction 1: old public `foo` → new private `#foo` → Major.
+    for m in &old_pub {
+        let k = bare_member_name(m);
+        if old_priv_names.contains(k) {
+            continue; // Risk 2: both-on-old side — class has both public and private slot
+        }
+        if new_pub_names.contains(k) {
+            continue; // still public on new — not a transition
+        }
+        if new_priv_names.contains(k) {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_CLASS_FIELD_MADE_PRIVATE,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "field `{}` on class `{}` became private (`#{}`) — consumers referencing this member will break",
+                    k, symbol_name, k,
+                ),
+            });
+            transitioned_bare.insert(k.to_string());
+        }
+    }
+
+    // Direction 2: old private `#foo` → new public `foo` → Minor.
+    for m in &old_priv {
+        let k = bare_member_name(m);
+        if old_pub_names.contains(k) {
+            continue; // Risk 2: both-on-old side
+        }
+        if new_priv_names.contains(k) {
+            continue; // still private on new — not a transition
+        }
+        if new_pub_names.contains(k) {
+            findings.push(Finding {
+                severity: Severity::Minor,
+                rule: RULE_CLASS_FIELD_MADE_PUBLIC,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "field `#{}` on class `{}` became public (`{}`) — previously-hidden surface is now observable",
+                    k, symbol_name, k,
+                ),
+            });
+            transitioned_bare.insert(k.to_string());
+        }
+    }
 
     // CLS-03: Method or constructor removed (also covers getters and setters)
     // Breaking: call sites that invoke the method/getter/setter will fail to compile.
     for (name, old_member) in &old_members {
+        // CLS-11 (Phase 21) suppression: if this bare name transitioned
+        // public↔private, the CLS-11 block above already emitted the
+        // canonical finding. Skip CLS-03 to avoid double-reporting the same
+        // conceptual change at two rule-IDs. Mirrors the REF-09 → REF-07
+        // in-loop gating at ref_diff.rs:222-225.
+        let bare = name.strip_prefix('#').unwrap_or(name);
+        if transitioned_bare.contains(bare) {
+            continue;
+        }
         if matches!(
             old_member.kind,
             ClassMemberKind::Method

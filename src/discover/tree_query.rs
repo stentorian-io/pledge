@@ -3889,6 +3889,12 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     .and_then(|n| n.utf8_text(source).ok())
                     .unwrap_or("")
                     .to_string();
+                // CLS-11 (Phase 21): ES2022 private methods (`#compute()`) keep
+                // the `#` in `name` so diff messages stay accurate; the flag
+                // lets class_diff.rs route them out of the public-surface
+                // HashMaps (Risk 6 Option A — prevents false-positive CLS-03
+                // `class-method-removed` on `#foo` → `#bar` renames).
+                let is_private = name.starts_with('#');
 
                 // Detect getter/setter by scanning anonymous children for "get"/"set" keywords.
                 // Modifiers appear before the name field; stop at named nodes other than
@@ -4031,7 +4037,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     // decorator siblings inside class_body in TS. extract_decorators
                     // handles both patterns.
                     decorators: extract_decorators(child, source),
-                    is_private: false,
+                    // CLS-11 (Phase 21): propagate `#`-prefix private method detection.
+                    is_private,
                 });
             }
             "public_field_definition" => {
@@ -4041,11 +4048,15 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     .unwrap_or("")
                     .to_string();
 
-                // ES private fields (#field) are truly runtime-private — not public API.
-                // Exclude them to avoid false positives when they are added/removed.
-                if name.starts_with('#') {
+                // CLS-11 (Phase 21): keep `#`-prefix private fields; the `is_private`
+                // flag lets the diff layer pair public `foo` ↔ private `#foo` across
+                // versions. `#` is retained in `name` so diff messages can show the
+                // accurate source-level identifier on either side. The identity-match
+                // helper in class_diff.rs strips the prefix on the fly.
+                if name.is_empty() {
                     continue;
                 }
+                let is_private = name.starts_with('#');
 
                 let visibility = extract_visibility(child, source);
 
@@ -4079,7 +4090,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     // public_field_definition node in TS, or appear as
                     // preceding decorator siblings in class_body.
                     decorators: extract_decorators(child, source),
-                    is_private: false,
+                    // CLS-11 (Phase 21): propagate `#`-prefix private field detection.
+                    is_private,
                 });
             }
             "abstract_method_signature" => {
@@ -4154,9 +4166,12 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     .and_then(|n| n.utf8_text(source).ok())
                     .unwrap_or("")
                     .to_string();
-                if name.is_empty() || name.starts_with('#') {
+                // CLS-11 (Phase 21): keep `#`-prefix ambient private members;
+                // same rationale as public_field_definition arm.
+                if name.is_empty() {
                     continue;
                 }
+                let is_private = name.starts_with('#');
                 let visibility = extract_visibility(child, source);
                 let mut is_static = false;
                 let mut is_readonly = false;
@@ -4183,7 +4198,8 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     this_param_type: None,
                     // CLS-10 (Phase 19): ambient property_signature decorators.
                     decorators: extract_decorators(child, source),
-                    is_private: false,
+                    // CLS-11 (Phase 21): propagate `#`-prefix private ambient-member detection.
+                    is_private,
                 });
             }
             _ => {}
@@ -5387,17 +5403,27 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_class_members_private_field_excluded() {
+    fn test_parse_class_members_private_field_kept_with_is_private_flag() {
+        // CLS-11 (Phase 21): `#`-prefix private fields are now KEPT in the
+        // members vector with `is_private: true` so the diff layer can detect
+        // public ↔ private transitions (e.g., `foo` → `#foo`). The `#`
+        // prefix is preserved in `name` so diff messages are accurate.
         let src = "class A { #secret: string; visible: string; }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
         let members = parse_class_members(&bytes, class_node);
         assert_eq!(
             members.len(),
-            1,
-            "only 'visible' should be present, not '#secret'"
+            2,
+            "both '#secret' (is_private=true) and 'visible' (is_private=false) should be present"
         );
-        assert_eq!(members[0].name, "visible");
+        let secret = members.iter().find(|m| m.name == "#secret").unwrap();
+        assert!(secret.is_private, "'#secret' must have is_private=true");
+        let visible = members.iter().find(|m| m.name == "visible").unwrap();
+        assert!(
+            !visible.is_private,
+            "'visible' must have is_private=false"
+        );
     }
 
     #[test]
