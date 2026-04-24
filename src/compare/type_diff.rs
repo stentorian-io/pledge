@@ -12,9 +12,10 @@ use std::path::Path;
 
 use super::subtype::{
     format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
-    RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
-    RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
-    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE,
+    RULE_INFER_EXTENDS_CONSTRAINT_CHANGED, RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED,
+    RULE_PARAM_REMOVED, RULE_PARAM_REORDERED, RULE_PARAM_TYPE_NARROWED,
+    RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED, RULE_TYPE_ALIAS_READONLY_CHANGED,
+    RULE_TYPE_INCOMPATIBLE,
 };
 use crate::types::shape::{ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -457,6 +458,89 @@ fn diff_recursive(
                         findings,
                     );
                 }
+            }
+        }
+
+        // TYPE-02 (Phase 20): Both InferExtends — any change in the `extends`
+        // constraint is Major. The `name` field (the inferred identifier,
+        // e.g. `U` vs `V`) is NOT consumer-observable and so differences in
+        // the name alone do NOT fire a finding.
+        (
+            TypeShape::InferExtends {
+                name: old_name,
+                constraint: old_c,
+            },
+            TypeShape::InferExtends {
+                name: new_name,
+                constraint: new_c,
+            },
+        ) => {
+            // Silence unused-variable warnings — the name is intentionally
+            // NOT part of the comparison per the locked TYPE-02 scope.
+            let _ = (old_name, new_name);
+            if old_c != new_c {
+                let display = make_display_name(symbol_name, field_path);
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "constraint on `infer {}` in `{}` changed from `{}` to `{}`",
+                        old_name,
+                        display,
+                        format_type(old_c),
+                        format_type(new_c),
+                    ),
+                });
+            }
+        }
+
+        // TYPE-02 (Phase 20) plumbing: Both Conditional — walk into each
+        // of the four child shapes (check / extends / then_type / else_type)
+        // so an `InferExtends` buried inside the extends-leg (the canonical
+        // TYPE-02 position) is visible to the (InferExtends, InferExtends)
+        // arm above. Without this walker, conditional-type pairs fall
+        // through to the `_` arm and emit a generic `type-incompatible`
+        // that hides the more-specific TYPE-02 rule.
+        (
+            TypeShape::Conditional {
+                check: old_check,
+                extends: old_extends,
+                then_type: old_then,
+                else_type: old_else,
+            },
+            TypeShape::Conditional {
+                check: new_check,
+                extends: new_extends,
+                then_type: new_then,
+                else_type: new_else,
+            },
+        ) => {
+            let legs: [(&str, &TypeShape, &TypeShape); 4] = [
+                ("check", old_check, new_check),
+                ("extends", old_extends, new_extends),
+                ("then_type", old_then, new_then),
+                ("else_type", old_else, new_else),
+            ];
+            for (leg_name, old_leg, new_leg) in legs {
+                let leg_path = if field_path.is_empty() {
+                    leg_name.to_string()
+                } else {
+                    format!("{field_path}.{leg_name}")
+                };
+                diff_recursive(
+                    old_leg,
+                    new_leg,
+                    symbol_name,
+                    &leg_path,
+                    file,
+                    line,
+                    col,
+                    depth + 1,
+                    findings,
+                );
             }
         }
 

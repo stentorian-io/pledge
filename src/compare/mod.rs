@@ -432,6 +432,12 @@ struct ExtractedDecl {
     is_enum: bool,
     is_function: bool,
     is_interface: bool,
+    /// TYPE-02 (Phase 20): true iff the declaration is a `type X = <type>`
+    /// alias. Used by `compare_structural_diff` to route type-alias RHS
+    /// pairs through `diff_types` (the base `compare_exports_core` path
+    /// only fires for functions because resolver-side `overloads` is
+    /// empty for type aliases without LSP).
+    is_type_alias: bool,
     class_shape: Option<ClassShape>,
     enum_shape: Option<EnumShape>,
     type_params: Vec<TypeParam>,
@@ -528,6 +534,9 @@ fn extract_declaration(
         matches!(kind, "class_declaration" | "abstract_class_declaration") || is_anonymous_class;
     let is_enum = kind == "enum_declaration";
     let is_interface = kind == "interface_declaration";
+    // TYPE-02 (Phase 20): recognize type aliases so compare_structural_diff
+    // can route RHS pairs through diff_types.
+    let is_type_alias = kind == "type_alias_declaration";
 
     // parse_class_shape handles both class_declaration and class (anonymous) nodes
     // since both have a class_body child
@@ -568,6 +577,20 @@ fn extract_declaration(
     // works on arrow_function nodes (field name is also "parameters")
     let overloads = if is_function {
         tree_query::build_function_shape_from_node(decl_node, source)
+            .into_iter()
+            .collect()
+    } else if kind == "type_alias_declaration" {
+        // TYPE-02 (Phase 20): route the RHS of `type X = <type>` through
+        // `parse_type_string` into `overloads[0]` so the existing
+        // `diff_types` pipeline can compare the shape. Without this,
+        // non-LSP runs (where `type_signature` stays None) have no path
+        // from a type-alias source to `TypeShape`, and the
+        // (InferExtends, InferExtends) diff arm never fires.
+        // Limited to a single TypeShape (no true overloads for type aliases).
+        decl_node
+            .child_by_field_name("value")
+            .and_then(|value_node| value_node.utf8_text(source).ok())
+            .map(crate::types::parser::parse_type_string)
             .into_iter()
             .collect()
     } else {
@@ -625,6 +648,7 @@ fn extract_declaration(
         is_enum,
         is_function,
         is_interface,
+        is_type_alias,
         class_shape,
         enum_shape,
         type_params,
@@ -1245,6 +1269,31 @@ pub fn compare_structural_diff(
                 new_sym.line,
                 new_sym.col,
             ));
+        }
+
+        // TYPE-02 (Phase 20): type-alias shape diff.
+        // The base `compare_exports_core` diff_types path only fires when
+        // `sym.overloads` is populated — which happens only for functions
+        // via resolver-side extraction. For `type X = <type>` aliases
+        // `overloads` stays empty without LSP, so the (InferExtends,
+        // InferExtends) arm and all other shape diffs never fire on
+        // type-alias bodies. Here in `compare_structural_diff` we have
+        // re-parsed the declaration; `extract_declaration` populates
+        // `overloads[0]` with the type-alias RHS. Route that pair through
+        // `diff_types` so the structural shape diff runs on type aliases.
+        if old_decl.is_type_alias && new_decl.is_type_alias {
+            if let (Some(old_shape), Some(new_shape)) =
+                (old_decl.overloads.first(), new_decl.overloads.first())
+            {
+                findings.extend(type_diff::diff_types(
+                    old_shape,
+                    new_shape,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
+            }
         }
 
         // TLF-07: type-only re-export flag changed

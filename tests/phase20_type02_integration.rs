@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 
-use interlint::compare::compare_exports;
+use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::compare::subtype::RULE_INFER_EXTENDS_CONSTRAINT_CHANGED;
 use interlint::discover::discover_exports;
 use interlint::types::Severity;
@@ -31,7 +31,21 @@ fn run(form: &str) -> Vec<interlint::types::Finding> {
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();
     let (new_exports, _) = discover_exports(&new_dir).unwrap();
-    compare_exports(&old_exports, &new_exports, &new_dir)
+    // TYPE-02 findings originate in `compare_structural_diff`
+    // (which re-parses each file and routes the type-alias RHS pair
+    // through `diff_types`). `compare_exports` alone runs only the base
+    // ExportKey-iteration diff which skips type-alias bodies when LSP
+    // hover did not populate `overloads`. Both must run to exercise the
+    // full pipeline — mirror how the CLI composes them (see
+    // `src/main.rs` and the CLS-10 integration test).
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    findings.extend(compare_structural_diff(
+        &old_dir,
+        &new_dir,
+        &old_exports,
+        &new_exports,
+    ));
+    findings
 }
 
 #[test]
