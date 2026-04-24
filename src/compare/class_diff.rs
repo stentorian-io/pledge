@@ -251,23 +251,34 @@ pub fn compare_class_shapes(
     let new_pub: Vec<&ClassMember> = new.members.iter().filter(|m| !m.is_private).collect();
     let new_priv: Vec<&ClassMember> = new.members.iter().filter(|m| m.is_private).collect();
 
-    let old_pub_names: HashSet<&str> = old_pub.iter().map(|m| bare_member_name(m)).collect();
-    let old_priv_names: HashSet<&str> = old_priv.iter().map(|m| bare_member_name(m)).collect();
-    let new_pub_names: HashSet<&str> = new_pub.iter().map(|m| bare_member_name(m)).collect();
-    let new_priv_names: HashSet<&str> = new_priv.iter().map(|m| bare_member_name(m)).collect();
+    // Key matching on (bare_name, is_static) — `static foo` and instance
+    // `#foo` are distinct runtime slots (class-object vs prototype); pairing
+    // them as a public↔private transition would be wrong. Only same-
+    // static-ness pairs represent the same logical slot.
+    let old_pub_keys: HashSet<(&str, bool)> =
+        old_pub.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
+    let old_priv_keys: HashSet<(&str, bool)> =
+        old_priv.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
+    let new_pub_keys: HashSet<(&str, bool)> =
+        new_pub.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
+    let new_priv_keys: HashSet<(&str, bool)> =
+        new_priv.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
 
-    let mut transitioned_bare: HashSet<String> = HashSet::new();
+    // Suppression set keyed on (bare_name, is_static) — mirrors the match key
+    // above. CLS-03 removal suppression reconstructs the tuple from each
+    // old-side entry's `is_static` flag before querying this set.
+    let mut transitioned_keys: HashSet<(String, bool)> = HashSet::new();
 
     // Direction 1: old public `foo` → new private `#foo` → Major.
     for m in &old_pub {
-        let k = bare_member_name(m);
-        if old_priv_names.contains(k) {
+        let k = (bare_member_name(m), m.is_static);
+        if old_priv_keys.contains(&k) {
             continue; // Risk 2: both-on-old side — class has both public and private slot
         }
-        if new_pub_names.contains(k) {
+        if new_pub_keys.contains(&k) {
             continue; // still public on new — not a transition
         }
-        if new_priv_names.contains(k) {
+        if new_priv_keys.contains(&k) {
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_CLASS_FIELD_MADE_PRIVATE,
@@ -276,23 +287,23 @@ pub fn compare_class_shapes(
                 col,
                 message: format!(
                     "field `{}` on class `{}` became private (`#{}`) — consumers referencing this member will break",
-                    k, symbol_name, k,
+                    k.0, symbol_name, k.0,
                 ),
             });
-            transitioned_bare.insert(k.to_string());
+            transitioned_keys.insert((k.0.to_string(), k.1));
         }
     }
 
     // Direction 2: old private `#foo` → new public `foo` → Minor.
     for m in &old_priv {
-        let k = bare_member_name(m);
-        if old_pub_names.contains(k) {
+        let k = (bare_member_name(m), m.is_static);
+        if old_pub_keys.contains(&k) {
             continue; // Risk 2: both-on-old side
         }
-        if new_priv_names.contains(k) {
+        if new_priv_keys.contains(&k) {
             continue; // still private on new — not a transition
         }
-        if new_pub_names.contains(k) {
+        if new_pub_keys.contains(&k) {
             findings.push(Finding {
                 severity: Severity::Minor,
                 rule: RULE_CLASS_FIELD_MADE_PUBLIC,
@@ -301,23 +312,27 @@ pub fn compare_class_shapes(
                 col,
                 message: format!(
                     "field `#{}` on class `{}` became public (`{}`) — previously-hidden surface is now observable",
-                    k, symbol_name, k,
+                    k.0, symbol_name, k.0,
                 ),
             });
-            transitioned_bare.insert(k.to_string());
+            transitioned_keys.insert((k.0.to_string(), k.1));
         }
     }
 
     // CLS-03: Method or constructor removed (also covers getters and setters)
     // Breaking: call sites that invoke the method/getter/setter will fail to compile.
     for (name, old_member) in &old_members {
-        // CLS-11 (Phase 21) suppression: if this bare name transitioned
-        // public↔private, the CLS-11 block above already emitted the
-        // canonical finding. Skip CLS-03 to avoid double-reporting the same
-        // conceptual change at two rule-IDs. Mirrors the REF-09 → REF-07
+        // CLS-11 (Phase 21) suppression: if this (bare_name, is_static) slot
+        // transitioned public↔private, the CLS-11 block above already emitted
+        // the canonical finding. Skip CLS-03 to avoid double-reporting the
+        // same conceptual change at two rule-IDs. Mirrors the REF-09 → REF-07
         // in-loop gating at ref_diff.rs:222-225.
+        //
+        // The key must include `is_static` so a removed `static foo` with an
+        // added instance `#foo` (different runtime slots) does NOT suppress
+        // the genuine CLS-03 removal of the static.
         let bare = name.strip_prefix('#').unwrap_or(name);
-        if transitioned_bare.contains(bare) {
+        if transitioned_keys.contains(&(bare.to_string(), old_member.is_static)) {
             continue;
         }
         // CLS-03: Method/Constructor/Getter/Setter removal.
