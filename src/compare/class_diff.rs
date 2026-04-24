@@ -320,21 +320,33 @@ pub fn compare_class_shapes(
         if transitioned_bare.contains(bare) {
             continue;
         }
-        if matches!(
+        // CLS-03: Method/Constructor/Getter/Setter removal.
+        // CLS-12 (Phase 21): additionally fires for static Property removal —
+        // synthesized static-block members (ClassMemberKind::Property with
+        // is_static = true) and top-level `static bar = 1;` declarations
+        // surface here. Non-static property removal remains silent, matching
+        // existing CLS-* semantics where instance-property diff is handled by
+        // other rules (CLS-07, etc.).
+        let is_removable_kind = matches!(
             old_member.kind,
             ClassMemberKind::Method
                 | ClassMemberKind::Constructor
                 | ClassMemberKind::Getter
                 | ClassMemberKind::Setter
-        ) && !new_members.contains_key(name)
-        {
+        ) || (matches!(old_member.kind, ClassMemberKind::Property) && old_member.is_static);
+        if is_removable_kind && !new_members.contains_key(name) {
+            let noun = if matches!(old_member.kind, ClassMemberKind::Property) {
+                "static property"
+            } else {
+                "method"
+            };
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_CLASS_METHOD_REMOVED,
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!("method `{}` was removed from class `{}`", name, symbol_name),
+                message: format!("{} `{}` was removed from class `{}`", noun, name, symbol_name),
             });
         }
     }

@@ -3860,8 +3860,27 @@ pub fn extract_param_optionality(fn_or_method_node: tree_sitter::Node) -> Vec<bo
 /// from a `class_declaration` or `abstract_class_declaration` node.
 ///
 /// Per Pitfall 7: line/col are 1-indexed (tree-sitter provides 0-indexed).
-pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<ClassMember> {
+///
+/// CLS-12 (Phase 21): returns `(members, has_dynamic_static_key)`. The bool is
+/// `true` if any `class_static_block` body contains a subscript-expression LHS
+/// (`Foo[computed()] = x`) — consumed by `parse_class_shape` to set
+/// `ClassShape.has_dynamic_static_key`, which the diff layer reads to emit the
+/// `limitation: dynamic-static-member-key` annotation.
+pub fn parse_class_members(
+    source: &[u8],
+    class_node: tree_sitter::Node,
+) -> (Vec<ClassMember>, bool) {
     let mut members = Vec::new();
+    // CLS-12 (Phase 21): extract the enclosing class name once — used by the
+    // class_static_block arm to gate `Foo.bar = ...` assignments. Returns an
+    // empty string for anonymous `export default class { ... }`, in which case
+    // only the `this.bar = ...` path matches inside the static-block walker.
+    let class_name = class_node
+        .child_by_field_name("name")
+        .and_then(|n| n.utf8_text(source).ok())
+        .unwrap_or("")
+        .to_string();
+    let mut has_dynamic_static_key = false;
 
     // Find class_body child
     let class_body = {
@@ -3876,7 +3895,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
         }
         match body {
             Some(b) => b,
-            None => return members,
+            None => return (members, has_dynamic_static_key),
         }
     };
 
@@ -4202,11 +4221,100 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     is_private,
                 });
             }
+            "class_static_block" => {
+                // CLS-12 (Phase 21): extract top-level `Foo.bar = expr` and
+                // `this.bar = expr` assignments from static initialization
+                // blocks as synthesized static Property members. Subscript
+                // expressions (`Foo[x] = ...`) set has_dynamic_static_key;
+                // non-assignment statements are ignored per locked decision.
+                let Some(sb_body) = child.child_by_field_name("body") else {
+                    continue;
+                };
+                let mut sb_cursor = sb_body.walk();
+                for stmt in sb_body.children(&mut sb_cursor) {
+                    if stmt.kind() != "expression_statement" {
+                        continue;
+                    }
+                    // Find the assignment_expression child of the expression_statement.
+                    let mut s_cursor = stmt.walk();
+                    let Some(assign) = stmt
+                        .children(&mut s_cursor)
+                        .find(|n| n.kind() == "assignment_expression")
+                    else {
+                        continue;
+                    };
+                    let Some(lhs) = assign.child_by_field_name("left") else {
+                        continue;
+                    };
+                    match lhs.kind() {
+                        "member_expression" => {
+                            let obj = lhs.child_by_field_name("object");
+                            let prop = lhs.child_by_field_name("property");
+                            let obj_text = obj
+                                .and_then(|n| n.utf8_text(source).ok())
+                                .unwrap_or("");
+                            // Gate: object must be the class name (by text) OR
+                            // `this` (handles anonymous default-exported
+                            // classes). If class_name is empty (anonymous),
+                            // only `this` matches.
+                            let is_class_ref = (!class_name.is_empty()
+                                && obj_text == class_name)
+                                || obj.is_some_and(|n| n.kind() == "this");
+                            if !is_class_ref {
+                                continue;
+                            }
+                            let prop_name = prop
+                                .and_then(|n| n.utf8_text(source).ok())
+                                .unwrap_or("")
+                                .to_string();
+                            if prop_name.is_empty() {
+                                continue;
+                            }
+                            // Last-write-wins: remove any prior synthesized
+                            // member with the same name + is_static + Property
+                            // kind. Matches runtime semantics where the final
+                            // assignment is observable.
+                            members.retain(|m| {
+                                !(m.name == prop_name
+                                    && m.is_static
+                                    && matches!(m.kind, ClassMemberKind::Property))
+                            });
+                            members.push(ClassMember {
+                                name: prop_name,
+                                kind: ClassMemberKind::Property,
+                                visibility: Visibility::Public,
+                                is_static: true,
+                                is_abstract: false,
+                                is_readonly: false,
+                                param_count: 0,
+                                // No LSP enrichment on synthesized members.
+                                type_signature: None,
+                                is_optional: false,
+                                is_accessor: false,
+                                this_param_type: None,
+                                decorators: Vec::new(),
+                                // Static-block synthesized members are public surface.
+                                is_private: false,
+                            });
+                        }
+                        "subscript_expression" => {
+                            // Locked decision: `Foo[computed()] = x` is NOT
+                            // extracted. Flag the class so the diff layer can
+                            // emit `limitation: dynamic-static-member-key`.
+                            has_dynamic_static_key = true;
+                        }
+                        _ => {
+                            // Other LHS shapes (identifier, etc.) are ignored
+                            // — not static-member exports.
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
 
-    members
+    (members, has_dynamic_static_key)
 }
 
 /// Extract a full `ClassShape` from a `class_declaration` or
@@ -4255,7 +4363,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
     }
 
     let type_params = parse_type_params(source, decl_node);
-    let members = parse_class_members(source, decl_node);
+    let (members, has_dynamic_static_key) = parse_class_members(source, decl_node);
 
     // CLS-10 (Phase 19): Extract class-level decorators. In TS, decorators
     // appear as direct children on the class_declaration / abstract_class_declaration
@@ -4328,8 +4436,8 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         type_params,
         constructor_param_optionality,
         decorators: class_decorators,
-        // Phase 21 CLS-12: set by class_static_block arm in Plan 21-02.
-        has_dynamic_static_key: false,
+        // Phase 21 CLS-12: propagated from `parse_class_members` tuple return.
+        has_dynamic_static_key,
     }
 }
 
@@ -5303,7 +5411,7 @@ mod tests {
         let src = "class Foo { doWork(x: string): void {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         assert!(
             members.iter().any(|m| m.name == "doWork"),
             "should extract doWork method"
@@ -5315,7 +5423,7 @@ mod tests {
         let src = "class Foo { doWork(): void {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let method = members.iter().find(|m| m.name == "doWork").unwrap();
         assert_eq!(
             method.visibility,
@@ -5329,7 +5437,7 @@ mod tests {
         let src = "class Foo { protected doWork(): void {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let method = members.iter().find(|m| m.name == "doWork").unwrap();
         assert_eq!(method.visibility, Visibility::Protected);
     }
@@ -5339,7 +5447,7 @@ mod tests {
         let src = "class Foo { constructor(x: string) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let ctor = members.iter().find(|m| m.name == "constructor").unwrap();
         assert_eq!(ctor.kind, ClassMemberKind::Constructor);
     }
@@ -5349,7 +5457,7 @@ mod tests {
         let src = "class Foo { constructor(x: string, y: number) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let ctor = members.iter().find(|m| m.name == "constructor").unwrap();
         assert_eq!(ctor.param_count, 2, "two required params");
     }
@@ -5359,7 +5467,7 @@ mod tests {
         let src = "class Foo { static create(): Foo { return new Foo(); } }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let method = members.iter().find(|m| m.name == "create").unwrap();
         assert!(method.is_static, "create should be static");
     }
@@ -5369,7 +5477,7 @@ mod tests {
         let src = "class Foo { name: string = ''; }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let prop = members.iter().find(|m| m.name == "name").unwrap();
         assert_eq!(prop.kind, ClassMemberKind::Property);
     }
@@ -5379,7 +5487,7 @@ mod tests {
         let src = "class A { get foo(): number { return 1; } }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let getter = members.iter().find(|m| m.name == "foo").unwrap();
         assert_eq!(
             getter.kind,
@@ -5393,7 +5501,7 @@ mod tests {
         let src = "class A { set foo(v: number) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let setter = members.iter().find(|m| m.name == "foo").unwrap();
         assert_eq!(
             setter.kind,
@@ -5411,7 +5519,7 @@ mod tests {
         let src = "class A { #secret: string; visible: string; }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         assert_eq!(
             members.len(),
             2,
@@ -5431,7 +5539,7 @@ mod tests {
         let src = "class A { get x(): number { return 0; } set x(v: number) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let getter = members
             .iter()
             .find(|m| m.name == "x" && m.kind == ClassMemberKind::Getter);
@@ -7020,7 +7128,7 @@ declare global {
         let src = "class Foo { constructor(public x: number, private y: string, z: boolean) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         // x and y should be synthesized as Property members
         let x = members.iter().find(|m| m.name == "x");
         let y = members.iter().find(|m| m.name == "y");
@@ -7072,7 +7180,7 @@ declare global {
         let src = "class Foo { accessor bar: number; }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
-        let members = parse_class_members(&bytes, class_node);
+        let (members, _has_dynamic_static_key) = parse_class_members(&bytes, class_node);
         let bar = members
             .iter()
             .find(|m| m.name == "bar")
