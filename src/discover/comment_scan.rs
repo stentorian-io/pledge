@@ -228,6 +228,16 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
         None => (content.to_string(), ""),
     };
     // Validate the name looks like a directive (letters/digits/hyphen).
+    //
+    // IN-04 (Phase 19 re-review): we deliberately allow digit-leading and
+    // all-hyphen names here (e.g. `1foo`, `---`). Strict XML would require
+    // `[A-Za-z_]` as the first char, but tsserver's directive parser is
+    // similarly permissive and no real-world triple-slash directive uses
+    // such pathological names. Matching tsserver's laxness keeps our
+    // discovery identical to what the TypeScript compiler itself sees. If
+    // the diff pipeline ever reports spurious noise from a real-world
+    // package using weird attribute syntax, tighten this to require
+    // `[A-Za-z_]` leading char.
     if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return None;
     }
@@ -240,6 +250,11 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
             break;
         }
         // Read key: letters/digits/hyphen until '=' or whitespace.
+        //
+        // IN-04 (Phase 19 re-review): same permissive-parse rationale as
+        // the name check above — digit-leading and all-hyphen keys are
+        // accepted. This is theoretically looser than strict XML attribute
+        // syntax, but mirrors tsserver and never fires in practice.
         let key_end = remaining
             .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
             .unwrap_or(remaining.len());
