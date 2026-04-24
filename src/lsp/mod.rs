@@ -160,6 +160,31 @@ pub async fn enrich_exports(
                         if !overloads.is_empty() && symbol.overloads.is_empty() {
                             symbol.overloads = overloads.clone();
                         }
+                        // TYPE-01 (Phase 20): if this symbol has an unfilled
+                        // `TypeShape::Satisfies { narrowed: None, .. }` slot,
+                        // fill it from the LSP hover result. Hover on a
+                        // `const foo = {...} satisfies T` returns the narrowed
+                        // literal type (not `T`); parse it through
+                        // parse_type_string and stash into the `narrowed` slot.
+                        // Leaving it None preserves degraded-mode semantics
+                        // (Finding message carries
+                        // `limitation: satisfies-narrowed-type-not-verified`).
+                        if let Some(crate::types::shape::TypeShape::Satisfies {
+                            constraint,
+                            narrowed: None,
+                        }) = symbol.satisfies_type.as_ref()
+                        {
+                            if let Some(narrow_text) = type_signature.as_ref() {
+                                let narrowed_shape =
+                                    crate::types::parser::parse_type_string(narrow_text);
+                                let constraint_clone = constraint.clone();
+                                symbol.satisfies_type =
+                                    Some(crate::types::shape::TypeShape::Satisfies {
+                                        constraint: constraint_clone,
+                                        narrowed: Some(Box::new(narrowed_shape)),
+                                    });
+                            }
+                        }
                     }
                 }
             }

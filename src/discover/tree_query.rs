@@ -121,6 +121,12 @@ pub struct RawExport {
     /// `declare` statement precedes the `export { foo }` specifier and for
     /// re-exports where the symbol comes from another module.
     pub type_signature: Option<String>,
+    /// TYPE-01 (Phase 20): `satisfies T` RHS — populated by the resolver's
+    /// post-parse populate pass that calls `extract_satisfies_types` and
+    /// routes each hit through `parse_type_string`. `None` for exports that
+    /// have no adjacent `satisfies` clause, and on every initial construction
+    /// from this module (the populate pass is the single producer).
+    pub satisfies_type: Option<crate::types::shape::TypeShape>,
 }
 
 // ---------------------------------------------------------------------------
@@ -961,6 +967,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -994,6 +1001,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 release_tag: None,
                                 compound_members: Vec::new(),
                                 type_signature: None,
+                                satisfies_type: None,
                             });
                         }
                     }
@@ -1025,6 +1033,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1091,6 +1100,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -1135,6 +1145,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         release_tag: None,
                         compound_members: Vec::new(),
                         type_signature: None,
+                        satisfies_type: None,
                     });
                 }
             }
@@ -1193,6 +1204,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1238,6 +1250,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         release_tag: None,
                         compound_members: Vec::new(),
                         type_signature: None,
+                        satisfies_type: None,
                     });
                 }
             }
@@ -1283,6 +1296,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                         }
@@ -1336,6 +1350,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1369,6 +1384,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -1404,6 +1420,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         release_tag: None,
                         compound_members: Vec::new(),
                         type_signature: None,
+                        satisfies_type: None,
                     });
                 }
             }
@@ -1443,6 +1460,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1518,6 +1536,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         release_tag,
                         compound_members: Vec::new(),
                         type_signature: None,
+                        satisfies_type: None,
                     });
                 }
             }
@@ -1589,6 +1608,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1624,6 +1644,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1653,6 +1674,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1724,6 +1746,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1778,6 +1801,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1831,6 +1855,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -1880,6 +1905,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -1907,6 +1933,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1936,6 +1963,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -1978,6 +2006,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                         }
@@ -2042,6 +2071,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             release_tag: None,
                                             compound_members: Vec::new(),
                                             type_signature: None,
+                                            satisfies_type: None,
                                         });
                                     }
                                 }
@@ -2093,6 +2123,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         release_tag: None,
                                         compound_members: Vec::new(),
                                         type_signature: None,
+                                        satisfies_type: None,
                                     });
                                 }
                             }
@@ -2135,6 +2166,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         release_tag: None,
                                         compound_members: Vec::new(),
                                         type_signature: None,
+                                        satisfies_type: None,
                                     });
                                 }
                             }
@@ -2176,6 +2208,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         release_tag: None,
                                         compound_members: Vec::new(),
                                         type_signature: None,
+                                        satisfies_type: None,
                                     });
                                 }
                             }
@@ -2218,6 +2251,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 release_tag: None,
                                 compound_members: Vec::new(),
                                 type_signature: None,
+                                satisfies_type: None,
                             });
                         }
                     }
@@ -2256,6 +2290,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 release_tag: None,
                                 compound_members: Vec::new(),
                                 type_signature: None,
+                                satisfies_type: None,
                             });
                         }
                     }
@@ -2306,6 +2341,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                         }
@@ -2347,6 +2383,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                         }
@@ -2408,6 +2445,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
                                                 type_signature: None,
+                                                satisfies_type: None,
                                             });
                                         }
                                     }
@@ -2430,6 +2468,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     release_tag: None,
                                                     compound_members: Vec::new(),
                                                     type_signature: None,
+                                                    satisfies_type: None,
                                                 });
                                             }
                                         }
@@ -2493,6 +2532,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                     // META-03: emit synthetic keys for each top-level member in the body.
@@ -2545,6 +2585,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             release_tag: None,
                                             compound_members: Vec::new(),
                                             type_signature: None,
+                                            satisfies_type: None,
                                         });
                                     }
                                     // META-03: emit synthetic keys for top-level members.
@@ -2676,6 +2717,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
                                                 type_signature: None,
+                                                satisfies_type: None,
                                             });
                                         }
                                     }
@@ -2700,6 +2742,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             release_tag: None,
                                             compound_members: Vec::new(),
                                             type_signature: None,
+                                            satisfies_type: None,
                                         });
                                     }
                                 }
@@ -2764,6 +2807,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 release_tag: None,
                                                 compound_members: Vec::new(),
                                                 type_signature: None,
+                                                satisfies_type: None,
                                             });
                                         }
                                     }
@@ -2821,6 +2865,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                         }
@@ -2929,6 +2974,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -3007,6 +3053,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             release_tag: None,
                                             compound_members: Vec::new(),
                                             type_signature: None,
+                                            satisfies_type: None,
                                         });
                                     }
                                 }
@@ -3051,6 +3098,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         release_tag: None,
                                                         compound_members: Vec::new(),
                                                         type_signature: None,
+                                                        satisfies_type: None,
                                                     });
                                                 }
                                             }
@@ -3099,6 +3147,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         release_tag: None,
                                                         compound_members: Vec::new(),
                                                         type_signature: None,
+                                                        satisfies_type: None,
                                                     });
                                                 }
                                             }
@@ -3123,6 +3172,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     release_tag: None,
                                                     compound_members: Vec::new(),
                                                     type_signature: None,
+                                                    satisfies_type: None,
                                                 });
                                             }
                                         }
@@ -3174,6 +3224,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 release_tag: None,
                                 compound_members: Vec::new(),
                                 type_signature: None,
+                                satisfies_type: None,
                             });
                         }
                     }
@@ -3352,6 +3403,7 @@ fn expand_namespace_members(
                                     release_tag: None,
                                     compound_members: Vec::new(),
                                     type_signature: None,
+                                    satisfies_type: None,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -3418,6 +3470,7 @@ fn expand_namespace_members(
                             release_tag: None,
                             compound_members: Vec::new(),
                             type_signature: None,
+                            satisfies_type: None,
                         });
                     }
                 }
@@ -3481,6 +3534,7 @@ fn emit_augmentation_members(
                     release_tag: None,
                     compound_members: Vec::new(),
                     type_signature: None,
+                    satisfies_type: None,
                 });
             }
         }
@@ -4612,6 +4666,73 @@ pub fn extract_type_guard(fn_node: tree_sitter::Node, source: &[u8]) -> Option<S
         }
     }
     None
+}
+
+/// TYPE-01 (Phase 20): Extract `satisfies T` constraints from exported
+/// const/let/var declarations at the top level of a TS/TSX source file.
+///
+/// Returns a map from the exported binding name to the RHS type-expression
+/// source text. Resolver insertion consumes this map to post-populate
+/// `ExportSymbol.satisfies_type` after parsing the RHS through
+/// `parse_type_string`.
+///
+/// Tree-sitter AST path: `variable_declarator (name: identifier)
+/// (value: satisfies_expression (_) @value (_) @satisfies_type)`.
+///
+/// Grammar gate: `satisfies_expression` does NOT exist in
+/// tree-sitter-javascript 0.25.0. This function MUST be a no-op on JS
+/// inputs — call sites guard via `SourceLanguage::TypeScript` /
+/// `SourceLanguage::TypeScriptTsx`.
+pub fn extract_satisfies_types(
+    root: tree_sitter::Node<'_>,
+    source: &[u8],
+    lang: SourceLanguage,
+) -> std::collections::HashMap<String, String> {
+    let mut out: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    // Grammar gate: only TS/TSX have `satisfies_expression`. Silently no-op on JS.
+    if !matches!(
+        lang,
+        SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
+    ) {
+        return out;
+    }
+
+    let language = get_language(&lang);
+    let query_src = r#"
+        (variable_declarator
+          name: (identifier) @name
+          value: (satisfies_expression
+            (_) @value
+            (_) @satisfies_type))
+    "#;
+
+    let query = match Query::new(&language, query_src) {
+        Ok(q) => q,
+        Err(_) => return out,
+    };
+    let capture_names = query.capture_names();
+    let mut cursor = QueryCursor::new();
+    let mut matches = cursor.matches(&query, root, source);
+    while let Some(m) = matches.next() {
+        let mut name: Option<String> = None;
+        let mut satisfies_text: Option<String> = None;
+        for capture in m.captures {
+            let capture_name = capture_names[capture.index as usize];
+            let text = match capture.node.utf8_text(source) {
+                Ok(t) => t.to_string(),
+                Err(_) => continue,
+            };
+            match capture_name {
+                "name" => name = Some(text),
+                "satisfies_type" => satisfies_text = Some(text),
+                _ => {}
+            }
+        }
+        if let (Some(n), Some(t)) = (name, satisfies_text) {
+            out.insert(n, t);
+        }
+    }
+    out
 }
 
 /// An index signature extracted from an interface or object type.

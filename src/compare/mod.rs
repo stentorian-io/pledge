@@ -329,6 +329,16 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 );
                 findings.extend(type_findings);
             }
+            // TYPE-01 (Phase 20): `satisfies T` removal emits Minor
+            // `type-narrowing-widened`. Fires regardless of TypeShape overload
+            // presence — the satisfies_type field is the direct source of truth.
+            findings.extend(type_diff::diff_satisfies_types(
+                old_sym,
+                new_sym,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
         }
     }
 

@@ -450,6 +450,37 @@ pub fn collect_exports(
                 // compiler position rule: only directives at the top of the
                 // file, before any non-comment statement, are recognized).
                 file_directives = comment_index.extract_directives();
+
+                // TYPE-01 (Phase 20): backfill satisfies_type on eligible
+                // RawExports. Mirrors the META-06 populate pass directly above
+                // — same tree/source pair, single post-parse scan, no need to
+                // edit individual RawExport construction sites.
+                //
+                // Grammar gate: `satisfies_expression` is a TypeScript AST node
+                // only; `extract_satisfies_types` internally returns an empty
+                // map on JavaScript inputs so the loop is a no-op there.
+                let satisfies_map = super::tree_query::extract_satisfies_types(
+                    tree.root_node(),
+                    &source,
+                    lang,
+                );
+                if !satisfies_map.is_empty() {
+                    for rx in raw_exports.iter_mut() {
+                        if rx.satisfies_type.is_some() {
+                            continue;
+                        }
+                        if let Some(satisfies_text) = satisfies_map.get(&rx.name) {
+                            let constraint = crate::types::parser::parse_type_string(
+                                satisfies_text,
+                            );
+                            rx.satisfies_type =
+                                Some(crate::types::shape::TypeShape::Satisfies {
+                                    constraint: Box::new(constraint),
+                                    narrowed: None,
+                                });
+                        }
+                    }
+                }
             }
         }
     }
@@ -525,7 +556,11 @@ pub fn collect_exports(
                             is_reexport: false,
                             is_type_only: false,
                             release_tag: export.release_tag, // META-04: propagate TSDoc release tag
-                            satisfies_type: None,
+                            // TYPE-01 (Phase 20): forward the populated
+                            // satisfies_type onto the resolved ExportSymbol
+                            // alongside release_tag — single-write from the
+                            // post-parse populate pass above.
+                            satisfies_type: export.satisfies_type,
                             // ARCH-02 (Phase 18): propagate compound-component members
                             // from the RawExport (populated by attach_compound_members).
                             compound_members: export.compound_members,
@@ -581,7 +616,11 @@ pub fn collect_exports(
                             // Without this, `/** @deprecated */ export default foo`
                             // loses its tag at insertion time.
                             release_tag: export.release_tag,
-                            satisfies_type: None,
+                            // TYPE-01 (Phase 20): propagate satisfies_type for
+                            // default-export forms — covers cases like
+                            // `const foo = {...} satisfies T; export default foo;`
+                            // where the pop-pass tagged the binding.
+                            satisfies_type: export.satisfies_type,
                             compound_members: Vec::new(),
                         },
                     );

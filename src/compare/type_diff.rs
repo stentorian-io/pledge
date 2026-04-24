@@ -749,6 +749,71 @@ fn make_display_name(symbol_name: &str, field_path: &str) -> String {
     }
 }
 
+/// TYPE-01 (Phase 20): Emits `type-narrowing-widened` (Minor) when the old
+/// version of an exported binding carried a `satisfies T` clause and the new
+/// version does not.
+///
+/// Semantic (per v0.3-decisions.md Phase 20 TYPE-01):
+/// - `old_sym.satisfies_type.is_some()` AND `new_sym.satisfies_type.is_none()`
+///   fires exactly 1 Minor finding for the symbol.
+/// - Otherwise emits nothing.
+///
+/// Degraded-mode handling: when the `Satisfies.narrowed` slot is `None` on
+/// the old symbol (LSP was unavailable during enrichment, or the hover did
+/// not surface a narrowed type), the finding message embeds
+/// `limitation: satisfies-narrowed-type-not-verified` so downstream consumers
+/// know narrowing direction was not confirmed. Never silently drop coverage
+/// (v0.3 Phase 20 locked decision).
+pub fn diff_satisfies_types(
+    old_sym: &crate::types::ExportSymbol,
+    new_sym: &crate::types::ExportSymbol,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    use crate::compare::subtype::RULE_TYPE_NARROWING_WIDENED;
+    let mut findings: Vec<Finding> = Vec::new();
+    let old_has_satisfies = matches!(
+        old_sym.satisfies_type.as_ref(),
+        Some(TypeShape::Satisfies { .. })
+    );
+    let new_has_satisfies = matches!(
+        new_sym.satisfies_type.as_ref(),
+        Some(TypeShape::Satisfies { .. })
+    );
+    if !old_has_satisfies || new_has_satisfies {
+        return findings;
+    }
+    // `satisfies` was present, now absent.
+    let narrowed_was_verified = matches!(
+        old_sym.satisfies_type.as_ref(),
+        Some(TypeShape::Satisfies {
+            narrowed: Some(_),
+            ..
+        })
+    );
+    let message = if narrowed_was_verified {
+        format!(
+            "`satisfies T` removed from `{}` \u{2014} narrowed type was surfaced in the public signature; consumers that relied on the narrowing will observe the broader type",
+            new_sym.name
+        )
+    } else {
+        format!(
+            "`satisfies T` removed from `{}` \u{2014} narrowing direction not confirmed (limitation: satisfies-narrowed-type-not-verified)",
+            new_sym.name
+        )
+    };
+    findings.push(Finding {
+        severity: Severity::Minor,
+        rule: RULE_TYPE_NARROWING_WIDENED,
+        file: file.to_path_buf(),
+        line,
+        col,
+        message,
+    });
+    findings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
