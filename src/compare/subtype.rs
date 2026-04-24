@@ -170,13 +170,18 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         // Array: covariant in element type
         (Array(sub_inner), Array(sup_inner)) => is_subtype_of(sub_inner, sup_inner, depth + 1),
 
-        // Tuple: same length and each position covariant
+        // Tuple: same length and each position covariant.
+        //
+        // REF-10 (Phase 22): labels are nominal metadata and are NOT part of
+        // structural subtyping — subtype checks compare only `.shape` per
+        // position. Label diffs are the diff pipeline's responsibility
+        // (see `compare::type_diff::diff_recursive`).
         (Tuple(sub_elems), Tuple(sup_elems)) => {
             sub_elems.len() == sup_elems.len()
                 && sub_elems
                     .iter()
                     .zip(sup_elems.iter())
-                    .all(|(s, p)| is_subtype_of(s, p, depth + 1))
+                    .all(|(s, p)| is_subtype_of(&s.shape, &p.shape, depth + 1))
         }
 
         // Function: contravariant params, covariant return
@@ -284,7 +289,21 @@ pub fn format_type(shape: &TypeShape) -> String {
         Array(inner) => format!("{}[]", format_type(inner)),
         Tuple(elems) => format!(
             "[{}]",
-            elems.iter().map(format_type).collect::<Vec<_>>().join(", ")
+            elems
+                .iter()
+                .map(|e| {
+                    let rest_prefix = if e.rest { "..." } else { "" };
+                    let opt_suffix = if e.optional { "?" } else { "" };
+                    match &e.label {
+                        Some(lbl) => format!(
+                            "{rest_prefix}{lbl}{opt_suffix}: {}",
+                            format_type(&e.shape)
+                        ),
+                        None => format!("{rest_prefix}{}", format_type(&e.shape)),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Object(_) => "{ ... }".to_string(),
         Function {
@@ -428,6 +447,13 @@ pub const RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED: &str = "index-signature-key-
 // ─── Phase 21: class-surface completion ─────────────────────────────────────
 pub const RULE_CLASS_FIELD_MADE_PRIVATE: &str = "class-field-made-private"; // CLS-11 Major
 pub const RULE_CLASS_FIELD_MADE_PUBLIC: &str = "class-field-made-public"; // CLS-11 Minor
+
+// ─── Phase 22: LSP-gated structural identity ───────────────────────────────
+pub const RULE_TUPLE_LABEL_RENAMED: &str = "tuple-label-renamed"; // REF-10 Minor
+pub const RULE_TUPLE_LABEL_REORDERED: &str = "tuple-label-reordered"; // REF-10 Major
+pub const RULE_TUPLE_LABEL_DROPPED: &str = "tuple-label-dropped"; // REF-10 Major
+pub const RULE_TUPLE_LABEL_ADDED: &str = "tuple-label-added"; // REF-10 Minor (CONTEXT D-08: locked Minor for v0.3)
+pub const RULE_TYPE_REFERENCE_REMOVED: &str = "type-reference-removed"; // INF-04 Major (used by Plan 22-04)
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
@@ -854,10 +880,17 @@ mod tests {
 
     #[test]
     fn test_tuple_same_length_subtype() {
-        let t1 = TypeShape::Tuple(vec![string(), number()]);
-        let t2 = TypeShape::Tuple(vec![string(), number()]);
-        let t3 = TypeShape::Tuple(vec![string(), string()]);
-        let t4 = TypeShape::Tuple(vec![string()]);
+        use crate::types::shape::TupleElement;
+        let te = |s: TypeShape| TupleElement {
+            label: None,
+            optional: false,
+            rest: false,
+            shape: s,
+        };
+        let t1 = TypeShape::Tuple(vec![te(string()), te(number())]);
+        let t2 = TypeShape::Tuple(vec![te(string()), te(number())]);
+        let t3 = TypeShape::Tuple(vec![te(string()), te(string())]);
+        let t4 = TypeShape::Tuple(vec![te(string())]);
 
         assert!(sub(&t1, &t2), "[string, number] <: [string, number]");
         assert!(
@@ -868,6 +901,27 @@ mod tests {
             !sub(&t1, &t4),
             "[string, number] is NOT <: [string] (different length)"
         );
+    }
+
+    /// REF-10 (Phase 22): labels are nominal metadata. Structural subtype
+    /// must ignore them — `[a: number]` is both ways a subtype of `[number]`.
+    #[test]
+    fn test_tuple_subtype_label_blind() {
+        use crate::types::shape::TupleElement;
+        let labeled = TypeShape::Tuple(vec![TupleElement {
+            label: Some("a".to_string()),
+            optional: false,
+            rest: false,
+            shape: number(),
+        }]);
+        let unlabeled = TypeShape::Tuple(vec![TupleElement {
+            label: None,
+            optional: false,
+            rest: false,
+            shape: number(),
+        }]);
+        assert!(sub(&labeled, &unlabeled), "labeled <: unlabeled (same shape)");
+        assert!(sub(&unlabeled, &labeled), "unlabeled <: labeled (same shape)");
     }
 
     // ── 20. Conditional/Mapped/Indexed/Template return false (D-10) ───────────
@@ -957,8 +1011,46 @@ mod tests {
     // Extra: format tuple
     #[test]
     fn test_format_type_tuple() {
-        let tuple = TypeShape::Tuple(vec![string(), number()]);
+        use crate::types::shape::TupleElement;
+        let te = |s: TypeShape| TupleElement {
+            label: None,
+            optional: false,
+            rest: false,
+            shape: s,
+        };
+        let tuple = TypeShape::Tuple(vec![te(string()), te(number())]);
         assert_eq!(format_type(&tuple), "[string, number]");
+    }
+
+    /// REF-10 (Phase 22): `format_type` must render labeled tuple elements
+    /// with the label prefix and the optional/rest markers.
+    #[test]
+    fn test_format_type_tuple_labeled() {
+        use crate::types::shape::TupleElement;
+        let tuple = TypeShape::Tuple(vec![
+            TupleElement {
+                label: Some("x".to_string()),
+                optional: false,
+                rest: false,
+                shape: number(),
+            },
+            TupleElement {
+                label: Some("y".to_string()),
+                optional: true,
+                rest: false,
+                shape: string(),
+            },
+            TupleElement {
+                label: Some("rest".to_string()),
+                optional: false,
+                rest: true,
+                shape: TypeShape::Array(Box::new(boolean())),
+            },
+        ]);
+        assert_eq!(
+            format_type(&tuple),
+            "[x: number, y?: string, ...rest: boolean[]]"
+        );
     }
 
     // Extra: format function

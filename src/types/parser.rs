@@ -4,7 +4,8 @@
 //! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
 
 use crate::types::shape::{
-    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TemplatePart, TypeShape,
+    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TemplatePart, TupleElement,
+    TypeShape,
 };
 use std::collections::BTreeMap;
 
@@ -474,9 +475,82 @@ impl<'a> TypeParser<'a> {
         }
         self.expect_char('[')?;
         self.skip_whitespace();
-        let mut elements = Vec::new();
+        let mut elements: Vec<TupleElement> = Vec::new();
         while self.peek_char() != Some(']') {
-            elements.push(self.parse_type(depth + 1)?);
+            // REF-10 (Phase 22): recognize per-position label prefix
+            //   `name:`  → labeled element
+            //   `name?:` → labeled optional element
+            //   `...name:` → labeled rest element
+            // Backtrack if the identifier is not followed by `:` (e.g.
+            // `Map<string, number>` — `Map` is a type name, not a label).
+            let outer_save = self.pos;
+            let mut label: Option<String> = None;
+            let mut optional = false;
+            let mut rest = false;
+
+            // Try `...name:` prefix for labeled rest element.
+            if self.peek_str("...") {
+                // Peek past the `...` to check for an identifier start.
+                let after_dots = self.pos + KW_REST_DOTS_LEN;
+                let starts_ident = self.input[after_dots..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '$');
+                if starts_ident {
+                    self.pos += KW_REST_DOTS_LEN;
+                    if let Some(name) = self.read_identifier() {
+                        let name = name.to_string();
+                        self.skip_whitespace();
+                        if self.peek_char() == Some(':') {
+                            self.advance();
+                            label = Some(name);
+                            rest = true;
+                        } else {
+                            // Not a labeled rest (e.g. `...T` spread in tuple
+                            // without label). Rewind so the shape parser sees
+                            // the full source and lets the existing generic /
+                            // array machinery handle it.
+                            self.pos = outer_save;
+                        }
+                    } else {
+                        self.pos = outer_save;
+                    }
+                }
+            }
+
+            // Try `name:` or `name?:` prefix (only if we didn't consume a rest-label).
+            if label.is_none() && !rest {
+                let inner_save = self.pos;
+                if let Some(name) = self.read_identifier() {
+                    let name = name.to_string();
+                    self.skip_whitespace();
+                    let maybe_opt = self.peek_char() == Some('?');
+                    if maybe_opt {
+                        self.advance();
+                        self.skip_whitespace();
+                    }
+                    if self.peek_char() == Some(':') {
+                        self.advance();
+                        label = Some(name);
+                        optional = maybe_opt;
+                    } else {
+                        // Not a label (e.g. `Map<...>`, bare type reference
+                        // `ID`). Rewind to let parse_type re-read the token
+                        // as a type name.
+                        self.pos = inner_save;
+                    }
+                }
+            }
+
+            self.skip_whitespace();
+            let shape = self.parse_type(depth + 1)?;
+            elements.push(TupleElement {
+                label,
+                optional,
+                rest,
+                shape,
+            });
+
             self.skip_whitespace();
             if self.peek_char() == Some(',') {
                 self.advance();
@@ -990,7 +1064,7 @@ fn collect_placeholders(parts: &[TemplatePart]) -> Vec<&TypeShape> {
 #[cfg(test)]
 mod tests {
     use super::parse_type_string;
-    use crate::types::shape::{FieldShape, LiteralKind, PrimitiveKind, TypeShape};
+    use crate::types::shape::{FieldShape, LiteralKind, PrimitiveKind, TupleElement, TypeShape};
 
     fn assert_shape(input: &str, expected: TypeShape) {
         let result = parse_type_string(input);
@@ -1141,10 +1215,122 @@ mod tests {
         assert_shape(
             "[string, number]",
             TypeShape::Tuple(vec![
-                TypeShape::Primitive(PrimitiveKind::String),
-                TypeShape::Primitive(PrimitiveKind::Number),
+                TupleElement {
+                    label: None,
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::String),
+                },
+                TupleElement {
+                    label: None,
+                    optional: false,
+                    rest: false,
+                    shape: TypeShape::Primitive(PrimitiveKind::Number),
+                },
             ]),
         );
+    }
+
+    // ── REF-10 (Phase 22): labeled-tuple parsing ────────────────────────────
+
+    #[test]
+    fn test_tuple_labeled_basic() {
+        let result = parse_type_string("[x: number, y: string]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 2);
+            assert_eq!(elems[0].label.as_deref(), Some("x"));
+            assert!(!elems[0].optional);
+            assert!(!elems[0].rest);
+            assert_eq!(elems[0].shape, TypeShape::Primitive(PrimitiveKind::Number));
+            assert_eq!(elems[1].label.as_deref(), Some("y"));
+            assert!(!elems[1].optional);
+            assert!(!elems[1].rest);
+            assert_eq!(elems[1].shape, TypeShape::Primitive(PrimitiveKind::String));
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_tuple_unlabeled_labels_none() {
+        let result = parse_type_string("[number, string]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 2);
+            assert!(elems[0].label.is_none(), "first elem label should be None");
+            assert!(elems[1].label.is_none(), "second elem label should be None");
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_tuple_labeled_optional() {
+        let result = parse_type_string("[x?: number]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 1);
+            assert_eq!(elems[0].label.as_deref(), Some("x"));
+            assert!(elems[0].optional, "optional slot should be true");
+            assert!(!elems[0].rest);
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_tuple_labeled_rest() {
+        let result = parse_type_string("[...xs: number[]]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 1);
+            assert_eq!(elems[0].label.as_deref(), Some("xs"));
+            assert!(elems[0].rest, "rest slot should be true");
+            assert!(!elems[0].optional);
+            // Shape is `number[]` → Array(Number).
+            assert_eq!(
+                elems[0].shape,
+                TypeShape::Array(Box::new(TypeShape::Primitive(PrimitiveKind::Number)))
+            );
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
+    }
+
+    /// Pitfall 3 (22-RESEARCH.md): `[Map<string, number>]` must NOT treat
+    /// `Map` as a label. When the parser peeks past `Map` and sees `<` (not
+    /// `:`), it must rewind and let the generic machinery consume `Map<...>`.
+    #[test]
+    fn test_tuple_backtrack_on_generic_reference() {
+        let result = parse_type_string("[Map<string, number>]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 1);
+            assert!(
+                elems[0].label.is_none(),
+                "Map is a type name, not a label; label should be None"
+            );
+            match &elems[0].shape {
+                TypeShape::Generic { name, args } => {
+                    assert_eq!(name, "Map");
+                    assert_eq!(args.len(), 2);
+                }
+                other => panic!("expected Generic Map<string, number>, got {:?}", other),
+            }
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
+    }
+
+    /// Bare-type-reference pitfall: `[ID, Name]` — `ID` and `Name` look like
+    /// they *could* be labels because they start with letters, but without a
+    /// trailing `:` they must remain type references.
+    #[test]
+    fn test_tuple_backtrack_on_bare_type_references() {
+        let result = parse_type_string("[ID, Name]");
+        if let TypeShape::Tuple(elems) = result {
+            assert_eq!(elems.len(), 2);
+            assert!(elems[0].label.is_none());
+            assert!(elems[1].label.is_none());
+        } else {
+            panic!("expected Tuple, got {:?}", result);
+        }
     }
 
     #[test]
