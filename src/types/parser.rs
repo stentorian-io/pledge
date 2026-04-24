@@ -258,7 +258,25 @@ impl<'a> TypeParser<'a> {
                     "infer" => {
                         self.skip_whitespace();
                         let name = self.read_identifier()?;
-                        TypeShape::TypeParam(format!("infer {}", name))
+                        self.skip_whitespace();
+                        // TYPE-02 (Phase 20): optional `extends <type>` constraint.
+                        // The outer `parse_conditional` already consumed its own top-level
+                        // `extends` before recursing into parse_primary, so any `extends`
+                        // we see here must be the inner infer-scoped constraint.
+                        // The whitespace-suffix check (`extends ` / `extends\t`) mirrors
+                        // `parse_type` at lines 142-144 — avoids misparsing an identifier
+                        // that merely starts with the `extends` prefix (e.g. `extendsFoo`).
+                        if self.peek_str("extends ") || self.peek_str("extends\t") {
+                            self.pos += KW_EXTENDS_LEN;
+                            self.skip_whitespace();
+                            let constraint = self.parse_primary(depth + 1)?;
+                            TypeShape::InferExtends {
+                                name: name.to_string(),
+                                constraint: Box::new(constraint),
+                            }
+                        } else {
+                            TypeShape::TypeParam(format!("infer {}", name))
+                        }
                     }
                     "typeof" => {
                         self.skip_whitespace();
