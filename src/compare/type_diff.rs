@@ -12,10 +12,10 @@ use std::path::Path;
 
 use super::subtype::{
     format_type, is_subtype_of, RULE_FIELD_ADDED, RULE_FIELD_REMOVED, RULE_FIELD_TYPE_CHANGED,
-    RULE_INFER_EXTENDS_CONSTRAINT_CHANGED, RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED,
-    RULE_PARAM_REMOVED, RULE_PARAM_REORDERED, RULE_PARAM_TYPE_NARROWED,
-    RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED, RULE_TYPE_ALIAS_READONLY_CHANGED,
-    RULE_TYPE_INCOMPATIBLE,
+    RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED, RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
+    RULE_PARAM_ADDED, RULE_PARAM_MADE_REQUIRED, RULE_PARAM_REMOVED, RULE_PARAM_REORDERED,
+    RULE_PARAM_TYPE_NARROWED, RULE_PROPERTY_MADE_REQUIRED, RULE_RETURN_TYPE_WIDENED,
+    RULE_TYPE_ALIAS_READONLY_CHANGED, RULE_TYPE_INCOMPATIBLE,
 };
 use crate::types::shape::{ParamShape, TypeShape};
 use crate::types::{Finding, Severity};
@@ -811,6 +811,165 @@ fn diff_functions(
         }
         // else: new_subtypes_old (new is narrower or equal) — safe, no finding
     }
+}
+
+/// GEN-07 (Phase 20): Detect `NoInfer<T>` wrapper removal at
+/// function-parameter positions across paired function overloads.
+///
+/// Walks each pair of `Function` shapes (one from old, one from new) and,
+/// at every shared parameter position, checks whether the old param's
+/// shape is `TypeShape::NoInferWrap(inner)` while the new param's shape
+/// equals the unwrapped `inner`. Each such position emits one Minor
+/// `generic-inference-constraint-removed` finding.
+///
+/// Two shape sources are inspected:
+///
+/// 1. **Canonical shapes** (`TypeShape::NoInferWrap(inner)`): produced
+///    when the param shape was filled by a path that ran through
+///    `parse_type_string` (LSP hover enrichment, type-alias body
+///    extraction in `compare_structural_diff`, or future paths). Direct
+///    pattern-match.
+/// 2. **Opaque text shapes** (`TypeShape::Opaque(text)`): produced by
+///    `tree_query::build_function_shape_from_node` for non-LSP runs.
+///    The text carries the verbatim source (`"NoInfer<T>"`); we route it
+///    through `parse_type_string` so the GEN-07 special-case in
+///    `parse_generic` produces `NoInferWrap(inner)`. Same pattern-match
+///    then applies. This is the path that fires for the GEN-07
+///    integration fixtures in tests where LSP is not available.
+///
+/// Caller-supplied `symbol_name` appears in the finding message;
+/// `file`/`line`/`col` carry source location. Findings are appended to
+/// the returned `Vec<Finding>`.
+///
+/// Out of scope (per RESEARCH §GEN-07 Open Question 3): return-type
+/// position. Return-type NoInfer doesn't have the same consumer-
+/// observable inference semantics as parameter NoInfer.
+pub fn diff_function_param_noinfer_removed(
+    old_overloads: &[TypeShape],
+    new_overloads: &[TypeShape],
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+
+    // Pair overloads positionally — non-LSP extraction yields one shape
+    // per declared signature in source order, mirroring the original
+    // function-overload list. If counts differ, walk the shorter prefix
+    // (the count mismatch is REF-01 territory, not GEN-07's concern).
+    let pair_count = old_overloads.len().min(new_overloads.len());
+    for i in 0..pair_count {
+        let (
+            TypeShape::Function {
+                params: old_params,
+                ..
+            },
+            TypeShape::Function {
+                params: new_params,
+                ..
+            },
+        ) = (&old_overloads[i], &new_overloads[i])
+        else {
+            continue; // not both Function — nothing to walk
+        };
+
+        // Per-param positional walk. Mismatched counts are the existing
+        // REF-01 / SIG-01 territory; we walk only the shared prefix.
+        let n = old_params.len().min(new_params.len());
+        for pos in 0..n {
+            let old_p = &old_params[pos];
+            let new_p = &new_params[pos];
+            if detect_noinfer_param_removal(&old_p.shape, &new_p.shape) {
+                findings.push(Finding {
+                    severity: Severity::Minor,
+                    rule: RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "`NoInfer<T>` wrapper removed from parameter `{}` (position {}) of `{}` — consumer inference behavior may change",
+                        new_p.name, pos, symbol_name
+                    ),
+                });
+            }
+        }
+    }
+
+    findings
+}
+
+/// Helper for `diff_function_param_noinfer_removed`: returns `true`
+/// when removing the `NoInfer<T>` wrapper somewhere inside `old_shape`
+/// would produce `new_shape` (the wrapper(s) were removed but the inner
+/// types are otherwise structurally equivalent).
+///
+/// Three shape positions are inspected, in order:
+///
+/// 1. **Direct canonical wrapper** — `old_shape = NoInferWrap(inner)`
+///    and `new_shape == inner` unwrapped. Common when the param itself
+///    is `NoInfer<T>`.
+/// 2. **Opaque-text path** — both shapes are `Opaque(text)`; route both
+///    through `parse_type_string` and recurse on the parsed forms. The
+///    parser's GEN-07 special-case in `parse_generic` produces
+///    `NoInferWrap` for verbatim `NoInfer<X>`, so the recursive check
+///    finds the wrapper inside parsed callback signatures, etc.
+/// 3. **Callback-shape recursion** — when both shapes are `Function`
+///    (e.g., `(prev: NoInfer<T>) => NoInfer<T>` -> `(prev: T) => T`
+///    parsed from the param's type-text), walk paired callback params
+///    and the return type and recurse on each pair. This captures the
+///    common TS 5.4 pattern where `NoInfer` wraps a callback's
+///    parameter.
+///
+/// Returns `true` if AT LEAST ONE NoInfer-wrapper position differs in
+/// the unwrap direction. The diff_function_param_noinfer_removed caller
+/// emits one Minor finding per top-level param hit.
+fn detect_noinfer_param_removal(old_shape: &TypeShape, new_shape: &TypeShape) -> bool {
+    // 1. Direct canonical wrapper.
+    if let TypeShape::NoInferWrap(old_inner) = old_shape {
+        if !matches!(new_shape, TypeShape::NoInferWrap(_)) && **old_inner == *new_shape {
+            return true;
+        }
+    }
+
+    // 2. Opaque-text path — parse and recurse on the parsed result.
+    if let (TypeShape::Opaque(old_text), TypeShape::Opaque(new_text)) = (old_shape, new_shape) {
+        let old_parsed = crate::types::parser::parse_type_string(old_text);
+        let new_parsed = crate::types::parser::parse_type_string(new_text);
+        // Avoid infinite recursion: only recurse if parsing gave us a
+        // structurally different shape (anything other than another
+        // pair of Opaque on the same texts).
+        if !matches!((&old_parsed, &new_parsed), (TypeShape::Opaque(_), TypeShape::Opaque(_)))
+            && detect_noinfer_param_removal(&old_parsed, &new_parsed)
+        {
+            return true;
+        }
+    }
+
+    // 3. Callback-shape recursion (parsed from a param's type-text).
+    if let (
+        TypeShape::Function {
+            params: old_p,
+            return_type: old_r,
+        },
+        TypeShape::Function {
+            params: new_p,
+            return_type: new_r,
+        },
+    ) = (old_shape, new_shape)
+    {
+        let n = old_p.len().min(new_p.len());
+        for i in 0..n {
+            if detect_noinfer_param_removal(&old_p[i].shape, &new_p[i].shape) {
+                return true;
+            }
+        }
+        if detect_noinfer_param_removal(old_r, new_r) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Build a dot-separated path for nested field access.

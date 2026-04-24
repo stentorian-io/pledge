@@ -1218,6 +1218,24 @@ pub fn compare_structural_diff(
             &new_decl.index_signatures,
         ));
 
+        // GEN-07 (Phase 20): NoInfer<T> wrapper removed from a function-
+        // parameter position. Walks paired Function overloads from the
+        // augmented symbols (which carry the tree-sitter-extracted shapes
+        // even in non-LSP runs). Falls through Opaque param-text via
+        // parse_type_string so the GEN-07 wrapper canonicalization (in
+        // parse_generic) surfaces here as TypeShape::NoInferWrap. Out of
+        // scope: return-type position (RESEARCH §GEN-07 Open Question 3).
+        if old_decl.is_function && new_decl.is_function {
+            findings.extend(type_diff::diff_function_param_noinfer_removed(
+                &old_sym_augmented.overloads,
+                &new_sym_augmented.overloads,
+                name,
+                &new_sym.file,
+                new_sym.line,
+                new_sym.col,
+            ));
+        }
+
         // BEH-01, BEH-02: behavioral modifier diff (async/generator)
         if old_decl.is_function && new_decl.is_function {
             findings.extend(behavior_diff::compare_behavior(

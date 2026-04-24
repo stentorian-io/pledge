@@ -11,9 +11,11 @@
 use std::path::Path;
 
 use super::subtype::{
-    format_type, is_subtype_of, RULE_CONST_TYPE_PARAM_CHANGED, RULE_GENERIC_CONSTRAINT_TIGHTENED,
-    RULE_GENERIC_DEFAULT_CHANGED, RULE_GENERIC_PARAM_ADDED, RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
-    RULE_GENERIC_PARAM_REMOVED, RULE_GENERIC_PARAM_REORDERED, RULE_GENERIC_VARIANCE_CHANGED,
+    format_type, is_subtype_of, RULE_CONST_TYPE_PARAM_CHANGED,
+    RULE_GENERIC_CONSTRAINT_TIGHTENED, RULE_GENERIC_DEFAULT_CHANGED,
+    RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED, RULE_GENERIC_PARAM_ADDED,
+    RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT, RULE_GENERIC_PARAM_REMOVED,
+    RULE_GENERIC_PARAM_REORDERED, RULE_GENERIC_VARIANCE_CHANGED,
 };
 use crate::types::{Finding, Severity, TypeParam};
 
@@ -158,6 +160,34 @@ pub fn compare_type_params(
             col,
             &mut findings,
         );
+
+        // GEN-07 (Phase 20): NoInfer<T> wrapper removed from this constraint.
+        // Runs AFTER check_constraint_tightened so the GEN-04 finding (if
+        // any) for the same param is visible — when GEN-07 fires, we
+        // suppress that GEN-04 finding because the wrapper-removal is a
+        // distinct, lower-severity event (Minor inference change vs Major
+        // constraint tightening). Without suppression both would fire on
+        // the exact same syntactic transition (`NoInfer<X>` -> `X`).
+        let gen07_fired = check_noinfer_wrapper_removed(
+            old_param,
+            new_param,
+            symbol_name,
+            file,
+            line,
+            col,
+            &mut findings,
+        );
+        if gen07_fired {
+            // Suppress any GEN-04 finding emitted by check_constraint_tightened
+            // for this same param above — it would double-report the
+            // wrapper-removal as a constraint tightening.
+            let target_param_name = old_param.name.as_str();
+            findings.retain(|f| {
+                !(f.rule == RULE_GENERIC_CONSTRAINT_TIGHTENED
+                    && f.message.contains(&format!("on `{}`", target_param_name))
+                    && f.message.contains("NoInfer<"))
+            });
+        }
 
         // GAP-15-07: const type parameter modifier changed
         if old_param.is_const != new_param.is_const {
@@ -394,6 +424,95 @@ fn check_default_changed(
             // No defaults → no change
         }
     }
+}
+
+/// GEN-07 (Phase 20): Detect `NoInfer<T>` wrapper removal on a
+/// type-parameter constraint between old and new.
+///
+/// Two detection paths handle LSP-enriched and degraded modes:
+///
+/// 1. **Shape path (LSP-enriched):** when both sides have a populated
+///    `constraint_shape`, look for `TypeShape::NoInferWrap(inner)` on the
+///    old side and the structurally-equal unwrapped `inner` on the new
+///    side. This is the canonical path that fires when LSP hover
+///    enrichment has filled in the parsed constraint shape.
+///
+/// 2. **Text fallback (degraded mode):** when the parsed shapes aren't
+///    populated, route the constraint *text* through `parse_type_string`
+///    and apply the same NoInferWrap-vs-unwrapped pattern. This keeps
+///    GEN-07 covering the type-param-constraint position even in
+///    LSP-less runs where `constraint_shape` stays None.
+///
+/// Returns `true` when a Minor `generic-inference-constraint-removed`
+/// finding was emitted; the caller uses this signal to suppress any
+/// GEN-04 `generic-constraint-tightened` finding emitted for the same
+/// param (the wrapper-removal would otherwise be double-reported as a
+/// constraint tightening, since `NoInfer<X>` -> `X` looks like
+/// "tightened" to the text-fallback comparator).
+#[allow(clippy::too_many_arguments)]
+fn check_noinfer_wrapper_removed(
+    old_param: &TypeParam,
+    new_param: &TypeParam,
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+    findings: &mut Vec<Finding>,
+) -> bool {
+    use crate::types::shape::TypeShape;
+
+    // 1. Shape path — preferred, fires when LSP enrichment filled the
+    //    parsed constraint shape on both sides.
+    if let (Some(TypeShape::NoInferWrap(old_inner)), Some(new_shape)) = (
+        old_param.constraint_shape.as_ref(),
+        new_param.constraint_shape.as_ref(),
+    ) {
+        if !matches!(new_shape, TypeShape::NoInferWrap(_)) && **old_inner == *new_shape {
+            findings.push(Finding {
+                severity: Severity::Minor,
+                rule: RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "`NoInfer<T>` wrapper removed from constraint on type parameter `{}` in `{}` — consumer inference behavior may change",
+                    old_param.name, symbol_name
+                ),
+            });
+            return true;
+        }
+    }
+
+    // 2. Text fallback — degraded mode (no LSP). Parse both texts through
+    //    `parse_type_string` and apply the same shape-level pattern. The
+    //    parser's GEN-07 special-case (parse_generic) produces
+    //    `TypeShape::NoInferWrap` for `NoInfer<T>` literally, so the same
+    //    matching logic works on the parsed result.
+    if let (Some(old_text), Some(new_text)) = (
+        old_param.constraint_text.as_deref(),
+        new_param.constraint_text.as_deref(),
+    ) {
+        let old_shape = crate::types::parser::parse_type_string(old_text);
+        let new_shape = crate::types::parser::parse_type_string(new_text);
+        if let TypeShape::NoInferWrap(old_inner) = &old_shape {
+            if !matches!(new_shape, TypeShape::NoInferWrap(_)) && **old_inner == new_shape {
+                findings.push(Finding {
+                    severity: Severity::Minor,
+                    rule: RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "`NoInfer<T>` wrapper removed from constraint on type parameter `{}` in `{}` — consumer inference behavior may change",
+                        old_param.name, symbol_name
+                    ),
+                });
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
