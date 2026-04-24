@@ -157,7 +157,15 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
     // META-04 / META-06 (Phase 19): Filter non-public release tags before comparison.
     // Symbols tagged @internal, @alpha, or @beta are considered non-public per the
     // locked v0.3 Phase 19 decision (D-01); only @public and no-tag remain comparable.
+    //
+    // WR-03 (Phase 19 review): `ExportMap::clone()` also deep-clones the
+    // `directives: BTreeMap<PathBuf, Vec<DirectiveRecord>>` sidecar, but the
+    // directive-diff block below reads from the UNFILTERED `old`/`new` maps
+    // (directives are a file-level concept and are unrelated to per-symbol
+    // release tags). Drop the cloned directives on the filtered copies so
+    // we are not carrying dead data through the retain calls.
     let mut filtered_old = old.clone();
+    filtered_old.directives.clear();
     filtered_old.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
@@ -165,6 +173,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
         )
     });
     let mut filtered_new = new.clone();
+    filtered_new.directives.clear();
     filtered_new.retain(|_name, sym| {
         !matches!(
             sym.release_tag,
