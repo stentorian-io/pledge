@@ -425,6 +425,10 @@ pub const RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED: &str = "generic-inference-c
 pub const RULE_UNION_VARIANT_ADDED: &str = "union-variant-added"; // BEH-06 Warning
 pub const RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED: &str = "index-signature-key-pattern-changed"; // REF-09 Major (narrowing) / Minor (widening)
 
+// ─── Phase 21: class-surface completion ─────────────────────────────────────
+pub const RULE_CLASS_FIELD_MADE_PRIVATE: &str = "class-field-made-private"; // CLS-11 Major
+pub const RULE_CLASS_FIELD_MADE_PUBLIC: &str = "class-field-made-public"; // CLS-11 Minor
+
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1054,5 +1058,12 @@ mod tests {
             RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
             "index-signature-key-pattern-changed"
         );
+    }
+
+    // ── Phase 21: class-surface completion rule constant values ──────────────
+    #[test]
+    fn phase21_class_surface_rule_constant_values() {
+        assert_eq!(RULE_CLASS_FIELD_MADE_PRIVATE, "class-field-made-private");
+        assert_eq!(RULE_CLASS_FIELD_MADE_PUBLIC, "class-field-made-public");
     }
 }

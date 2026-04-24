@@ -498,6 +498,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -511,6 +512,7 @@ mod tests {
             type_params: vec![],
             constructor_param_optionality: vec![],
             decorators: Vec::new(),
+            has_dynamic_static_key: false,
         }
     }
 
@@ -1006,6 +1008,7 @@ mod tests {
             type_params: vec![],
             constructor_param_optionality: optionality,
             decorators: Vec::new(),
+            has_dynamic_static_key: false,
         }
     }
 

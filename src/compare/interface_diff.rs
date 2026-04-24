@@ -362,6 +362,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -379,6 +380,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -396,6 +398,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -532,6 +535,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -606,6 +610,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 
@@ -751,6 +756,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         }
     }
 

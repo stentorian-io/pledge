@@ -4005,6 +4005,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                                             // CLS-10 (Phase 19): parameter-property decorators
                                             // live on the required_parameter/optional_parameter node.
                                             decorators: extract_decorators(param, source),
+                                            is_private: false,
                                         });
                                     }
                                 }
@@ -4030,6 +4031,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     // decorator siblings inside class_body in TS. extract_decorators
                     // handles both patterns.
                     decorators: extract_decorators(child, source),
+                    is_private: false,
                 });
             }
             "public_field_definition" => {
@@ -4077,6 +4079,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     // public_field_definition node in TS, or appear as
                     // preceding decorator siblings in class_body.
                     decorators: extract_decorators(child, source),
+                    is_private: false,
                 });
             }
             "abstract_method_signature" => {
@@ -4103,6 +4106,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     this_param_type: None,
                     // CLS-10 (Phase 19): abstract-method decorators.
                     decorators: extract_decorators(child, source),
+                    is_private: false,
                 });
             }
             // BUG-13-01: .d.ts ambient class members use method_signature /
@@ -4141,6 +4145,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     // CLS-10 (Phase 19): ambient method_signature decorators
                     // (rare in .d.ts but harmless to extract).
                     decorators: extract_decorators(child, source),
+                    is_private: false,
                 });
             }
             "property_signature" => {
@@ -4178,6 +4183,7 @@ pub fn parse_class_members(source: &[u8], class_node: tree_sitter::Node) -> Vec<
                     this_param_type: None,
                     // CLS-10 (Phase 19): ambient property_signature decorators.
                     decorators: extract_decorators(child, source),
+                    is_private: false,
                 });
             }
             _ => {}
@@ -4306,6 +4312,8 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         type_params,
         constructor_param_optionality,
         decorators: class_decorators,
+        // Phase 21 CLS-12: set by class_static_block arm in Plan 21-02.
+        has_dynamic_static_key: false,
     }
 }
 
@@ -4842,6 +4850,7 @@ pub fn parse_interface_members(
                     is_accessor: false,
                     this_param_type: None,
                     decorators: Vec::new(),
+                    is_private: false,
                 });
             }
             "property_signature" => {
@@ -4887,6 +4896,7 @@ pub fn parse_interface_members(
                     is_accessor: false,
                     this_param_type: None,
                     decorators: Vec::new(),
+                    is_private: false,
                 });
             }
             "call_signature" => {
@@ -4906,6 +4916,7 @@ pub fn parse_interface_members(
                     is_accessor: false,
                     this_param_type: None,
                     decorators: Vec::new(),
+                    is_private: false,
                 });
             }
             _ => {}

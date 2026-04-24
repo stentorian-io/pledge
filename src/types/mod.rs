@@ -297,6 +297,8 @@ pub struct ClassMember {
     pub this_param_type: Option<String>, // TLF-03 — this parameter type annotation
     // Phase 19 CLS-10 foundation (Plan 01):
     pub decorators: Vec<DecoratorSpec>, // CLS-10 — populated by extract_decorators in Plan 03
+    // Phase 21 CLS-11:
+    pub is_private: bool, // CLS-11 — `#`-prefixed ES2022 private field or method (distinct from TS `private` keyword)
 }
 
 #[allow(dead_code)]
@@ -310,6 +312,8 @@ pub struct ClassShape {
     pub constructor_param_optionality: Vec<bool>, // IFT-03 — per-position optional flag for constructor params
     // Phase 19 CLS-10 foundation (Plan 01):
     pub decorators: Vec<DecoratorSpec>, // CLS-10 — class-level decorators; populated by Plan 03
+    // Phase 21 CLS-12:
+    pub has_dynamic_static_key: bool, // CLS-12 — true if any `static { Foo[x] = ... }` subscript assignment was seen; consumed by Plan 21-02
 }
 
 // ─── Enum shape model ───────────────────────────────────────────────────────
@@ -441,6 +445,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         };
         let shape = ClassShape {
             members: vec![member],
@@ -450,6 +455,7 @@ mod tests {
             type_params: vec![],
             constructor_param_optionality: vec![],
             decorators: Vec::new(),
+            has_dynamic_static_key: false,
         };
         assert_eq!(shape.members.len(), 1);
         assert!(!shape.is_abstract);
@@ -614,6 +620,7 @@ mod tests {
             is_accessor: false,
             this_param_type: None,
             decorators: Vec::new(),
+            is_private: false,
         };
         assert!(!m.is_accessor);
         assert!(!m.is_optional);
