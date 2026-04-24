@@ -608,6 +608,16 @@ impl<'a> TypeParser<'a> {
         if name == "Array" && args.len() == 1 {
             return Some(TypeShape::Array(Box::new(args.into_iter().next().unwrap())));
         }
+        // GEN-07 (Phase 20): canonicalize `NoInfer<T>` into a dedicated
+        // wrapper variant so diff engines observe wrapper-vs-unwrapped
+        // transitions without string parsing. `NoInfer<T>` is a TS 5.4+
+        // utility type; arity > 1 falls through to the generic catch-all
+        // as a defensive measure.
+        if name == "NoInfer" && args.len() == 1 {
+            return Some(TypeShape::NoInferWrap(Box::new(
+                args.into_iter().next().unwrap(),
+            )));
+        }
         Some(TypeShape::Generic { name, args })
     }
 
