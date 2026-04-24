@@ -176,6 +176,16 @@ impl<'a> TypeParser<'a> {
         if depth >= MAX_DEPTH {
             return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
         }
+        // BEH-06 (Phase 20): accept an optional leading `|` so the
+        // idiomatic multi-line discriminated-union form
+        // `type Shape = | { kind: 'a' } | { kind: 'b' };` parses to a
+        // `TypeShape::Union`. Without this, the RHS returns None and
+        // `parse_type_string` falls back to `TypeShape::Opaque`, which
+        // suppresses all shape-level diff rules on the type body.
+        if self.peek_char() == Some('|') {
+            self.advance(); // consume leading '|'
+            self.skip_whitespace();
+        }
         let first = self.parse_intersection(depth + 1)?;
         self.skip_whitespace();
         if self.peek_char() != Some('|') {
@@ -1163,6 +1173,24 @@ mod tests {
         assert!(matches!(result, TypeShape::Union(_)));
         if let TypeShape::Union(members) = result {
             assert_eq!(members.len(), 3);
+        }
+    }
+
+    /// BEH-06 (Phase 20): `parse_union` must accept an optional leading
+    /// `|` so the idiomatic multi-line discriminated-union form parses
+    /// into a `TypeShape::Union` (not `TypeShape::Opaque`). Without this,
+    /// BEH-06's discriminated-union detector never sees the Union
+    /// because the RHS falls to Opaque.
+    #[test]
+    fn beh_06_leading_pipe_multiline_union_parses() {
+        let source = "| { kind: 'circle'; radius: number }\n  | { kind: 'square'; side: number }";
+        let result = parse_type_string(source);
+        assert!(
+            matches!(result, TypeShape::Union(_)),
+            "expected Union; got {result:?}"
+        );
+        if let TypeShape::Union(members) = result {
+            assert_eq!(members.len(), 2, "expected 2 object variants");
         }
     }
 
