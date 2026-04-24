@@ -163,6 +163,23 @@ const NAMED_EXPORT_ALIAS_QUERY: &str = r#"
       alias: (identifier) @alias_name)))
 "#;
 
+/// INF-06 (Phase 22): JS grammar's `export { foo as default }` alias form.
+/// In tree-sitter-javascript 0.25.0 the alias child is an anonymous `default`
+/// keyword token (kind = "default"), NOT an identifier. Requires the string-
+/// literal matcher in the query pattern. Corrects v0.2 INF-03 audit's
+/// incorrect root-cause diagnosis (CONTEXT.md D-06 — overrides REQUIREMENTS.md
+/// "regex fallback" wording).
+///
+/// Capture index 0 = `@local_name` (the local binding, e.g. "foo").
+/// Capture index 1 = `@alias_default` (the anonymous `default` keyword token).
+const NAMED_EXPORT_ALIAS_DEFAULT_QUERY_JS: &str = r#"
+(export_statement
+  (export_clause
+    (export_specifier
+      name: (identifier) @local_name
+      alias: "default" @alias_default)))
+"#;
+
 /// ARCH-02 Form 1: `Target.Member = X;` top-level member assignment.
 ///
 /// Captures `@target` (the object identifier) and `@member` (the new property
@@ -1102,6 +1119,52 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                 });
+            }
+        }
+    }
+
+    // INF-06 (Phase 22): JS-specific `export { foo as default }` alias capture.
+    // The grammar uses an anonymous `default` keyword token for this alias,
+    // which the identifier-typed NAMED_EXPORT_ALIAS_QUERY cannot match.
+    // Shares `alias_local_positions` with the existing ALIAS loop for dedup.
+    if matches!(lang, SourceLanguage::JavaScript) {
+        if let Ok(query) = Query::new(&language, NAMED_EXPORT_ALIAS_DEFAULT_QUERY_JS) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // cap 0 = @local_name (identifier), cap 1 = @alias_default ("default" keyword)
+                let mut local_pos: Option<(u32, u32)> = None;
+                let mut alias_pos: Option<(u32, u32)> = None;
+                for capture in m.captures {
+                    let node = capture.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    if capture.index == 0 {
+                        local_pos = Some((line, col));
+                    } else if capture.index == 1 {
+                        alias_pos = Some((line, col));
+                    }
+                }
+                if let (Some(lp), Some((line, col))) = (local_pos, alias_pos) {
+                    // Dedup against the existing NAMED_EXPORT_ALIAS_QUERY loop.
+                    if alias_local_positions.contains(&lp) {
+                        continue;
+                    }
+                    alias_local_positions.insert(lp);
+                    exports.push(RawExport {
+                        name: "default".to_string(),
+                        kind: RawExportKind::Default,
+                        line,
+                        col,
+                        source: None,
+                        decl_kind: None,
+                        is_type_only: false,
+                        release_tag: None,
+                        compound_members: Vec::new(),
+                        type_signature: None,
+                        satisfies_type: None,
+                    });
+                }
             }
         }
     }
