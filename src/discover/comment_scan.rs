@@ -209,6 +209,15 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
         return None;
     }
     let inner = body.strip_prefix('<')?;
+    // IN-03 (Phase 19 re-review): we terminate on the first `>` in the body,
+    // INCLUDING one that appears inside a quoted attribute value. This
+    // matches the TypeScript compiler's tsserver directive parser, which
+    // does not treat `>` as special inside quoted regions either. A
+    // pathological case like `/// <reference path="a>b" />` would truncate
+    // at the first `>` — deliberate. Triple-slash directive attribute
+    // values in real-world TS packages are paths, identifiers, or the
+    // literal strings "true"/"false"; none of them ever contain `>`.
+    // Revisit only if a real-world breakage surfaces.
     let end = inner.find('>')?;
     // Content between < and > is "name attr=\"v\" attr=\"v\" /" — strip the
     // trailing '/' that precedes '>' in self-closing form, then trim.
