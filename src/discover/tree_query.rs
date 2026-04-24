@@ -712,6 +712,56 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
   right: (_))
 "#;
 
+/// ECF-13 (Phase 22): `exports[Symbol.X] = ...` — bare `exports` identifier LHS
+/// object. Captures well-known Symbol-keyed module exports on CJS.
+///
+/// Capture 0 = `@exports_id` (gated to == "exports")
+/// Capture 1 = `@symbol_obj`  (gated to == "Symbol")
+/// Capture 2 = `@symbol_prop` (checked against WELL_KNOWN_SYMBOLS allow-list)
+const SYMBOL_SUBSCRIPT_ON_EXPORTS_QUERY: &str = r#"
+(assignment_expression
+  left: (subscript_expression
+    object: (identifier) @exports_id
+    index: (member_expression
+      object: (identifier) @symbol_obj
+      property: (property_identifier) @symbol_prop))
+  right: (_))
+"#;
+
+/// ECF-13 (Phase 22): `module.exports[Symbol.X] = ...` — `module.exports`
+/// member_expression LHS object. Two separate queries (one per LHS form)
+/// avoid an over-complex single pattern.
+///
+/// Capture 0 = `@module_id`    (gated to == "module")
+/// Capture 1 = `@exports_prop` (gated to == "exports") — this is the false-
+///   positive guard for Pitfall 2: `Foo.prototype[Symbol.iterator]` has
+///   `@exports_prop == "prototype"` and is rejected here.
+/// Capture 2 = `@symbol_obj`   (gated to == "Symbol")
+/// Capture 3 = `@symbol_prop`  (checked against WELL_KNOWN_SYMBOLS allow-list)
+const SYMBOL_SUBSCRIPT_ON_MODULE_EXPORTS_QUERY: &str = r#"
+(assignment_expression
+  left: (subscript_expression
+    object: (member_expression
+      object: (identifier) @module_id
+      property: (property_identifier) @exports_prop)
+    index: (member_expression
+      object: (identifier) @symbol_obj
+      property: (property_identifier) @symbol_prop))
+  right: (_))
+"#;
+
+/// ECF-13 (Phase 22): allow-list of well-known Symbol property names.
+/// The 5-Symbol surface is locked per CONTEXT.md and REQUIREMENTS.md.
+/// Other well-known Symbols (match, replace, species, split, etc.) are
+/// out of scope for v0.3 — revisit if a real package uses them.
+const WELL_KNOWN_SYMBOLS: &[&str] = &[
+    "iterator",
+    "asyncIterator",
+    "toPrimitive",
+    "hasInstance",
+    "toStringTag",
+];
+
 // ---------------------------------------------------------------------------
 // INF-02 (Phase 18): rollup-plugin-dts / api-extractor split-declaration
 // capture queries.
@@ -3291,6 +3341,150 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             });
                         }
                     }
+                }
+            }
+        }
+
+        // ECF-13 (Phase 22): well-known Symbol index exports.
+        // Two parallel queries: `exports[Symbol.X]` and `module.exports[Symbol.X]`.
+        // Allow-list filter on WELL_KNOWN_SYMBOLS. The module.exports form's
+        // Pitfall 2 rejection (Foo.prototype[Symbol.iterator]) is enforced by
+        // the exports_prop == "exports" gate in the second query's driver.
+        //
+        // Class methods `class Foo { [Symbol.iterator]() {} }` are NOT
+        // matched by either query at the grammar level: the class-method AST
+        // shape is `method_definition > computed_property_name > member_expression`,
+        // not `assignment_expression > subscript_expression`. No explicit
+        // filter is needed; the `class-method-negative` integration fixture
+        // regression-tests this.
+
+        // Query 1: bare `exports` LHS
+        if let Ok(query) = Query::new(&language, SYMBOL_SUBSCRIPT_ON_EXPORTS_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let exports_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if exports_id != "exports" {
+                    continue;
+                }
+                let symbol_obj = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if symbol_obj != "Symbol" {
+                    continue;
+                }
+                let symbol_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 2)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if !WELL_KNOWN_SYMBOLS.contains(&symbol_prop) {
+                    continue;
+                }
+                let prop_node = match m.captures.iter().find(|c| c.index == 2) {
+                    Some(c) => c.node,
+                    None => continue,
+                };
+                let line = prop_node.start_position().row as u32 + 1;
+                let col = prop_node.start_position().column as u32 + 1;
+                let name = format!("@@{}", symbol_prop);
+                let already = exports.iter().any(|e| e.name == name);
+                if !already {
+                    exports.push(RawExport {
+                        name,
+                        kind: RawExportKind::Named,
+                        line,
+                        col,
+                        source: None,
+                        decl_kind: None,
+                        is_type_only: false,
+                        release_tag: None,
+                        compound_members: Vec::new(),
+                        type_signature: None,
+                        satisfies_type: None,
+                    });
+                }
+            }
+        }
+
+        // Query 2: `module.exports` LHS.
+        // Pitfall 2 rejection: `Foo.prototype[Symbol.iterator]` has
+        // exports_prop == "prototype" here. The exports_prop == "exports"
+        // gate below rejects anything other than the real `module.exports`
+        // binding.
+        if let Ok(query) = Query::new(&language, SYMBOL_SUBSCRIPT_ON_MODULE_EXPORTS_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let module_id = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if module_id != "module" {
+                    continue;
+                }
+                let exports_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                // Pitfall 2 rejection: reject `Foo.prototype[Symbol.X]` and
+                // any other `<expr>.<non-exports>[Symbol.X]` form.
+                if exports_prop != "exports" {
+                    continue;
+                }
+                let symbol_obj = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 2)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if symbol_obj != "Symbol" {
+                    continue;
+                }
+                let symbol_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 3)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                if !WELL_KNOWN_SYMBOLS.contains(&symbol_prop) {
+                    continue;
+                }
+                let prop_node = match m.captures.iter().find(|c| c.index == 3) {
+                    Some(c) => c.node,
+                    None => continue,
+                };
+                let line = prop_node.start_position().row as u32 + 1;
+                let col = prop_node.start_position().column as u32 + 1;
+                let name = format!("@@{}", symbol_prop);
+                let already = exports.iter().any(|e| e.name == name);
+                if !already {
+                    exports.push(RawExport {
+                        name,
+                        kind: RawExportKind::Named,
+                        line,
+                        col,
+                        source: None,
+                        decl_kind: None,
+                        is_type_only: false,
+                        release_tag: None,
+                        compound_members: Vec::new(),
+                        type_signature: None,
+                        satisfies_type: None,
+                    });
                 }
             }
         }
