@@ -229,6 +229,16 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 } else {
                     format!("default export was removed{}", qualifier)
                 }
+            } else if let Some(symbol_part) = name.strip_prefix("@@") {
+                // ECF-13 (Phase 22): well-known-Symbol removal branch. Present
+                // the synthetic `@@<name>` internal key as the human-readable
+                // `[Symbol.<name>]` form in the CLI message. Same
+                // `export-removed` rule-ID — CONTEXT.md D-07 locks reuse over a
+                // new rule-ID.
+                format!(
+                    "well-known Symbol export `[Symbol.{}]` was removed{} - consumers relying on this protocol will break",
+                    symbol_part, qualifier
+                )
             } else {
                 format!("exported symbol `{}` was removed{}", name, qualifier)
             };
