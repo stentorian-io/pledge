@@ -186,11 +186,15 @@ impl ExportKey {
 #[derive(Debug, Clone, Default)]
 pub struct ExportMap {
     inner: HashMap<ExportKey, ExportSymbol>,
-    /// INF-05 (Phase 19): per-source-file triple-slash directive records,
-    /// captured by `CommentIndex::extract_directives` during resolver insertion.
+    /// INF-05 (Phase 19): per-source-file triple-slash directive records.
+    ///
     /// Key: relative path to the source file (same as `ExportSymbol.file`).
-    /// Value: ordered directive records (document order). Files with no
-    /// directives are absent from the map.
+    /// Value: ordered directive records in document order.
+    ///
+    /// Populated by `CommentIndex::extract_directives` during resolver
+    /// insertion. See the struct-level `# Invariants` block for the
+    /// keying-disjoint reasoning that lets `inner` and `directives`
+    /// be mutated independently without drift.
     pub directives: std::collections::BTreeMap<
         std::path::PathBuf,
         Vec<crate::discover::comment_scan::DirectiveRecord>,
