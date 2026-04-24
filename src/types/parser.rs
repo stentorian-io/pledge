@@ -1569,4 +1569,106 @@ mod tests {
             other => panic!("expected Generic, got {:?}", other),
         }
     }
+
+    // ---------------------------------------------------------------------
+    // REF-09 (Phase 20): parse_template_literal_type + compare_template_literal_patterns
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn ref_09_parse_template_literal_type_simple() {
+        use super::parse_template_literal_type;
+        use crate::types::shape::TemplatePart;
+        let parsed = parse_template_literal_type("`on${string}`").expect("should parse");
+        // Expect at minimum: Literal("on"), Placeholder(Primitive(String))
+        assert!(parsed.len() >= 2, "parsed: {:?}", parsed);
+        match &parsed[0] {
+            TemplatePart::Literal(s) => assert_eq!(s, "on"),
+            other => panic!("expected Literal, got {:?}", other),
+        }
+        assert!(
+            matches!(parsed[1], TemplatePart::Placeholder(_)),
+            "second part should be Placeholder"
+        );
+    }
+
+    #[test]
+    fn ref_09_parse_template_literal_type_multi_literal() {
+        use super::parse_template_literal_type;
+        use crate::types::shape::TemplatePart;
+        let parsed = parse_template_literal_type("`on_${string}_off`").expect("should parse");
+        let literals: Vec<&String> = parsed
+            .iter()
+            .filter_map(|p| {
+                if let TemplatePart::Literal(s) = p {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(literals.iter().any(|s| s.as_str() == "on_"));
+        assert!(literals.iter().any(|s| s.as_str() == "_off"));
+    }
+
+    #[test]
+    fn ref_09_parse_template_literal_type_non_template_returns_none() {
+        use super::parse_template_literal_type;
+        assert!(parse_template_literal_type("string").is_none());
+        assert!(parse_template_literal_type("Record<string, number>").is_none());
+    }
+
+    #[test]
+    fn ref_09_parse_template_literal_type_pure_literal() {
+        use super::parse_template_literal_type;
+        use crate::types::shape::TemplatePart;
+        let parsed = parse_template_literal_type("`no-placeholder`").expect("should parse");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0], TemplatePart::Literal("no-placeholder".to_string()));
+    }
+
+    #[test]
+    fn ref_09_compare_template_literal_patterns_equal() {
+        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        let a = parse_template_literal_type("`on${string}`").unwrap();
+        let b = parse_template_literal_type("`on${string}`").unwrap();
+        assert_eq!(
+            compare_template_literal_patterns(&a, &b),
+            PatternDirection::Equal
+        );
+    }
+
+    #[test]
+    fn ref_09_compare_template_literal_patterns_narrowing() {
+        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        let old = parse_template_literal_type("`on${string}`").unwrap();
+        let new = parse_template_literal_type("`onClick${string}`").unwrap();
+        // `onClick` prefix extends `on` prefix -> new is narrower
+        assert_eq!(
+            compare_template_literal_patterns(&old, &new),
+            PatternDirection::Narrowing
+        );
+    }
+
+    #[test]
+    fn ref_09_compare_template_literal_patterns_widening() {
+        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        let old = parse_template_literal_type("`onClick${string}`").unwrap();
+        let new = parse_template_literal_type("`on${string}`").unwrap();
+        assert_eq!(
+            compare_template_literal_patterns(&old, &new),
+            PatternDirection::Widening
+        );
+    }
+
+    #[test]
+    fn ref_09_compare_template_literal_patterns_unrelated() {
+        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        let old = parse_template_literal_type("`abc${string}`").unwrap();
+        let new = parse_template_literal_type("`xyz${string}`").unwrap();
+        // Neither `abc` nor `xyz` is a prefix of the other
+        assert_eq!(
+            compare_template_literal_patterns(&old, &new),
+            PatternDirection::Unrelated
+        );
+    }
 }
