@@ -1454,4 +1454,81 @@ mod tests {
             other => panic!("expected InferExtends, got {:?}", other),
         }
     }
+
+    // ─── GEN-07 (Phase 20): NoInfer<T> wrapper canonicalization ───────────
+    //
+    // The parser must recognize `NoInfer<T>` as a dedicated wrapper variant
+    // (`TypeShape::NoInferWrap`) rather than the generic catch-all
+    // `TypeShape::Generic { name: "NoInfer", args: [T] }` form. This mirrors
+    // the existing `Array<T>` special-case at parser.rs:608-610. Diff
+    // engines depend on the canonical wrapper form to detect wrapper-vs-
+    // unwrapped transitions without resorting to string comparison.
+
+    #[test]
+    fn gen_07_noinfer_of_primitive_produces_noinfer_wrap() {
+        let shape = parse_type_string("NoInfer<string>");
+        match shape {
+            TypeShape::NoInferWrap(inner) => {
+                assert_eq!(*inner, TypeShape::Primitive(PrimitiveKind::String));
+            }
+            other => panic!("expected NoInferWrap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn gen_07_noinfer_of_typeparam_produces_noinfer_wrap() {
+        let shape = parse_type_string("NoInfer<T>");
+        match shape {
+            TypeShape::NoInferWrap(inner) => {
+                assert_eq!(*inner, TypeShape::TypeParam("T".to_string()));
+            }
+            other => panic!("expected NoInferWrap, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn gen_07_noinfer_of_generic_produces_noinfer_wrap_with_generic_inner() {
+        let shape = parse_type_string("NoInfer<Foo<string>>");
+        match shape {
+            TypeShape::NoInferWrap(inner) => match *inner {
+                TypeShape::Generic { name, args } => {
+                    assert_eq!(name, "Foo");
+                    assert_eq!(args.len(), 1);
+                }
+                other => panic!("expected Generic inside NoInferWrap, got {:?}", other),
+            },
+            other => panic!("expected NoInferWrap, got {:?}", other),
+        }
+    }
+
+    // Defensive: the real `NoInfer<T>` utility type takes exactly one
+    // type parameter. If a user (or some future LSP hover-string drift)
+    // hands us `NoInfer<X, Y>`, fall through to the generic catch-all
+    // rather than panic or canonicalize incorrectly.
+    #[test]
+    fn gen_07_noinfer_arity_mismatch_falls_through_to_generic() {
+        let shape = parse_type_string("NoInfer<string, number>");
+        match shape {
+            TypeShape::Generic { name, args } => {
+                assert_eq!(name, "NoInfer");
+                assert_eq!(args.len(), 2);
+            }
+            other => panic!("expected Generic fallthrough, got {:?}", other),
+        }
+    }
+
+    // Regression: any other 1-arg generic name (not literally "NoInfer")
+    // must remain a `TypeShape::Generic`. The new branch is name-keyed
+    // and must not affect surrounding generics.
+    #[test]
+    fn gen_07_non_noinfer_generic_unchanged() {
+        let shape = parse_type_string("SomethingElse<string>");
+        match shape {
+            TypeShape::Generic { name, args } => {
+                assert_eq!(name, "SomethingElse");
+                assert_eq!(args.len(), 1);
+            }
+            other => panic!("expected Generic, got {:?}", other),
+        }
+    }
 }
