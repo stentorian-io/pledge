@@ -44,6 +44,23 @@ Phase 19 also extends the existing `export-deprecated` (Warning) rule: `@depreca
 
 See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and the TypeScript compiler position rule.
 
+### Phase 20 rule-IDs (TS type-system features)
+
+| Rule ID | Severity | Trigger |
+|---------|----------|---------|
+| `type-narrowing-widened` | Minor | A `satisfies T` clause is removed from an exported const/let/var; consumers that relied on the narrowed type will observe the wider declared type |
+| `infer-extends-constraint-changed` | Major | The `C` in `T extends infer U extends C ? ... : ...` on an exported conditional type is changed |
+| `generic-inference-constraint-removed` | Minor | A `NoInfer<T>` wrapper is removed from a function parameter position or generic constraint on an exported signature |
+| `union-variant-added` | Warning | A variant is added to an exported discriminated (tagged) union — may break exhaustive `switch`/`match` consumers |
+| `index-signature-key-pattern-changed` | Major (narrowing) / Minor (widening) | The template-literal key pattern of an exported index signature (e.g. `` [key: `on${string}`]: T ``) is narrowed or widened |
+
+Phase 20 also introduces two informational limitations surfaced in finding messages:
+
+- `limitation: satisfies-narrowed-type-not-verified` — TYPE-01 degraded mode (LSP unavailable); rule still fires syntactically but narrowing direction is not confirmed.
+- `limitation: noinfer-via-local-alias` — GEN-07; users aliasing `NoInfer<T>` locally (`type MyNoInfer<T> = NoInfer<T>`) evade detection.
+
+See `docs/rules/type-narrowing.md`, `docs/rules/infer-extends.md`, `docs/rules/noinfer-wrapper.md`, `docs/rules/union-variant-added.md`, and `docs/rules/template-index-signature.md` for per-rule detail.
+
 ## Development Setup
 
 ### Prerequisites
