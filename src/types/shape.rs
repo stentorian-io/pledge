@@ -54,6 +54,25 @@ pub struct FieldShape {
     pub shape: TypeShape,
 }
 
+/// REF-10 (Phase 22): per-position metadata for labeled tuple elements.
+///
+/// Unlabeled tuples have `label: None` at every position. Labels are nominal
+/// metadata — they participate in the diff (`tuple-label-renamed`,
+/// `tuple-label-reordered`, `tuple-label-dropped`, `tuple-label-added`) but
+/// are IGNORED by structural subtyping. `optional` and `rest` map to the
+/// per-position `?:` and `...` markers respectively.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TupleElement {
+    /// Label text (e.g., "x" in `[x: number]`). `None` for unlabeled elements.
+    pub label: Option<std::string::String>,
+    /// `[x?: T]` — per-position optionality. Independent of label presence.
+    pub optional: bool,
+    /// `[...xs: T[]]` — variadic/rest element; always the tail position.
+    pub rest: bool,
+    /// The element's type.
+    pub shape: TypeShape,
+}
+
 /// A parameter in a function type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamShape {
@@ -77,8 +96,15 @@ pub enum TypeShape {
     Object(BTreeMap<std::string::String, FieldShape>),
     /// Array types: `string[]` or `Array<string>`
     Array(Box<TypeShape>),
-    /// Tuple types: `[string, number]`
-    Tuple(Vec<TypeShape>),
+    /// Tuple types: `[string, number]` or labeled `[x: number, y?: string, ...rest: T[]]`.
+    ///
+    /// REF-10 (Phase 22): labeled-tuple support. Each element is a `TupleElement`
+    /// carrying `label`, `optional`, `rest`, and `shape`. Unlabeled tuples have
+    /// `label: None` at every position; `optional` and `rest` map to the
+    /// per-position `?:` and `...` markers. Labels are nominal metadata — they
+    /// participate in the diff (`tuple-label-renamed` etc.) but are IGNORED by
+    /// structural subtyping.
+    Tuple(Vec<TupleElement>),
     /// Union types: `string | number` — normalized (sorted) by canonical string
     Union(Vec<TypeShape>),
     /// Intersection types: `A & B` — normalized (sorted) by canonical string
@@ -176,9 +202,17 @@ impl TypeShape {
                 TypeShape::Object(normalized)
             }
             TypeShape::Array(inner) => TypeShape::Array(Box::new(inner.normalize())),
-            TypeShape::Tuple(elements) => {
-                TypeShape::Tuple(elements.into_iter().map(|e| e.normalize()).collect())
-            }
+            TypeShape::Tuple(elements) => TypeShape::Tuple(
+                elements
+                    .into_iter()
+                    .map(|e| TupleElement {
+                        label: e.label,
+                        optional: e.optional,
+                        rest: e.rest,
+                        shape: e.shape.normalize(),
+                    })
+                    .collect(),
+            ),
             TypeShape::Generic { name, args } => TypeShape::Generic {
                 name,
                 args: args.into_iter().map(|a| a.normalize()).collect(),
@@ -417,9 +451,58 @@ mod tests {
     #[test]
     fn test_tuple_shape() {
         let shape = TypeShape::Tuple(vec![
-            TypeShape::Primitive(PrimitiveKind::String),
-            TypeShape::Primitive(PrimitiveKind::Number),
+            TupleElement {
+                label: None,
+                optional: false,
+                rest: false,
+                shape: TypeShape::Primitive(PrimitiveKind::String),
+            },
+            TupleElement {
+                label: None,
+                optional: false,
+                rest: false,
+                shape: TypeShape::Primitive(PrimitiveKind::Number),
+            },
         ]);
         assert!(matches!(shape, TypeShape::Tuple(_)));
+    }
+
+    /// REF-10 (Phase 22): verify that `normalize()` on a labeled tuple
+    /// preserves label/optional/rest metadata and recurses into inner shapes.
+    #[test]
+    fn test_tuple_labeled_normalize_preserves_metadata() {
+        let shape = TypeShape::Tuple(vec![
+            TupleElement {
+                label: Some("x".to_string()),
+                optional: false,
+                rest: false,
+                shape: TypeShape::Union(vec![
+                    TypeShape::Primitive(PrimitiveKind::Number),
+                    TypeShape::Primitive(PrimitiveKind::String),
+                ]),
+            },
+            TupleElement {
+                label: Some("rest".to_string()),
+                optional: false,
+                rest: true,
+                shape: TypeShape::Array(Box::new(TypeShape::Primitive(PrimitiveKind::String))),
+            },
+        ])
+        .normalize();
+
+        if let TypeShape::Tuple(elems) = shape {
+            assert_eq!(elems.len(), 2);
+            assert_eq!(elems[0].label.as_deref(), Some("x"));
+            assert!(!elems[0].optional);
+            assert!(!elems[0].rest);
+            // Inner Union should be normalized (sorted). Original order
+            // [Number, String] and normalized order is deterministic.
+            assert!(matches!(elems[0].shape, TypeShape::Union(_)));
+            assert_eq!(elems[1].label.as_deref(), Some("rest"));
+            assert!(elems[1].rest);
+            assert!(matches!(elems[1].shape, TypeShape::Array(_)));
+        } else {
+            panic!("expected Tuple after normalize");
+        }
     }
 }

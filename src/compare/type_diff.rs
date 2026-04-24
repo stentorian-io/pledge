@@ -408,6 +408,10 @@ fn diff_recursive(
                     ),
                 });
             } else {
+                // REF-10 (Phase 22): label-semantics extension landed in
+                // Task 2. Task 1 keeps the label-blind structural recursion
+                // below; the per-position label comparison + reorder pre-pass
+                // are appended by `src/compare/type_diff.rs` in Task 2.
                 for (i, (old_elem, new_elem)) in old_elems.iter().zip(new_elems.iter()).enumerate()
                 {
                     let idx_path = if field_path.is_empty() {
@@ -416,8 +420,8 @@ fn diff_recursive(
                         format!("{field_path}[{i}]")
                     };
                     diff_recursive(
-                        old_elem,
-                        new_elem,
+                        &old_elem.shape,
+                        &new_elem.shape,
                         symbol_name,
                         &idx_path,
                         file,
