@@ -1636,12 +1636,12 @@ mod tests {
             compound_members: Vec::new(),
         };
 
-        let mut old_exports: ExportMap = HashMap::new();
+        let mut old_exports: ExportMap = ExportMap::new();
         old_exports.insert(
             crate::types::ExportKey::new_root_value("default"),
             sym.clone(),
         );
-        let mut new_exports: ExportMap = HashMap::new();
+        let mut new_exports: ExportMap = ExportMap::new();
         new_exports.insert(crate::types::ExportKey::new_root_value("default"), sym);
 
         let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports);
@@ -1695,12 +1695,12 @@ mod tests {
             compound_members: Vec::new(),
         };
 
-        let mut old_exports: ExportMap = HashMap::new();
+        let mut old_exports: ExportMap = ExportMap::new();
         old_exports.insert(
             crate::types::ExportKey::new_root_value("default"),
             sym.clone(),
         );
-        let mut new_exports_map: ExportMap = HashMap::new();
+        let mut new_exports_map: ExportMap = ExportMap::new();
         new_exports_map.insert(crate::types::ExportKey::new_root_value("default"), sym);
 
         let findings = compare_structural_diff(&old_dir, &new_dir, &old_exports, &new_exports_map);
@@ -1746,8 +1746,8 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
 
-        let mut old: ExportMap = HashMap::new();
-        let mut new: ExportMap = HashMap::new();
+        let mut old: ExportMap = ExportMap::new();
+        let mut new: ExportMap = ExportMap::new();
         old.insert(
             ExportKey::new(".", None, SymbolSpace::Value, "foo"),
             make_basic_sym("foo", PathBuf::from("a.ts"), 1),
@@ -1799,8 +1799,8 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
 
-        let mut old: ExportMap = HashMap::new();
-        let mut new: ExportMap = HashMap::new();
+        let mut old: ExportMap = ExportMap::new();
+        let mut new: ExportMap = ExportMap::new();
         old.insert(
             ExportKey::new(".", None, SymbolSpace::Type, "Foo"),
             make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
@@ -1841,8 +1841,8 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
 
-        let mut old: ExportMap = HashMap::new();
-        let mut new: ExportMap = HashMap::new();
+        let mut old: ExportMap = ExportMap::new();
+        let mut new: ExportMap = ExportMap::new();
         let user_root_key = ExportKey::new(".", None, SymbolSpace::Value, "User");
         let user_admin_key = ExportKey::new("./admin", None, SymbolSpace::Value, "User");
         old.insert(
@@ -1889,8 +1889,8 @@ mod tests {
         use std::collections::HashMap;
         use std::path::PathBuf;
 
-        let mut old: ExportMap = HashMap::new();
-        let new: ExportMap = HashMap::new();
+        let mut old: ExportMap = ExportMap::new();
+        let new: ExportMap = ExportMap::new();
         // 4 distinct ExportKeys, all removed → 4 Major findings.
         for n in ["alpha", "beta", "gamma", "delta"] {
             old.insert(

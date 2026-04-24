@@ -430,6 +430,10 @@ pub fn collect_exports(
     // The comment_scan pass re-parses the source to own a Tree; tree-sitter
     // parsing is iterative and fast so the duplicate parse is acceptable
     // for Phase 19 (future optimization: thread the Tree from parse_exports).
+    // INF-05 (Phase 19): collect directive records from the SAME CommentIndex
+    // we use for META-06. Captured here as a local Vec so we can insert into
+    // the ExportMap.directives sidecar once `rel_path` is computed below.
+    let mut file_directives: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
     {
         let language = super::tree_query::get_language(&lang);
         let mut parser = tree_sitter::Parser::new();
@@ -442,6 +446,10 @@ pub fn collect_exports(
                             comment_index.release_tag_for_export_at(rx.line, rx.col);
                     }
                 }
+                // INF-05: extract triple-slash directives (honors the TS
+                // compiler position rule: only directives at the top of the
+                // file, before any non-comment statement, are recognized).
+                file_directives = comment_index.extract_directives();
             }
         }
     }
@@ -450,6 +458,13 @@ pub fn collect_exports(
     // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
     // so that rollup/vite rebuilds produce stable paths for diff comparison.
     let rel_path = normalize_chunk_path(canonical.strip_prefix(pkg_root).unwrap_or(&canonical));
+
+    // INF-05 (Phase 19): flow extracted directives into the ExportMap sidecar.
+    // Key by the rel_path so compare_directives can pair old/new directive
+    // lists per-file. Files with no directives are absent from the map.
+    if !file_directives.is_empty() {
+        map.directives.insert(rel_path.to_path_buf(), file_directives);
+    }
 
     // META-05: Accumulate named re-export failures keyed by specifier so we can
     // aggregate them into a single "barrel" warning when ≥3 from the same barrel

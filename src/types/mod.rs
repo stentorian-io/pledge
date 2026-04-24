@@ -152,8 +152,81 @@ impl ExportKey {
     }
 }
 
+/// INF-05 (Phase 19): primary export symbol map plus a per-source-file
+/// triple-slash directive sidecar.
+///
+/// Internally a `HashMap<ExportKey, ExportSymbol>` (preserved from pre-Phase-19
+/// behavior) with a parallel `BTreeMap<PathBuf, Vec<DirectiveRecord>>` for
+/// directives. `Deref`/`DerefMut` to the inner HashMap keep every existing
+/// call site (`.get`, `.insert`, `.keys`, `.iter`, `.retain`, `.contains_key`,
+/// `.clone`, `for (k, v) in &map`, etc.) working without change.
+///
+/// Files with no directives are absent from the map.
 #[allow(dead_code)]
-pub type ExportMap = HashMap<ExportKey, ExportSymbol>;
+#[derive(Debug, Clone, Default)]
+pub struct ExportMap {
+    inner: HashMap<ExportKey, ExportSymbol>,
+    /// INF-05 (Phase 19): per-source-file triple-slash directive records,
+    /// captured by `CommentIndex::extract_directives` during resolver insertion.
+    /// Key: relative path to the source file (same as `ExportSymbol.file`).
+    /// Value: ordered directive records (document order). Files with no
+    /// directives are absent from the map.
+    pub directives: std::collections::BTreeMap<
+        std::path::PathBuf,
+        Vec<crate::discover::comment_scan::DirectiveRecord>,
+    >,
+}
+
+impl ExportMap {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl std::ops::Deref for ExportMap {
+    type Target = HashMap<ExportKey, ExportSymbol>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl std::ops::DerefMut for ExportMap {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+/// Preserve the ergonomic of `ExportMap: HashMap<...> = HashMap::new()`
+/// that appears at ~4 test construction sites in `src/compare/mod.rs`.
+impl From<HashMap<ExportKey, ExportSymbol>> for ExportMap {
+    fn from(inner: HashMap<ExportKey, ExportSymbol>) -> Self {
+        ExportMap {
+            inner,
+            directives: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+/// Enable `for (k, v) in &export_map { ... }`. `Deref` on its own does NOT
+/// make the struct iterable because `IntoIterator` is only attempted on the
+/// concrete type in `for` loops.
+impl<'a> IntoIterator for &'a ExportMap {
+    type Item = (&'a ExportKey, &'a ExportSymbol);
+    type IntoIter = std::collections::hash_map::Iter<'a, ExportKey, ExportSymbol>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+/// Enable `for (k, v) in &mut export_map { ... }`.
+impl<'a> IntoIterator for &'a mut ExportMap {
+    type Item = (&'a ExportKey, &'a mut ExportSymbol);
+    type IntoIter = std::collections::hash_map::IterMut<'a, ExportKey, ExportSymbol>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter_mut()
+    }
+}
 
 // ─── Class shape model ──────────────────────────────────────────────────────
 

@@ -148,12 +148,115 @@ impl<'a> CommentIndex<'a> {
         None
     }
 
-    /// INF-05 (consumed by Plan 02): return ordered directive records
-    /// for triple-slash comments at the top of the file. Stub in Plan 01;
-    /// Plan 02 fills in the body.
+    /// INF-05 (Plan 02): return ordered directive records for triple-slash
+    /// comments at the top of the file.
+    ///
+    /// "Top of file" honors the TypeScript compiler position rule: a
+    /// `/// <X ... />` comment is a directive ONLY if all preceding
+    /// top-level children of the `program` node are comments. The moment a
+    /// non-comment statement appears at program level, ALL subsequent
+    /// `///` comments are treated as plain comments and produce no
+    /// directive records.
     pub fn extract_directives(&self) -> Vec<DirectiveRecord> {
-        Vec::new()
+        let root = self.tree.root_node();
+        let mut directives: Vec<DirectiveRecord> = Vec::new();
+        let mut cursor = root.walk();
+        for child in root.named_children(&mut cursor) {
+            if child.kind() == "comment" {
+                let text = match child.utf8_text(self.source) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                };
+                let trimmed = text.trim_start();
+                if !trimmed.starts_with("///") {
+                    // Plain comment (`// ...` or `/* ... */`) — does not break
+                    // the directive window, just skip.
+                    continue;
+                }
+                // Strip the leading /// and any whitespace after it.
+                let body = trimmed[3..].trim_start();
+                if !body.starts_with('<') {
+                    // `/// some free-form comment` — not a directive.
+                    continue;
+                }
+                if let Some(record) = parse_directive_body(body, child.start_byte()) {
+                    directives.push(record);
+                }
+                // Continue scanning: more /// directives may follow before
+                // the first non-comment statement.
+                continue;
+            }
+            // First non-comment named child ends the directive window.
+            break;
+        }
+        directives
     }
+}
+
+/// Parse the body of a triple-slash directive — the text inside a `///`
+/// comment AFTER the leading `///` has been stripped.
+///
+/// Example body: `<reference path="./x.ts" preserve="true" />`
+///
+/// Returns `None` if the body does not look like `<name attr="v" .../>`.
+/// Malformed attributes (e.g., unterminated quote) cause the directive to
+/// be silently skipped — this matches the TypeScript compiler's permissive
+/// handling and prevents a single malformed comment from producing a
+/// misleading finding.
+fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord> {
+    let body = body.trim();
+    if !body.starts_with('<') {
+        return None;
+    }
+    let inner = body.strip_prefix('<')?;
+    let end = inner.find('>')?;
+    // Content between < and > is "name attr=\"v\" attr=\"v\" /" — strip the
+    // trailing '/' that precedes '>' in self-closing form, then trim.
+    let content = inner[..end].trim_end_matches('/').trim();
+    // Split on first whitespace to separate name from attrs.
+    let (name, attrs_str) = match content.find(char::is_whitespace) {
+        Some(i) => (content[..i].to_string(), content[i..].trim()),
+        None => (content.to_string(), ""),
+    };
+    // Validate the name looks like a directive (letters/digits/hyphen).
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    let mut attrs: BTreeMap<String, String> = BTreeMap::new();
+    // Iterate `key="value"` pairs.
+    let mut remaining = attrs_str;
+    while !remaining.is_empty() {
+        remaining = remaining.trim_start();
+        if remaining.is_empty() {
+            break;
+        }
+        // Read key: letters/digits/hyphen until '=' or whitespace.
+        let key_end = remaining
+            .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+            .unwrap_or(remaining.len());
+        if key_end == 0 {
+            break;
+        }
+        let key = remaining[..key_end].to_string();
+        remaining = remaining[key_end..].trim_start();
+        if !remaining.starts_with('=') {
+            break;
+        }
+        remaining = remaining[1..].trim_start();
+        if !remaining.starts_with('"') {
+            break;
+        }
+        remaining = &remaining[1..];
+        let val_end = remaining.find('"')?;
+        let value = remaining[..val_end].to_string();
+        remaining = &remaining[val_end + 1..];
+        attrs.insert(key, value);
+    }
+    Some(DirectiveRecord {
+        name,
+        attrs,
+        start_byte,
+    })
 }
 
 /// Walk up the tree to the nearest `export_statement` / `ambient_declaration`
@@ -187,6 +290,10 @@ mod tests {
             .set_language(&get_language(&SourceLanguage::TypeScript))
             .unwrap();
         parser.parse(source, None).unwrap()
+    }
+
+    fn make_index<'a>(source: &'a [u8], tree: &'a Tree) -> CommentIndex<'a> {
+        CommentIndex::build(tree, source, SourceLanguage::TypeScript)
     }
 
     #[test]
@@ -242,12 +349,70 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_extract_directives_stub_returns_empty() {
-        // Plan 01 stub body returns empty Vec; Plan 02 fills in.
+    fn inf_05_extract_directives_returns_directive_for_top_of_file_form() {
         let source = b"/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);
-        let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
+        let idx = make_index(source, &tree);
+        let dirs = idx.extract_directives();
+        assert_eq!(dirs.len(), 1, "expected 1 directive; got {:?}", dirs);
+        assert_eq!(dirs[0].name, "reference");
+        assert_eq!(dirs[0].attrs.get("path").map(|s| s.as_str()), Some("./x.ts"));
+    }
+
+    #[test]
+    fn inf_05_directive_after_statement_is_ignored() {
+        let source = b"export const x = 1;\n/// <reference path=\"./x.ts\" />\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
         assert_eq!(idx.extract_directives().len(), 0);
+    }
+
+    #[test]
+    fn inf_05_multiple_top_of_file_directives_ordered_by_byte() {
+        let source = b"/// <reference types=\"node\" />\n/// <reference lib=\"es2017\" />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        let dirs = idx.extract_directives();
+        assert_eq!(dirs.len(), 2);
+        assert!(dirs[0].start_byte < dirs[1].start_byte);
+    }
+
+    #[test]
+    fn inf_05_preserve_attribute_captured() {
+        let source = b"/// <reference path=\"./x.ts\" preserve=\"true\" />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        let dirs = idx.extract_directives();
+        assert_eq!(dirs.len(), 1);
+        assert_eq!(
+            dirs[0].attrs.get("preserve").map(|s| s.as_str()),
+            Some("true")
+        );
+        assert_eq!(dirs[0].attrs.get("path").map(|s| s.as_str()), Some("./x.ts"));
+    }
+
+    #[test]
+    fn inf_05_attribute_order_independent_equality() {
+        let src_a = b"/// <amd-dependency path=\"a\" name=\"b\" />\n";
+        let src_b = b"/// <amd-dependency name=\"b\" path=\"a\" />\n";
+        let tree_a = parse_ts(src_a);
+        let tree_b = parse_ts(src_b);
+        let a = make_index(src_a, &tree_a).extract_directives();
+        let b = make_index(src_b, &tree_b).extract_directives();
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 1);
+        // BTreeMap equality is order-independent.
+        assert_eq!(a[0].attrs, b[0].attrs);
+        assert_eq!(a[0].name, b[0].name);
+    }
+
+    #[test]
+    fn inf_05_leading_plain_comments_do_not_block_directives() {
+        // Plain comments before directives are OK. Only non-comment statements block.
+        let source = b"// preamble\n/* block */\n/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
+        let tree = parse_ts(source);
+        let idx = make_index(source, &tree);
+        assert_eq!(idx.extract_directives().len(), 1);
     }
 
     #[test]
