@@ -4270,14 +4270,38 @@ pub fn parse_class_members(
                             if prop_name.is_empty() {
                                 continue;
                             }
-                            // Last-write-wins: remove any prior synthesized
-                            // member with the same name + is_static + Property
-                            // kind. Matches runtime semantics where the final
-                            // assignment is observable.
+                            // Last-write-wins among STATIC-BLOCK synthesized
+                            // members, but preserve class-body declarations
+                            // (which carry LSP-enriched `type_signature` and
+                            // may carry `decorators` / `is_readonly`). If a
+                            // class-body `static bar: string = "x"` exists,
+                            // the static-block `Foo.bar = "y"` assignment is
+                            // a runtime write to that same slot — the typed
+                            // declaration wins so CLS-07 static-type-change
+                            // can fire on a genuine `string → number`
+                            // regression. Heuristic: class-body members carry
+                            // either a type_signature or decorators;
+                            // synthesized ones carry neither.
+                            let class_body_wins = members.iter().any(|m| {
+                                m.name == prop_name
+                                    && m.is_static
+                                    && matches!(m.kind, ClassMemberKind::Property)
+                                    && (m.type_signature.is_some()
+                                        || !m.decorators.is_empty())
+                            });
+                            if class_body_wins {
+                                // Skip synthesizing — class-body entry stays.
+                                continue;
+                            }
+                            // Drop prior synthesized entries (no type_signature
+                            // AND no decorators) for the same static-property
+                            // slot; the new assignment supersedes them.
                             members.retain(|m| {
                                 !(m.name == prop_name
                                     && m.is_static
-                                    && matches!(m.kind, ClassMemberKind::Property))
+                                    && matches!(m.kind, ClassMemberKind::Property)
+                                    && m.type_signature.is_none()
+                                    && m.decorators.is_empty())
                             });
                             members.push(ClassMember {
                                 name: prop_name,
