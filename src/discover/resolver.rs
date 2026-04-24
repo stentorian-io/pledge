@@ -1587,6 +1587,76 @@ mod tests {
         );
     }
 
+    // ── WR-02 (Phase 19 review): path-equality invariant between
+    //    ExportSymbol.file and ExportMap.directives keys for rollup chunks.
+    //    The resolver MUST key the directives sidecar by the SAME normalized
+    //    path it stamps onto ExportSymbol.file. If this ever drifts, a
+    //    rollup chunk with a stable set of directives across rebuilds
+    //    would diff as "directive-added + directive-removed" instead of
+    //    appearing under a single shared key.
+
+    #[test]
+    fn wr_02_chunk_directives_keyed_by_normalized_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Canonicalize pkg_root so that strip_prefix succeeds on macOS
+        // (tempdir returns /var/..., canonicalize() returns /private/var/...).
+        let pkg_root = dir.path().canonicalize().expect("canonicalize tempdir");
+        let chunk_rel = std::path::Path::new("dist/chunks/chunk-A1B2C3D4.js");
+        let chunk_abs = pkg_root.join(chunk_rel);
+        std::fs::create_dir_all(chunk_abs.parent().unwrap()).unwrap();
+        // Rollup chunk with a triple-slash directive at the top followed by
+        // a regular export. Both the directive (in ExportMap.directives)
+        // and the export (in ExportMap.inner) must end up keyed/stamped
+        // with the SAME normalized path.
+        std::fs::write(
+            &chunk_abs,
+            b"/// <reference path=\"./chunk.d.ts\" />\nexport const x = 1;\n",
+        )
+        .unwrap();
+
+        let mut map = crate::types::ExportMap::new();
+        let mut visited = HashSet::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &chunk_abs,
+            &pkg_root,
+            &mut map,
+            &mut visited,
+            &mut warnings,
+            0,
+            None,
+            ".",
+            None,
+        )
+        .expect("collect_exports should succeed");
+
+        let normalized = std::path::PathBuf::from("dist/chunks/chunk-*.js");
+
+        // (1) directives sidecar keyed by the NORMALIZED path.
+        let directive_keys: Vec<&std::path::PathBuf> = map.directives.keys().collect();
+        assert_eq!(
+            directive_keys,
+            vec![&normalized],
+            "WR-02: directives must be keyed by normalized chunk path; got: {:?}",
+            directive_keys
+        );
+        let recs = map.directives.get(&normalized).unwrap();
+        assert_eq!(recs.len(), 1, "exactly one directive expected");
+        assert_eq!(recs[0].name, "reference");
+
+        // (2) ExportSymbol.file stamped with the SAME normalized path.
+        //     If these ever drift the directive-diff union-walk in
+        //     compare_exports_core can't route findings back to a
+        //     symbol-bearing file.
+        let x_key = ExportKey::new_root_value("x");
+        let x_sym = map.get(&x_key).expect("x export present");
+        assert_eq!(
+            x_sym.file, normalized,
+            "WR-02: ExportSymbol.file must equal the directives sidecar key"
+        );
+    }
+
     // ── ROB-01: UTF-8 / parse failure → per-file warning ────────────────────
 
     #[test]
