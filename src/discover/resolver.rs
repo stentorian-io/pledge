@@ -563,6 +563,21 @@ pub fn collect_exports(
                             existing.compound_members.push(m.clone());
                         }
                     }
+                    // WR-02 (Phase 22 review): also merge typeof_import_refs to
+                    // mirror the compound_members handling above. Without this,
+                    // a later declaration-merge partner carrying typeof refs
+                    // would silently lose them. Idempotent dedup on the four
+                    // identity fields (specifier + property + line/col).
+                    for r in export.typeof_import_refs.iter() {
+                        if !existing.typeof_import_refs.iter().any(|er| {
+                            er.specifier == r.specifier
+                                && er.property == r.property
+                                && er.property_line == r.property_line
+                                && er.property_col == r.property_col
+                        }) {
+                            existing.typeof_import_refs.push(r.clone());
+                        }
+                    }
                 } else {
                     map.insert(
                         key,
