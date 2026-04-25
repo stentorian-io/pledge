@@ -3579,6 +3579,121 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 }
             }
         }
+
+        // BUN-11-A (Phase 24): UMD wrapper factory-returns-object literal unwrap.
+        //
+        // Detects the canonical UMD shape:
+        //   (function (root, factory) { ... })(this, function () { return { foo, bar }; });
+        // and emits each pair in the factory's `return { ... }` as a Named export.
+        //
+        // Sub-cases covered ELSEWHERE (no code needed here):
+        //   - Factory uses `exports.X = …` / `Object.defineProperty(exports, …)`:
+        //     already detected by the depth-agnostic CJS_EXPORTS_PROPERTY_QUERY and
+        //     OBJECT_DEFINE_EXPORT_QUERY at the outer pass. The dedup check below
+        //     prevents double emission.
+        //   - Lodash-style `(module.exports = <ident>)._ = <ident>`: handled by the
+        //     BUN-11-B driver after this driver (Path 1A in Task 3).
+        //
+        // Pitfall 3: a fresh QueryCursor::new() is allocated here (D-24-02-G).
+        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // Capture index 4 = @umd_factory_body (the statement_block of the
+                // factory). NOTE: capture indexes are stable by declaration order in
+                // the query string. They are, in order:
+                //   0 = @umd_root_param
+                //   1 = @umd_factory_param
+                //   2 = @umd_global_arg
+                //   3 = @umd_factory_params
+                //   4 = @umd_factory_body
+                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
+                let Some(body) = factory_body else { continue };
+
+                // Walk the factory body's children looking for `return_statement`
+                // whose argument is an object literal. This is the BUN-11-A target
+                // (Form E from 24-RESEARCH.md). `function_expression` body is a
+                // statement_block, whose direct children include statements.
+                let mut body_cursor = body.walk();
+                for stmt in body.children(&mut body_cursor) {
+                    if stmt.kind() != "return_statement" {
+                        continue;
+                    }
+                    // The return_statement's argument is the returned value.
+                    // tree-sitter-javascript exposes it as a child or via field name
+                    // "argument" — try both for grammar-version resilience.
+                    let arg = stmt
+                        .child_by_field_name("argument")
+                        .or_else(|| stmt.named_child(0));
+                    let Some(arg_node) = arg else { continue };
+                    if arg_node.kind() != "object" {
+                        // Returns a non-object (e.g. an identifier — that's the
+                        // lodash-style adjacent case, handled by the BUN-11-B
+                        // driver below, NOT here).
+                        continue;
+                    }
+
+                    // Walk the object literal's pairs / shorthands — same shape as
+                    // the BUN-06a `assign` arm walker.
+                    let mut obj_cur = arg_node.walk();
+                    for child in arg_node.children(&mut obj_cur) {
+                        if child.kind() == "pair" {
+                            if let Some(key_node) = child.child_by_field_name("key") {
+                                if let Ok(name) = key_node.utf8_text(source) {
+                                    if name == "__esModule" {
+                                        continue;
+                                    }
+                                    let line = key_node.start_position().row as u32 + 1;
+                                    let col = key_node.start_position().column as u32 + 1;
+                                    let already = exports.iter().any(|e| e.name == name);
+                                    if !already {
+                                        exports.push(RawExport {
+                                            name: name.to_string(),
+                                            kind: RawExportKind::Named,
+                                            line,
+                                            col,
+                                            source: None,
+                                            decl_kind: None,
+                                            is_type_only: false,
+                                            release_tag: None,
+                                            compound_members: Vec::new(),
+                                            type_signature: None,
+                                            satisfies_type: None,
+                                            typeof_import_refs: Vec::new(),
+                                        });
+                                    }
+                                }
+                            }
+                        } else if child.kind() == "shorthand_property_identifier" {
+                            if let Ok(name) = child.utf8_text(source) {
+                                if name == "__esModule" {
+                                    continue;
+                                }
+                                let line = child.start_position().row as u32 + 1;
+                                let col = child.start_position().column as u32 + 1;
+                                let already = exports.iter().any(|e| e.name == name);
+                                if !already {
+                                    exports.push(RawExport {
+                                        name: name.to_string(),
+                                        kind: RawExportKind::Named,
+                                        line,
+                                        col,
+                                        source: None,
+                                        decl_kind: None,
+                                        is_type_only: false,
+                                        release_tag: None,
+                                        compound_members: Vec::new(),
+                                        type_signature: None,
+                                        satisfies_type: None,
+                                        typeof_import_refs: Vec::new(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     } // end matches!(lang, SourceLanguage::JavaScript) BUN-01..07
 
     // BUN-07: Belt-and-suspenders __esModule final sweep.
