@@ -1,0 +1,11 @@
+{
+  "name": "p23-exp14-coexist",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "imports": {
+    "#util": "./src/util.ts"
+  },
+  "types": "./index.ts"
+}

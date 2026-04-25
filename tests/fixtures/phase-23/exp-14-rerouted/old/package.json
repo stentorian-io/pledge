@@ -1,0 +1,7 @@
+{
+  "name": "p23-exp14-rerouted",
+  "version": "1.0.0",
+  "imports": {
+    "#dep": "./old-impl.js"
+  }
+}

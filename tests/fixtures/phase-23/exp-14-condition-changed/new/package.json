@@ -1,0 +1,9 @@
+{
+  "name": "p23-exp14-cond",
+  "version": "1.1.0",
+  "imports": {
+    "#crypto": {
+      "default": "./generic.js"
+    }
+  }
+}

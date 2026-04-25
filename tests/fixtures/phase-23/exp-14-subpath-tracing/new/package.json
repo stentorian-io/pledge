@@ -1,0 +1,8 @@
+{
+  "name": "p23-exp14-tracing",
+  "version": "1.0.0",
+  "types": "./index.ts",
+  "imports": {
+    "#internal": "./src/internal.ts"
+  }
+}

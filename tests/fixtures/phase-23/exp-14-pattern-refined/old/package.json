@@ -1,0 +1,7 @@
+{
+  "name": "p23-exp14-pat",
+  "version": "1.0.0",
+  "imports": {
+    "#i/*": "./src/*.js"
+  }
+}

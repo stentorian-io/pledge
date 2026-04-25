@@ -1,0 +1,7 @@
+{
+  "name": "p23-exp14-removed",
+  "version": "1.0.0",
+  "imports": {
+    "#removed": "./src/removed.js"
+  }
+}

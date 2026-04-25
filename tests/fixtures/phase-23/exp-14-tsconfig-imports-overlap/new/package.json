@@ -1,0 +1,8 @@
+{
+  "name": "p23-exp14-tsconfig-overlap",
+  "version": "1.0.0",
+  "types": "./src/index.ts",
+  "imports": {
+    "#shared": "./src/shared-imports.js"
+  }
+}
