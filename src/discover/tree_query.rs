@@ -4014,8 +4014,19 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 });
             } else {
                 // Merge the gathered members into the existing default.
+                //
+                // WR-02 (Phase 24 review): if the existing `default` was emitted
+                // by a path that did not record real source coordinates (e.g. a
+                // synthetic placeholder with `(line, col) == (0, 0)`), upgrade
+                // its location from the synthesized entry's coords. Real coords
+                // win over the (0, 0) sentinel; otherwise the existing entry's
+                // location is preserved (first-real-writer-wins).
                 for rx in exports.iter_mut() {
                     if rx.name == "default" && matches!(rx.kind, RawExportKind::Default) {
+                        if rx.line == 0 && rx.col == 0 {
+                            rx.line = merged_line;
+                            rx.col = merged_col;
+                        }
                         for m in &merged_members {
                             if !rx.compound_members.iter().any(|mm| mm == m) {
                                 rx.compound_members.push(m.clone());
