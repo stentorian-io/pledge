@@ -215,7 +215,7 @@ pub async fn enrich_exports(
                 .collect();
 
         let mut definition_failures: usize = 0;
-        'outer: for (key, refs) in keys_with_refs {
+        for (key, refs) in keys_with_refs {
             if budget_start.elapsed() >= total_budget {
                 tracing::warn!(
                     "LSP total budget exhausted before resolving all typeof_import_refs"
@@ -271,7 +271,12 @@ pub async fn enrich_exports(
                             let _ = session.shutdown().await;
                             return Ok(EnrichResult::Degraded(msg));
                         }
-                        break 'outer;
+                        // WR-03 (Phase 22 review): a single sub-threshold error
+                        // should not abort all remaining symbols. Continue to
+                        // the next ref — matches the hover pass pattern at
+                        // line 143. CRASH_THRESHOLD branch above already
+                        // handles the "too many failures" case.
+                        continue;
                     }
                 }
             }
