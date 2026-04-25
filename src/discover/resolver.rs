@@ -324,6 +324,57 @@ impl ResolveWarning {
 // Phase 23 (RES-01 + RES-02): specifier classification
 // ---------------------------------------------------------------------------
 
+/// Classification of a re-export specifier — drives whether the resolver
+/// attempts filesystem resolution, routes through the package.json `imports`
+/// map (Plan 23-02), or silently skips.
+///
+/// RES-01: `node:`-prefixed builtins are not paths and must not be
+///   probed against the filesystem nor inserted as synthetic external entries.
+/// RES-02: URL-scheme specifiers (`data:`, `https:`, `http:`, `file:`) are
+///   not paths under our static-analysis model and are filtered identically.
+/// EXP-14 (consumed in Plan 23-02): `#`-prefixed specifiers route through
+///   the package's own `imports` field rather than the filesystem.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SpecifierKind {
+    /// `node:fs`, `node:path`, `node:test`, ...
+    NodeBuiltin,
+    /// `data:`, `https:`, `http:`, `file:` — URL-scheme imports.
+    UrlScheme,
+    /// `#subpath` — resolved through package.json `imports` field (EXP-14).
+    ImportsField,
+    /// `./`, `../`, `/` — filesystem-relative or absolute path.
+    Relative,
+    /// External package: `react`, `@scope/pkg`, ... — anything not above.
+    Bare,
+}
+
+/// Classify a re-export specifier string. Pure function, no I/O.
+///
+/// Order of checks matters: `node:` and URL schemes are checked first so
+/// that a hypothetical relative path like `./node-something` (which starts
+/// with `.`) is correctly classified as `Relative`, not `NodeBuiltin`.
+#[allow(dead_code)]
+pub(crate) fn classify_specifier(spec: &str) -> SpecifierKind {
+    if spec.starts_with("node:") {
+        return SpecifierKind::NodeBuiltin;
+    }
+    if spec.starts_with("data:")
+        || spec.starts_with("https:")
+        || spec.starts_with("http:")
+        || spec.starts_with("file:")
+    {
+        return SpecifierKind::UrlScheme;
+    }
+    if spec.starts_with('#') {
+        return SpecifierKind::ImportsField;
+    }
+    if spec.starts_with('.') || spec.starts_with('/') {
+        return SpecifierKind::Relative;
+    }
+    SpecifierKind::Bare
+}
+
 #[cfg(test)]
 mod phase23_classifier_tests {
     use super::{classify_specifier, SpecifierKind};
