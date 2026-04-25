@@ -745,6 +745,28 @@ const UMD_FACTORY_WRAPPER_QUERY: &str = r#"
       body: (statement_block) @umd_factory_body)))
 "#;
 
+/// BUN-11-B (Phase 24): lodash-style IIFE with `module.exports = <ident>`.
+///
+/// The simplest shape is a top-level IIFE call like:
+///   (function() { ... module.exports = X; ... }.call(this))
+/// or:
+///   (function() { ... module.exports = X; ... }())
+/// or with the parenthesized_expression chain (Pitfall 5):
+///   (function() { ... (module.exports = X)._ = X; ... }.call(this))
+///
+/// We search the AST DEPTH-AGNOSTICALLY for `module.exports = <identifier>` —
+/// tree-sitter queries are depth-agnostic by default (Pitfall 1) so this
+/// captures the assignment regardless of nesting under any IIFE wrapper.
+/// The transient Default RawExport is synthesized for the captured identifier
+/// so attach_compound_members's D-16 gate accepts the binding.
+const LODASH_STYLE_DEFAULT_QUERY: &str = r#"
+(assignment_expression
+  left: (member_expression
+    object: (identifier) @mod_obj
+    property: (property_identifier) @mod_prop)
+  right: (identifier) @umd_default_binding)
+"#;
+
 /// ECF-13 (Phase 22): `exports[Symbol.X] = ...` — bare `exports` identifier LHS
 /// object. Captures well-known Symbol-keyed module exports on CJS.
 ///
@@ -2821,6 +2843,14 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Detects esbuild tree-shake wrappers, __export helper calls, __defProp aliases,
     // tsc void 0 placeholders, swc star re-export shims, Object.defineProperty/
     // defineProperties/assign forms, and bracket-subscript assignments.
+    //
+    // BUN-11-B (Phase 24) Path 1A scratch: lodash-style binding identifiers
+    // pushed by the BUN-11-B driver (e.g. "_" for lodash). The post-process
+    // after `attach_compound_members` (~line 3730) consumes this list to
+    // rename the synthetic Default's `name` from the binding to "default".
+    // Declared at parse_exports scope so the post-process — outside the
+    // JS-only gate — can see it.
+    let mut umd_default_bindings: Vec<String> = Vec::new();
     if matches!(lang, SourceLanguage::JavaScript) {
         // BUN-03: Build alias map: identifier → (Object, defineProperty) before processing
         // other queries so BUN-06a can resolve __defProp aliases.
@@ -3694,6 +3724,92 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 }
             }
         }
+
+        // BUN-11-B SENTINEL PATH 1A IMPLEMENTED  (do not remove — Plan 24-02 Task 5 greps for this exact marker to detect path choice)
+        // BUN-11-B (Phase 24) Path 1A: lodash-style IIFE with `module.exports = <ident>`.
+        //
+        // Detects the assignment depth-agnostically (per Pitfall 1) so the
+        // parenthesized_expression chain `(module.exports = X)._ = X` from the lodash
+        // canonical shape (Pitfall 5) is captured the same way as a clean
+        // `module.exports = X;` at top level.
+        //
+        // Path 1A synthesis: pushes a transient Default RawExport tagged with the
+        // captured binding NAME as its `name` field. This makes attach_compound_members
+        // (called below at ~line 3730) accept the binding in its D-16 exported_names
+        // gate, collecting every `<ident>.<member> = …` assignment as a
+        // compound_member. The post-pass after attach_compound_members renames the
+        // synthetic export's `name` from the binding to "default".
+        if let Ok(query) = Query::new(&language, LODASH_STYLE_DEFAULT_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                // Capture indices: 0=mod_obj, 1=mod_prop, 2=umd_default_binding.
+                let mod_obj = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 0)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                let mod_prop = m
+                    .captures
+                    .iter()
+                    .find(|c| c.index == 1)
+                    .and_then(|c| c.node.utf8_text(source).ok())
+                    .unwrap_or("");
+                // Gate: must be `module.exports = ...`.
+                if mod_obj != "module" || mod_prop != "exports" {
+                    continue;
+                }
+                let binding_node = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
+                let Some(node) = binding_node else { continue };
+                let Ok(binding) = node.utf8_text(source) else {
+                    continue;
+                };
+                // Skip `module.exports = exports` and similar (already handled by
+                // the existing CJS exports-aliasing logic).
+                if binding == "exports" || binding.starts_with("module.") {
+                    continue;
+                }
+                // Skip if a Default with name == "default" already exists from a
+                // direct top-level `module.exports = X;` capture; that's handled by
+                // CJS_MODULE_EXPORTS_DEFAULT_QUERY at line 565. We only want to fire
+                // for the lodash-style IIFE-wrapped case where the program-level
+                // CJS query did NOT match.
+                let already_default = exports
+                    .iter()
+                    .any(|e| e.name == "default" && matches!(e.kind, RawExportKind::Default));
+                if already_default {
+                    continue;
+                }
+
+                // Synthesize a transient Default tagged with the binding name.
+                // attach_compound_members's D-16 gate looks up `target` in
+                // `exported_names: HashSet<String>` built from `exports.iter().map(|r| r.name)`.
+                // Setting `name = binding` causes the gate to accept `<binding>.<member>`
+                // attachments. We post-process this entry after attach_compound_members
+                // returns to rename to "default".
+                let already_synth = exports.iter().any(|e| e.name == binding);
+                if !already_synth {
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    exports.push(RawExport {
+                        name: binding.to_string(),
+                        kind: RawExportKind::Default,
+                        line,
+                        col,
+                        source: None,
+                        decl_kind: None,
+                        is_type_only: false,
+                        release_tag: None,
+                        compound_members: Vec::new(),
+                        type_signature: None,
+                        satisfies_type: None,
+                        typeof_import_refs: Vec::new(),
+                    });
+                    umd_default_bindings.push(binding.to_string());
+                }
+            }
+        }
     } // end matches!(lang, SourceLanguage::JavaScript) BUN-01..07
 
     // BUN-07: Belt-and-suspenders __esModule final sweep.
@@ -3706,6 +3822,79 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Per D-16 conservative: members attach ONLY when the target identifier is
     // itself an exported symbol discovered by the first pass.
     attach_compound_members(root, source, &language, &mut exports);
+
+    // BUN-11-B (Phase 24) Path 1A post-process: rename synthetic default exports.
+    //
+    // The BUN-11-B driver pushed transient Default RawExports whose `name` field
+    // equals the local binding identifier (e.g. "_" for lodash). attach_compound_members
+    // just used those names to gate compound-member attachment. Now rename to
+    // "default" so the export surface reflects the user-facing semantics.
+    //
+    // Edge case: if multiple synthetic defaults somehow ended up tagged with
+    // different binding names (shouldn't happen — the driver short-circuits on
+    // `already_default`), merge their compound_members onto a single Default and
+    // drop the duplicates.
+    if !umd_default_bindings.is_empty() {
+        let mut merged_members: Vec<String> = Vec::new();
+        let mut merged_line: u32 = 0;
+        let mut merged_col: u32 = 0;
+        let mut found = false;
+        exports.retain(|rx| {
+            let is_synth = umd_default_bindings.iter().any(|b| b == &rx.name)
+                && matches!(rx.kind, RawExportKind::Default);
+            if is_synth {
+                for m in &rx.compound_members {
+                    if !merged_members.iter().any(|mm| mm == m) {
+                        merged_members.push(m.clone());
+                    }
+                }
+                if !found {
+                    merged_line = rx.line;
+                    merged_col = rx.col;
+                    found = true;
+                }
+                false // drop the synthetic entry; replaced below
+            } else {
+                true
+            }
+        });
+        if found {
+            // Re-emit ONE Default named "default" with the merged compound_members.
+            // Skip if a "default" entry already exists from elsewhere (defensive
+            // — the driver's `already_default` short-circuit makes this rare).
+            let already_default = exports
+                .iter()
+                .any(|e| e.name == "default" && matches!(e.kind, RawExportKind::Default));
+            if !already_default {
+                exports.push(RawExport {
+                    name: "default".to_string(),
+                    kind: RawExportKind::Default,
+                    line: merged_line,
+                    col: merged_col,
+                    source: None,
+                    decl_kind: None,
+                    is_type_only: false,
+                    release_tag: None,
+                    compound_members: merged_members,
+                    type_signature: None,
+                    satisfies_type: None,
+                    typeof_import_refs: Vec::new(),
+                });
+            } else {
+                // Merge the gathered members into the existing default.
+                for rx in exports.iter_mut() {
+                    if rx.name == "default" && matches!(rx.kind, RawExportKind::Default) {
+                        for m in &merged_members {
+                            if !rx.compound_members.iter().any(|mm| mm == m) {
+                                rx.compound_members.push(m.clone());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
 
     // INF-02 link-pass (Phase 18): for each Named (non-re-export) RawExport,
     // look up the matching declare-site in the file-scope ambient sidecar
