@@ -1307,7 +1307,7 @@ pub fn diff_satisfies_types(
 /// Shape mirrors `diff_satisfies_types` (above) — the same
 /// "optional LSP-derived slot determines verified-vs-limitation branch"
 /// pattern.
-#[allow(dead_code)]
+#[allow(dead_code, clippy::too_many_arguments)]
 pub fn diff_typeof_import_refs(
     old_sym: &crate::types::ExportSymbol,
     new_sym: &crate::types::ExportSymbol,
