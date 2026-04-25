@@ -23,10 +23,13 @@ Interlint emits findings tagged with stable rule-IDs. Severity maps to CLI exit 
 | Severity | Exit code | Meaning |
 |----------|-----------|---------|
 | Major | 1 | Breaking change — consumers will observe broken behavior |
-| Warning | 2 | Observable behavior change — exhaustive-switch breaks, deprecation |
+| Warning | 0 | Observable behavior change — exhaustive-switch breaks, deprecation. Reported but does not break the build. |
 | Degraded | 3 | Analysis could not complete cleanly (LSP unavailable, parse failure) |
 | Minor | 0 | Non-breaking change worth noting |
 | Patch | 0 | Cosmetic / non-observable change |
+| Info | 0 | Documented limitation — analysis acknowledged but couldn't verify (Phase 25) |
+
+Exit code 2 is reserved for tool-internal errors (e.g., I/O failure, registry unavailable). It is NOT used for any finding severity.
 
 ### Phase 19 rule-IDs (comment-scan pass)
 
@@ -73,6 +76,24 @@ A field rename within the private space (`#foo` → `#bar`) is deliberately sile
 See `docs/rules/class-field-visibility-transition.md` for matching heuristic, limitations, and decorator interaction.
 
 CLS-12 (class static initialization block member extraction) reuses the existing `class-method-removed` rule-ID for removed static-block assignments (`class Foo { static { Foo.bar = 1 } }` — removing `Foo.bar` fires Major `class-method-removed` with the `static property` noun) and surfaces the `limitation: dynamic-static-member-key` annotation under the existing `class-static-type-changed` rule-ID for subscript-expression LHS (`Foo[x] = ...`). See [docs/rules/class-static-block.md](docs/rules/class-static-block.md).
+
+### Limitations (first-class `limitation:` rule-IDs)
+
+Interlint detects what is statically detectable. For cases that fundamentally cannot be verified by static analysis, it emits a paired Severity::Info finding tagged `limitation: <id>` so the boundary is visible in CLI output. All limitation findings exit 0 — they document analysis ceilings, not breakages.
+
+| Rule ID | Origin phase | Trigger |
+|---------|--------------|---------|
+| `limitation: lsp-required` | INF-04 (Phase 22) | LSP was unavailable; the typeof-import target could not be resolved across files. |
+| `limitation: external-type-reference` | INF-04 (Phase 22) | LSP resolved the typeof-import target to a file outside the package tarball (cross-package reference). |
+| `limitation: noinfer-via-local-alias` | GEN-07 (Phase 20) | The user aliased `NoInfer<T>` locally (`type MyNoInfer<T> = NoInfer<T>`) which evades the name-based detector. |
+| `limitation: satisfies-narrowed-type-not-verified` | TYPE-01 (Phase 20) | Degraded mode: `satisfies T` removal detected syntactically, but narrowing direction not LSP-confirmed. |
+| `limitation: symbol-for-registry-key-not-tracked` | ECF-13 (Phase 22) | `Symbol.for(...)` registry keys are private identity with no stable spec semantics; tracked but not diffed. |
+| `limitation: dynamic-static-member-key` | CLS-12 (Phase 21) | A class static initialization block contains computed-key assignments (`Foo[expr] = ...`); members behind dynamic keys are not diffed. |
+| `limitation: proxy-dispatched-exports` | DOC-01 (Phase 25) | Package entrypoint exports a `Proxy` or `Reflect.construct(...)` value; the surface is dynamically dispatched and cannot be enumerated statically. |
+| `limitation: decorator-runtime-effect-opaque` | DOC-01 (Phase 25) | A decorator addition/removal/argument-change is detected, but the semantic runtime effect is not verified. |
+| `limitation: private-brand-access-not-checkable` | DOC-01 (Phase 25) | A class field crosses the public/private boundary (CLS-11); consumer reliance on `#foo` private-brand checks cannot be statically proven. |
+
+See `docs/rules/<name>.md` for individual rule documentation. Phase 25 elevates these from substring-in-message annotations (Phases 19-22) to first-class `Finding.rule` values backed by Severity::Info.
 
 ## Development Setup
 
