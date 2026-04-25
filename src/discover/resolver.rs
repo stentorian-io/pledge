@@ -5,6 +5,7 @@ use anyhow::Context;
 
 use super::comment_scan::CommentIndex;
 use super::tree_query::{language_for_file, parse_exports, RawExportKind};
+use crate::compare::imports_diff::ImportsMap;
 use crate::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace};
 
 // ---------------------------------------------------------------------------
@@ -205,6 +206,21 @@ pub fn parse_tsconfig_paths(pkg_root: &Path) -> Option<TsconfigPaths> {
     })
 }
 
+/// Parse the `imports` field from `pkg_root/package.json` into an ImportsMap.
+///
+/// Returns None if package.json is unreadable, unparseable, or has no
+/// `imports` field. Fail-soft via `.ok()?` chain (mirrors parse_tsconfig_paths).
+///
+/// Per CLAUDE.md project note: package.json is strict JSON, no JSONC handling.
+#[allow(dead_code)]
+pub fn parse_imports_map_for_pkg(pkg_root: &Path) -> Option<ImportsMap> {
+    let pkg_path = pkg_root.join("package.json");
+    let content = std::fs::read_to_string(&pkg_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let imports = json.get("imports")?;
+    Some(crate::compare::imports_diff::parse_imports_map(imports))
+}
+
 /// Attempt to resolve a module specifier using tsconfig path aliases.
 ///
 /// Given a specifier like `@/utils` and paths like `{"@/*": ["./src/*"]}`,
@@ -263,6 +279,133 @@ pub fn resolve_tsconfig_alias(
     }
 
     candidates
+}
+
+/// Resolve a `#`-prefixed specifier through the parsed imports map.
+///
+/// EXP-14 (Phase 23). Returns the on-disk path of the first condition leaf
+/// that classifies as Relative or Bare (with extension probing) — skipping
+/// leaves whose target classifies as NodeBuiltin / UrlScheme / another
+/// ImportsField (per Pitfall §1: imports values may legally name `node:` /
+/// URL targets which are TERMINAL — no source to recurse into).
+///
+/// Lookup order:
+/// 1. Direct exact-key match.
+/// 2. Wildcard pattern fallback (e.g. `#i/*.js` matches `#i/foo.js`).
+///
+/// Returns None if the specifier is not in the map, no condition leaf
+/// resolves to an existing on-disk file, or every leaf is a non-file target.
+#[allow(dead_code)]
+pub(crate) fn resolve_imports_subpath(
+    imports_map: &ImportsMap,
+    specifier: &str,
+    pkg_root: &Path,
+) -> Option<PathBuf> {
+    use crate::compare::exports_diff::{ConditionNode, SubpathEntry};
+
+    /// Walk a ConditionNode to the leaf list, skipping null and non-resolvable targets.
+    fn collect_leaf_targets(node: &ConditionNode, out: &mut Vec<String>) {
+        match node {
+            ConditionNode::Leaf(Some(s)) => out.push(s.clone()),
+            ConditionNode::Leaf(None) => {} // null block-list — terminal, no target
+            ConditionNode::Branch(map) => {
+                for child in map.values() {
+                    collect_leaf_targets(child, out);
+                }
+            }
+        }
+    }
+
+    /// Try a target path string under pkg_root, probing common extensions if
+    /// the literal path doesn't exist on disk. Mirrors the extension-probing
+    /// strategy of resolve_tsconfig_alias.
+    fn probe_target(pkg_root: &Path, target: &str) -> Option<PathBuf> {
+        // Strip leading "./" so join produces a clean path.
+        let trimmed = target.trim_start_matches("./");
+        let base = pkg_root.join(trimmed);
+        if base.exists() {
+            return Some(base);
+        }
+        for ext in &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"] {
+            let candidate = base.with_extension(ext);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        // Directory index fallback.
+        for idx in &[
+            "index.ts",
+            "index.tsx",
+            "index.js",
+            "index.mjs",
+            "index.cjs",
+        ] {
+            let candidate = base.join(idx);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
+    /// Classify a target string and return its on-disk path if it resolves to
+    /// a real file. Skip NodeBuiltin / UrlScheme / nested ImportsField targets.
+    fn try_target(target: &str, pkg_root: &Path) -> Option<PathBuf> {
+        match classify_specifier(target) {
+            SpecifierKind::NodeBuiltin
+            | SpecifierKind::UrlScheme
+            | SpecifierKind::ImportsField => None,
+            SpecifierKind::Relative | SpecifierKind::Bare => probe_target(pkg_root, target),
+        }
+    }
+
+    // --- 1. Direct exact-key match.
+    if let Some(SubpathEntry { node }) = imports_map.get(specifier) {
+        let mut targets = Vec::new();
+        collect_leaf_targets(node, &mut targets);
+        for t in &targets {
+            if let Some(path) = try_target(t, pkg_root) {
+                return Some(path);
+            }
+        }
+        return None;
+    }
+
+    // --- 2. Wildcard fallback.
+    for (key, SubpathEntry { node }) in imports_map.iter() {
+        if !key.contains('*') {
+            continue;
+        }
+        // Same wildcard semantics as resolve_tsconfig_alias: split key at '*',
+        // require specifier to start with the prefix-before-* and end with the
+        // suffix-after-*; remainder is the captured text.
+        let star_pos = match key.find('*') {
+            Some(p) => p,
+            None => continue,
+        };
+        let key_prefix = &key[..star_pos];
+        let key_suffix = &key[star_pos + 1..];
+        if !specifier.starts_with(key_prefix) || !specifier.ends_with(key_suffix) {
+            continue;
+        }
+        let remainder = &specifier[key_prefix.len()..specifier.len() - key_suffix.len()];
+
+        let mut targets = Vec::new();
+        collect_leaf_targets(node, &mut targets);
+        for t in &targets {
+            // Substitute remainder for the value's `*`, if any.
+            let substituted = if t.contains('*') {
+                t.replacen('*', remainder, 1)
+            } else {
+                t.clone()
+            };
+            if let Some(path) = try_target(&substituted, pkg_root) {
+                return Some(path);
+            }
+        }
+    }
+
+    None
 }
 
 /// Maximum number of re-export hops before aborting a resolution chain (D-12).
@@ -445,6 +588,7 @@ pub fn collect_exports(
     warnings: &mut Vec<ResolveWarning>,
     depth: usize,
     tsconfig: Option<&TsconfigPaths>,
+    imports_map: Option<&ImportsMap>,
     subpath: &str,
     condition: Option<&str>,
 ) -> anyhow::Result<()> {
@@ -796,14 +940,34 @@ pub fn collect_exports(
                             // emit ResolveWarnings.
                             continue;
                         }
-                        SpecifierKind::ImportsField | SpecifierKind::Relative | SpecifierKind::Bare => {
-                            // EXISTING behavior (Plan 23-02 will split ImportsField off into
-                            // its own arm that routes through the package.json imports map).
-                            // Until then, ImportsField falls through to the existing
-                            // resolve_module_path -> tsconfig -> external-package fallback,
-                            // preserving the pre-Phase-23 behavior of inserting a synthetic
-                            // *<#internal> entry. Plan 23-02 replaces that with imports-map
-                            // lookup.
+                        SpecifierKind::ImportsField => {
+                            // EXP-14: route #subpath through package.json imports map.
+                            if let Some(im) = imports_map {
+                                if let Some(target) = resolve_imports_subpath(im, specifier, pkg_root) {
+                                    collect_exports(
+                                        &target,
+                                        pkg_root,
+                                        map,
+                                        visited,
+                                        warnings,
+                                        depth + 1,
+                                        tsconfig,
+                                        imports_map,
+                                        subpath,
+                                        condition,
+                                    )?;
+                                    continue;
+                                }
+                            }
+                            // Imports map missing OR lookup miss — ResolveWarning per Pitfall §6.
+                            warnings.push(ResolveWarning::new(format!(
+                                "could not resolve `{}` through package.json imports map (from {})",
+                                specifier,
+                                file.display()
+                            )));
+                            continue;
+                        }
+                        SpecifierKind::Relative | SpecifierKind::Bare => {
                     let mut candidates = resolve_module_path(&canonical, specifier);
                     // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
                     if let Some(tc) = tsconfig {
@@ -825,6 +989,7 @@ pub fn collect_exports(
                                 warnings,
                                 depth + 1,
                                 tsconfig,
+                                imports_map,
                                 subpath,
                                 condition,
                             )?;
@@ -880,7 +1045,7 @@ pub fn collect_exports(
                             }
                         }
                     }
-                        } // end SpecifierKind::ImportsField | Relative | Bare arm
+                        } // end SpecifierKind::Relative | Bare arm
                     } // end match classify_specifier
                 }
             }
@@ -893,9 +1058,64 @@ pub fn collect_exports(
                             // emit ResolveWarnings.
                             continue;
                         }
-                        SpecifierKind::ImportsField | SpecifierKind::Relative | SpecifierKind::Bare => {
-                            // EXISTING behavior (Plan 23-02 will split ImportsField off into
-                            // its own arm that routes through the package.json imports map).
+                        SpecifierKind::ImportsField => {
+                            // EXP-14: route #subpath through package.json imports map.
+                            if let Some(im) = imports_map {
+                                if let Some(target) = resolve_imports_subpath(im, specifier, pkg_root) {
+                                    // Insert a named re-export pointing at the resolved target file —
+                                    // mirrors the existing `Some(target)` insertion at the (now
+                                    // `Relative | Bare`) arm. Use space_for(export.decl_kind.as_ref())
+                                    // and propagate release_tag the same way.
+                                    let space = space_for(export.decl_kind.as_ref());
+                                    let key = ExportKey {
+                                        subpath: subpath.to_string(),
+                                        condition: condition.map(|c| c.to_string()),
+                                        space,
+                                        name: export.name.clone(),
+                                    };
+                                    #[allow(clippy::map_entry)]
+                                    if !map.contains_key(&key) {
+                                        map.insert(
+                                            key,
+                                            ExportSymbol {
+                                                name: export.name.clone(),
+                                                kind: ExportKind::Named,
+                                                file: target
+                                                    .strip_prefix(pkg_root)
+                                                    .unwrap_or(&target)
+                                                    .to_path_buf(),
+                                                line: export.line,
+                                                col: export.col,
+                                                type_signature: None,
+                                                overloads: Vec::new(),
+                                                decl_kinds: export
+                                                    .decl_kind
+                                                    .clone()
+                                                    .map(|k| vec![k])
+                                                    .unwrap_or_default(),
+                                                type_guard_type: None,
+                                                is_async: false,
+                                                is_generator: false,
+                                                is_reexport: false,
+                                                is_type_only: false,
+                                                release_tag: export.release_tag.clone(),
+                                                satisfies_type: None,
+                                                compound_members: Vec::new(),
+                                                typeof_import_refs: Vec::new(),
+                                            },
+                                        );
+                                    }
+                                    continue;
+                                }
+                            }
+                            warnings.push(ResolveWarning::new(format!(
+                                "could not resolve `{}` through package.json imports map (from {})",
+                                specifier,
+                                file.display()
+                            )));
+                            continue;
+                        }
+                        SpecifierKind::Relative | SpecifierKind::Bare => {
                     let mut candidates = resolve_module_path(&canonical, specifier);
                     // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
                     if let Some(tc) = tsconfig {
@@ -1021,7 +1241,7 @@ pub fn collect_exports(
                             }
                         }
                     }
-                        } // end SpecifierKind::ImportsField | Relative | Bare arm
+                        } // end SpecifierKind::Relative | Bare arm
                     } // end match classify_specifier
                 }
             }
@@ -1558,6 +1778,7 @@ mod tests {
             &mut warnings,
             0,
             None,
+            None,
             ".",
             None,
         )
@@ -1637,6 +1858,7 @@ mod tests {
             &mut warnings,
             0,
             None,
+            None,
             ".",
             None,
         )
@@ -1683,6 +1905,7 @@ mod tests {
             &mut visited,
             &mut warnings,
             0,
+            None,
             None,
             ".",
             None,
@@ -1731,6 +1954,7 @@ mod tests {
             &mut visited,
             &mut warnings,
             0,
+            None,
             None,
             ".",
             None,
@@ -1781,6 +2005,7 @@ mod tests {
             &mut visited,
             &mut warnings,
             0,
+            None,
             None,
             ".",
             None,
@@ -1873,6 +2098,7 @@ mod tests {
             &mut warnings,
             0,
             None,
+            None,
             ".",
             None,
         )
@@ -1930,6 +2156,7 @@ mod tests {
             &mut visited,
             &mut warnings,
             0,
+            None,
             None,
             ".",
             None,
@@ -2073,6 +2300,7 @@ export namespace User { export const kind = "u"; }
             &mut warnings,
             0,
             None,
+            None,
             ".",
             None,
         )
@@ -2176,6 +2404,7 @@ Menu.Header = () => null;
             &mut visited,
             &mut warnings,
             0,
+            None,
             None,
             ".",
             None,

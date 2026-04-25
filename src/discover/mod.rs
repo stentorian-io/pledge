@@ -23,6 +23,9 @@ pub fn discover_exports(
     // GAP-15-04: Parse tsconfig.json for path alias resolution
     let tsconfig = resolver::parse_tsconfig_paths(pkg_root);
 
+    // EXP-14 (Phase 23): parse the imports field once for the entire walk.
+    let imports_map = resolver::parse_imports_map_for_pkg(pkg_root);
+
     let mut map = ExportMap::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut warnings: Vec<resolver::ResolveWarning> = Vec::new();
@@ -36,6 +39,7 @@ pub fn discover_exports(
             &mut warnings,
             0,
             tsconfig.as_ref(),
+            imports_map.as_ref(),
             &entry.subpath,
             entry.condition.as_deref(),
         )?;
