@@ -564,6 +564,10 @@ pub fn collect_exports(
                             // ARCH-02 (Phase 18): propagate compound-component members
                             // from the RawExport (populated by attach_compound_members).
                             compound_members: export.compound_members,
+                            // INF-04 (Phase 22): typeof_import_refs propagated
+                            // from RawExport in Task 2 once the RawExport sidecar
+                            // lands. Empty Vec for Task 1 baseline.
+                            typeof_import_refs: Vec::new(),
                         },
                     );
                 }
@@ -622,6 +626,11 @@ pub fn collect_exports(
                             // where the pop-pass tagged the binding.
                             satisfies_type: export.satisfies_type,
                             compound_members: Vec::new(),
+                            // INF-04 (Phase 22): default exports propagate
+                            // typeof_import_refs through the same populate pass.
+                            // Empty Vec for Task 1 baseline; Task 2 wires the
+                            // populate from RawExport.
+                            typeof_import_refs: Vec::new(),
                         },
                     );
                 }
@@ -688,6 +697,10 @@ pub fn collect_exports(
                                             release_tag: None,
                                             satisfies_type: None,
                                             compound_members: Vec::new(),
+                                            // INF-04 (Phase 22): external star re-exports
+                                            // carry no source-site type position; empty Vec
+                                            // is correct.
+                                            typeof_import_refs: Vec::new(),
                                         },
                                     );
                                 }
@@ -762,6 +775,10 @@ pub fn collect_exports(
                                         release_tag: export.release_tag.clone(),
                                         satisfies_type: None,
                                         compound_members: Vec::new(),
+                                        // INF-04 (Phase 22): named re-exports point at the
+                                        // target file's symbol; their typeof refs (if any)
+                                        // live on the target's ExportSymbol. Empty Vec here.
+                                        typeof_import_refs: Vec::new(),
                                     },
                                 );
                             }
@@ -801,6 +818,9 @@ pub fn collect_exports(
                                             release_tag: None,
                                             satisfies_type: None,
                                             compound_members: Vec::new(),
+                                            // INF-04 (Phase 22): external named re-exports
+                                            // carry no source-site type position; empty Vec.
+                                            typeof_import_refs: Vec::new(),
                                         },
                                     );
                                 }
@@ -1401,6 +1421,7 @@ mod tests {
                 release_tag: None,
                 satisfies_type: None,
                 compound_members: Vec::new(),
+                typeof_import_refs: Vec::new(),
             },
         );
         let new_map = crate::types::ExportMap::new();
@@ -1843,6 +1864,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         }
     }
 

@@ -40,6 +40,7 @@ fn make_export_sym(
         release_tag: None,
         satisfies_type: None,
         compound_members: Vec::new(),
+        typeof_import_refs: Vec::new(),
     }
 }
 
@@ -65,6 +66,7 @@ fn make_default_export_sym(
         release_tag: None,
         satisfies_type: None,
         compound_members: Vec::new(),
+        typeof_import_refs: Vec::new(),
     }
 }
 
@@ -350,6 +352,7 @@ fn test_namespace_member_removed() {
                 release_tag: None,
                 satisfies_type: None,
                 compound_members: Vec::new(),
+                typeof_import_refs: Vec::new(),
             },
         );
     }
@@ -375,6 +378,7 @@ fn test_namespace_member_removed() {
                 release_tag: None,
                 satisfies_type: None,
                 compound_members: Vec::new(),
+                typeof_import_refs: Vec::new(),
             },
         );
     }
@@ -432,6 +436,7 @@ fn test_namespace_member_added() {
                 release_tag: None,
                 satisfies_type: None,
                 compound_members: Vec::new(),
+                typeof_import_refs: Vec::new(),
             },
         );
     }
@@ -457,6 +462,7 @@ fn test_namespace_member_added() {
                 release_tag: None,
                 satisfies_type: None,
                 compound_members: Vec::new(),
+                typeof_import_refs: Vec::new(),
             },
         );
     }

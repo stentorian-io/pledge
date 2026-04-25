@@ -357,6 +357,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());

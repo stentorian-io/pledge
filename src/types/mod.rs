@@ -94,6 +94,37 @@ pub struct ExportSymbol {
     /// (D-16 conservative: only when the target identifier is itself an exported
     /// symbol in the same file).
     pub compound_members: Vec<String>,
+    /// INF-04 (Phase 22): `typeof import('./y').Z` references discovered in this
+    /// symbol's type position. Populated by `extract_typeof_import_refs` in the
+    /// resolver's post-parse populate phase (mirrors META-06 release-tag populate
+    /// at resolver.rs:423-448 and Phase 20's satisfies_type sidecar at line 90).
+    ///
+    /// Consumed by the diff pipeline in type_diff.rs::diff_typeof_import_refs:
+    ///   - LSP-available path: each ref resolved via textDocument/definition
+    ///     (see CONTEXT.md D-05 kickoff spike for method choice); if the
+    ///     resolved symbol is absent from the new-version ExportMap, fires
+    ///     Major `type-reference-removed`.
+    ///   - Degraded path: finding message embeds `(limitation: lsp-required)`.
+    ///
+    /// Empty `Vec` is the default — populated only when the type RHS contains
+    /// `typeof import(...)` or `import(...)` member-access forms.
+    pub typeof_import_refs: Vec<TypeofImportRef>,
+}
+
+/// INF-04 (Phase 22): a single `typeof import('./x').Y` or `import('./x').Y`
+/// type reference captured during parse. Positions are 1-indexed per the
+/// project's ExportSymbol convention; the LSP call site adjusts to 0-indexed.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct TypeofImportRef {
+    /// The import specifier, e.g., `"./y"` or `"../shared/types"`.
+    pub specifier: String,
+    /// The property accessed, e.g., `"Z"` in `typeof import('./y').Z`.
+    pub property: String,
+    /// 1-indexed line of the `property` token — used as the LSP request position.
+    pub property_line: u32,
+    /// 1-indexed column of the `property` token.
+    pub property_col: u32,
 }
 
 /// D-03 (Phase 18): SymbolSpace is a first-class key dimension — `export type Foo` and
@@ -527,6 +558,48 @@ mod tests {
     }
 
     #[test]
+    fn inf_04_typeof_import_ref_constructs_cleanly() {
+        // INF-04 (Phase 22): TypeofImportRef sidecar struct construction +
+        // default `typeof_import_refs == Vec::new()` on ExportSymbol.
+        let r = TypeofImportRef {
+            specifier: "./y".into(),
+            property: "Z".into(),
+            property_line: 1,
+            property_col: 40,
+        };
+        assert_eq!(r.specifier, "./y");
+        assert_eq!(r.property, "Z");
+        assert_eq!(r.property_line, 1);
+        assert_eq!(r.property_col, 40);
+    }
+
+    #[test]
+    fn inf_04_export_symbol_default_typeof_refs_empty() {
+        // INF-04 (Phase 22): a freshly-constructed ExportSymbol has an empty
+        // typeof_import_refs Vec by default.
+        let sym = ExportSymbol {
+            name: "foo".to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: Vec::new(),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+            satisfies_type: None,
+            compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
+        };
+        assert!(sym.typeof_import_refs.is_empty());
+    }
+
+    #[test]
     fn test_export_symbol_unchanged() {
         // Ensure existing ExportSymbol still compiles correctly after changes
         let sym = ExportSymbol {
@@ -546,6 +619,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         };
         assert_eq!(sym.name, "foo");
     }
@@ -589,6 +663,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);
@@ -658,6 +733,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         };
         assert!(sym.is_type_only);
     }
@@ -777,6 +853,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         };
         assert_eq!(sym.decl_kinds.len(), 2);
         assert!(sym.decl_kinds.contains(&DeclarationKind::Class));

@@ -286,6 +286,7 @@ mod tests {
             release_tag: None,
             satisfies_type: None,
             compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
         }
     }
 
