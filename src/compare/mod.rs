@@ -8,6 +8,7 @@ pub mod directive_diff;
 pub mod enum_diff;
 pub mod exports_diff;
 pub mod generics_diff;
+pub mod imports_diff;
 pub mod interface_diff;
 pub mod json_diff;
 pub mod metadata;
@@ -420,8 +421,9 @@ fn compare_exports_core(
     findings
 }
 
-/// Orchestrates exports map diffing (EXP-01..13).
-/// Reads package.json from both roots and delegates to exports_diff::compare_exports_diff.
+/// Orchestrates exports + imports map diffing (EXP-01..14).
+/// Reads package.json from both roots and delegates to exports_diff::compare_exports_diff
+/// and imports_diff::compare_imports_diff.
 /// Per D-03: findings merge in compare/mod.rs, not in main.rs.
 pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let old_pkg_path = old_root.join("package.json");
@@ -445,7 +447,10 @@ pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding
         Err(_) => return Vec::new(),
     };
 
-    exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root)
+    let mut findings =
+        exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root);
+    findings.extend(imports_diff::compare_imports_diff(&old_pkg, &new_pkg));
+    findings
 }
 
 /// Orchestrates asset & schema comparison (AST-01..06).

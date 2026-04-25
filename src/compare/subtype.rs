@@ -62,6 +62,13 @@ pub const RULE_PLATFORM_NARROWED: &str = "platform-narrowed";
 pub const RULE_IMPORTABLE_FILE_REMOVED: &str = "importable-file-removed";
 pub const RULE_TYPES_VERSIONS_CHANGED: &str = "types-versions-changed";
 
+// ─── Phase 23: imports-field diff rules (EXP-14) ────────────────────────────
+pub const RULE_IMPORT_ADDED: &str = "import-added";
+pub const RULE_IMPORT_REMOVED: &str = "import-removed";
+pub const RULE_IMPORT_CONDITION_CHANGED: &str = "import-condition-changed";
+pub const RULE_IMPORT_PATTERN_REFINED: &str = "import-pattern-refined";
+pub const RULE_IMPORT_REROUTE: &str = "import-reroute";
+
 // ─── Subtype checker ─────────────────────────────────────────────────────────
 
 /// Determine whether `sub` is a structural subtype of `sup` under TypeScript
@@ -1157,5 +1164,15 @@ mod tests {
     fn phase21_class_surface_rule_constant_values() {
         assert_eq!(RULE_CLASS_FIELD_MADE_PRIVATE, "class-field-made-private");
         assert_eq!(RULE_CLASS_FIELD_MADE_PUBLIC, "class-field-made-public");
+    }
+
+    // ── Phase 23: imports-field diff rule constant values ────────────────────
+    #[test]
+    fn phase23_import_rule_constant_values() {
+        assert_eq!(RULE_IMPORT_ADDED, "import-added");
+        assert_eq!(RULE_IMPORT_REMOVED, "import-removed");
+        assert_eq!(RULE_IMPORT_CONDITION_CHANGED, "import-condition-changed");
+        assert_eq!(RULE_IMPORT_PATTERN_REFINED, "import-pattern-refined");
+        assert_eq!(RULE_IMPORT_REROUTE, "import-reroute");
     }
 }

@@ -96,7 +96,7 @@ fn is_subpath_key(key: &str) -> bool {
 }
 
 /// Parse a `serde_json::Value` condition node into a `ConditionNode`.
-fn parse_condition_node(value: &serde_json::Value) -> ConditionNode {
+pub(crate) fn parse_condition_node(value: &serde_json::Value) -> ConditionNode {
     match value {
         serde_json::Value::String(s) => ConditionNode::Leaf(Some(s.clone())),
         serde_json::Value::Null => ConditionNode::Leaf(None),
@@ -197,7 +197,7 @@ pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
 // ─── Finding factory ──────────────────────────────────────────────────────────
 
 /// Create a Finding anchored to package.json line 1, col 1 (same pattern as metadata.rs D-08).
-fn pkg_json_finding(severity: Severity, rule: &'static str, message: String) -> Finding {
+pub(crate) fn pkg_json_finding(severity: Severity, rule: &'static str, message: String) -> Finding {
     Finding {
         severity,
         rule,
@@ -531,7 +531,7 @@ fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Findi
 /// - "./utils/*.js" -> "./utils/"
 ///
 /// Used for GAP-15-08 semantic matching of wildcard pattern refinements.
-fn strip_wildcard_to_base(pattern: &str) -> &str {
+pub(crate) fn strip_wildcard_to_base(pattern: &str) -> &str {
     // Find the position of '*' and return everything before it
     match pattern.find('*') {
         Some(pos) => &pattern[..pos],
