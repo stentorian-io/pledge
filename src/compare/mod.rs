@@ -415,6 +415,26 @@ fn compare_exports_core(
         }
     }
 
+    // DOC-01 (Phase 25): paired Info for Proxy/Reflect-dispatched defaults.
+    // The Major export-removed findings (above) already report the typed
+    // surface that disappeared; this paired Info documents WHY (the new
+    // surface is dynamically dispatched and not enumerable statically).
+    for (_key, sym) in &filtered_new {
+        if sym.is_proxy_dispatched {
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: subtype::RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS,
+                file: sym.file.clone(),
+                line: sym.line,
+                col: sym.col,
+                message: format!(
+                    "default export of `{}` is dispatched through a Proxy/Reflect handler \u{2014} surface is dynamically dispatched and cannot be enumerated statically",
+                    sym.file.display()
+                ),
+            });
+        }
+    }
+
     // Warning 10 (Blocker 1 fix, Phase 18): NO sort here — the public
     // `compare_exports` wrapper performs the single total-order sort after
     // IDN-01 + IDN-02 post-passes. Sorting here would mean double-sort.
@@ -1798,6 +1818,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
 
         let mut old_exports: ExportMap = ExportMap::new();
@@ -1858,6 +1879,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
 
         let mut old_exports: ExportMap = ExportMap::new();
@@ -1902,6 +1924,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         }
     }
 

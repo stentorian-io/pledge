@@ -866,6 +866,8 @@ pub fn collect_exports(
                             // when the export's type position contains no
                             // `typeof import(...).Y` references.
                             typeof_import_refs: export.typeof_import_refs.clone(),
+                            // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
+                            is_proxy_dispatched: export.is_proxy_dispatched,
                         },
                     );
                 }
@@ -927,6 +929,8 @@ pub fn collect_exports(
                             // INF-04 (Phase 22): default exports propagate
                             // typeof_import_refs from the populated RawExport.
                             typeof_import_refs: export.typeof_import_refs.clone(),
+                            // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
+                            is_proxy_dispatched: export.is_proxy_dispatched,
                         },
                     );
                 }
@@ -1033,6 +1037,7 @@ pub fn collect_exports(
                                             // carry no source-site type position; empty Vec
                                             // is correct.
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         },
                                     );
                                 }
@@ -1102,6 +1107,7 @@ pub fn collect_exports(
                                                 satisfies_type: None,
                                                 compound_members: Vec::new(),
                                                 typeof_import_refs: Vec::new(),
+                                                is_proxy_dispatched: false,
                                             },
                                         );
                                     }
@@ -1178,6 +1184,7 @@ pub fn collect_exports(
                                         // target file's symbol; their typeof refs (if any)
                                         // live on the target's ExportSymbol. Empty Vec here.
                                         typeof_import_refs: Vec::new(),
+                                        is_proxy_dispatched: false,
                                     },
                                 );
                             }
@@ -1220,6 +1227,7 @@ pub fn collect_exports(
                                             // INF-04 (Phase 22): external named re-exports
                                             // carry no source-site type position; empty Vec.
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         },
                                     );
                                 }
@@ -1824,6 +1832,7 @@ mod tests {
                 satisfies_type: None,
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
+                is_proxy_dispatched: false,
             },
         );
         let new_map = crate::types::ExportMap::new();
@@ -2273,6 +2282,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         }
     }
 

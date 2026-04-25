@@ -358,6 +358,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert!(sym.type_signature.is_none());
         assert!(sym.overloads.is_empty());

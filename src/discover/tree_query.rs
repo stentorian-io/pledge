@@ -134,6 +134,12 @@ pub struct RawExport {
     /// later forwarded onto the resolved `ExportSymbol.typeof_import_refs`
     /// at the resolver's insertion sites.
     pub typeof_import_refs: Vec<crate::types::TypeofImportRef>,
+    /// DOC-01 (Phase 25): true when this RawExport was synthesized from a
+    /// `module.exports = new Proxy(...)` or `module.exports = Reflect.construct(...)`
+    /// RHS. The comparator emits a paired Severity::Info finding with rule
+    /// `limitation: proxy-dispatched-exports` when transitioning to or from this
+    /// shape. Default `false` for all non-proxy export forms.
+    pub is_proxy_dispatched: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +604,30 @@ const CJS_MODULE_EXPORTS_FUNCTION_QUERY: &str = r#"
       (function_expression) @fn_value
       (generator_function) @fn_value
       (arrow_function) @fn_value
+    ]))
+"#;
+
+/// DOC-01 (Phase 25): Captures `module.exports = new Proxy(...)` and
+/// `module.exports = Reflect.construct(...)` — Proxy-dispatched default
+/// export. Synthesizes a `default` RawExport flagged is_proxy_dispatched
+/// so the comparator can emit a paired `limitation: proxy-dispatched-exports`
+/// Info finding. Covers Open Question O3 idioms (a) and (b); idiom (c)
+/// (named-key Proxy) and (d) (factory returning Proxy) are NOT covered
+/// here — they fall through to existing patterns and the limitation is
+/// the catch-all.
+const CJS_MODULE_EXPORTS_PROXY_QUERY: &str = r#"
+(expression_statement
+  (assignment_expression
+    left: (member_expression
+      object: (identifier) @obj
+      property: (property_identifier) @prop)
+    right: [
+      (new_expression
+        constructor: (identifier) @ctor)
+      (call_expression
+        function: (member_expression
+          object: (identifier) @reflect_obj
+          property: (property_identifier) @reflect_method))
     ]))
 "#;
 
@@ -1153,6 +1183,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -1188,6 +1219,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 type_signature: None,
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
+                                is_proxy_dispatched: false,
                             });
                         }
                     }
@@ -1221,6 +1253,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1289,6 +1322,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -1335,6 +1369,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -1382,6 +1417,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -1442,6 +1478,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1489,6 +1526,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -1536,6 +1574,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                         }
@@ -1591,6 +1630,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1626,6 +1666,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -1663,6 +1704,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -1704,6 +1746,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1781,6 +1824,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -1854,6 +1898,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1891,6 +1936,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1922,6 +1968,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -1995,6 +2042,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -2051,6 +2099,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -2106,6 +2155,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -2157,6 +2207,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -2186,6 +2237,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -2217,6 +2269,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -2261,6 +2314,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                         }
@@ -2327,6 +2381,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             type_signature: None,
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         });
                                     }
                                 }
@@ -2380,6 +2435,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         type_signature: None,
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
+                                        is_proxy_dispatched: false,
                                     });
                                 }
                             }
@@ -2424,6 +2480,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         type_signature: None,
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
+                                        is_proxy_dispatched: false,
                                     });
                                 }
                             }
@@ -2467,6 +2524,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         type_signature: None,
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
+                                        is_proxy_dispatched: false,
                                     });
                                 }
                             }
@@ -2511,6 +2569,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 type_signature: None,
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
+                                is_proxy_dispatched: false,
                             });
                         }
                     }
@@ -2551,6 +2610,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 type_signature: None,
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
+                                is_proxy_dispatched: false,
                             });
                         }
                     }
@@ -2603,6 +2663,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                         }
@@ -2646,8 +2707,72 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // DOC-01 (Phase 25): module.exports = new Proxy(...) | Reflect.construct(...)
+        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_PROXY_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let obj_ok = m.captures.iter()
+                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
+                let prop_ok = m.captures.iter()
+                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                if !obj_ok || !prop_ok { continue; }
+
+                // Branch A: new_expression with constructor 'Proxy'
+                let is_proxy_new = m.captures.iter().any(|c| {
+                    c.index == 2 && c.node.utf8_text(source).ok() == Some("Proxy")
+                });
+
+                // Branch B: call_expression with Reflect.{construct,get}
+                let is_reflect_call = {
+                    let reflect_obj_ok = m.captures.iter().any(|c| {
+                        c.index == 3 && c.node.utf8_text(source).ok() == Some("Reflect")
+                    });
+                    let reflect_method_ok = m.captures.iter().any(|c| {
+                        c.index == 4 && matches!(c.node.utf8_text(source).ok(), Some("construct") | Some("get"))
+                    });
+                    reflect_obj_ok && reflect_method_ok
+                };
+
+                if !(is_proxy_new || is_reflect_call) { continue; }
+
+                // Find the position of the right-hand expression
+                let pos_capture = m.captures.iter().find(|c| c.index == 2 || c.index == 3);
+                if let Some(c) = pos_capture {
+                    let node = c.node;
+                    let line = node.start_position().row as u32 + 1;
+                    let col = node.start_position().column as u32 + 1;
+                    let already = exports.iter().any(|e| e.name == "default");
+                    if !already {
+                        exports.push(RawExport {
+                            name: "default".to_string(),
+                            kind: RawExportKind::Default,
+                            line,
+                            col,
+                            source: None,
+                            decl_kind: None,
+                            is_type_only: false,
+                            release_tag: None,
+                            compound_members: Vec::new(),
+                            type_signature: None,
+                            satisfies_type: None,
+                            typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: true,
+                        });
+                    } else {
+                        // Existing default already captured by a sibling pattern (rare).
+                        // Mark it as proxy-dispatched so the comparator still emits the limitation.
+                        for e in exports.iter_mut() {
+                            if e.name == "default" { e.is_proxy_dispatched = true; break; }
                         }
                     }
                 }
@@ -2709,6 +2834,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 type_signature: None,
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
+                                                is_proxy_dispatched: false,
                                             });
                                         }
                                     }
@@ -2733,6 +2859,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     type_signature: None,
                                                     satisfies_type: None,
                                                     typeof_import_refs: Vec::new(),
+                                                    is_proxy_dispatched: false,
                                                 });
                                             }
                                         }
@@ -2798,6 +2925,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                     // META-03: emit synthetic keys for each top-level member in the body.
@@ -2852,6 +2980,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             type_signature: None,
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         });
                                     }
                                     // META-03: emit synthetic keys for top-level members.
@@ -2993,6 +3122,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 type_signature: None,
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
+                                                is_proxy_dispatched: false,
                                             });
                                         }
                                     }
@@ -3019,6 +3149,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             type_signature: None,
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         });
                                     }
                                 }
@@ -3085,6 +3216,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 type_signature: None,
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
+                                                is_proxy_dispatched: false,
                                             });
                                         }
                                     }
@@ -3144,6 +3276,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                         }
@@ -3254,6 +3387,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -3334,6 +3468,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             type_signature: None,
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
+                                            is_proxy_dispatched: false,
                                         });
                                     }
                                 }
@@ -3380,6 +3515,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         type_signature: None,
                                                         satisfies_type: None,
                                                         typeof_import_refs: Vec::new(),
+                                                        is_proxy_dispatched: false,
                                                     });
                                                 }
                                             }
@@ -3440,6 +3576,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         type_signature: None,
                                                         satisfies_type: None,
                                                         typeof_import_refs: Vec::new(),
+                                                        is_proxy_dispatched: false,
                                                     });
                                                 }
                                             }
@@ -3466,6 +3603,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     type_signature: None,
                                                     satisfies_type: None,
                                                     typeof_import_refs: Vec::new(),
+                                                    is_proxy_dispatched: false,
                                                 });
                                             }
                                         }
@@ -3519,6 +3657,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 type_signature: None,
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
+                                is_proxy_dispatched: false,
                             });
                         }
                     }
@@ -3593,6 +3732,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -3667,6 +3807,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                 }
             }
@@ -3754,6 +3895,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         type_signature: None,
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
+                                        is_proxy_dispatched: false,
                                     });
                                 }
                             }
@@ -3780,6 +3922,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                         }
@@ -3893,6 +4036,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         type_signature: None,
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
+                        is_proxy_dispatched: false,
                     });
                     umd_default_bindings.push(binding.to_string());
                 }
@@ -4023,6 +4167,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             } else {
                 // Merge the gathered members into the existing default.
@@ -4212,6 +4357,7 @@ fn expand_namespace_members(
                                     type_signature: None,
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
+                                    is_proxy_dispatched: false,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -4280,6 +4426,7 @@ fn expand_namespace_members(
                             type_signature: None,
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
+                            is_proxy_dispatched: false,
                         });
                     }
                 }
@@ -4345,6 +4492,7 @@ fn emit_augmentation_members(
                     type_signature: None,
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
                 });
             }
         }
@@ -8862,6 +9010,41 @@ mod phase24_bun11_query_tests {
         let lang: Language = tree_sitter_javascript::LANGUAGE.into();
         Query::new(&lang, UMD_FACTORY_WRAPPER_QUERY)
             .expect("UMD_FACTORY_WRAPPER_QUERY must compile against tree-sitter-javascript 0.25.0");
+    }
+}
+
+#[cfg(test)]
+mod phase25_proxy_detection_tests {
+    use super::{parse_exports, SourceLanguage};
+
+    #[test]
+    fn proxy_module_exports_detected() {
+        let source = b"module.exports = new Proxy({}, {});";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let default_exp = raw.iter().find(|e| e.name == "default").expect("default not captured");
+        assert!(default_exp.is_proxy_dispatched, "Proxy RHS should set is_proxy_dispatched");
+    }
+
+    #[test]
+    fn reflect_construct_module_exports_detected() {
+        let source = b"module.exports = Reflect.construct(SomeClass, []);";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        let default_exp = raw.iter().find(|e| e.name == "default").expect("default not captured");
+        assert!(default_exp.is_proxy_dispatched, "Reflect.construct RHS should set is_proxy_dispatched");
+    }
+
+    #[test]
+    fn non_proxy_call_expression_not_flagged() {
+        let source = b"module.exports = require('./other');";
+        let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
+        // require() is a call_expression with a plain identifier function (not a member_expression).
+        // The Proxy query's call_expression branch requires function: (member_expression ...).
+        // So this should NOT match the Proxy query; it falls through to existing identifier patterns.
+        for e in &raw {
+            if e.name == "default" {
+                assert!(!e.is_proxy_dispatched, "require() must not flag is_proxy_dispatched");
+            }
+        }
     }
 }
 

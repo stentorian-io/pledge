@@ -110,6 +110,12 @@ pub struct ExportSymbol {
     /// Empty `Vec` is the default — populated only when the type RHS contains
     /// `typeof import(...)` or `import(...)` member-access forms.
     pub typeof_import_refs: Vec<TypeofImportRef>,
+    /// DOC-01 (Phase 25): true when this ExportSymbol was synthesized from a
+    /// `module.exports = new Proxy(...)` or `module.exports = Reflect.construct(...)`
+    /// RHS. Forwarded from RawExport.is_proxy_dispatched by the resolver.
+    /// The comparator uses this flag to emit a paired Severity::Info finding
+    /// with rule `limitation: proxy-dispatched-exports`. Default `false`.
+    pub is_proxy_dispatched: bool,
 }
 
 /// INF-04 (Phase 22): a single `typeof import('./x').Y` or `import('./x').Y`
@@ -643,6 +649,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert!(sym.typeof_import_refs.is_empty());
     }
@@ -668,6 +675,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert_eq!(sym.name, "foo");
     }
@@ -734,6 +742,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);
@@ -804,6 +813,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert!(sym.is_type_only);
     }
@@ -924,6 +934,7 @@ mod tests {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         };
         assert_eq!(sym.decl_kinds.len(), 2);
         assert!(sym.decl_kinds.contains(&DeclarationKind::Class));
