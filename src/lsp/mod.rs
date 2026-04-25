@@ -192,6 +192,92 @@ pub async fn enrich_exports(
         }
     }
 
+    // INF-04 (Phase 22): second LSP pass — resolve typeof_import_refs via
+    // textDocument/definition. Runs AFTER all hovers (Pitfall 6 — no
+    // interleaving; keeps hover-completion timing predictable).
+    //
+    // Shares the 60s total_budget and 3-strike CRASH_THRESHOLD with the
+    // hover pass.
+    //
+    // Resolved locations are stored on the ExportMap via the `typeof_targets`
+    // sidecar (parallel to the Phase 19 `directives` sidecar). The diff
+    // pipeline reads this sidecar in `type_diff.rs::diff_typeof_import_refs`.
+    {
+        use async_lsp::lsp_types::Url;
+
+        // Snapshot of (key, refs) pairs — we cannot hold an immutable borrow
+        // on `exports` while calling `record_typeof_target` (mutable borrow).
+        let keys_with_refs: Vec<(crate::types::ExportKey, Vec<crate::types::TypeofImportRef>)> =
+            exports
+                .iter()
+                .filter(|(_, sym)| !sym.typeof_import_refs.is_empty())
+                .map(|(k, sym)| (k.clone(), sym.typeof_import_refs.clone()))
+                .collect();
+
+        let mut definition_failures: usize = 0;
+        'outer: for (key, refs) in keys_with_refs {
+            if budget_start.elapsed() >= total_budget {
+                tracing::warn!(
+                    "LSP total budget exhausted before resolving all typeof_import_refs"
+                );
+                break;
+            }
+
+            // The request URI is the FILE that contains the symbol whose
+            // type position holds the typeof-import refs. Each ref's
+            // (property_line, property_col) is the position passed to
+            // textDocument/definition — that's the column of the `Y` in
+            // `typeof import('./x').Y`.
+            let abs_file_path = {
+                let sym = match exports.get(&key) {
+                    Some(s) => s,
+                    None => continue,
+                };
+                if sym.file.is_absolute() {
+                    sym.file.clone()
+                } else {
+                    pkg_root.join(&sym.file)
+                }
+            };
+            let file_uri = match Url::from_file_path(&abs_file_path) {
+                Ok(u) => u,
+                Err(_) => continue,
+            };
+
+            for (idx, r) in refs.iter().enumerate() {
+                let result = definition::resolve_definition_location(
+                    &session,
+                    file_uri.clone(),
+                    r.property_line,
+                    r.property_col,
+                )
+                .await;
+                match result {
+                    Ok(location_opt) => {
+                        definition_failures = 0;
+                        exports.record_typeof_target(&key, idx, location_opt);
+                    }
+                    Err(e) => {
+                        definition_failures += 1;
+                        tracing::warn!(
+                            "typeof-import definition failed for {} ref#{idx}: {e}",
+                            key.name
+                        );
+                        if definition_failures >= CRASH_THRESHOLD {
+                            let msg = format!(
+                                "LSP definition pass failed: {} \u{2014} falling back to structural-only diff",
+                                e
+                            );
+                            let _ = session.shutdown().await;
+                            return Ok(EnrichResult::Degraded(msg));
+                        }
+                        break 'outer;
+                    }
+                }
+            }
+        }
+    }
+
     // Step 5: shutdown
     if let Err(e) = session.shutdown().await {
         tracing::warn!("LSP shutdown error: {e}");

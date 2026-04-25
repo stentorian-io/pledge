@@ -238,12 +238,58 @@ pub struct ExportMap {
         std::path::PathBuf,
         Vec<crate::discover::comment_scan::DirectiveRecord>,
     >,
+    /// INF-04 (Phase 22): resolved LSP `textDocument/definition` Locations
+    /// for each ExportSymbol's `typeof_import_refs` entries.
+    ///
+    /// Outer key: ExportKey of the symbol whose `typeof_import_refs` is
+    /// non-empty.
+    /// Inner key: the index of the ref within that symbol's
+    /// `typeof_import_refs` Vec (stable iteration order).
+    /// Inner value: `Some(Location)` = LSP resolved to a concrete declaration
+    /// site; `None` = LSP ran but returned no result (timeout / no
+    /// definition); absent = LSP was never run for this ref (degraded path).
+    ///
+    /// Populated by `enrich_exports` second pass (`src/lsp/mod.rs`). Consumed
+    /// by `diff_typeof_import_refs` (`src/compare/type_diff.rs`).
+    pub typeof_targets: std::collections::HashMap<
+        ExportKey,
+        std::collections::HashMap<usize, Option<async_lsp::lsp_types::Location>>,
+    >,
 }
 
 impl ExportMap {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// INF-04 (Phase 22): record the resolved Location for a given
+    /// ExportSymbol's `typeof_import_refs` entry at the given ref index.
+    /// Called by the second-pass LSP dispatch in `enrich_exports`.
+    #[allow(dead_code)]
+    pub fn record_typeof_target(
+        &mut self,
+        key: &ExportKey,
+        ref_idx: usize,
+        location: Option<async_lsp::lsp_types::Location>,
+    ) {
+        self.typeof_targets
+            .entry(key.clone())
+            .or_default()
+            .insert(ref_idx, location);
+    }
+
+    /// INF-04 (Phase 22): look up a recorded target. Returns:
+    /// - `Some(&Some(loc))` — LSP resolved to `loc`
+    /// - `Some(&None)`      — LSP ran but returned no result
+    /// - `None`             — LSP was never run (degraded path)
+    #[allow(dead_code)]
+    pub fn typeof_target(
+        &self,
+        key: &ExportKey,
+        ref_idx: usize,
+    ) -> Option<&Option<async_lsp::lsp_types::Location>> {
+        self.typeof_targets.get(key).and_then(|m| m.get(&ref_idx))
     }
 }
 
@@ -267,6 +313,7 @@ impl From<HashMap<ExportKey, ExportSymbol>> for ExportMap {
         ExportMap {
             inner,
             directives: std::collections::BTreeMap::new(),
+            typeof_targets: std::collections::HashMap::new(),
         }
     }
 }
