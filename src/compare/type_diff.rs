@@ -1285,6 +1285,22 @@ pub fn diff_satisfies_types(
         col,
         message,
     });
+    // DOC-01 (Phase 25): paired Info finding when degraded-mode emit fires
+    // (i.e., narrowing direction was not LSP-verified). Original Minor message
+    // retains the substring for backward-compat with existing fixture assertions.
+    if !narrowed_was_verified {
+        findings.push(Finding {
+            severity: Severity::Info,
+            rule: crate::compare::subtype::RULE_LIMITATION_SATISFIES_NARROWED,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "narrowing direction not LSP-confirmed for `{}`",
+                new_sym.name
+            ),
+        });
+    }
     findings
 }
 
@@ -1339,6 +1355,18 @@ pub fn diff_typeof_import_refs(
                 message: format!(
                     "type reference `typeof import('{}').{}` on `{}` could not be verified (limitation: lsp-required)",
                     r.specifier, r.property, new_sym.name
+                ),
+            });
+            // DOC-01 (Phase 25): paired Info for the lsp-required limitation.
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: crate::compare::subtype::RULE_LIMITATION_LSP_REQUIRED,
+                file: file.to_path_buf(),
+                line: new_sym.line,
+                col: new_sym.col,
+                message: format!(
+                    "typeof-import target `{}.{}` could not be resolved (LSP unavailable)",
+                    r.specifier, r.property
                 ),
             });
             continue;
@@ -2690,5 +2718,128 @@ mod tests {
         assert_eq!(added.len(), 1, "exactly one variant added; got: {added:?}");
         // `format_type` renders string literals as `"literal"`
         assert_eq!(added[0], "\"triangle\"");
+    }
+
+    // ── Phase 25 DOC-01: paired Severity::Info tests ───────────────────────────
+
+    fn make_sym_with_satisfies(name: &str, has_narrowed: bool) -> crate::types::ExportSymbol {
+        use crate::types::{ExportKind, ExportSymbol};
+        use crate::types::shape::{TypeShape, PrimitiveKind};
+        let satisfies_type = Some(TypeShape::Satisfies {
+            constraint: Box::new(TypeShape::Primitive(PrimitiveKind::Unknown)),
+            narrowed: if has_narrowed {
+                Some(Box::new(TypeShape::Primitive(PrimitiveKind::String)))
+            } else {
+                None
+            },
+        });
+        ExportSymbol {
+            name: name.to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from("f.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: Vec::new(),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+            satisfies_type,
+            compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
+        }
+    }
+
+    fn make_sym_plain(name: &str) -> crate::types::ExportSymbol {
+        use crate::types::{ExportKind, ExportSymbol};
+        ExportSymbol {
+            name: name.to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from("f.ts"),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: Vec::new(),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+            satisfies_type: None,
+            compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
+        }
+    }
+
+    #[test]
+    fn paired_info_at_satisfies_site() {
+        use crate::compare::subtype::{RULE_TYPE_NARROWING_WIDENED, RULE_LIMITATION_SATISFIES_NARROWED};
+        // old has satisfies with no narrowed (degraded) → new has no satisfies
+        let old_sym = make_sym_with_satisfies("cfg", false);
+        let new_sym = make_sym_plain("cfg");
+        let findings = diff_satisfies_types(&old_sym, &new_sym, &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_NARROWING_WIDENED),
+            "expected Minor type-narrowing-widened; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_SATISFIES_NARROWED),
+            "expected Info limitation: satisfies-narrowed-type-not-verified; got: {:?}", findings
+        );
+        assert_eq!(findings.len(), 2, "expected exactly 2 findings (Minor + paired Info); got: {:?}", findings);
+    }
+
+    #[test]
+    fn paired_info_at_typeof_import_site() {
+        use crate::compare::subtype::{RULE_TYPE_REFERENCE_REMOVED, RULE_LIMITATION_LSP_REQUIRED};
+        use crate::types::TypeofImportRef;
+        use crate::types::{ExportKey, SymbolSpace};
+
+        let r = TypeofImportRef {
+            specifier: "./target".to_string(),
+            property: "Z".to_string(),
+            property_line: 1,
+            property_col: 10,
+        };
+        let mut old_sym = make_sym_plain("X");
+        old_sym.typeof_import_refs = vec![r];
+        let new_sym = make_sym_plain("X");
+
+        let old_map = crate::types::ExportMap::new();
+        let new_map = crate::types::ExportMap::new();
+        let key = ExportKey {
+            subpath: ".".to_string(),
+            condition: None,
+            space: SymbolSpace::Type,
+            name: "X".to_string(),
+        };
+
+        let mut findings: Vec<Finding> = Vec::new();
+        diff_typeof_import_refs(
+            &old_sym, &new_sym,
+            &old_map, &new_map,
+            &key, &key,
+            false, // lsp_was_available = false → degraded path
+            &PathBuf::from("f.ts"),
+            &mut findings,
+        );
+
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_REFERENCE_REMOVED),
+            "expected Minor type-reference-removed; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_LSP_REQUIRED),
+            "expected Info limitation: lsp-required; got: {:?}", findings
+        );
+        assert_eq!(findings.len(), 2, "expected exactly 2 findings (Minor + paired Info); got: {:?}", findings);
     }
 }

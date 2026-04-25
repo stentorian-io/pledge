@@ -110,6 +110,18 @@ fn diff_decorators(
                         o.name, owner_description, old_args, new_args
                     ),
                 });
+                // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+                findings.push(Finding {
+                    severity: Severity::Info,
+                    rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "decorator runtime effect on {} is opaque to static analysis",
+                        owner_description
+                    ),
+                });
                 break;
             }
         }
@@ -126,6 +138,18 @@ fn diff_decorators(
                 col,
                 message: format!("decorator `@{}` removed from {}", o.name, owner_description),
             });
+            // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "decorator runtime effect on {} is opaque to static analysis",
+                    owner_description
+                ),
+            });
         }
     }
 
@@ -139,6 +163,18 @@ fn diff_decorators(
                 line,
                 col,
                 message: format!("decorator `@{}` added to {}", n.name, owner_description),
+            });
+            // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "decorator runtime effect on {} is opaque to static analysis",
+                    owner_description
+                ),
             });
         }
     }
@@ -290,6 +326,18 @@ pub fn compare_class_shapes(
                     k.0, symbol_name, k.0,
                 ),
             });
+            // DOC-01 (Phase 25): paired Info — private-brand access is opaque.
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: crate::compare::subtype::RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "consumer reliance on `#{}` private-brand checks on `{}` cannot be statically verified",
+                    k.0, symbol_name
+                ),
+            });
             transitioned_keys.insert((k.0.to_string(), k.1));
         }
     }
@@ -313,6 +361,18 @@ pub fn compare_class_shapes(
                 message: format!(
                     "field `#{}` on class `{}` became public (`{}`) — previously-hidden surface is now observable",
                     k.0, symbol_name, k.0,
+                ),
+            });
+            // DOC-01 (Phase 25): paired Info — private-brand access is opaque.
+            findings.push(Finding {
+                severity: Severity::Info,
+                rule: crate::compare::subtype::RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "consumer reliance on `#{}` private-brand checks on `{}` cannot be statically verified",
+                    k.0, symbol_name
                 ),
             });
             transitioned_keys.insert((k.0.to_string(), k.1));
@@ -625,6 +685,18 @@ pub fn compare_class_shapes(
             message: format!(
                 "static initialization block on class `{}` contains dynamic-key assignment(s) \u{2014} members behind computed keys are not diffed (limitation: dynamic-static-member-key)",
                 symbol_name,
+            ),
+        });
+        // DOC-01 (Phase 25): paired Info — dynamic-key limitation promoted to first-class.
+        findings.push(Finding {
+            severity: Severity::Info,
+            rule: crate::compare::subtype::RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "dynamic-key static-block assignments on class `{}` are not enumerated",
+                symbol_name
             ),
         });
     }
@@ -1212,6 +1284,130 @@ mod tests {
             0,
             "same optionality should NOT fire; got: {:?}",
             rules(&findings)
+        );
+    }
+
+    // ── Phase 25 DOC-01: paired Severity::Info tests ───────────────────────────
+
+    fn make_decorated_class(decorator_name: &str, decorator_args: Option<&str>) -> ClassShape {
+        let mut cls = make_class(vec![]);
+        cls.decorators = vec![DecoratorSpec {
+            name: decorator_name.to_string(),
+            args: decorator_args.map(|s| s.to_string()),
+        }];
+        cls
+    }
+
+    #[test]
+    fn paired_info_at_decorator_arguments_changed_site() {
+        use crate::compare::subtype::{RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::types::Severity;
+        let old = make_decorated_class("Route", Some("'/users'"));
+        let new = make_decorated_class("Route", Some("'/people'"));
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED),
+            "expected Major decorator-arguments-changed; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn paired_info_at_decorator_removed_site() {
+        use crate::compare::subtype::{RULE_DECORATOR_REMOVED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::types::Severity;
+        let old = make_decorated_class("LogCall", None);
+        let new = make_class(vec![]); // no decorator
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_REMOVED),
+            "expected Major decorator-removed; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn paired_info_at_decorator_added_site() {
+        use crate::compare::subtype::{RULE_DECORATOR_ADDED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::types::Severity;
+        let old = make_class(vec![]); // no decorator
+        let new = make_decorated_class("LogCall", None);
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ADDED),
+            "expected Major decorator-added; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn paired_info_at_cls11_made_private_site() {
+        use crate::compare::subtype::{RULE_CLASS_FIELD_MADE_PRIVATE, RULE_LIMITATION_PRIVATE_BRAND_ACCESS};
+        use crate::types::{ClassMemberKind, Severity, Visibility};
+        // old has public 'foo', new has private '#foo'
+        let mut pub_member = make_member("foo", ClassMemberKind::Property, Visibility::Public);
+        pub_member.is_private = false;
+        let mut priv_member = make_member("#foo", ClassMemberKind::Property, Visibility::Private);
+        priv_member.is_private = true;
+        let old = make_class(vec![pub_member]);
+        let new = make_class(vec![priv_member]);
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_CLASS_FIELD_MADE_PRIVATE),
+            "expected Major class-field-made-private; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
+            "expected Info limitation: private-brand-access-not-checkable; got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn paired_info_at_cls11_made_public_site() {
+        use crate::compare::subtype::{RULE_CLASS_FIELD_MADE_PUBLIC, RULE_LIMITATION_PRIVATE_BRAND_ACCESS};
+        use crate::types::{ClassMemberKind, Severity, Visibility};
+        // old has private '#foo', new has public 'foo'
+        let mut priv_member = make_member("#foo", ClassMemberKind::Property, Visibility::Private);
+        priv_member.is_private = true;
+        let mut pub_member = make_member("foo", ClassMemberKind::Property, Visibility::Public);
+        pub_member.is_private = false;
+        let old = make_class(vec![priv_member]);
+        let new = make_class(vec![pub_member]);
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_FIELD_MADE_PUBLIC),
+            "expected Minor class-field-made-public; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
+            "expected Info limitation: private-brand-access-not-checkable; got: {:?}", findings
+        );
+    }
+
+    #[test]
+    fn paired_info_at_dynamic_static_key_site() {
+        use crate::compare::subtype::{RULE_CLASS_STATIC_TYPE_CHANGED, RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY};
+        use crate::types::Severity;
+        let mut old = make_class(vec![]);
+        old.has_dynamic_static_key = true;
+        let new = make_class(vec![]);
+        let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_STATIC_TYPE_CHANGED),
+            "expected Minor class-static-type-changed; got: {:?}", findings
+        );
+        assert!(
+            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY),
+            "expected Info limitation: dynamic-static-member-key; got: {:?}", findings
         );
     }
 }

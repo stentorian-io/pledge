@@ -47,6 +47,7 @@ fn make_export_sym(name: &str, file: PathBuf, line: u32) -> ExportSymbol {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     }
 }
 
@@ -86,6 +87,7 @@ fn test_ambient_class_removal_detected() {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         },
     );
 
@@ -110,6 +112,7 @@ fn test_ambient_class_removal_detected() {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         },
     );
 
@@ -450,6 +453,7 @@ fn test_structural_diff_with_file_move() {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         },
     );
 
@@ -474,6 +478,7 @@ fn test_structural_diff_with_file_move() {
             satisfies_type: None,
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
         },
     );
 

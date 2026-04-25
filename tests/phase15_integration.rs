@@ -47,6 +47,7 @@ fn make_export_sym(
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     }
 }
 
@@ -73,6 +74,7 @@ fn make_default_export_sym(
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     }
 }
 
@@ -99,6 +101,7 @@ fn raw_exports_to_map(raw: Vec<interlint::discover::tree_query::RawExport>) -> E
                 satisfies_type: None,
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
+                is_proxy_dispatched: false,
             },
         );
     }

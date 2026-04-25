@@ -134,6 +134,7 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     }
 }
 
@@ -202,6 +203,7 @@ fn test_ref_02_rest_param_narrowed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = ExportSymbol {
@@ -230,6 +232,7 @@ fn test_ref_02_rest_param_narrowed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     // Old has rest param, new does not — rest-param-narrowed
@@ -291,6 +294,7 @@ fn test_ref_03_type_guard_widened() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = ExportSymbol {
@@ -311,6 +315,7 @@ fn test_ref_03_type_guard_widened() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let findings =
@@ -348,6 +353,7 @@ fn test_ref_04_declaration_kind_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = ExportSymbol {
@@ -368,6 +374,7 @@ fn test_ref_04_declaration_kind_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let findings =
@@ -414,6 +421,7 @@ fn test_ref_05_namespace_to_other() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     // Log what tree-sitter sees for debugging
@@ -437,6 +445,7 @@ fn test_ref_05_namespace_to_other() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let findings =
@@ -534,6 +543,7 @@ fn test_ref_07_index_signature_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = ExportSymbol {
@@ -554,6 +564,7 @@ fn test_ref_07_index_signature_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let findings = ref_diff::compare_ref_changes(
@@ -613,6 +624,7 @@ fn test_ref_07_index_signature_removed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = old_sym.clone();
@@ -660,6 +672,7 @@ fn test_ref_08_default_export_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let new_sym = ExportSymbol {
@@ -680,6 +693,7 @@ fn test_ref_08_default_export_changed() {
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     };
 
     let findings =

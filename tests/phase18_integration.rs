@@ -41,6 +41,7 @@ fn make_sym(name: &str, file: PathBuf, line: u32, kinds: Vec<DeclarationKind>) -
         satisfies_type: None,
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
+        is_proxy_dispatched: false,
     }
 }
 
