@@ -3273,18 +3273,28 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                     "assign" => {
                         if let Some(args) = args_node {
-                            let first_arg = args.named_children(&mut args.walk()).next();
-                            let is_exports_target = first_arg
-                                .and_then(|n| n.utf8_text(source).ok())
-                                .map(|t| t == "exports" || t.starts_with("module."))
-                                .unwrap_or(false);
-                            if !is_exports_target {
+                            // BUN-10 (Phase 24): accept any-position `exports`/`module.*` reference.
+                            // This handles all three real shapes uniformly:
+                            //   Object.assign(exports, {…})            — pre-Phase-24 path
+                            //   Object.assign(module.exports, {…}, …)  — pre-Phase-24 path
+                            //   Object.assign({}, exports, {…})        — NEW: BUN-10-A gap closed
+                            // The arm short-circuits when no arg references `exports`/`module.*`,
+                            // preserving the precision of the pre-Phase-24 gate.
+                            let all_args: Vec<_> =
+                                args.named_children(&mut args.walk()).collect();
+                            let any_arg_is_exports = all_args.iter().any(|n| {
+                                n.utf8_text(source)
+                                    .ok()
+                                    .map(|t| t == "exports" || t.starts_with("module."))
+                                    .unwrap_or(false)
+                            });
+                            if !any_arg_is_exports {
                                 continue;
                             }
-                            // Remaining args are objects whose pairs to emit
-                            let remaining: Vec<_> =
-                                args.named_children(&mut args.walk()).skip(1).collect();
-                            for obj_node in remaining {
+                            // Walk every object-literal arg's pairs. Skip non-object args
+                            // (including the `exports` reference itself, which has kind
+                            // "identifier" or "member_expression" — not "object").
+                            for obj_node in all_args.iter().filter(|n| n.kind() == "object") {
                                 let mut obj_cur = obj_node.walk();
                                 for child in obj_node.children(&mut obj_cur) {
                                     if child.kind() == "pair" {
