@@ -3674,6 +3674,18 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
 
         // BUN-11-A (Phase 24): UMD wrapper factory-returns-object literal unwrap.
         //
+        // ORDERING INVARIANT (WR-03): this driver MUST run AFTER
+        // `CJS_EXPORTS_PROPERTY_QUERY` (and `OBJECT_DEFINE_EXPORT_QUERY`) so
+        // that the dedup check `exports.iter().any(|e| e.name == name)` below
+        // sees those earlier emissions FIRST. If a future refactor moves this
+        // driver earlier in the JS-only block — or introduces a new export
+        // shape that surfaces names AFTER BUN-11-A — the dedup precedence
+        // flips: BUN-11-A becomes the first writer with empty
+        // `compound_members` and no `decl_kind`, and subsequent
+        // `exports.X = …` emissions get suppressed. Do NOT reorder without
+        // adding a regression test for the hybrid "factory both `return { foo }`
+        // AND `exports.foo = …`" shape.
+        //
         // Detects the canonical UMD shape:
         //   (function (root, factory) { ... })(this, function () { return { foo, bar }; });   // Form 1
         //   (function (root, factory) { ... }(this, function () { return { foo, bar }; }));   // Form 2
@@ -3683,7 +3695,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         //   - Factory uses `exports.X = …` / `Object.defineProperty(exports, …)`:
         //     already detected by the depth-agnostic CJS_EXPORTS_PROPERTY_QUERY and
         //     OBJECT_DEFINE_EXPORT_QUERY at the outer pass. The dedup check below
-        //     prevents double emission.
+        //     prevents double emission (see ORDERING INVARIANT above).
         //   - Lodash-style `(module.exports = <ident>)._ = <ident>`: handled by the
         //     BUN-11-B driver after this driver (Path 1A in Task 3).
         //
