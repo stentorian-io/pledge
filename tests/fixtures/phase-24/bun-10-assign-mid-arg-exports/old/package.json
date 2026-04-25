@@ -1,0 +1,5 @@
+{
+  "name": "phase24-bun-10-assign-mid-arg-exports",
+  "version": "1.0.0",
+  "main": "./dist/index.js"
+}
