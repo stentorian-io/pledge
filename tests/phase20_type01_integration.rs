@@ -33,7 +33,7 @@ fn run(form: &str) -> Vec<interlint::types::Finding> {
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();
     let (new_exports, _) = discover_exports(&new_dir).unwrap();
-    compare_exports(&old_exports, &new_exports, &new_dir)
+    compare_exports(&old_exports, &new_exports, &new_dir, true)
 }
 
 #[test]

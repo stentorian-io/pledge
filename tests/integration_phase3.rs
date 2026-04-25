@@ -45,7 +45,7 @@ fn test_signature_changes_detected() {
 
     let old_exports = discover_fixture(&old_path);
     let new_exports = discover_fixture(&new_path);
-    let findings = compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
+    let findings = compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
 
     let rules = rule_ids(&findings);
 

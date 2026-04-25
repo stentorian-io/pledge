@@ -32,7 +32,7 @@ fn run(form: &str) -> Vec<Finding> {
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();
     let (new_exports, _) = discover_exports(&new_dir).unwrap();
-    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
     findings.extend(compare_structural_diff(
         &old_dir,
         &new_dir,

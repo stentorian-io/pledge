@@ -1456,7 +1456,7 @@ mod tests {
         let new_map = crate::types::ExportMap::new();
 
         let findings =
-            crate::compare::compare_exports(&old_map, &new_map, std::path::Path::new("."));
+            crate::compare::compare_exports(&old_map, &new_map, std::path::Path::new("."), true);
         assert!(
             findings
                 .iter()

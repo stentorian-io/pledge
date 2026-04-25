@@ -1288,6 +1288,86 @@ pub fn diff_satisfies_types(
     findings
 }
 
+/// INF-04 (Phase 22): emit `type-reference-removed` findings for
+/// `typeof import('./y').Z` references whose target symbol is absent
+/// from the new version.
+///
+/// Two branches, gated by `lsp_was_available`:
+///
+/// - **LSP-available (Major):** old/new versions both ran the LSP
+///   second pass (Task 4). For each ref, we compare the resolved-target
+///   side. If the OLD side resolved to a Location and the NEW side did
+///   NOT (`Some(&None)` or `None`), the reference target was removed —
+///   fires Major `type-reference-removed`.
+/// - **LSP-unavailable (Minor):** at least one side was Degraded. We
+///   cannot verify removal but must NOT silently drop coverage. Emit
+///   one Minor finding per ref with `(limitation: lsp-required)` in the
+///   message (Phase 20 / Phase 21 limitation-annotation precedent).
+///
+/// Shape mirrors `diff_satisfies_types` (above) — the same
+/// "optional LSP-derived slot determines verified-vs-limitation branch"
+/// pattern.
+#[allow(dead_code)]
+pub fn diff_typeof_import_refs(
+    old_sym: &crate::types::ExportSymbol,
+    new_sym: &crate::types::ExportSymbol,
+    old_exports: &crate::types::ExportMap,
+    new_exports: &crate::types::ExportMap,
+    old_key: &crate::types::ExportKey,
+    new_key: &crate::types::ExportKey,
+    lsp_was_available: bool,
+    file: &Path,
+    findings: &mut Vec<Finding>,
+) {
+    use crate::compare::subtype::RULE_TYPE_REFERENCE_REMOVED;
+
+    if old_sym.typeof_import_refs.is_empty() {
+        return;
+    }
+    for (idx, r) in old_sym.typeof_import_refs.iter().enumerate() {
+        if !lsp_was_available {
+            // Degraded path: emit limitation-annotated advisory (Phase 20/21
+            // pattern). Severity = Minor — a verifiable Major requires LSP
+            // confirmation that the target is actually missing in the new
+            // version.
+            findings.push(Finding {
+                severity: Severity::Minor,
+                rule: RULE_TYPE_REFERENCE_REMOVED,
+                file: file.to_path_buf(),
+                line: new_sym.line,
+                col: new_sym.col,
+                message: format!(
+                    "type reference `typeof import('{}').{}` on `{}` could not be verified (limitation: lsp-required)",
+                    r.specifier, r.property, new_sym.name
+                ),
+            });
+            continue;
+        }
+
+        // Verified path — both old and new have run the LSP second pass.
+        // Read the resolved targets out of the typeof_targets sidecar.
+        let old_target = old_exports.typeof_target(old_key, idx);
+        let new_target = new_exports.typeof_target(new_key, idx);
+
+        let old_resolved = matches!(old_target, Some(loc_opt) if loc_opt.is_some());
+        let new_resolved = matches!(new_target, Some(loc_opt) if loc_opt.is_some());
+
+        if old_resolved && !new_resolved {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_TYPE_REFERENCE_REMOVED,
+                file: file.to_path_buf(),
+                line: new_sym.line,
+                col: new_sym.col,
+                message: format!(
+                    "type reference `typeof import('{}').{}` on `{}` was removed \u{2014} `{}` is no longer exported from `{}`",
+                    r.specifier, r.property, new_sym.name, r.property, r.specifier
+                ),
+            });
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

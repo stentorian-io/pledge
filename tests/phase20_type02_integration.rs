@@ -38,7 +38,7 @@ fn run(form: &str) -> Vec<interlint::types::Finding> {
     // hover did not populate `overloads`. Both must run to exercise the
     // full pipeline — mirror how the CLI composes them (see
     // `src/main.rs` and the CLS-10 integration test).
-    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
     findings.extend(compare_structural_diff(
         &old_dir,
         &new_dir,

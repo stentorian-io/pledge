@@ -32,7 +32,7 @@ fn run(form: &str) -> Vec<Finding> {
     // each file to extract ClassShape / ClassMember). compare_exports alone
     // runs only the base ExportKey-iteration diff which does NOT touch
     // class shapes. Both must run to exercise the full pipeline.
-    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
     findings.extend(compare_structural_diff(
         &old_dir,
         &new_dir,

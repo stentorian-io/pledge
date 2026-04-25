@@ -38,7 +38,7 @@ fn run(form: &str) -> Vec<interlint::types::Finding> {
     // reached for type-alias bodies only via `compare_structural_diff`
     // (mirrors the TYPE-02 integration test and the CLI composition in
     // `src/main.rs`).
-    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
     findings.extend(compare_structural_diff(
         &old_dir,
         &new_dir,

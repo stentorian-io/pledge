@@ -390,7 +390,7 @@ fn test_namespace_member_removed() {
         old_exports.keys().collect::<Vec<_>>()
     );
 
-    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
+    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
 
     assert!(
         findings
@@ -474,7 +474,7 @@ fn test_namespace_member_added() {
         new_exports.keys().collect::<Vec<_>>()
     );
 
-    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."));
+    let findings = compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
 
     assert!(
         findings

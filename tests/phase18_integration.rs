@@ -89,7 +89,7 @@ fn arch_01_sc1_symbol_moved_between_subpaths_produces_removed_finding() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     assert_eq!(
         findings
             .iter()
@@ -150,7 +150,7 @@ fn arch_01_sc2_dropped_cjs_condition_produces_condition_scoped_finding() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     assert_eq!(
         findings
             .iter()
@@ -209,7 +209,7 @@ fn arch_04_sc3_multi_subpath_same_name_class_both_diffed() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     let removed: Vec<_> = findings
         .iter()
         .filter(|f| f.rule == "export-removed")
@@ -244,7 +244,7 @@ fn arch_03_sc4_type_and_value_space_coexist_and_diff_independently() {
         make_sym("Foo", test_file(), 5, vec![DeclarationKind::Variable]),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     assert_eq!(
         findings
             .iter()
@@ -351,7 +351,7 @@ fn arch_05_sc6_class_namespace_hybrid_preserved_no_ref05_fp() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     let ref05_fired = findings.iter().any(|f| f.rule == "namespace-to-other");
     assert!(
         !ref05_fired,
@@ -596,7 +596,7 @@ export { NewApi as OldApi, NewApi };
         ),
     );
 
-    let findings = compare_exports(&old_map, &new_map, dir.path());
+    let findings = compare_exports(&old_map, &new_map, dir.path(), true);
     assert_eq!(
         findings
             .iter()
@@ -660,7 +660,7 @@ fn idn_01_sc10_no_alias_trailer_stays_as_major_removed() {
         ),
     );
 
-    let findings = compare_exports(&old_map, &new_map, dir.path());
+    let findings = compare_exports(&old_map, &new_map, dir.path(), true);
     assert_eq!(
         findings
             .iter()
@@ -727,7 +727,7 @@ fn idn_02_sc11_namespace_move_collapses_into_member_moved_findings() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     assert_eq!(
         findings
             .iter()
@@ -799,7 +799,7 @@ fn idn_02_sc11_partial_overlap_does_not_collapse() {
         ),
     );
 
-    let findings = compare_exports(&old, &new, noop_root());
+    let findings = compare_exports(&old, &new, noop_root(), true);
     assert_eq!(
         findings
             .iter()
@@ -877,7 +877,7 @@ export namespace D {
         new_exports.keys().map(|k| &k.name).collect::<Vec<_>>()
     );
 
-    let findings = compare_exports(&old_exports, &new_exports, new_dir.path());
+    let findings = compare_exports(&old_exports, &new_exports, new_dir.path(), true);
     // Through the full pipeline, IDN-02 should consolidate into exactly 2
     // namespace-member-moved findings. Note: the namespace declarations
     // themselves (A/D in SymbolSpace::Namespace) remain as plain add/remove
@@ -987,7 +987,7 @@ export { Foo$1 as Foo };
     );
 
     // Assertion 4: identical old/new shape → no surface add/remove/renamed.
-    let findings = compare_exports(&old_exports, &new_exports, new_dir.path());
+    let findings = compare_exports(&old_exports, &new_exports, new_dir.path(), true);
     let surface_findings: Vec<_> = findings
         .iter()
         .filter(|f| {

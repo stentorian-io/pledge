@@ -194,8 +194,17 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             }
 
             // Step 3: Compare (type-aware when shapes available, fallback to presence-only)
+            //
+            // INF-04 (Phase 22): pass `lsp_was_available = !degraded` so the
+            // diff pipeline can choose between Major-verified and
+            // Minor-limitation-annotated emission for typeof-import refs.
             let all_warnings: Vec<_> = old_warnings.into_iter().chain(new_warnings).collect();
-            let mut findings = compare::compare_exports(&old_exports, &new_exports, &current_root);
+            let mut findings = compare::compare_exports(
+                &old_exports,
+                &new_exports,
+                &current_root,
+                !degraded,
+            );
 
             // Step 3b: Metadata comparison (META-01..07)
             let metadata_findings =

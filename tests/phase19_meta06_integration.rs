@@ -77,7 +77,7 @@ fn meta_06_regression_guard_all_forms() {
             }
         };
 
-        let findings = compare_exports(&old_exports, &new_exports, &new_dir);
+        let findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
 
         let deprecated_hits: Vec<_> = findings
             .iter()

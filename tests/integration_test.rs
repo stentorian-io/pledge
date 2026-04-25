@@ -66,7 +66,7 @@ fn test_discover_reexports() {
 fn test_compare_detects_removed_export() {
     let (old, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     let (new, _) = discover_exports(&fixture_path("simple-pkg-v2")).unwrap();
-    let findings = compare_exports(&old, &new, std::path::Path::new("."));
+    let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
     let removed: Vec<_> = findings
         .iter()
         .filter(|f| f.rule == "export-removed")
@@ -84,7 +84,7 @@ fn test_compare_detects_removed_export() {
 fn test_compare_detects_added_export() {
     let (old, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     let (new, _) = discover_exports(&fixture_path("simple-pkg-v2")).unwrap();
-    let findings = compare_exports(&old, &new, std::path::Path::new("."));
+    let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
     let added: Vec<_> = findings
         .iter()
         .filter(|f| f.rule == "export-added")
@@ -102,7 +102,7 @@ fn test_compare_detects_added_export() {
 fn test_compare_identical_no_findings() {
     let (old, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     let (new, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
-    let findings = compare_exports(&old, &new, std::path::Path::new("."));
+    let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
     assert!(
         findings.is_empty(),
         "identical exports should produce no findings"
@@ -113,7 +113,7 @@ fn test_compare_identical_no_findings() {
 fn test_has_breaking_changes() {
     let (old, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     let (new, _) = discover_exports(&fixture_path("simple-pkg-v2")).unwrap();
-    let findings = compare_exports(&old, &new, std::path::Path::new("."));
+    let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
     assert!(
         has_breaking_changes(&findings),
         "should detect breaking changes when export removed"
@@ -124,7 +124,7 @@ fn test_has_breaking_changes() {
 fn test_findings_sorted_by_severity() {
     let (old, _) = discover_exports(&fixture_path("simple-pkg")).unwrap();
     let (new, _) = discover_exports(&fixture_path("simple-pkg-v2")).unwrap();
-    let findings = compare_exports(&old, &new, std::path::Path::new("."));
+    let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
     // major findings should come before minor
     let first_major_idx = findings.iter().position(|f| f.severity == Severity::Major);
     let last_minor_idx = findings.iter().rposition(|f| f.severity == Severity::Minor);

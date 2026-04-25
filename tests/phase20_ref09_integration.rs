@@ -43,7 +43,7 @@ fn run(form: &str) -> Vec<interlint::types::Finding> {
     // uses `interface EventMap`, which runs through compare_structural_diff
     // -> interface_diff::compare_interface_index_signatures. Compose both
     // top-level pipelines (mirrors the CLI composition in `src/main.rs`).
-    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir);
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
     findings.extend(compare_structural_diff(
         &old_dir,
         &new_dir,

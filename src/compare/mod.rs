@@ -128,9 +128,22 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
 /// total-order sort at the tail (Warning 10: no double-sort).
 ///
 /// Findings are sorted by (severity, file, line, col, rule) at the tail.
-pub fn compare_exports(old: &ExportMap, new: &ExportMap, pkg_root: &Path) -> Vec<Finding> {
+///
+/// `lsp_was_available` (INF-04, Phase 22): when `true`, the diff pipeline
+/// reads `ExportMap.typeof_targets` and emits Major
+/// `type-reference-removed` findings for verified target removals. When
+/// `false` (degraded mode), the same code path emits a Minor finding with
+/// a `(limitation: lsp-required)` annotation. The flag is threaded
+/// explicitly through the signature rather than read from a thread-local —
+/// trivially testable, no hidden state.
+pub fn compare_exports(
+    old: &ExportMap,
+    new: &ExportMap,
+    pkg_root: &Path,
+    lsp_was_available: bool,
+) -> Vec<Finding> {
     // Base diff: ExportKey iteration, augment routing, type-aware compare.
-    let mut findings = compare_exports_core(old, new);
+    let mut findings = compare_exports_core(old, new, lsp_was_available);
     // IDN-01: transparent rename coalescing (alias-trailer-only, D-05).
     findings = rename_coalesce::coalesce_renames(old, new, findings, pkg_root);
     // IDN-02: namespace-move cascade consolidation (exact-subtree, depth 1).
@@ -151,7 +164,15 @@ pub fn compare_exports(old: &ExportMap, new: &ExportMap, pkg_root: &Path) -> Vec
 /// Base export diff — ExportKey iteration, augment-prefix routing, type-aware
 /// comparison. No sort, no post-passes. Called by `compare_exports` which
 /// wraps this with IDN-01 + IDN-02 post-passes and a single total-order sort.
-fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
+///
+/// `lsp_was_available` (INF-04, Phase 22): threaded to
+/// `diff_typeof_import_refs` to choose between Major-verified and
+/// Minor-limitation-annotated emission.
+fn compare_exports_core(
+    old: &ExportMap,
+    new: &ExportMap,
+    lsp_was_available: bool,
+) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
     // META-04 / META-06 (Phase 19): Filter non-public release tags before comparison.
@@ -349,6 +370,25 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap) -> Vec<Finding> {
                 new_sym.line,
                 new_sym.col,
             ));
+            // INF-04 (Phase 22): `typeof import('./y').Z` cross-file type
+            // reference removal. Reads the typeof_targets sidecar; the diff
+            // function returns nothing when old_sym has no typeof refs.
+            // The two ExportMaps to read sidecars from are the UNFILTERED
+            // `old`/`new` maps because the filtered_old/filtered_new copies
+            // dropped the `directives` sidecar — same applies to the new
+            // `typeof_targets` sidecar (file-level / per-symbol-LSP-result
+            // data unrelated to release-tag filtering).
+            type_diff::diff_typeof_import_refs(
+                old_sym,
+                new_sym,
+                old,
+                new,
+                key,
+                key,
+                lsp_was_available,
+                &new_sym.file,
+                &mut findings,
+            );
         }
     }
 
@@ -1877,7 +1917,7 @@ mod tests {
             ExportKey::new("./sub", None, SymbolSpace::Value, "foo"),
             make_basic_sym("foo", PathBuf::from("b.ts"), 1),
         );
-        let findings = compare_exports(&old, &new, std::path::Path::new("."));
+        let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
         assert_eq!(
             findings
                 .iter()
@@ -1934,7 +1974,7 @@ mod tests {
             ExportKey::new(".", None, SymbolSpace::Value, "Foo"),
             make_basic_sym("Foo", PathBuf::from("a.ts"), 1),
         );
-        let findings = compare_exports(&old, &new, std::path::Path::new("."));
+        let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
         assert_eq!(
             findings
                 .iter()
@@ -1977,7 +2017,7 @@ mod tests {
             make_basic_sym("User", PathBuf::from("src/a.ts"), 1),
         );
         // ./admin User removed.
-        let findings = compare_exports(&old, &new, std::path::Path::new("."));
+        let findings = compare_exports(&old, &new, std::path::Path::new("."), true);
         assert_eq!(
             findings
                 .iter()
@@ -2017,8 +2057,8 @@ mod tests {
             );
         }
 
-        let run_a = compare_exports(&old, &new, std::path::Path::new("."));
-        let run_b = compare_exports(&old, &new, std::path::Path::new("."));
+        let run_a = compare_exports(&old, &new, std::path::Path::new("."), true);
+        let run_b = compare_exports(&old, &new, std::path::Path::new("."), true);
 
         assert_eq!(
             run_a.len(),
