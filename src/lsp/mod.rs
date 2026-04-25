@@ -2,6 +2,7 @@
 //! and populates ExportSymbol with resolved type signatures and TypeShape values.
 
 pub mod client;
+pub mod definition;
 pub mod hover;
 pub mod managed;
 
