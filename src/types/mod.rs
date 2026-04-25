@@ -11,6 +11,7 @@ pub enum Severity {
     Minor,
     Patch,
     Warning,
+    Info,
 }
 
 #[allow(dead_code)]
@@ -687,6 +688,28 @@ mod tests {
                 Severity::Minor,
                 Severity::Patch,
                 Severity::Warning
+            ]
+        );
+    }
+
+    #[test]
+    fn test_severity_info_sorts_last() {
+        let mut severities = vec![
+            Severity::Info,
+            Severity::Warning,
+            Severity::Major,
+            Severity::Patch,
+            Severity::Minor,
+        ];
+        severities.sort();
+        assert_eq!(
+            severities,
+            vec![
+                Severity::Major,
+                Severity::Minor,
+                Severity::Patch,
+                Severity::Warning,
+                Severity::Info
             ]
         );
     }
