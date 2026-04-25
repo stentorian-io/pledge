@@ -808,6 +808,20 @@ const LODASH_STYLE_DEFAULT_QUERY: &str = r#"
 /// runtime by checking `target` against the synthesized binding name list
 /// (`umd_default_bindings`) so it cannot over-capture assignments from
 /// unrelated identifiers.
+///
+/// LIMITATION (WR-01): The gate is **binding-name-scoped, not lexically-scoped**.
+/// Matching is by identifier text equality against `umd_default_bindings`, NOT
+/// by AST containment within the wrapper IIFE body. If the same identifier
+/// (e.g. `_`) is reused as a different binding elsewhere in the same file —
+/// for instance a top-level `_.foo = bar` referring to a sibling-IIFE-rebound
+/// `_`, or a shadowed variable — those member assignments will be incorrectly
+/// attached to the synthetic Default. Plan 24-02 phrases this as "over-capture
+/// is bounded": bounded to "binding-name match anywhere in the file", NOT
+/// bounded to "descendants of the wrapper IIFE body". The robust fix is to
+/// capture the wrapper IIFE body node when synthesizing the Default and
+/// restrict matching to its byte-range descendants; deferred for v0.2 because
+/// the lodash-canonical shape scopes the binding to the wrapper IIFE and the
+/// collision is rare in real bundler output.
 const BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY: &str = r#"
 (assignment_expression
   left: (member_expression
