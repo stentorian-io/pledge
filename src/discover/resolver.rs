@@ -789,6 +789,21 @@ pub fn collect_exports(
             }
             RawExportKind::StarReexport => {
                 if let Some(specifier) = &export.source {
+                    match classify_specifier(specifier) {
+                        SpecifierKind::NodeBuiltin | SpecifierKind::UrlScheme => {
+                            // RES-01 / RES-02: silently skip — these are not paths and
+                            // must not be inserted as synthetic external re-exports nor
+                            // emit ResolveWarnings.
+                            continue;
+                        }
+                        SpecifierKind::ImportsField | SpecifierKind::Relative | SpecifierKind::Bare => {
+                            // EXISTING behavior (Plan 23-02 will split ImportsField off into
+                            // its own arm that routes through the package.json imports map).
+                            // Until then, ImportsField falls through to the existing
+                            // resolve_module_path -> tsconfig -> external-package fallback,
+                            // preserving the pre-Phase-23 behavior of inserting a synthetic
+                            // *<#internal> entry. Plan 23-02 replaces that with imports-map
+                            // lookup.
                     let mut candidates = resolve_module_path(&canonical, specifier);
                     // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
                     if let Some(tc) = tsconfig {
@@ -865,10 +880,22 @@ pub fn collect_exports(
                             }
                         }
                     }
+                        } // end SpecifierKind::ImportsField | Relative | Bare arm
+                    } // end match classify_specifier
                 }
             }
             RawExportKind::NamedReexport => {
                 if let Some(specifier) = &export.source {
+                    match classify_specifier(specifier) {
+                        SpecifierKind::NodeBuiltin | SpecifierKind::UrlScheme => {
+                            // RES-01 / RES-02: silently skip — these are not paths and
+                            // must not be inserted as synthetic external re-exports nor
+                            // emit ResolveWarnings.
+                            continue;
+                        }
+                        SpecifierKind::ImportsField | SpecifierKind::Relative | SpecifierKind::Bare => {
+                            // EXISTING behavior (Plan 23-02 will split ImportsField off into
+                            // its own arm that routes through the package.json imports map).
                     let mut candidates = resolve_module_path(&canonical, specifier);
                     // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
                     if let Some(tc) = tsconfig {
@@ -994,6 +1021,8 @@ pub fn collect_exports(
                             }
                         }
                     }
+                        } // end SpecifierKind::ImportsField | Relative | Bare arm
+                    } // end match classify_specifier
                 }
             }
         }
