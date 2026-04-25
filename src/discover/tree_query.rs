@@ -719,6 +719,32 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
   right: (_))
 "#;
 
+/// BUN-11-A (Phase 24): UMD wrapper IIFE shape.
+///   `(function (root, factory) { ... })(this, function (exports) { ... })`
+///   `(function (root, factory) { ... })(this, function ()        { return {...} })`
+///
+/// Captures @umd_factory_body — the IIFE's second-arg function body — so the
+/// driver can recurse the existing CJS / BUN-06a queries against just that
+/// sub-tree using a fresh QueryCursor (the `expand_namespace_members` trick).
+///
+/// `function_expression` is the verified tree-sitter-javascript 0.25.0 node
+/// name for anonymous `function(…) {}` literals (confirmed via Form C/F probe
+/// success in 24-RESEARCH.md §Empirical Coverage Audit). The query-compile
+/// unit test below is the regression guard for grammar version bumps.
+const UMD_FACTORY_WRAPPER_QUERY: &str = r#"
+(call_expression
+  function: (parenthesized_expression
+    (function_expression
+      parameters: (formal_parameters
+        (identifier) @umd_root_param
+        (identifier) @umd_factory_param)))
+  arguments: (arguments
+    (_) @umd_global_arg
+    (function_expression
+      parameters: (formal_parameters) @umd_factory_params
+      body: (statement_block) @umd_factory_body)))
+"#;
+
 /// ECF-13 (Phase 22): `exports[Symbol.X] = ...` — bare `exports` identifier LHS
 /// object. Captures well-known Symbol-keyed module exports on CJS.
 ///
