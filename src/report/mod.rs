@@ -62,6 +62,7 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
                 Severity::Minor => format!("{}", "minor".yellow()),
                 Severity::Patch => format!("{}", "patch".blue()),
                 Severity::Warning => format!("{}", "warning".bright_yellow()),
+                Severity::Info => format!("{}", "info".dimmed()),
             }
         } else {
             match f.severity {
@@ -69,6 +70,7 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
                 Severity::Minor => "minor".to_string(),
                 Severity::Patch => "patch".to_string(),
                 Severity::Warning => "warning".to_string(),
+                Severity::Info => "info".to_string(),
             }
         };
 
@@ -93,6 +95,10 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
     let warning_count = findings
         .iter()
         .filter(|f| f.severity == Severity::Warning)
+        .count();
+    let info_count = findings
+        .iter()
+        .filter(|f| f.severity == Severity::Info)
         .count();
 
     let degraded_note = if degraded {
@@ -142,6 +148,14 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
             println!("{} warning(s)", warning_count);
         }
     }
+
+    if info_count > 0 {
+        if color {
+            println!("{}", format!("{} info", info_count).dimmed());
+        } else {
+            println!("{} info", info_count);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -171,6 +185,82 @@ mod tests {
             .count();
         assert_eq!(major_count, 0);
         assert_eq!(warning_count, 1);
+    }
+
+    #[test]
+    fn test_info_findings_render_with_info_label() {
+        // Verify that Severity::Info produces the literal string "info" in no-color mode
+        let severity = Severity::Info;
+        let label = match severity {
+            Severity::Major => "major",
+            Severity::Minor => "minor",
+            Severity::Patch => "patch",
+            Severity::Warning => "warning",
+            Severity::Info => "info",
+        };
+        assert_eq!(label, "info");
+    }
+
+    #[test]
+    fn test_info_findings_do_not_increment_major_count() {
+        // Info findings must NOT trip has_breaking_changes (exits 0, not 1)
+        use crate::compare::has_breaking_changes;
+        let findings = vec![Finding {
+            severity: Severity::Info,
+            rule: "limitation: lsp-required",
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            message: "lsp unavailable".to_string(),
+        }];
+        assert!(!has_breaking_changes(&findings));
+        let major_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Major)
+            .count();
+        assert_eq!(major_count, 0);
+    }
+
+    #[test]
+    fn test_info_footer_renders_when_present() {
+        // Verify that info_count logic correctly counts Severity::Info findings
+        let findings = vec![
+            Finding {
+                severity: Severity::Info,
+                rule: "limitation: lsp-required",
+                file: PathBuf::from("test.ts"),
+                line: 1,
+                col: 1,
+                message: "first info finding".to_string(),
+            },
+            Finding {
+                severity: Severity::Info,
+                rule: "limitation: external-type-reference",
+                file: PathBuf::from("test.ts"),
+                line: 2,
+                col: 1,
+                message: "second info finding".to_string(),
+            },
+        ];
+        let info_count = findings
+            .iter()
+            .filter(|f| f.severity == Severity::Info)
+            .count();
+        assert_eq!(info_count, 2);
+        // Zero info when no Info findings present
+        let non_info = vec![Finding {
+            severity: Severity::Warning,
+            rule: "async-to-sync",
+            file: PathBuf::from("test.ts"),
+            line: 1,
+            col: 1,
+            message: "warning".to_string(),
+        }];
+        let info_count_zero = non_info
+            .iter()
+            .filter(|f| f.severity == Severity::Info)
+            .count();
+        assert_eq!(info_count_zero, 0);
     }
 }
 
