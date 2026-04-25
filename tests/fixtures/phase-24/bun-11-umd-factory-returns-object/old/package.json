@@ -1,0 +1,5 @@
+{
+  "name": "phase24-bun-11-umd-factory-returns-object",
+  "version": "1.0.0",
+  "main": "./dist/index.js"
+}
