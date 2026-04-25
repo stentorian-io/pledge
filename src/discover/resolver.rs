@@ -320,6 +320,63 @@ impl ResolveWarning {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 23 (RES-01 + RES-02): specifier classification
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod phase23_classifier_tests {
+    use super::{classify_specifier, SpecifierKind};
+
+    #[test]
+    fn node_prefix_is_node_builtin() {
+        assert_eq!(classify_specifier("node:fs"), SpecifierKind::NodeBuiltin);
+        assert_eq!(classify_specifier("node:path"), SpecifierKind::NodeBuiltin);
+        assert_eq!(classify_specifier("node:test"), SpecifierKind::NodeBuiltin);
+        assert_eq!(classify_specifier("node:"), SpecifierKind::NodeBuiltin);
+    }
+
+    #[test]
+    fn url_schemes_are_url_scheme() {
+        assert_eq!(classify_specifier("data:application/json,{}"), SpecifierKind::UrlScheme);
+        assert_eq!(classify_specifier("https://example.com/m.js"), SpecifierKind::UrlScheme);
+        assert_eq!(classify_specifier("http://example.com/m.js"), SpecifierKind::UrlScheme);
+        assert_eq!(classify_specifier("file:///abs/path.js"), SpecifierKind::UrlScheme);
+    }
+
+    #[test]
+    fn hash_prefix_is_imports_field() {
+        assert_eq!(classify_specifier("#internal"), SpecifierKind::ImportsField);
+        assert_eq!(classify_specifier("#"), SpecifierKind::ImportsField);
+        assert_eq!(classify_specifier("#dep/sub"), SpecifierKind::ImportsField);
+    }
+
+    #[test]
+    fn dot_or_slash_is_relative() {
+        assert_eq!(classify_specifier("./foo"), SpecifierKind::Relative);
+        assert_eq!(classify_specifier("../foo"), SpecifierKind::Relative);
+        assert_eq!(classify_specifier("/abs/foo"), SpecifierKind::Relative);
+    }
+
+    #[test]
+    fn relative_path_with_node_prefix_in_name_is_relative_not_builtin() {
+        // Pitfall: `./node-utils.js` starts with `.` — must classify as Relative,
+        // never as NodeBuiltin (the leading `.` check fires first because
+        // `node:` requires the COLON, not just the four characters).
+        assert_eq!(classify_specifier("./node-utils.js"), SpecifierKind::Relative);
+        assert_eq!(classify_specifier("../nodey/foo"), SpecifierKind::Relative);
+    }
+
+    #[test]
+    fn bare_packages_are_bare() {
+        assert_eq!(classify_specifier("react"), SpecifierKind::Bare);
+        assert_eq!(classify_specifier("@scope/pkg"), SpecifierKind::Bare);
+        assert_eq!(classify_specifier(""), SpecifierKind::Bare);
+        // Bare specifiers whose name happens to begin with "node" but no colon:
+        assert_eq!(classify_specifier("nodemon"), SpecifierKind::Bare);
+    }
+}
+
 /// Recursively collect all exports reachable from `file` into `map`.
 ///
 /// - `pkg_root` — absolute path to the package root; used to compute relative
