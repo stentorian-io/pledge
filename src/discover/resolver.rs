@@ -481,6 +481,35 @@ pub fn collect_exports(
                         }
                     }
                 }
+
+                // INF-04 (Phase 22): walk the tree once for `typeof import('./x').Y`
+                // / `import('./x').Y` member-expression shapes. Bucket each ref to
+                // its owning RawExport by the greatest export line <= ref line.
+                // Both single-line `export type X = typeof import('./y').Z;` and
+                // multi-line declarations are handled — the bucketing is by line
+                // ordering rather than line equality.
+                let all_typeof_refs = super::tree_query::extract_typeof_import_refs(
+                    tree.root_node(),
+                    source.as_slice(),
+                );
+                if !all_typeof_refs.is_empty() {
+                    let mut export_lines: Vec<(u32, usize)> = raw_exports
+                        .iter()
+                        .enumerate()
+                        .map(|(i, rx)| (rx.line, i))
+                        .collect();
+                    export_lines.sort_by_key(|(line, _)| *line);
+                    for r in &all_typeof_refs {
+                        let owner_idx = export_lines
+                            .iter()
+                            .rev()
+                            .find(|(line, _)| *line <= r.property_line)
+                            .map(|(_, idx)| *idx);
+                        if let Some(idx) = owner_idx {
+                            raw_exports[idx].typeof_import_refs.push(r.clone());
+                        }
+                    }
+                }
             }
         }
     }
@@ -564,10 +593,12 @@ pub fn collect_exports(
                             // ARCH-02 (Phase 18): propagate compound-component members
                             // from the RawExport (populated by attach_compound_members).
                             compound_members: export.compound_members,
-                            // INF-04 (Phase 22): typeof_import_refs propagated
-                            // from RawExport in Task 2 once the RawExport sidecar
-                            // lands. Empty Vec for Task 1 baseline.
-                            typeof_import_refs: Vec::new(),
+                            // INF-04 (Phase 22): forward typeof_import_refs from
+                            // the populated RawExport (extract_typeof_import_refs
+                            // populate pass below at lines ~485-506). Empty Vec
+                            // when the export's type position contains no
+                            // `typeof import(...).Y` references.
+                            typeof_import_refs: export.typeof_import_refs.clone(),
                         },
                     );
                 }
@@ -627,10 +658,8 @@ pub fn collect_exports(
                             satisfies_type: export.satisfies_type,
                             compound_members: Vec::new(),
                             // INF-04 (Phase 22): default exports propagate
-                            // typeof_import_refs through the same populate pass.
-                            // Empty Vec for Task 1 baseline; Task 2 wires the
-                            // populate from RawExport.
-                            typeof_import_refs: Vec::new(),
+                            // typeof_import_refs from the populated RawExport.
+                            typeof_import_refs: export.typeof_import_refs.clone(),
                         },
                     );
                 }
