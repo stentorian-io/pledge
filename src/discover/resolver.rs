@@ -2143,7 +2143,7 @@ mod tests {
         )
         .unwrap();
         // Write invalid UTF-8 bytes to the source file
-        std::fs::write(pkg.join("src/index.ts"), &[0x80u8, 0x81u8]).unwrap();
+        std::fs::write(pkg.join("src/index.ts"), [0x80u8, 0x81u8]).unwrap();
 
         let mut map = crate::types::ExportMap::new();
         let mut visited = HashSet::new();

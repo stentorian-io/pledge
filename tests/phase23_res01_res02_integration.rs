@@ -101,7 +101,7 @@ fn res_01_relative_shadow_resolves_normally() {
         has_x,
         "expected `x` to be resolved through the relative path; got exports: {:?} \
          and warnings: {:?}",
-        exports.iter().map(|(k, _)| &k.name).collect::<Vec<_>>(),
+        exports.keys().map(|k| &k.name).collect::<Vec<_>>(),
         warnings.iter().map(|w| &w.message).collect::<Vec<_>>()
     );
 

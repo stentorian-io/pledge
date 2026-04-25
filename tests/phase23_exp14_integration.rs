@@ -89,7 +89,7 @@ fn exp_14_subpath_routed_through_imports_map() {
     assert!(
         has_foo,
         "expected `foo` reached through imports map; got exports: {:?}, warnings: {:?}",
-        exports.iter().map(|(k, _)| &k.name).collect::<Vec<_>>(),
+        exports.keys().map(|k| &k.name).collect::<Vec<_>>(),
         warnings.iter().map(|w| &w.message).collect::<Vec<_>>()
     );
 
@@ -118,7 +118,7 @@ fn exp_14_imports_and_exports_coexist() {
     assert!(
         has_x,
         "expected `x` reached via imports map even with `exports` field present; got: {:?}",
-        exports.iter().map(|(k, _)| &k.name).collect::<Vec<_>>()
+        exports.keys().map(|k| &k.name).collect::<Vec<_>>()
     );
 }
 
@@ -150,7 +150,7 @@ fn exp_14_diff_orchestrator_appends_imports_findings() {
     // The new pkg also has an `exports` field that didn't exist in old, so
     // RULE_EXPORTS_FIELD_ADDED should also be present — proving both diffs ran.
     assert!(
-        rules.iter().any(|r| *r == "exports-field-added"),
+        rules.contains(&"exports-field-added"),
         "expected exports-field-added to coexist with import-added; got {:?}",
         rules
     );
@@ -204,7 +204,7 @@ fn exp_14_node_rhs_target_does_not_emit_warning() {
     assert!(
         has_hash,
         "expected `hash` resolved via default condition (./poly.ts); got: {:?}",
-        exports.iter().map(|(k, _)| &k.name).collect::<Vec<_>>()
+        exports.keys().map(|k| &k.name).collect::<Vec<_>>()
     );
 }
 
@@ -220,7 +220,7 @@ fn exp_14_imports_field_wins_over_tsconfig_paths() {
     let (exports, warnings) =
         discover_exports(&dir).expect("discover_exports must not error");
 
-    let names: Vec<&str> = exports.iter().map(|(k, _)| k.name.as_str()).collect();
+    let names: Vec<&str> = exports.keys().map(|k| k.name.as_str()).collect();
 
     // POSITIVE: the imports-mapped symbol resolves
     assert!(
