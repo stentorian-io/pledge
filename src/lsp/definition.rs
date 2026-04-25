@@ -33,8 +33,10 @@ use super::LspError;
 const DEFINITION_TIMEOUT_SECS: u64 = 5;
 
 /// Resolve a `textDocument/definition` request. Returns the resolved
-/// `Location` on success, `Ok(None)` on timeout / unresponsive server /
-/// no-result (matches `hover_symbol` behavior at `src/lsp/hover.rs:118-127`).
+/// `Location` on success, `Ok(None)` on timeout / no-result, and
+/// `Err(LspError::RequestFailed)` on real request errors (server exit,
+/// channel closed). The Err path lets the caller's CRASH_THRESHOLD branch
+/// fire, mirroring the hover pass at `src/lsp/hover.rs:118-127`.
 ///
 /// Position conversion: `ExportSymbol`/`TypeofImportRef` store 1-indexed
 /// positions; LSP uses 0-indexed. Pitfall 1 precedent.
@@ -62,11 +64,12 @@ pub async fn resolve_definition_location(
     });
 
     match tokio::time::timeout(Duration::from_secs(DEFINITION_TIMEOUT_SECS), fut).await {
+        // WR-01 (Phase 22 review): timeouts are NOT crashes — return Ok(None)
+        // so the per-ref budget enforcement keeps running. Real request errors
+        // (server exit, channel closed) propagate as Err so the CRASH_THRESHOLD
+        // branch in `enrich_exports` can fire, mirroring the hover pass.
         Err(_elapsed) => Ok(None),
-        Ok(Err(e)) => {
-            tracing::debug!("definition request error: {e}");
-            Ok(None)
-        }
+        Ok(Err(e)) => Err(LspError::RequestFailed(e.to_string())),
         Ok(Ok(None)) => Ok(None),
         Ok(Ok(Some(GotoDefinitionResponse::Scalar(loc)))) => Ok(Some(loc)),
         Ok(Ok(Some(GotoDefinitionResponse::Array(mut locs)))) => {
