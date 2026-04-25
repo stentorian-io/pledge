@@ -719,18 +719,29 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
   right: (_))
 "#;
 
-/// BUN-11-A (Phase 24): UMD wrapper IIFE shape.
-///   `(function (root, factory) { ... })(this, function (exports) { ... })`
-///   `(function (root, factory) { ... })(this, function ()        { return {...} })`
+/// BUN-11-A (Phase 24): UMD wrapper IIFE shape — Form 1: `(func)(args)`.
 ///
 /// Captures @umd_factory_body — the IIFE's second-arg function body — so the
 /// driver can recurse the existing CJS / BUN-06a queries against just that
 /// sub-tree using a fresh QueryCursor (the `expand_namespace_members` trick).
 ///
 /// `function_expression` is the verified tree-sitter-javascript 0.25.0 node
-/// name for anonymous `function(…) {}` literals (confirmed via Form C/F probe
-/// success in 24-RESEARCH.md §Empirical Coverage Audit). The query-compile
+/// name for anonymous `function(…) {}` literals. The query-compile
 /// unit test below is the regression guard for grammar version bumps.
+///
+/// Two parenthesization forms exist in real-world UMD output and BOTH must be
+/// covered (Rule 1 deviation from the original plan, which only covered Form 1):
+///
+/// Form 1 — `(function (root, factory) { ... })(this, function () { ... });`
+///   (parens wrap only the outer function; call sits outside)
+///   AST: `(call_expression function: (parenthesized_expression (function_expression ...)) ...)`
+///
+/// Form 2 — `(function (root, factory) { ... }(this, function () { ... }));`
+///   (parens wrap the entire call expression; function_expression sits directly under call_expression)
+///   AST: `(parenthesized_expression (call_expression function: (function_expression ...) ...))`
+///
+/// Form 2 is the lodash/UMD-template canonical shape. Both queries run in the
+/// driver and dedup at emission time prevents double-emission when both match.
 const UMD_FACTORY_WRAPPER_QUERY: &str = r#"
 (call_expression
   function: (parenthesized_expression
@@ -743,6 +754,23 @@ const UMD_FACTORY_WRAPPER_QUERY: &str = r#"
     (function_expression
       parameters: (formal_parameters) @umd_factory_params
       body: (statement_block) @umd_factory_body)))
+"#;
+
+/// BUN-11-A Form 2 (Phase 24): UMD wrapper IIFE shape — `(func(args))`.
+/// Companion query to UMD_FACTORY_WRAPPER_QUERY for the form where the call
+/// expression is wrapped by `parenthesized_expression`, not just the function.
+const UMD_FACTORY_WRAPPER_QUERY_FORM2: &str = r#"
+(parenthesized_expression
+  (call_expression
+    function: (function_expression
+      parameters: (formal_parameters
+        (identifier) @umd_root_param
+        (identifier) @umd_factory_param))
+    arguments: (arguments
+      (_) @umd_global_arg
+      (function_expression
+        parameters: (formal_parameters) @umd_factory_params
+        body: (statement_block) @umd_factory_body))))
 "#;
 
 /// BUN-11-B (Phase 24): lodash-style IIFE with `module.exports = <ident>`.
@@ -765,6 +793,26 @@ const LODASH_STYLE_DEFAULT_QUERY: &str = r#"
     object: (identifier) @mod_obj
     property: (property_identifier) @mod_prop)
   right: (identifier) @umd_default_binding)
+"#;
+
+/// BUN-11-B (Phase 24) Path 1A companion: depth-agnostic `<ident>.<member> = …`.
+///
+/// Companion query to LODASH_STYLE_DEFAULT_QUERY for collecting the lodash-style
+/// member assignments (`_.chunk = …`, `_.compact = …`) that live INSIDE an IIFE
+/// body. The pre-existing COMPOUND_ASSIGN_MEMBER_QUERY at line ~196 is anchored
+/// to `(program (expression_statement ...))` — it intentionally rejects
+/// nested-inside-function assignments. The lodash binding's members live
+/// inside the wrapper IIFE body and would be excluded.
+///
+/// This query is DEPTH-AGNOSTIC (no `(program ...)` anchor). The driver gates
+/// runtime by checking `target` against the synthesized binding name list
+/// (`umd_default_bindings`) so it cannot over-capture assignments from
+/// unrelated identifiers.
+const BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY: &str = r#"
+(assignment_expression
+  left: (member_expression
+    object: (identifier) @target
+    property: (property_identifier) @member))
 "#;
 
 /// ECF-13 (Phase 22): `exports[Symbol.X] = ...` — bare `exports` identifier LHS
@@ -3613,7 +3661,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // BUN-11-A (Phase 24): UMD wrapper factory-returns-object literal unwrap.
         //
         // Detects the canonical UMD shape:
-        //   (function (root, factory) { ... })(this, function () { return { foo, bar }; });
+        //   (function (root, factory) { ... })(this, function () { return { foo, bar }; });   // Form 1
+        //   (function (root, factory) { ... }(this, function () { return { foo, bar }; }));   // Form 2
         // and emits each pair in the factory's `return { ... }` as a Named export.
         //
         // Sub-cases covered ELSEWHERE (no code needed here):
@@ -3624,83 +3673,46 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         //   - Lodash-style `(module.exports = <ident>)._ = <ident>`: handled by the
         //     BUN-11-B driver after this driver (Path 1A in Task 3).
         //
-        // Pitfall 3: a fresh QueryCursor::new() is allocated here (D-24-02-G).
-        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY) {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                // Capture index 4 = @umd_factory_body (the statement_block of the
-                // factory). NOTE: capture indexes are stable by declaration order in
-                // the query string. They are, in order:
-                //   0 = @umd_root_param
-                //   1 = @umd_factory_param
-                //   2 = @umd_global_arg
-                //   3 = @umd_factory_params
-                //   4 = @umd_factory_body
-                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
-                let Some(body) = factory_body else { continue };
+        // Pitfall 3: a fresh QueryCursor::new() is allocated for each query
+        // (D-24-02-G). Both queries share an inner factory-body walker.
+        //
+        // Form 1 / Form 2 deviation note (Rule 1, post-plan): the original plan's
+        // single query covered only Form 1. Real-world UMD wrappers (including
+        // the Form-E test source and Form-2 fixture) use Form 2 where the entire
+        // call_expression is wrapped by parenthesized_expression.
+        // UMD_FACTORY_WRAPPER_QUERY_FORM2 is the companion query for Form 2.
+        let process_factory_body = |body: tree_sitter::Node, exports: &mut Vec<RawExport>| {
+            let mut body_cursor = body.walk();
+            for stmt in body.children(&mut body_cursor) {
+                if stmt.kind() != "return_statement" {
+                    continue;
+                }
+                // The return_statement's argument is the returned value.
+                // tree-sitter-javascript exposes it as a child or via field name
+                // "argument" — try both for grammar-version resilience.
+                let arg = stmt
+                    .child_by_field_name("argument")
+                    .or_else(|| stmt.named_child(0));
+                let Some(arg_node) = arg else { continue };
+                if arg_node.kind() != "object" {
+                    // Returns a non-object (e.g. an identifier — that's the
+                    // lodash-style adjacent case, handled by the BUN-11-B
+                    // driver below, NOT here).
+                    continue;
+                }
 
-                // Walk the factory body's children looking for `return_statement`
-                // whose argument is an object literal. This is the BUN-11-A target
-                // (Form E from 24-RESEARCH.md). `function_expression` body is a
-                // statement_block, whose direct children include statements.
-                let mut body_cursor = body.walk();
-                for stmt in body.children(&mut body_cursor) {
-                    if stmt.kind() != "return_statement" {
-                        continue;
-                    }
-                    // The return_statement's argument is the returned value.
-                    // tree-sitter-javascript exposes it as a child or via field name
-                    // "argument" — try both for grammar-version resilience.
-                    let arg = stmt
-                        .child_by_field_name("argument")
-                        .or_else(|| stmt.named_child(0));
-                    let Some(arg_node) = arg else { continue };
-                    if arg_node.kind() != "object" {
-                        // Returns a non-object (e.g. an identifier — that's the
-                        // lodash-style adjacent case, handled by the BUN-11-B
-                        // driver below, NOT here).
-                        continue;
-                    }
-
-                    // Walk the object literal's pairs / shorthands — same shape as
-                    // the BUN-06a `assign` arm walker.
-                    let mut obj_cur = arg_node.walk();
-                    for child in arg_node.children(&mut obj_cur) {
-                        if child.kind() == "pair" {
-                            if let Some(key_node) = child.child_by_field_name("key") {
-                                if let Ok(name) = key_node.utf8_text(source) {
-                                    if name == "__esModule" {
-                                        continue;
-                                    }
-                                    let line = key_node.start_position().row as u32 + 1;
-                                    let col = key_node.start_position().column as u32 + 1;
-                                    let already = exports.iter().any(|e| e.name == name);
-                                    if !already {
-                                        exports.push(RawExport {
-                                            name: name.to_string(),
-                                            kind: RawExportKind::Named,
-                                            line,
-                                            col,
-                                            source: None,
-                                            decl_kind: None,
-                                            is_type_only: false,
-                                            release_tag: None,
-                                            compound_members: Vec::new(),
-                                            type_signature: None,
-                                            satisfies_type: None,
-                                            typeof_import_refs: Vec::new(),
-                                        });
-                                    }
-                                }
-                            }
-                        } else if child.kind() == "shorthand_property_identifier" {
-                            if let Ok(name) = child.utf8_text(source) {
+                // Walk the object literal's pairs / shorthands — same shape as
+                // the BUN-06a `assign` arm walker.
+                let mut obj_cur = arg_node.walk();
+                for child in arg_node.children(&mut obj_cur) {
+                    if child.kind() == "pair" {
+                        if let Some(key_node) = child.child_by_field_name("key") {
+                            if let Ok(name) = key_node.utf8_text(source) {
                                 if name == "__esModule" {
                                     continue;
                                 }
-                                let line = child.start_position().row as u32 + 1;
-                                let col = child.start_position().column as u32 + 1;
+                                let line = key_node.start_position().row as u32 + 1;
+                                let col = key_node.start_position().column as u32 + 1;
                                 let already = exports.iter().any(|e| e.name == name);
                                 if !already {
                                     exports.push(RawExport {
@@ -3720,8 +3732,58 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 }
                             }
                         }
+                    } else if child.kind() == "shorthand_property_identifier" {
+                        if let Ok(name) = child.utf8_text(source) {
+                            if name == "__esModule" {
+                                continue;
+                            }
+                            let line = child.start_position().row as u32 + 1;
+                            let col = child.start_position().column as u32 + 1;
+                            let already = exports.iter().any(|e| e.name == name);
+                            if !already {
+                                exports.push(RawExport {
+                                    name: name.to_string(),
+                                    kind: RawExportKind::Named,
+                                    line,
+                                    col,
+                                    source: None,
+                                    decl_kind: None,
+                                    is_type_only: false,
+                                    release_tag: None,
+                                    compound_members: Vec::new(),
+                                    type_signature: None,
+                                    satisfies_type: None,
+                                    typeof_import_refs: Vec::new(),
+                                });
+                            }
+                        }
                     }
                 }
+            }
+        };
+
+        // Form 1: `(func)(args)` — capture index 4 = @umd_factory_body.
+        // Capture indices are stable by declaration order in the query string:
+        //   0 = @umd_root_param, 1 = @umd_factory_param, 2 = @umd_global_arg,
+        //   3 = @umd_factory_params, 4 = @umd_factory_body.
+        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
+                let Some(body) = factory_body else { continue };
+                process_factory_body(body, &mut exports);
+            }
+        }
+
+        // Form 2: `(func(args))` — capture index 4 = @umd_factory_body.
+        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY_FORM2) {
+            let mut cursor = QueryCursor::new();
+            let mut matches_iter = cursor.matches(&query, root, source);
+            while let Some(m) = matches_iter.next() {
+                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
+                let Some(body) = factory_body else { continue };
+                process_factory_body(body, &mut exports);
             }
         }
 
@@ -3807,6 +3869,62 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         typeof_import_refs: Vec::new(),
                     });
                     umd_default_bindings.push(binding.to_string());
+                }
+            }
+        }
+
+        // BUN-11-B (Phase 24) Path 1A: depth-agnostic compound-member scan for
+        // synthesized lodash-style bindings.
+        //
+        // The pre-existing attach_compound_members (called below at the post-pass)
+        // uses COMPOUND_ASSIGN_MEMBER_QUERY which is anchored at program level —
+        // it intentionally rejects nested-inside-function assignments. The
+        // lodash-style binding's `_.chunk = …` assignments live INSIDE the
+        // wrapper IIFE body, so the program-anchored query cannot see them.
+        //
+        // Run BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY (depth-agnostic) and
+        // attach members directly onto the synthesized transient Default.
+        // Over-capture is bounded: the runtime gate accepts a member only when
+        // its `target` matches a binding identifier in `umd_default_bindings`,
+        // which contains only identifiers we just synthesized as Default.
+        if !umd_default_bindings.is_empty() {
+            if let Ok(query) = Query::new(&language, BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY) {
+                let mut cursor = QueryCursor::new();
+                let mut matches_iter = cursor.matches(&query, root, source);
+                while let Some(m) = matches_iter.next() {
+                    let target = m
+                        .captures
+                        .iter()
+                        .find(|c| c.index == 0)
+                        .and_then(|c| c.node.utf8_text(source).ok())
+                        .unwrap_or("");
+                    let member = m
+                        .captures
+                        .iter()
+                        .find(|c| c.index == 1)
+                        .and_then(|c| c.node.utf8_text(source).ok())
+                        .unwrap_or("");
+                    if target.is_empty() || member.is_empty() {
+                        continue;
+                    }
+                    // Gate: target must be a binding we synthesized.
+                    if !umd_default_bindings.iter().any(|b| b == target) {
+                        continue;
+                    }
+                    // Skip __esModule assignments (defensive — these would be
+                    // filtered by the post-pass anyway).
+                    if member == "__esModule" {
+                        continue;
+                    }
+                    // Attach to the synthesized Default whose `name == target`.
+                    for rx in exports.iter_mut() {
+                        if rx.name == target && matches!(rx.kind, RawExportKind::Default) {
+                            if !rx.compound_members.iter().any(|mm| mm == member) {
+                                rx.compound_members.push(member.to_string());
+                            }
+                            break;
+                        }
+                    }
                 }
             }
         }
