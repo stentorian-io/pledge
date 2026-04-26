@@ -246,6 +246,21 @@ pub(crate) fn resolve_exports_value_with_warnings(
                     // Condition key like "import", "require", "types", "default".
                     // Phase 18: preserve the current subpath — condition-key recursion
                     // does NOT reset subpath context.
+                    //
+                    // Rule 3 fix: Skip vendor-specific/tool-specific export conditions
+                    // (those starting with "@", e.g., "@zod/source", "@bundler/module").
+                    // These are not Node.js/TypeScript standard conditions and typically
+                    // point to raw source files (.ts) intended for special build pipelines
+                    // rather than consumer-facing public API surfaces. Resolving them
+                    // causes interlint to analyse internal source files that are outside
+                    // the package's public interface and can cause OOM on large packages.
+                    if key.starts_with('@') {
+                        tracing::trace!(
+                            "skipping vendor export condition {:?} (not a standard Node.js/TS condition)",
+                            key
+                        );
+                        continue;
+                    }
                     results.extend(resolve_exports_value_with_warnings(
                         child,
                         base_path,
