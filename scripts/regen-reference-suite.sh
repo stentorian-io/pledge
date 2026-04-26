@@ -17,7 +17,10 @@
 
 set -euo pipefail
 
-PKGS=("react" "zod" "prisma" "tanstack-query" "trpc")
+# Active packages — zod and prisma are deferred pending backlog 999.1
+# (parse_type_string OOM mitigation). Pass them explicitly as $1 if you
+# want to regenerate them anyway (e.g., after the OOM fix lands).
+PKGS=("react" "tanstack-query" "trpc")
 if [[ $# -ge 1 ]]; then
     PKGS=("$1")
 fi

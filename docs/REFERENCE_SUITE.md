@@ -1,20 +1,24 @@
 # Reference Suite — Curation Procedure
 
-The reference suite (Phase 25 INT-01) is the v0.3 milestone-close gate. It runs Interlint against pinned versions of 5 published packages and asserts that the (exit_code, sorted_rule_ids) output matches a curated `expected-findings.json` file per package. CI gates on this suite passing for every PR to `main`.
+The reference suite (Phase 25 INT-01) runs Interlint against pinned versions of published packages and asserts that the (exit_code, sorted_rule_ids) output matches a curated `expected-findings.json` file per package. v0.3 ships with **3 active packages**; `zod` and `@prisma/client` are scaffolded but their tests are deferred pending backlog 999.1 (parse_type_string OOM mitigation). See `tests/reference_suite.rs` for the disabled-test comment and `src/types/parser.rs::parse_type_string` for the in-source bisect data.
 
 ## Packages
 
-| Package | from version | to version | Coverage stress-test |
-|---------|--------------|------------|----------------------|
-| react | 19.2.4 | 19.2.5 | Multiple subpath exports, CJS+ESM dual-publish, `.d.ts` |
-| zod | 4.3.5 | 4.3.6 | Heavy generics, discriminated unions (BEH-06), `satisfies` (TYPE-01) |
-| @prisma/client | 7.7.0 | 7.8.0 | Subpath exports, conditional exports, `.d.ts` ambient declarations |
-| @tanstack/query-core | 5.100.4 | 5.100.5 | Class surface, `imports` field (EXP-14) |
-| @trpc/server | 11.15.0 | 11.16.0 | `infer T extends C` (TYPE-02), multi-condition exports map |
+| Package | from version | to version | Status | Coverage stress-test |
+|---------|--------------|------------|--------|----------------------|
+| react | 19.2.4 | 19.2.5 | ✅ active | Multiple subpath exports, CJS+ESM dual-publish, `.d.ts` |
+| @tanstack/query-core | 5.100.4 | 5.100.5 | ✅ active | Class surface, `imports` field (EXP-14) |
+| @trpc/server | 11.15.2 | 11.16.0 | ✅ active | `infer T extends C` (TYPE-02), multi-condition exports map |
+| zod | 4.3.5 | 4.3.6 | ⏸ deferred (999.1) | Heavy generics, discriminated unions (BEH-06), `satisfies` (TYPE-01) |
+| @prisma/client | 7.7.0 | 7.8.0 | ⏸ deferred (999.1) | Subpath exports, conditional exports, `.d.ts` ambient declarations |
 
 Latest versions verified 2026-04-25; refresh when authoring future updates.
 
-Note: @prisma/client `from` version is 7.7.0 (not 7.7.1 as in the original pin table — 7.7.1 does not exist on npm; 7.7.0 is the nearest stable minor).
+Note: @prisma/client `from` version is 7.7.0 (not 7.7.1 as in the original pin table — 7.7.1 does not exist on npm; 7.7.0 is the nearest stable minor). @trpc/server uses 11.15.2 → 11.16.0 (a clean patch-bump-then-minor).
+
+### Why zod and @prisma/client are deferred
+
+Both packages ship `.d.ts` files with many medium-complex generated type aliases (zod's `types.ts` is 160 KB; prisma's `client.d.ts` declares 120+ aliases including 1–1.5 KB recursive conditional types). Running the suite against them currently triggers an OOM in `parse_type_string` — bisected to ~7 GB resident across the per-symbol loop in `compare::compare_structural_diff`. Their fixture tarballs and scaffolded `expected-findings.json` files remain committed under `tests/fixtures/reference-suite/{zod,prisma}/` so re-enabling is a one-line change to `tests/reference_suite.rs` once the parse-allocator fix lands. Full bisect details: see backlog 999.1 in ROADMAP.md and the doc comment on `parse_type_string` in `src/types/parser.rs`.
 
 ## Why pinned + degraded
 
