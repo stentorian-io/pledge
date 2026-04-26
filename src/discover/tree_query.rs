@@ -6505,7 +6505,9 @@ mod tests {
         kind: &str,
     ) -> Option<tree_sitter::Node<'a>> {
         let mut cursor = root.walk();
-        let result = root.children(&mut cursor).find(|&child| child.kind() == kind);
+        let result = root
+            .children(&mut cursor)
+            .find(|&child| child.kind() == kind);
         result
     }
 

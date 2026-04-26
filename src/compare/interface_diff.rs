@@ -828,8 +828,14 @@ mod tests {
             is_abstract: false,
         };
         let sig2 = sig.clone();
-        let findings =
-            compare_construct_signatures(std::slice::from_ref(&sig2), &[sig], "MyInterface", &file(), 1, 1);
+        let findings = compare_construct_signatures(
+            std::slice::from_ref(&sig2),
+            &[sig],
+            "MyInterface",
+            &file(),
+            1,
+            1,
+        );
         assert!(
             findings.is_empty(),
             "identical construct signatures should produce no findings"
