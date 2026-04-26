@@ -20,6 +20,18 @@ Note: @prisma/client `from` version is 7.7.0 (not 7.7.1 as in the original pin t
 
 Both packages ship `.d.ts` files with many medium-complex generated type aliases (zod's `types.ts` is 160 KB; prisma's `client.d.ts` declares 120+ aliases including 1–1.5 KB recursive conditional types). Running the suite against them currently triggers an OOM in `parse_type_string` — bisected to ~7 GB resident across the per-symbol loop in `compare::compare_structural_diff`. Their fixture tarballs and scaffolded `expected-findings.json` files remain committed under `tests/fixtures/reference-suite/{zod,prisma}/` so re-enabling is a one-line change to `tests/reference_suite.rs` once the parse-allocator fix lands. Full bisect details: see backlog 999.1 in ROADMAP.md and the doc comment on `parse_type_string` in `src/types/parser.rs`.
 
+## Pre-publish Gate
+
+The canonical pre-publish gate for this project is:
+
+```sh
+make check
+```
+
+`make check` runs four cargo commands in sequence — `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --release`, and `cargo test --release --test reference_suite` — and exits non-zero on the first failure. The fourth command is the milestone-close reference suite gate; running it as part of `make check` ensures the suite always passes before publish.
+
+**Why no CI?** A GitHub Actions workflow is permanently out of scope for the v0.3 milestone — `make check` is the gating story. This is a deliberate project constraint, not a deferred TODO; the rationale is recorded in `.planning/phases/25-reference-suite-documented-limitations/25-VERIFICATION.md` §Deviations §2. If you fork this project and want CI, you can mirror the four `make check` commands in any standard CI runner; nothing in the codebase blocks it.
+
 ## Why pinned + degraded
 
 - **Pinned tarballs** (`from.tgz` / `to.tgz` committed to git): npm registry promises immutability, but reference fixtures live in this repo for reproducibility and offline-capable test runs.
