@@ -29,6 +29,22 @@ const KW_REST_DOTS_LEN: usize = "...".len();
 ///
 /// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per D-13).
 /// Applies normalization (sorting of union/intersection members) after parsing (D-11).
+///
+/// **OOM tech debt — see backlog 999.1.** This function allocates pathologically
+/// on real-world packages with many medium-complex generated type aliases
+/// (`@prisma/client`, `zod`). On `@prisma/client` 7.7.0 → 7.8.0, calling
+/// parse_type_string across the 120+ aliases in `client.d.ts` cumulatively
+/// allocates 7-8 GB resident before the OS kills the process. Bisected:
+/// skipping this function alone drops the prisma reference-suite run from
+/// 8 GB OOM to 78 MB / 4 s.
+///
+/// Likely fix paths (refine in 999.1 spec phase): node-count budget inside
+/// `TypeParser`, flamegraph profile to find the actual hot allocator, or
+/// skip this function entirely in degraded (`lsp_was_available=false`) mode
+/// since the LSP path is the intended TypeShape source. Profiling/benchmark
+/// infra to measure any fix is captured separately in backlog 999.2 — that
+/// phase should likely land first so a fix here can be quantified rather
+/// than guessed at.
 pub fn parse_type_string(input: &str) -> TypeShape {
     let input = input.trim();
 
