@@ -150,3 +150,20 @@ cargo test
 # Full suite including LSP integration tests
 cargo test --features lsp-tests
 ```
+
+### Pre-publish Gate
+
+Before running `cargo publish`, run the canonical pre-publish gate:
+
+```sh
+make check
+```
+
+This runs four checks in sequence and exits non-zero on the first failure:
+
+1. `cargo fmt --all -- --check` — formatting
+2. `cargo clippy --all-targets -- -D warnings` — linting (all targets: lib, tests, examples, benches)
+3. `cargo test --release` — full release-mode test suite
+4. `cargo test --release --test reference_suite` — milestone-close reference suite gate (3 of 5 published packages: react, @tanstack/query-core, @trpc/server)
+
+`make check` is the canonical gating command for this project. **There is no CI workflow** — automated remote gating is permanently out of scope for the v0.3 milestone (see `.planning/phases/25-reference-suite-documented-limitations/25-VERIFICATION.md` for the rationale). `make check` running clean on the developer's machine is the milestone-close contract.
