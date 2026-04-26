@@ -228,6 +228,12 @@ impl ExportKey {
 /// that go through `From` are accepting "no directive coverage" as an
 /// explicit design choice; production discovery always populates
 /// `directives` via `map.directives.insert(...)` in the resolver.
+///
+/// In debug builds, `debug_assert_invariants` enforces the
+/// `typeof_targets ⊆ inner` direction at every public mutation entry
+/// (`record_typeof_target`, `From<HashMap>` construction). The
+/// `directives ⊥ inner` independence is NOT checked at runtime — it is
+/// a keying-disjoint property documented as a design choice above.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default)]
 pub struct ExportMap {
@@ -270,6 +276,25 @@ impl ExportMap {
         Self::default()
     }
 
+    /// WR-01 (Phase 19 review): runtime guard for the documented invariants.
+    /// Cheap enough for debug builds — O(typeof_targets keys). Production
+    /// builds compile this out via `debug_assert!`.
+    ///
+    /// Invariants checked:
+    /// - Every key in `typeof_targets` is also present in `inner` (a typeof
+    ///   sidecar entry without a backing ExportSymbol is a desync).
+    ///
+    /// NOT checked (intentional, per the # Invariants block above):
+    /// - `directives` keys do NOT need to correspond to any
+    ///   `ExportSymbol.file` — pure-directive files (rollup chunks with
+    ///   `/// <reference />` and zero exports) are legal.
+    fn debug_assert_invariants(&self) {
+        debug_assert!(
+            self.typeof_targets.keys().all(|k| self.inner.contains_key(k)),
+            "ExportMap WR-01 invariant violated: typeof_targets contains key absent from inner"
+        );
+    }
+
     /// INF-04 (Phase 22): record the resolved Location for a given
     /// ExportSymbol's `typeof_import_refs` entry at the given ref index.
     /// Called by the second-pass LSP dispatch in `enrich_exports`.
@@ -284,6 +309,7 @@ impl ExportMap {
             .entry(key.clone())
             .or_default()
             .insert(ref_idx, location);
+        self.debug_assert_invariants();
     }
 
     /// INF-04 (Phase 22): look up a recorded target. Returns:
@@ -317,11 +343,13 @@ impl std::ops::DerefMut for ExportMap {
 /// that appears at ~4 test construction sites in `src/compare/mod.rs`.
 impl From<HashMap<ExportKey, ExportSymbol>> for ExportMap {
     fn from(inner: HashMap<ExportKey, ExportSymbol>) -> Self {
-        ExportMap {
+        let out = ExportMap {
             inner,
             directives: std::collections::BTreeMap::new(),
             typeof_targets: std::collections::HashMap::new(),
-        }
+        };
+        out.debug_assert_invariants();
+        out
     }
 }
 
@@ -939,5 +967,89 @@ mod tests {
         assert_eq!(sym.decl_kinds.len(), 2);
         assert!(sym.decl_kinds.contains(&DeclarationKind::Class));
         assert!(sym.decl_kinds.contains(&DeclarationKind::Namespace));
+    }
+
+    // ─── WR-01 (Phase 19 review): ExportMap structural guard tests ──────────
+
+    fn make_sym(file: &str) -> ExportSymbol {
+        ExportSymbol {
+            name: "x".to_string(),
+            kind: ExportKind::Named,
+            file: PathBuf::from(file),
+            line: 1,
+            col: 1,
+            type_signature: None,
+            overloads: Vec::new(),
+            decl_kinds: Vec::new(),
+            type_guard_type: None,
+            is_async: false,
+            is_generator: false,
+            is_reexport: false,
+            is_type_only: false,
+            release_tag: None,
+            satisfies_type: None,
+            compound_members: Vec::new(),
+            typeof_import_refs: Vec::new(),
+            is_proxy_dispatched: false,
+        }
+    }
+
+    /// WR-01: A directives entry whose key matches no ExportSymbol.file is
+    /// legal (pure-directive rollup chunk). Must NOT panic.
+    #[test]
+    fn wr_01_directive_only_file_is_legal() {
+        let mut map = ExportMap::new();
+        // Insert a symbol for "src/x.ts"
+        let key = ExportKey::new_root_value("x");
+        map.inner.insert(key, make_sym("src/x.ts"));
+        // Insert a directive for a DIFFERENT file (no matching ExportSymbol)
+        map.directives.insert(
+            PathBuf::from("dist/chunks/chunk-*.js"),
+            vec![],
+        );
+        // debug_assert_invariants is not called by directives mutation (by design);
+        // call it explicitly to assert it does not panic.
+        map.debug_assert_invariants();
+    }
+
+    /// WR-01: Overwriting the same (ExportKey, ExportSymbol) via inner.insert
+    /// (HashMap semantics: overwrite, not desync) must NOT panic.
+    #[test]
+    fn wr_01_overwrite_inner_is_safe() {
+        let mut map = ExportMap::new();
+        let key = ExportKey::new_root_value("y");
+        map.inner.insert(key.clone(), make_sym("src/y.ts"));
+        // Overwrite with a different symbol at the same key
+        map.inner.insert(key, make_sym("src/y2.ts"));
+        map.debug_assert_invariants();
+    }
+
+    /// WR-01: record_typeof_target called with a key that IS present in inner
+    /// must NOT panic.
+    #[test]
+    fn wr_01_record_typeof_target_with_inner_present_ok() {
+        let mut map = ExportMap::new();
+        let key = ExportKey::new_root_value("z");
+        map.inner.insert(key.clone(), make_sym("src/z.ts"));
+        map.record_typeof_target(&key, 0, None);
+        // record_typeof_target calls debug_assert_invariants internally;
+        // reaching here means it did not panic.
+    }
+
+    /// WR-01: typeof_targets referencing a key NOT in inner is a desync;
+    /// debug_assert_invariants MUST panic in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "WR-01 invariant violated")]
+    fn wr_01_orphan_typeof_target_panics() {
+        let mut map = ExportMap::new();
+        let key = ExportKey::new_root_value("orphan");
+        // Inject directly into typeof_targets WITHOUT adding to inner
+        map.typeof_targets
+            .entry(key)
+            .or_default()
+            .insert(0, None);
+        // This call must panic because typeof_targets has a key absent from inner
+        map.debug_assert_invariants();
     }
 }
