@@ -419,14 +419,28 @@ const MAX_RESOLVE_DEPTH: usize = 20;
 /// basename matches `chunk-[A-Z0-9]{8,}.<ext>`. Example:
 ///   `dist/chunks/chunk-A1B2C3D4.js` → `dist/chunks/chunk-*.js`
 fn normalize_chunk_path(path: &Path) -> PathBuf {
-    let path_str = path.to_string_lossy();
-    let in_chunks_dir = path_str.contains("/chunks/")
-        || path_str.contains("/dist/chunks/")
-        || path_str.contains("\\chunks\\"); // Windows
+    // WR-02 (Phase 19 review, Phase 27 regression): normalize separators
+    // BEFORE every probe so a Windows-style `dist\chunks\chunk-HASH.js`
+    // path produces the same normalized result as the forward-slash
+    // form. Without this the `/chunks/` substring probe would miss
+    // backslash inputs even though we have a `\\chunks\\` branch — the
+    // `parent.join(normalized_name)` step at the bottom would still
+    // splice the original separator back in, breaking the round-trip
+    // path-equality invariant exercised by
+    // `wr_02_chunk_directives_keyed_by_normalized_path`.
+    let path_str_lossy = path.to_string_lossy();
+    let canonical = path_str_lossy.replace('\\', "/");
+    let in_chunks_dir = canonical.contains("/chunks/");
     if !in_chunks_dir {
         return path.to_path_buf();
     }
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    // Extract the file_name from the CANONICAL (forward-slash) string so that
+    // on Unix a Windows-style path like `dist\chunks\chunk-HASH.js` (treated
+    // as a single component by the OS) still yields `chunk-HASH.js` here.
+    let file_name = canonical
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
     if !file_name.starts_with("chunk-") {
         return path.to_path_buf();
     }
@@ -439,9 +453,15 @@ fn normalize_chunk_path(path: &Path) -> PathBuf {
                     .all(|c| c.is_ascii_hexdigit() || c.is_ascii_uppercase());
             if looks_like_hash {
                 let normalized_name = format!("chunk-*.{}", ext_part);
-                if let Some(parent) = path.parent() {
-                    return parent.join(normalized_name);
+                // Build the normalized path FROM the canonicalized string
+                // so the parent component uses `/` regardless of the input
+                // separator. PathBuf is OS-agnostic about its components;
+                // string-level construction guarantees byte-equality of the
+                // result across `/`- and `\`-separator inputs.
+                if let Some((parent_str, _)) = canonical.rsplit_once('/') {
+                    return PathBuf::from(format!("{}/{}", parent_str, normalized_name));
                 }
+                return PathBuf::from(normalized_name);
             }
         }
     }
@@ -2092,6 +2112,46 @@ mod tests {
             normalize_chunk_path(p).to_string_lossy(),
             "pkg/dist/chunks/chunk-*.mjs"
         );
+    }
+
+    // ── WR-02 (Phase 19 review): normalize_chunk_path separator parity ──
+    //    On a Windows host the resolver reports paths with `\` separators;
+    //    on Unix it reports `/`. The normalized output MUST be byte-equal
+    //    across the two so a rollup rebuild on either OS produces the same
+    //    diff key.
+
+    #[test]
+    fn wr_02_normalize_chunk_path_separator_parity() {
+        let forward = normalize_chunk_path(std::path::Path::new("dist/chunks/chunk-A1B2C3D4.js"));
+        let backward =
+            normalize_chunk_path(std::path::Path::new("dist\\chunks\\chunk-A1B2C3D4.js"));
+        assert_eq!(
+            forward.to_string_lossy(),
+            backward.to_string_lossy(),
+            "WR-02: forward-slash and backslash chunk paths must normalize identically"
+        );
+        // Additionally pin the canonical output to forward-slashes so cross-OS diff stability is explicit.
+        assert_eq!(forward.to_string_lossy(), "dist/chunks/chunk-*.js");
+    }
+
+    #[test]
+    fn wr_02_backslash_path_outside_chunks_unchanged() {
+        let p = std::path::Path::new("dist\\src\\index.js");
+        assert_eq!(normalize_chunk_path(p), p.to_path_buf());
+    }
+
+    #[test]
+    fn wr_02_backslash_path_non_hashed_basename_unchanged() {
+        let p = std::path::Path::new("dist\\chunks\\chunk-foo.js");
+        assert_eq!(normalize_chunk_path(p), p.to_path_buf());
+    }
+
+    #[test]
+    fn wr_02_backslash_mjs_extension_normalized() {
+        let result = normalize_chunk_path(std::path::Path::new(
+            "pkg\\dist\\chunks\\chunk-DEADBEEF.mjs",
+        ));
+        assert_eq!(result.to_string_lossy(), "pkg/dist/chunks/chunk-*.mjs");
     }
 
     // ── WR-02 (Phase 19 review): path-equality invariant between
