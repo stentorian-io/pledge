@@ -122,8 +122,7 @@ mod degraded_path {
         // the 4th argument of compare_exports. The diff pipeline reads this
         // flag and emits the `(limitation: lsp-required)` branch for every
         // ExportSymbol with non-empty typeof_import_refs.
-        let findings: Vec<Finding> =
-            compare_exports(&old_exports, &new_exports, &new_dir, false);
+        let findings: Vec<Finding> = compare_exports(&old_exports, &new_exports, &new_dir, false);
 
         let hits: Vec<_> = findings
             .iter()

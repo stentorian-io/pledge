@@ -83,9 +83,7 @@ fn inf_06_non_default_alias_unchanged() {
         "non-default alias `export {{ foo as Bar }}` must still produce Named `Bar` via pre-existing NAMED_EXPORT_ALIAS_QUERY; got: {:?}",
         exports
     );
-    let has_spurious_default = exports
-        .iter()
-        .any(|(name, _)| name == "default");
+    let has_spurious_default = exports.iter().any(|(name, _)| name == "default");
     assert!(
         !has_spurious_default,
         "non-default alias must NOT emit a `default` export; got: {:?}",

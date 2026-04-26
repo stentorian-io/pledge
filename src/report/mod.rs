@@ -158,6 +158,17 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
     }
 }
 
+/// Create a progress spinner for slow operations (D-05).
+///
+/// indicatif automatically suppresses the spinner in non-TTY environments (D-06),
+/// so no manual TTY check is needed here.
+pub fn create_spinner(msg: &str) -> ProgressBar {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_message(msg.to_string());
+    spinner.enable_steady_tick(Duration::from_millis(80));
+    spinner
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,7 +178,7 @@ mod tests {
     #[test]
     fn test_warning_findings_do_not_affect_summary_breaking_count() {
         // Verify the contract: warning count is separate from major count
-        let findings = vec![Finding {
+        let findings = [Finding {
             severity: Severity::Warning,
             rule: "async-to-sync",
             file: PathBuf::from("test.ts"),
@@ -205,7 +216,7 @@ mod tests {
     fn test_info_findings_do_not_increment_major_count() {
         // Info findings must NOT trip has_breaking_changes (exits 0, not 1)
         use crate::compare::has_breaking_changes;
-        let findings = vec![Finding {
+        let findings = [Finding {
             severity: Severity::Info,
             rule: "limitation: lsp-required",
             file: PathBuf::from("test.ts"),
@@ -224,7 +235,7 @@ mod tests {
     #[test]
     fn test_info_footer_renders_when_present() {
         // Verify that info_count logic correctly counts Severity::Info findings
-        let findings = vec![
+        let findings = [
             Finding {
                 severity: Severity::Info,
                 rule: "limitation: lsp-required",
@@ -248,7 +259,7 @@ mod tests {
             .count();
         assert_eq!(info_count, 2);
         // Zero info when no Info findings present
-        let non_info = vec![Finding {
+        let non_info = [Finding {
             severity: Severity::Warning,
             rule: "async-to-sync",
             file: PathBuf::from("test.ts"),
@@ -262,15 +273,4 @@ mod tests {
             .count();
         assert_eq!(info_count_zero, 0);
     }
-}
-
-/// Create a progress spinner for slow operations (D-05).
-///
-/// indicatif automatically suppresses the spinner in non-TTY environments (D-06),
-/// so no manual TTY check is needed here.
-pub fn create_spinner(msg: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_message(msg.to_string());
-    spinner.enable_steady_tick(Duration::from_millis(80));
-    spinner
 }

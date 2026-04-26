@@ -352,9 +352,9 @@ pub(crate) fn resolve_imports_subpath(
     /// a real file. Skip NodeBuiltin / UrlScheme / nested ImportsField targets.
     fn try_target(target: &str, pkg_root: &Path) -> Option<PathBuf> {
         match classify_specifier(target) {
-            SpecifierKind::NodeBuiltin
-            | SpecifierKind::UrlScheme
-            | SpecifierKind::ImportsField => None,
+            SpecifierKind::NodeBuiltin | SpecifierKind::UrlScheme | SpecifierKind::ImportsField => {
+                None
+            }
             SpecifierKind::Relative | SpecifierKind::Bare => probe_target(pkg_root, target),
         }
     }
@@ -532,10 +532,22 @@ mod phase23_classifier_tests {
 
     #[test]
     fn url_schemes_are_url_scheme() {
-        assert_eq!(classify_specifier("data:application/json,{}"), SpecifierKind::UrlScheme);
-        assert_eq!(classify_specifier("https://example.com/m.js"), SpecifierKind::UrlScheme);
-        assert_eq!(classify_specifier("http://example.com/m.js"), SpecifierKind::UrlScheme);
-        assert_eq!(classify_specifier("file:///abs/path.js"), SpecifierKind::UrlScheme);
+        assert_eq!(
+            classify_specifier("data:application/json,{}"),
+            SpecifierKind::UrlScheme
+        );
+        assert_eq!(
+            classify_specifier("https://example.com/m.js"),
+            SpecifierKind::UrlScheme
+        );
+        assert_eq!(
+            classify_specifier("http://example.com/m.js"),
+            SpecifierKind::UrlScheme
+        );
+        assert_eq!(
+            classify_specifier("file:///abs/path.js"),
+            SpecifierKind::UrlScheme
+        );
     }
 
     #[test]
@@ -557,7 +569,10 @@ mod phase23_classifier_tests {
         // Pitfall: `./node-utils.js` starts with `.` — must classify as Relative,
         // never as NodeBuiltin (the leading `.` check fires first because
         // `node:` requires the COLON, not just the four characters).
-        assert_eq!(classify_specifier("./node-utils.js"), SpecifierKind::Relative);
+        assert_eq!(
+            classify_specifier("./node-utils.js"),
+            SpecifierKind::Relative
+        );
         assert_eq!(classify_specifier("../nodey/foo"), SpecifierKind::Relative);
     }
 
@@ -704,8 +719,7 @@ pub fn collect_exports(
                 let comment_index = CommentIndex::build(&tree, &source, lang);
                 for rx in raw_exports.iter_mut() {
                     if rx.release_tag.is_none() {
-                        rx.release_tag =
-                            comment_index.release_tag_for_export_at(rx.line, rx.col);
+                        rx.release_tag = comment_index.release_tag_for_export_at(rx.line, rx.col);
                     }
                 }
                 // INF-05: extract triple-slash directives (honors the TS
@@ -721,25 +735,20 @@ pub fn collect_exports(
                 // Grammar gate: `satisfies_expression` is a TypeScript AST node
                 // only; `extract_satisfies_types` internally returns an empty
                 // map on JavaScript inputs so the loop is a no-op there.
-                let satisfies_map = super::tree_query::extract_satisfies_types(
-                    tree.root_node(),
-                    &source,
-                    lang,
-                );
+                let satisfies_map =
+                    super::tree_query::extract_satisfies_types(tree.root_node(), &source, lang);
                 if !satisfies_map.is_empty() {
                     for rx in raw_exports.iter_mut() {
                         if rx.satisfies_type.is_some() {
                             continue;
                         }
                         if let Some(satisfies_text) = satisfies_map.get(&rx.name) {
-                            let constraint = crate::types::parser::parse_type_string(
-                                satisfies_text,
-                            );
-                            rx.satisfies_type =
-                                Some(crate::types::shape::TypeShape::Satisfies {
-                                    constraint: Box::new(constraint),
-                                    narrowed: None,
-                                });
+                            let constraint =
+                                crate::types::parser::parse_type_string(satisfies_text);
+                            rx.satisfies_type = Some(crate::types::shape::TypeShape::Satisfies {
+                                constraint: Box::new(constraint),
+                                narrowed: None,
+                            });
                         }
                     }
                 }
@@ -785,7 +794,8 @@ pub fn collect_exports(
     // Key by the rel_path so compare_directives can pair old/new directive
     // lists per-file. Files with no directives are absent from the map.
     if !file_directives.is_empty() {
-        map.directives.insert(rel_path.to_path_buf(), file_directives);
+        map.directives
+            .insert(rel_path.to_path_buf(), file_directives);
     }
 
     // META-05: Accumulate named re-export failures keyed by specifier so we can
@@ -957,7 +967,9 @@ pub fn collect_exports(
                         SpecifierKind::ImportsField => {
                             // EXP-14: route #subpath through package.json imports map.
                             if let Some(im) = imports_map {
-                                if let Some(target) = resolve_imports_subpath(im, specifier, pkg_root) {
+                                if let Some(target) =
+                                    resolve_imports_subpath(im, specifier, pkg_root)
+                                {
                                     collect_exports(
                                         &target,
                                         pkg_root,
@@ -982,84 +994,85 @@ pub fn collect_exports(
                             continue;
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
-                    let mut candidates = resolve_module_path(&canonical, specifier);
-                    // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
-                    if let Some(tc) = tsconfig {
-                        if !candidates.iter().any(|p| p.exists()) {
-                            candidates.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
-                        }
-                    }
-                    let resolved = candidates.into_iter().find(|p| p.exists());
-                    match resolved {
-                        Some(target) => {
-                            // Phase 18: propagate current subpath/condition into the
-                            // recursive resolution so all exports reached through this
-                            // re-export chain are keyed consistently.
-                            collect_exports(
-                                &target,
-                                pkg_root,
-                                map,
-                                visited,
-                                warnings,
-                                depth + 1,
-                                tsconfig,
-                                imports_map,
-                                subpath,
-                                condition,
-                            )?;
-                        }
-                        None => {
-                            // GAP-15-05: If specifier looks like an external package (not relative),
-                            // track it as an external re-export entry rather than just warning.
-                            if !specifier.starts_with('.') && !specifier.starts_with('/') {
-                                let reexport_key = format!("*<{}>", specifier);
-                                // Phase 18 D-13: pre-merge at insertion (StarReexport external).
-                                // External re-exports carry no decl_kind to merge — first-write-wins
-                                // via get_mut/insert branch is the correct semantic.
-                                let key = ExportKey {
-                                    subpath: subpath.to_string(),
-                                    condition: condition.map(|c| c.to_string()),
-                                    space: SymbolSpace::Value,
-                                    name: reexport_key.clone(),
-                                };
-                                #[allow(clippy::map_entry)]
-                                if !map.contains_key(&key) {
-                                    map.insert(
-                                        key,
-                                        ExportSymbol {
-                                            name: reexport_key,
-                                            kind: ExportKind::Named,
-                                            file: rel_path.clone(),
-                                            line: export.line,
-                                            col: export.col,
-                                            type_signature: None,
-                                            overloads: Vec::new(),
-                                            decl_kinds: Vec::new(),
-                                            type_guard_type: None,
-                                            is_async: false,
-                                            is_generator: false,
-                                            is_reexport: true,
-                                            is_type_only: false,
-                                            release_tag: None,
-                                            satisfies_type: None,
-                                            compound_members: Vec::new(),
-                                            // INF-04 (Phase 22): external star re-exports
-                                            // carry no source-site type position; empty Vec
-                                            // is correct.
-                                            typeof_import_refs: Vec::new(),
-                                            is_proxy_dispatched: false,
-                                        },
-                                    );
+                            let mut candidates = resolve_module_path(&canonical, specifier);
+                            // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                            if let Some(tc) = tsconfig {
+                                if !candidates.iter().any(|p| p.exists()) {
+                                    candidates
+                                        .extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
                                 }
-                            } else {
-                                warnings.push(ResolveWarning::new(format!(
-                                    "could not resolve star re-export '{}' from {}",
-                                    specifier,
-                                    file.display()
-                                )));
                             }
-                        }
-                    }
+                            let resolved = candidates.into_iter().find(|p| p.exists());
+                            match resolved {
+                                Some(target) => {
+                                    // Phase 18: propagate current subpath/condition into the
+                                    // recursive resolution so all exports reached through this
+                                    // re-export chain are keyed consistently.
+                                    collect_exports(
+                                        &target,
+                                        pkg_root,
+                                        map,
+                                        visited,
+                                        warnings,
+                                        depth + 1,
+                                        tsconfig,
+                                        imports_map,
+                                        subpath,
+                                        condition,
+                                    )?;
+                                }
+                                None => {
+                                    // GAP-15-05: If specifier looks like an external package (not relative),
+                                    // track it as an external re-export entry rather than just warning.
+                                    if !specifier.starts_with('.') && !specifier.starts_with('/') {
+                                        let reexport_key = format!("*<{}>", specifier);
+                                        // Phase 18 D-13: pre-merge at insertion (StarReexport external).
+                                        // External re-exports carry no decl_kind to merge — first-write-wins
+                                        // via get_mut/insert branch is the correct semantic.
+                                        let key = ExportKey {
+                                            subpath: subpath.to_string(),
+                                            condition: condition.map(|c| c.to_string()),
+                                            space: SymbolSpace::Value,
+                                            name: reexport_key.clone(),
+                                        };
+                                        #[allow(clippy::map_entry)]
+                                        if !map.contains_key(&key) {
+                                            map.insert(
+                                                key,
+                                                ExportSymbol {
+                                                    name: reexport_key,
+                                                    kind: ExportKind::Named,
+                                                    file: rel_path.clone(),
+                                                    line: export.line,
+                                                    col: export.col,
+                                                    type_signature: None,
+                                                    overloads: Vec::new(),
+                                                    decl_kinds: Vec::new(),
+                                                    type_guard_type: None,
+                                                    is_async: false,
+                                                    is_generator: false,
+                                                    is_reexport: true,
+                                                    is_type_only: false,
+                                                    release_tag: None,
+                                                    satisfies_type: None,
+                                                    compound_members: Vec::new(),
+                                                    // INF-04 (Phase 22): external star re-exports
+                                                    // carry no source-site type position; empty Vec
+                                                    // is correct.
+                                                    typeof_import_refs: Vec::new(),
+                                                    is_proxy_dispatched: false,
+                                                },
+                                            );
+                                        }
+                                    } else {
+                                        warnings.push(ResolveWarning::new(format!(
+                                            "could not resolve star re-export '{}' from {}",
+                                            specifier,
+                                            file.display()
+                                        )));
+                                    }
+                                }
+                            }
                         } // end SpecifierKind::Relative | Bare arm
                     } // end match classify_specifier
                 }
@@ -1076,7 +1089,9 @@ pub fn collect_exports(
                         SpecifierKind::ImportsField => {
                             // EXP-14: route #subpath through package.json imports map.
                             if let Some(im) = imports_map {
-                                if let Some(target) = resolve_imports_subpath(im, specifier, pkg_root) {
+                                if let Some(target) =
+                                    resolve_imports_subpath(im, specifier, pkg_root)
+                                {
                                     // Insert a named re-export pointing at the resolved target file —
                                     // mirrors the existing `Some(target)` insertion at the (now
                                     // `Relative | Bare`) arm. Use space_for(export.decl_kind.as_ref())
@@ -1132,133 +1147,134 @@ pub fn collect_exports(
                             continue;
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
-                    let mut candidates = resolve_module_path(&canonical, specifier);
-                    // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
-                    if let Some(tc) = tsconfig {
-                        if !candidates.iter().any(|p| p.exists()) {
-                            candidates.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
-                        }
-                    }
-                    let resolved = candidates.into_iter().find(|p| p.exists());
-                    match resolved {
-                        Some(target) => {
-                            // For named re-exports we only want the specific
-                            // symbol, not everything the target file exports.
-                            // We insert a placeholder pointing at the target
-                            // file's location rather than recursing fully.
-                            // The ExportSymbol references the re-export site
-                            // (current file) for accurate position reporting.
-                            // Phase 18 D-13: pre-merge at insertion (NamedReexport resolved).
-                            // Named re-exports don't declaration-merge (they point to another
-                            // file's symbol) — first-write-wins is the correct semantic.
-                            let space = space_for(export.decl_kind.as_ref());
-                            let key = ExportKey {
-                                subpath: subpath.to_string(),
-                                condition: condition.map(|c| c.to_string()),
-                                space,
-                                name: export.name.clone(),
-                            };
-                            #[allow(clippy::map_entry)]
-                            if !map.contains_key(&key) {
-                                map.insert(
-                                    key,
-                                    ExportSymbol {
-                                        name: export.name.clone(),
-                                        kind: ExportKind::Named,
-                                        file: target
-                                            .strip_prefix(pkg_root)
-                                            .unwrap_or(&target)
-                                            .to_path_buf(),
-                                        line: export.line,
-                                        col: export.col,
-                                        type_signature: None,
-                                        overloads: Vec::new(),
-                                        decl_kinds: export
-                                            .decl_kind
-                                            .clone()
-                                            .map(|k| vec![k])
-                                            .unwrap_or_default(),
-                                        type_guard_type: None,
-                                        is_async: false,
-                                        is_generator: false,
-                                        is_reexport: false,
-                                        is_type_only: false,
-                                        // META-06 (Phase 19): propagate the release_tag populated
-                                        // by the comment_scan pass on the current file's RawExport.
-                                        // Without this, a `/** @deprecated */ export { foo } from ...`
-                                        // loses its tag at the re-export boundary.
-                                        release_tag: export.release_tag.clone(),
-                                        satisfies_type: None,
-                                        compound_members: Vec::new(),
-                                        // INF-04 (Phase 22): named re-exports point at the
-                                        // target file's symbol; their typeof refs (if any)
-                                        // live on the target's ExportSymbol. Empty Vec here.
-                                        typeof_import_refs: Vec::new(),
-                                        is_proxy_dispatched: false,
-                                    },
-                                );
-                            }
-                        }
-                        None => {
-                            // GAP-15-05: If specifier looks like an external package (not relative),
-                            // track it as an external named re-export entry.
-                            if !specifier.starts_with('.') && !specifier.starts_with('/') {
-                                // Phase 18 D-13: pre-merge at insertion (NamedReexport external).
-                                // decl_kind is unknown for external packages so space defaults to Value.
-                                // External re-export names don't participate in declaration
-                                // merging — first-write-wins via get_mut/insert is correct.
-                                let key = ExportKey {
-                                    subpath: subpath.to_string(),
-                                    condition: condition.map(|c| c.to_string()),
-                                    space: SymbolSpace::Value,
-                                    name: export.name.clone(),
-                                };
-                                #[allow(clippy::map_entry)]
-                                if !map.contains_key(&key) {
-                                    map.insert(
-                                        key,
-                                        ExportSymbol {
-                                            name: export.name.clone(),
-                                            kind: ExportKind::Named,
-                                            file: rel_path.clone(),
-                                            line: export.line,
-                                            col: export.col,
-                                            type_signature: None,
-                                            overloads: Vec::new(),
-                                            decl_kinds: Vec::new(),
-                                            type_guard_type: None,
-                                            is_async: false,
-                                            is_generator: false,
-                                            is_reexport: true,
-                                            is_type_only: false,
-                                            release_tag: None,
-                                            satisfies_type: None,
-                                            compound_members: Vec::new(),
-                                            // INF-04 (Phase 22): external named re-exports
-                                            // carry no source-site type position; empty Vec.
-                                            typeof_import_refs: Vec::new(),
-                                            is_proxy_dispatched: false,
-                                        },
-                                    );
+                            let mut candidates = resolve_module_path(&canonical, specifier);
+                            // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                            if let Some(tc) = tsconfig {
+                                if !candidates.iter().any(|p| p.exists()) {
+                                    candidates
+                                        .extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
                                 }
-                            } else if depth == 0 {
-                                // META-05: At root depth, accumulate failures per
-                                // specifier for potential barrel aggregation below.
-                                barrel_failures
-                                    .entry(specifier.to_string())
-                                    .or_default()
-                                    .push(export.name.clone());
-                            } else {
-                                // At non-root depth, emit individual warning immediately.
-                                warnings.push(ResolveWarning::new(format!(
+                            }
+                            let resolved = candidates.into_iter().find(|p| p.exists());
+                            match resolved {
+                                Some(target) => {
+                                    // For named re-exports we only want the specific
+                                    // symbol, not everything the target file exports.
+                                    // We insert a placeholder pointing at the target
+                                    // file's location rather than recursing fully.
+                                    // The ExportSymbol references the re-export site
+                                    // (current file) for accurate position reporting.
+                                    // Phase 18 D-13: pre-merge at insertion (NamedReexport resolved).
+                                    // Named re-exports don't declaration-merge (they point to another
+                                    // file's symbol) — first-write-wins is the correct semantic.
+                                    let space = space_for(export.decl_kind.as_ref());
+                                    let key = ExportKey {
+                                        subpath: subpath.to_string(),
+                                        condition: condition.map(|c| c.to_string()),
+                                        space,
+                                        name: export.name.clone(),
+                                    };
+                                    #[allow(clippy::map_entry)]
+                                    if !map.contains_key(&key) {
+                                        map.insert(
+                                            key,
+                                            ExportSymbol {
+                                                name: export.name.clone(),
+                                                kind: ExportKind::Named,
+                                                file: target
+                                                    .strip_prefix(pkg_root)
+                                                    .unwrap_or(&target)
+                                                    .to_path_buf(),
+                                                line: export.line,
+                                                col: export.col,
+                                                type_signature: None,
+                                                overloads: Vec::new(),
+                                                decl_kinds: export
+                                                    .decl_kind
+                                                    .clone()
+                                                    .map(|k| vec![k])
+                                                    .unwrap_or_default(),
+                                                type_guard_type: None,
+                                                is_async: false,
+                                                is_generator: false,
+                                                is_reexport: false,
+                                                is_type_only: false,
+                                                // META-06 (Phase 19): propagate the release_tag populated
+                                                // by the comment_scan pass on the current file's RawExport.
+                                                // Without this, a `/** @deprecated */ export { foo } from ...`
+                                                // loses its tag at the re-export boundary.
+                                                release_tag: export.release_tag.clone(),
+                                                satisfies_type: None,
+                                                compound_members: Vec::new(),
+                                                // INF-04 (Phase 22): named re-exports point at the
+                                                // target file's symbol; their typeof refs (if any)
+                                                // live on the target's ExportSymbol. Empty Vec here.
+                                                typeof_import_refs: Vec::new(),
+                                                is_proxy_dispatched: false,
+                                            },
+                                        );
+                                    }
+                                }
+                                None => {
+                                    // GAP-15-05: If specifier looks like an external package (not relative),
+                                    // track it as an external named re-export entry.
+                                    if !specifier.starts_with('.') && !specifier.starts_with('/') {
+                                        // Phase 18 D-13: pre-merge at insertion (NamedReexport external).
+                                        // decl_kind is unknown for external packages so space defaults to Value.
+                                        // External re-export names don't participate in declaration
+                                        // merging — first-write-wins via get_mut/insert is correct.
+                                        let key = ExportKey {
+                                            subpath: subpath.to_string(),
+                                            condition: condition.map(|c| c.to_string()),
+                                            space: SymbolSpace::Value,
+                                            name: export.name.clone(),
+                                        };
+                                        #[allow(clippy::map_entry)]
+                                        if !map.contains_key(&key) {
+                                            map.insert(
+                                                key,
+                                                ExportSymbol {
+                                                    name: export.name.clone(),
+                                                    kind: ExportKind::Named,
+                                                    file: rel_path.clone(),
+                                                    line: export.line,
+                                                    col: export.col,
+                                                    type_signature: None,
+                                                    overloads: Vec::new(),
+                                                    decl_kinds: Vec::new(),
+                                                    type_guard_type: None,
+                                                    is_async: false,
+                                                    is_generator: false,
+                                                    is_reexport: true,
+                                                    is_type_only: false,
+                                                    release_tag: None,
+                                                    satisfies_type: None,
+                                                    compound_members: Vec::new(),
+                                                    // INF-04 (Phase 22): external named re-exports
+                                                    // carry no source-site type position; empty Vec.
+                                                    typeof_import_refs: Vec::new(),
+                                                    is_proxy_dispatched: false,
+                                                },
+                                            );
+                                        }
+                                    } else if depth == 0 {
+                                        // META-05: At root depth, accumulate failures per
+                                        // specifier for potential barrel aggregation below.
+                                        barrel_failures
+                                            .entry(specifier.to_string())
+                                            .or_default()
+                                            .push(export.name.clone());
+                                    } else {
+                                        // At non-root depth, emit individual warning immediately.
+                                        warnings.push(ResolveWarning::new(format!(
                                     "could not resolve named re-export '{}' from {} (specifier '{}')",
                                     export.name,
                                     file.display(),
                                     specifier,
                                 )));
+                                    }
+                                }
                             }
-                        }
-                    }
                         } // end SpecifierKind::Relative | Bare arm
                     } // end match classify_specifier
                 }

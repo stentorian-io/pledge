@@ -302,10 +302,9 @@ pub fn format_type(shape: &TypeShape) -> String {
                     let rest_prefix = if e.rest { "..." } else { "" };
                     let opt_suffix = if e.optional { "?" } else { "" };
                     match &e.label {
-                        Some(lbl) => format!(
-                            "{rest_prefix}{lbl}{opt_suffix}: {}",
-                            format_type(&e.shape)
-                        ),
+                        Some(lbl) => {
+                            format!("{rest_prefix}{lbl}{opt_suffix}: {}", format_type(&e.shape))
+                        }
                         None => format!("{rest_prefix}{}", format_type(&e.shape)),
                     }
                 })
@@ -466,12 +465,16 @@ pub const RULE_TYPE_REFERENCE_REMOVED: &str = "type-reference-removed"; // INF-0
 pub const RULE_LIMITATION_LSP_REQUIRED: &str = "limitation: lsp-required"; // INF-04 Phase 22 (existing substring)
 pub const RULE_LIMITATION_EXTERNAL_TYPE_REFERENCE: &str = "limitation: external-type-reference"; // INF-04 Phase 22 (pre-approved, not yet emitted)
 pub const RULE_LIMITATION_NOINFER_VIA_LOCAL_ALIAS: &str = "limitation: noinfer-via-local-alias"; // GEN-07 Phase 20 (doc-only)
-pub const RULE_LIMITATION_SATISFIES_NARROWED: &str = "limitation: satisfies-narrowed-type-not-verified"; // TYPE-01 Phase 20 (existing substring)
-pub const RULE_LIMITATION_SYMBOL_FOR_REGISTRY: &str = "limitation: symbol-for-registry-key-not-tracked"; // ECF-13 Phase 22 (pre-approved, not yet emitted)
+pub const RULE_LIMITATION_SATISFIES_NARROWED: &str =
+    "limitation: satisfies-narrowed-type-not-verified"; // TYPE-01 Phase 20 (existing substring)
+pub const RULE_LIMITATION_SYMBOL_FOR_REGISTRY: &str =
+    "limitation: symbol-for-registry-key-not-tracked"; // ECF-13 Phase 22 (pre-approved, not yet emitted)
 pub const RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY: &str = "limitation: dynamic-static-member-key"; // CLS-12 Phase 21 (existing substring)
 pub const RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS: &str = "limitation: proxy-dispatched-exports"; // DOC-01 Phase 25 (new)
-pub const RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT: &str = "limitation: decorator-runtime-effect-opaque"; // DOC-01 Phase 25 (new)
-pub const RULE_LIMITATION_PRIVATE_BRAND_ACCESS: &str = "limitation: private-brand-access-not-checkable"; // DOC-01 Phase 25 (new)
+pub const RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT: &str =
+    "limitation: decorator-runtime-effect-opaque"; // DOC-01 Phase 25 (new)
+pub const RULE_LIMITATION_PRIVATE_BRAND_ACCESS: &str =
+    "limitation: private-brand-access-not-checkable"; // DOC-01 Phase 25 (new)
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
@@ -938,8 +941,14 @@ mod tests {
             rest: false,
             shape: number(),
         }]);
-        assert!(sub(&labeled, &unlabeled), "labeled <: unlabeled (same shape)");
-        assert!(sub(&unlabeled, &labeled), "unlabeled <: labeled (same shape)");
+        assert!(
+            sub(&labeled, &unlabeled),
+            "labeled <: unlabeled (same shape)"
+        );
+        assert!(
+            sub(&unlabeled, &labeled),
+            "unlabeled <: labeled (same shape)"
+        );
     }
 
     // ── 20. Conditional/Mapped/Indexed/Template return false (D-10) ───────────

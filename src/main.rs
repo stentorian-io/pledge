@@ -46,62 +46,6 @@ async fn main() {
     }
 }
 
-#[cfg(test)]
-mod rob_07_tests {
-    use interlint::types::{Finding, Severity};
-    use std::path::PathBuf;
-
-    fn make_finding(rule: &'static str, line: u32, col: u32, message: &str) -> Finding {
-        Finding {
-            severity: Severity::Major,
-            rule,
-            file: PathBuf::from("a.ts"),
-            line,
-            col,
-            message: message.into(),
-        }
-    }
-
-    #[test]
-    fn rob_07_different_message_same_line_preserved() {
-        let mut findings = vec![
-            make_finding("r", 1, 1, "first"),
-            make_finding("r", 1, 1, "second"),
-        ];
-        super::dedup_findings(&mut findings);
-        assert_eq!(
-            findings.len(),
-            2,
-            "ROB-07: same rule/file/line/col but different message must both be retained"
-        );
-    }
-
-    #[test]
-    fn rob_07_identical_fields_deduped() {
-        let mut findings = vec![
-            make_finding("r", 1, 1, "same"),
-            make_finding("r", 1, 1, "same"),
-        ];
-        super::dedup_findings(&mut findings);
-        assert_eq!(
-            findings.len(),
-            1,
-            "ROB-07: identical 5-tuple must be deduped to 1"
-        );
-    }
-
-    #[test]
-    fn rob_07_different_col_preserved() {
-        let mut findings = vec![make_finding("r", 1, 1, "m"), make_finding("r", 1, 5, "m")];
-        super::dedup_findings(&mut findings);
-        assert_eq!(
-            findings.len(),
-            2,
-            "ROB-07: different col must be retained as distinct findings"
-        );
-    }
-}
-
 async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
     // Handle --clear-cache before any pipeline work (D-21)
     if cli.clear_cache {
@@ -199,12 +143,8 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // diff pipeline can choose between Major-verified and
             // Minor-limitation-annotated emission for typeof-import refs.
             let all_warnings: Vec<_> = old_warnings.into_iter().chain(new_warnings).collect();
-            let mut findings = compare::compare_exports(
-                &old_exports,
-                &new_exports,
-                &current_root,
-                !degraded,
-            );
+            let mut findings =
+                compare::compare_exports(&old_exports, &new_exports, &current_root, !degraded);
 
             // Step 3b: Metadata comparison (META-01..07)
             let metadata_findings =
@@ -249,5 +189,61 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 Ok(RunOutcome::Clean)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod rob_07_tests {
+    use interlint::types::{Finding, Severity};
+    use std::path::PathBuf;
+
+    fn make_finding(rule: &'static str, line: u32, col: u32, message: &str) -> Finding {
+        Finding {
+            severity: Severity::Major,
+            rule,
+            file: PathBuf::from("a.ts"),
+            line,
+            col,
+            message: message.into(),
+        }
+    }
+
+    #[test]
+    fn rob_07_different_message_same_line_preserved() {
+        let mut findings = vec![
+            make_finding("r", 1, 1, "first"),
+            make_finding("r", 1, 1, "second"),
+        ];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "ROB-07: same rule/file/line/col but different message must both be retained"
+        );
+    }
+
+    #[test]
+    fn rob_07_identical_fields_deduped() {
+        let mut findings = vec![
+            make_finding("r", 1, 1, "same"),
+            make_finding("r", 1, 1, "same"),
+        ];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            1,
+            "ROB-07: identical 5-tuple must be deduped to 1"
+        );
+    }
+
+    #[test]
+    fn rob_07_different_col_preserved() {
+        let mut findings = vec![make_finding("r", 1, 1, "m"), make_finding("r", 1, 5, "m")];
+        super::dedup_findings(&mut findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "ROB-07: different col must be retained as distinct findings"
+        );
     }
 }

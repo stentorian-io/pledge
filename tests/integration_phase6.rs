@@ -9,7 +9,7 @@ use interlint::compare::subtype::{
     RULE_TYPES_CONDITION_REMOVED, RULE_TYPES_RUNTIME_MISMATCH,
 };
 use interlint::types::Severity;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -18,7 +18,7 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn read_pkg(path: &PathBuf) -> serde_json::Value {
+fn read_pkg(path: &Path) -> serde_json::Value {
     let content = std::fs::read_to_string(path.join("package.json")).unwrap();
     serde_json::from_str(&content).unwrap()
 }

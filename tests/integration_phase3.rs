@@ -5,7 +5,7 @@ use interlint::compare;
 use interlint::compare::metadata;
 use interlint::discover;
 use interlint::types::Severity;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Helper: resolve a fixture path relative to the crate root.
 fn fixture_path(name: &str) -> PathBuf {
@@ -16,7 +16,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 /// Helper: discover exports from a fixture directory.
-fn discover_fixture(path: &PathBuf) -> interlint::types::ExportMap {
+fn discover_fixture(path: &Path) -> interlint::types::ExportMap {
     let (exports, _warnings) = discover::discover_exports(path).expect("discover should succeed");
     exports
 }
@@ -45,7 +45,8 @@ fn test_signature_changes_detected() {
 
     let old_exports = discover_fixture(&old_path);
     let new_exports = discover_fixture(&new_path);
-    let findings = compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
+    let findings =
+        compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
 
     let rules = rule_ids(&findings);
 

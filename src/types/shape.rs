@@ -256,7 +256,10 @@ impl TypeShape {
                 base: Box::new(base.normalize()),
                 index: Box::new(index.normalize()),
             },
-            TypeShape::Satisfies { constraint, narrowed } => TypeShape::Satisfies {
+            TypeShape::Satisfies {
+                constraint,
+                narrowed,
+            } => TypeShape::Satisfies {
                 constraint: Box::new(constraint.normalize()),
                 narrowed: narrowed.map(|n| Box::new(n.normalize())),
             },

@@ -8,8 +8,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::compare::subtype::{
-    RULE_DIRECTIVE_ADDED, RULE_DIRECTIVE_CHANGED, RULE_DIRECTIVE_REMOVED,
-    RULE_DIRECTIVE_REORDERED,
+    RULE_DIRECTIVE_ADDED, RULE_DIRECTIVE_CHANGED, RULE_DIRECTIVE_REMOVED, RULE_DIRECTIVE_REORDERED,
 };
 use crate::discover::comment_scan::DirectiveRecord;
 use crate::types::{Finding, Severity};

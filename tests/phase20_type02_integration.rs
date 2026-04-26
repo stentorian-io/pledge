@@ -14,8 +14,8 @@
 
 use std::path::{Path, PathBuf};
 
-use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::compare::subtype::RULE_INFER_EXTENDS_CONSTRAINT_CHANGED;
+use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::discover::discover_exports;
 use interlint::types::Severity;
 

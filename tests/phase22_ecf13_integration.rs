@@ -7,6 +7,7 @@
 //! False-positive guards (CONTEXT.md):
 //!   - Foo.prototype[Symbol.iterator] (class-instance iteration protocol)
 //!   - class Foo { [Symbol.iterator]() {} } (class method)
+//!
 //! Both must produce ZERO @@-prefixed exports.
 
 use std::path::{Path, PathBuf};
@@ -40,7 +41,7 @@ fn run(form: &str) -> Vec<Finding> {
 fn export_names(form: &str, side: &str) -> Vec<String> {
     let dir = fixture_dir(form, side);
     let (exports, _) = discover_exports(&dir).unwrap();
-    exports.iter().map(|(k, _)| k.name.clone()).collect()
+    exports.keys().map(|k| k.name.clone()).collect()
 }
 
 fn assert_symbol_removed(form: &str, symbol_short: &str) {

@@ -2721,29 +2721,43 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m.captures.iter()
+                let obj_ok = m
+                    .captures
+                    .iter()
                     .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m.captures.iter()
+                let prop_ok = m
+                    .captures
+                    .iter()
                     .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
-                if !obj_ok || !prop_ok { continue; }
+                if !obj_ok || !prop_ok {
+                    continue;
+                }
 
                 // Branch A: new_expression with constructor 'Proxy'
-                let is_proxy_new = m.captures.iter().any(|c| {
-                    c.index == 2 && c.node.utf8_text(source).ok() == Some("Proxy")
-                });
+                let is_proxy_new = m
+                    .captures
+                    .iter()
+                    .any(|c| c.index == 2 && c.node.utf8_text(source).ok() == Some("Proxy"));
 
                 // Branch B: call_expression with Reflect.{construct,get}
                 let is_reflect_call = {
-                    let reflect_obj_ok = m.captures.iter().any(|c| {
-                        c.index == 3 && c.node.utf8_text(source).ok() == Some("Reflect")
-                    });
+                    let reflect_obj_ok = m
+                        .captures
+                        .iter()
+                        .any(|c| c.index == 3 && c.node.utf8_text(source).ok() == Some("Reflect"));
                     let reflect_method_ok = m.captures.iter().any(|c| {
-                        c.index == 4 && matches!(c.node.utf8_text(source).ok(), Some("construct") | Some("get"))
+                        c.index == 4
+                            && matches!(
+                                c.node.utf8_text(source).ok(),
+                                Some("construct") | Some("get")
+                            )
                     });
                     reflect_obj_ok && reflect_method_ok
                 };
 
-                if !(is_proxy_new || is_reflect_call) { continue; }
+                if !(is_proxy_new || is_reflect_call) {
+                    continue;
+                }
 
                 // Find the position of the right-hand expression
                 let pos_capture = m.captures.iter().find(|c| c.index == 2 || c.index == 3);
@@ -2772,7 +2786,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         // Existing default already captured by a sibling pattern (rare).
                         // Mark it as proxy-dispatched so the comparator still emits the limitation.
                         for e in exports.iter_mut() {
-                            if e.name == "default" { e.is_proxy_dispatched = true; break; }
+                            if e.name == "default" {
+                                e.is_proxy_dispatched = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -3534,8 +3551,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             //   Object.assign({}, exports, {…})        — NEW: BUN-10-A gap closed
                             // The arm short-circuits when no arg references `exports`/`module.*`,
                             // preserving the precision of the pre-Phase-24 gate.
-                            let all_args: Vec<_> =
-                                args.named_children(&mut args.walk()).collect();
+                            let all_args: Vec<_> = args.named_children(&mut args.walk()).collect();
                             let any_arg_is_exports = all_args.iter().any(|n| {
                                 n.utf8_text(source)
                                     .ok()
@@ -5208,15 +5224,12 @@ pub fn parse_class_members(
                         "member_expression" => {
                             let obj = lhs.child_by_field_name("object");
                             let prop = lhs.child_by_field_name("property");
-                            let obj_text = obj
-                                .and_then(|n| n.utf8_text(source).ok())
-                                .unwrap_or("");
+                            let obj_text = obj.and_then(|n| n.utf8_text(source).ok()).unwrap_or("");
                             // Gate: object must be the class name (by text) OR
                             // `this` (handles anonymous default-exported
                             // classes). If class_name is empty (anonymous),
                             // only `this` matches.
-                            let is_class_ref = (!class_name.is_empty()
-                                && obj_text == class_name)
+                            let is_class_ref = (!class_name.is_empty() && obj_text == class_name)
                                 || obj.is_some_and(|n| n.kind() == "this");
                             if !is_class_ref {
                                 continue;
@@ -5244,8 +5257,7 @@ pub fn parse_class_members(
                                 m.name == prop_name
                                     && m.is_static
                                     && matches!(m.kind, ClassMemberKind::Property)
-                                    && (m.type_signature.is_some()
-                                        || !m.decorators.is_empty())
+                                    && (m.type_signature.is_some() || !m.decorators.is_empty())
                             });
                             if class_body_wins {
                                 // Skip synthesizing — class-body entry stays.
@@ -6493,12 +6505,8 @@ mod tests {
         kind: &str,
     ) -> Option<tree_sitter::Node<'a>> {
         let mut cursor = root.walk();
-        for child in root.children(&mut cursor) {
-            if child.kind() == kind {
-                return Some(child);
-            }
-        }
-        None
+        let result = root.children(&mut cursor).find(|&child| child.kind() == kind);
+        result
     }
 
     // ── INF-04 (Phase 22) extract_typeof_import_refs tests ───────────────────
@@ -6673,10 +6681,7 @@ mod tests {
         let secret = members.iter().find(|m| m.name == "#secret").unwrap();
         assert!(secret.is_private, "'#secret' must have is_private=true");
         let visible = members.iter().find(|m| m.name == "visible").unwrap();
-        assert!(
-            !visible.is_private,
-            "'visible' must have is_private=false"
-        );
+        assert!(!visible.is_private, "'visible' must have is_private=false");
     }
 
     #[test]
@@ -8980,8 +8985,7 @@ export { z as default, z };
         let source = b"@ns.log\nexport class X {}\n";
         let decs = combined_class_decs(source);
         assert!(
-            decs.iter()
-                .any(|d| d.name == "ns.log" && d.args.is_none()),
+            decs.iter().any(|d| d.name == "ns.log" && d.args.is_none()),
             "ns.log member_expression decorator should be extracted; decs = {:?}",
             decs
         );
@@ -8991,7 +8995,11 @@ export { z as default, z };
     fn cls_10_no_decorators_is_empty() {
         let source = b"export class Plain {}\n";
         let decs = combined_class_decs(source);
-        assert!(decs.is_empty(), "plain class should have no decorators; got {:?}", decs);
+        assert!(
+            decs.is_empty(),
+            "plain class should have no decorators; got {:?}",
+            decs
+        );
     }
 }
 
@@ -9021,16 +9029,28 @@ mod phase25_proxy_detection_tests {
     fn proxy_module_exports_detected() {
         let source = b"module.exports = new Proxy({}, {});";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
-        let default_exp = raw.iter().find(|e| e.name == "default").expect("default not captured");
-        assert!(default_exp.is_proxy_dispatched, "Proxy RHS should set is_proxy_dispatched");
+        let default_exp = raw
+            .iter()
+            .find(|e| e.name == "default")
+            .expect("default not captured");
+        assert!(
+            default_exp.is_proxy_dispatched,
+            "Proxy RHS should set is_proxy_dispatched"
+        );
     }
 
     #[test]
     fn reflect_construct_module_exports_detected() {
         let source = b"module.exports = Reflect.construct(SomeClass, []);";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
-        let default_exp = raw.iter().find(|e| e.name == "default").expect("default not captured");
-        assert!(default_exp.is_proxy_dispatched, "Reflect.construct RHS should set is_proxy_dispatched");
+        let default_exp = raw
+            .iter()
+            .find(|e| e.name == "default")
+            .expect("default not captured");
+        assert!(
+            default_exp.is_proxy_dispatched,
+            "Reflect.construct RHS should set is_proxy_dispatched"
+        );
     }
 
     #[test]
@@ -9042,9 +9062,11 @@ mod phase25_proxy_detection_tests {
         // So this should NOT match the Proxy query; it falls through to existing identifier patterns.
         for e in &raw {
             if e.name == "default" {
-                assert!(!e.is_proxy_dispatched, "require() must not flag is_proxy_dispatched");
+                assert!(
+                    !e.is_proxy_dispatched,
+                    "require() must not flag is_proxy_dispatched"
+                );
             }
         }
     }
 }
-

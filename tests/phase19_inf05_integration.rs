@@ -21,8 +21,7 @@ use std::path::{Path, PathBuf};
 
 use interlint::compare::compare_exports;
 use interlint::compare::subtype::{
-    RULE_DIRECTIVE_ADDED, RULE_DIRECTIVE_CHANGED, RULE_DIRECTIVE_REMOVED,
-    RULE_DIRECTIVE_REORDERED,
+    RULE_DIRECTIVE_ADDED, RULE_DIRECTIVE_CHANGED, RULE_DIRECTIVE_REMOVED, RULE_DIRECTIVE_REORDERED,
 };
 use interlint::discover::discover_exports;
 use interlint::types::Severity;

@@ -111,7 +111,9 @@ fn meta_06_regression_guard_all_forms() {
         }
 
         // Severity must be Warning (per existing META-04 emission at compare/mod.rs:288-302).
-        let severity_ok = deprecated_hits.iter().any(|f| f.severity == Severity::Warning);
+        let severity_ok = deprecated_hits
+            .iter()
+            .any(|f| f.severity == Severity::Warning);
         if !severity_ok {
             failures.push(format!(
                 "form `{}`: export-deprecated fired but not at Warning severity. Severities: {:?}",

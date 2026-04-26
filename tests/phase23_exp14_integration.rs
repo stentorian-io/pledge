@@ -31,7 +31,10 @@ fn exp_14_imports_field_added_fires_minor() {
     let old = read_pkg(&fixture_dir("exp-14-added", "old"));
     let new = read_pkg(&fixture_dir("exp-14-added", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
-    let added: Vec<_> = findings.iter().filter(|f| f.rule == RULE_IMPORT_ADDED).collect();
+    let added: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_IMPORT_ADDED)
+        .collect();
     assert!(
         !added.is_empty(),
         "expected at least one import-added finding; got rules {:?}",
@@ -48,8 +51,9 @@ fn exp_14_imports_field_removed_fires_major() {
     let old = read_pkg(&fixture_dir("exp-14-removed", "old"));
     let new = read_pkg(&fixture_dir("exp-14-removed", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
-    assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_REMOVED
-        && f.severity == Severity::Major));
+    assert!(findings
+        .iter()
+        .any(|f| f.rule == RULE_IMPORT_REMOVED && f.severity == Severity::Major));
 }
 
 #[test]
@@ -57,8 +61,9 @@ fn exp_14_import_rerouted_fires_major() {
     let old = read_pkg(&fixture_dir("exp-14-rerouted", "old"));
     let new = read_pkg(&fixture_dir("exp-14-rerouted", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
-    assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_REROUTE
-        && f.severity == Severity::Major));
+    assert!(findings
+        .iter()
+        .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Major));
 }
 
 #[test]
@@ -66,8 +71,9 @@ fn exp_14_import_condition_removed_fires_major() {
     let old = read_pkg(&fixture_dir("exp-14-condition-changed", "old"));
     let new = read_pkg(&fixture_dir("exp-14-condition-changed", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
-    assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED
-        && f.severity == Severity::Major));
+    assert!(findings
+        .iter()
+        .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
 }
 
 #[test]
@@ -75,8 +81,9 @@ fn exp_14_import_pattern_refined_fires_major() {
     let old = read_pkg(&fixture_dir("exp-14-pattern-refined", "old"));
     let new = read_pkg(&fixture_dir("exp-14-pattern-refined", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
-    assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED
-        && f.severity == Severity::Major));
+    assert!(findings
+        .iter()
+        .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Major));
 }
 
 #[test]
@@ -108,8 +115,7 @@ fn exp_14_subpath_routed_through_imports_map() {
 #[test]
 fn exp_14_imports_and_exports_coexist() {
     let dir = fixture_dir("exp-14-imports-with-exports", "new");
-    let (exports, _warnings) =
-        discover_exports(&dir).expect("discover_exports must not error");
+    let (exports, _warnings) = discover_exports(&dir).expect("discover_exports must not error");
 
     // The export `x` (from #util → src/util.ts) is reached via the imports map
     // even though the package ALSO has a top-level exports field. Both fields
@@ -180,10 +186,16 @@ fn exp_14_node_rhs_target_does_not_emit_warning() {
         }"##,
     )
     .expect("write pkg");
-    fs::write(dir.path().join("index.ts"), "export { hash } from '#crypto';\n")
-        .expect("write index");
-    fs::write(dir.path().join("poly.ts"), "export const hash: () => string = () => 'x';\n")
-        .expect("write poly");
+    fs::write(
+        dir.path().join("index.ts"),
+        "export { hash } from '#crypto';\n",
+    )
+    .expect("write index");
+    fs::write(
+        dir.path().join("poly.ts"),
+        "export const hash: () => string = () => 'x';\n",
+    )
+    .expect("write poly");
 
     let (exports, warnings) =
         discover_exports(dir.path()).expect("discover_exports must not error");
@@ -217,8 +229,7 @@ fn exp_14_imports_field_wins_over_tsconfig_paths() {
     // SpecifierKind::ImportsField BEFORE the SpecifierKind::Relative | Bare
     // arm where tsconfig fallback runs. This test is the regression guard.
     let dir = fixture_dir("exp-14-tsconfig-imports-overlap", "new");
-    let (exports, warnings) =
-        discover_exports(&dir).expect("discover_exports must not error");
+    let (exports, warnings) = discover_exports(&dir).expect("discover_exports must not error");
 
     let names: Vec<&str> = exports.keys().map(|k| k.name.as_str()).collect();
 
@@ -264,8 +275,7 @@ fn exp_14_deep_nesting_does_not_panic() {
 
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("package.json"), &pkg_json).expect("write pkg");
-    fs::write(dir.path().join("index.ts"), "export const k: number = 1;\n")
-        .expect("write index");
+    fs::write(dir.path().join("index.ts"), "export const k: number = 1;\n").expect("write index");
 
     // Must not panic. The contract is graceful degradation, not a specific
     // output shape. A deeply-nested JSON that exceeds serde_json's recursion

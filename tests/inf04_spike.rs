@@ -14,9 +14,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_lsp::lsp_types::{
-    DidOpenTextDocumentParams, GotoDefinitionParams, HoverParams, Position,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Url,
-    WorkDoneProgressParams,
+    DidOpenTextDocumentParams, GotoDefinitionParams, HoverParams, Position, TextDocumentIdentifier,
+    TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams,
 };
 use async_lsp::LanguageServer;
 
@@ -26,8 +25,8 @@ type GotoTypeDefinitionParams = GotoDefinitionParams;
 #[tokio::test(flavor = "current_thread")]
 async fn inf04_spike_definition_resolves_property() {
     let manifest = env!("CARGO_MANIFEST_DIR");
-    let pkg_root = PathBuf::from(manifest)
-        .join("tests/fixtures/phase-22/inf-04-typeof-import/clean/old");
+    let pkg_root =
+        PathBuf::from(manifest).join("tests/fixtures/phase-22/inf-04-typeof-import/clean/old");
 
     let binary = interlint::lsp::managed::resolve_lsp_binary()
         .await
@@ -212,10 +211,7 @@ async fn inf04_spike_definition_resolves_property() {
     let typedef_json = serde_json::to_string_pretty(&typedef_resp).unwrap();
 
     eprintln!("INF-04 SPIKE RESPONSE [definition]:\n{}", def_json);
-    eprintln!(
-        "INF-04 SPIKE RESPONSE [typeDefinition]:\n{}",
-        typedef_json
-    );
+    eprintln!("INF-04 SPIKE RESPONSE [typeDefinition]:\n{}", typedef_json);
 
     let _ = session.shutdown().await;
 

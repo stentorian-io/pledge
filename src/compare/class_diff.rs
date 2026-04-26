@@ -15,17 +15,29 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use super::subtype::{
-    RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_ACCESSOR_CHANGED,
-    RULE_CLASS_CONSTRUCTOR_PARAM_ADDED, RULE_CLASS_IMPLEMENTS_REMOVED,
-    RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT, RULE_CLASS_METHOD_KIND_CHANGED,
-    RULE_CLASS_METHOD_REMOVED, RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
-    RULE_CLASS_STATIC_TYPE_CHANGED, RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
-    // CLS-10 (Phase 19) — stage-3 decorator diff rule-IDs:
-    RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
+    RULE_CLASS_ABSTRACT_METHOD_ADDED,
+    RULE_CLASS_ACCESSOR_CHANGED,
+    RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
     // CLS-11 (Phase 21) — public↔private visibility transition:
-    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_CLASS_FIELD_MADE_PUBLIC,
+    RULE_CLASS_FIELD_MADE_PRIVATE,
+    RULE_CLASS_FIELD_MADE_PUBLIC,
+    RULE_CLASS_IMPLEMENTS_REMOVED,
+    RULE_CLASS_INHERITANCE_CHANGED,
+    RULE_CLASS_MADE_ABSTRACT,
+    RULE_CLASS_METHOD_KIND_CHANGED,
+    RULE_CLASS_METHOD_REMOVED,
+    RULE_CLASS_METHOD_VISIBILITY_CHANGED,
+    RULE_CLASS_READONLY_CHANGED,
+    RULE_CLASS_STATIC_TYPE_CHANGED,
+    RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
+    // CLS-10 (Phase 19) — stage-3 decorator diff rule-IDs:
+    RULE_DECORATOR_ADDED,
+    RULE_DECORATOR_ARGUMENTS_CHANGED,
+    RULE_DECORATOR_REMOVED,
 };
-use crate::types::{ClassMember, ClassMemberKind, ClassShape, DecoratorSpec, Finding, Severity, Visibility};
+use crate::types::{
+    ClassMember, ClassMemberKind, ClassShape, DecoratorSpec, Finding, Severity, Visibility,
+};
 
 /// Returns true if visibility was narrowed (a breaking change for consumers).
 ///
@@ -291,14 +303,22 @@ pub fn compare_class_shapes(
     // `#foo` are distinct runtime slots (class-object vs prototype); pairing
     // them as a public↔private transition would be wrong. Only same-
     // static-ness pairs represent the same logical slot.
-    let old_pub_keys: HashSet<(&str, bool)> =
-        old_pub.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
-    let old_priv_keys: HashSet<(&str, bool)> =
-        old_priv.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
-    let new_pub_keys: HashSet<(&str, bool)> =
-        new_pub.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
-    let new_priv_keys: HashSet<(&str, bool)> =
-        new_priv.iter().map(|m| (bare_member_name(m), m.is_static)).collect();
+    let old_pub_keys: HashSet<(&str, bool)> = old_pub
+        .iter()
+        .map(|m| (bare_member_name(m), m.is_static))
+        .collect();
+    let old_priv_keys: HashSet<(&str, bool)> = old_priv
+        .iter()
+        .map(|m| (bare_member_name(m), m.is_static))
+        .collect();
+    let new_pub_keys: HashSet<(&str, bool)> = new_pub
+        .iter()
+        .map(|m| (bare_member_name(m), m.is_static))
+        .collect();
+    let new_priv_keys: HashSet<(&str, bool)> = new_priv
+        .iter()
+        .map(|m| (bare_member_name(m), m.is_static))
+        .collect();
 
     // Suppression set keyed on (bare_name, is_static) — mirrors the match key
     // above. CLS-03 removal suppression reconstructs the tuple from each
@@ -408,7 +428,8 @@ pub fn compare_class_shapes(
                 | ClassMemberKind::Constructor
                 | ClassMemberKind::Getter
                 | ClassMemberKind::Setter
-        ) || (matches!(old_member.kind, ClassMemberKind::Property) && old_member.is_static);
+        ) || (matches!(old_member.kind, ClassMemberKind::Property)
+            && old_member.is_static);
         if is_removable_kind && !new_members.contains_key(name) {
             let noun = if matches!(old_member.kind, ClassMemberKind::Property) {
                 "static property"
@@ -421,7 +442,10 @@ pub fn compare_class_shapes(
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!("{} `{}` was removed from class `{}`", noun, name, symbol_name),
+                message: format!(
+                    "{} `{}` was removed from class `{}`",
+                    noun, name, symbol_name
+                ),
             });
         }
     }
@@ -1300,58 +1324,81 @@ mod tests {
 
     #[test]
     fn paired_info_at_decorator_arguments_changed_site() {
-        use crate::compare::subtype::{RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::compare::subtype::{
+            RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+        };
         use crate::types::Severity;
         let old = make_decorated_class("Route", Some("'/users'"));
         let new = make_decorated_class("Route", Some("'/people'"));
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED),
-            "expected Major decorator-arguments-changed; got: {:?}", findings
+            findings.iter().any(
+                |f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED
+            ),
+            "expected Major decorator-arguments-changed; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
-            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+            findings.iter().any(|f| f.severity == Severity::Info
+                && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn paired_info_at_decorator_removed_site() {
-        use crate::compare::subtype::{RULE_DECORATOR_REMOVED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::compare::subtype::{
+            RULE_DECORATOR_REMOVED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+        };
         use crate::types::Severity;
         let old = make_decorated_class("LogCall", None);
         let new = make_class(vec![]); // no decorator
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_REMOVED),
-            "expected Major decorator-removed; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_REMOVED),
+            "expected Major decorator-removed; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
-            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+            findings.iter().any(|f| f.severity == Severity::Info
+                && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn paired_info_at_decorator_added_site() {
-        use crate::compare::subtype::{RULE_DECORATOR_ADDED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT};
+        use crate::compare::subtype::{
+            RULE_DECORATOR_ADDED, RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
+        };
         use crate::types::Severity;
         let old = make_class(vec![]); // no decorator
         let new = make_decorated_class("LogCall", None);
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ADDED),
-            "expected Major decorator-added; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Major && f.rule == RULE_DECORATOR_ADDED),
+            "expected Major decorator-added; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
-            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}", findings
+            findings.iter().any(|f| f.severity == Severity::Info
+                && f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT),
+            "expected Info limitation: decorator-runtime-effect-opaque; got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn paired_info_at_cls11_made_private_site() {
-        use crate::compare::subtype::{RULE_CLASS_FIELD_MADE_PRIVATE, RULE_LIMITATION_PRIVATE_BRAND_ACCESS};
+        use crate::compare::subtype::{
+            RULE_CLASS_FIELD_MADE_PRIVATE, RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
+        };
         use crate::types::{ClassMemberKind, Severity, Visibility};
         // old has public 'foo', new has private '#foo'
         let mut pub_member = make_member("foo", ClassMemberKind::Property, Visibility::Public);
@@ -1362,18 +1409,27 @@ mod tests {
         let new = make_class(vec![priv_member]);
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Major && f.rule == RULE_CLASS_FIELD_MADE_PRIVATE),
-            "expected Major class-field-made-private; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Major && f.rule == RULE_CLASS_FIELD_MADE_PRIVATE),
+            "expected Major class-field-made-private; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
-            "expected Info limitation: private-brand-access-not-checkable; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Info
+                    && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
+            "expected Info limitation: private-brand-access-not-checkable; got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn paired_info_at_cls11_made_public_site() {
-        use crate::compare::subtype::{RULE_CLASS_FIELD_MADE_PUBLIC, RULE_LIMITATION_PRIVATE_BRAND_ACCESS};
+        use crate::compare::subtype::{
+            RULE_CLASS_FIELD_MADE_PUBLIC, RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
+        };
         use crate::types::{ClassMemberKind, Severity, Visibility};
         // old has private '#foo', new has public 'foo'
         let mut priv_member = make_member("#foo", ClassMemberKind::Property, Visibility::Private);
@@ -1384,30 +1440,44 @@ mod tests {
         let new = make_class(vec![pub_member]);
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_FIELD_MADE_PUBLIC),
-            "expected Minor class-field-made-public; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_FIELD_MADE_PUBLIC),
+            "expected Minor class-field-made-public; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
-            "expected Info limitation: private-brand-access-not-checkable; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Info
+                    && f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS),
+            "expected Info limitation: private-brand-access-not-checkable; got: {:?}",
+            findings
         );
     }
 
     #[test]
     fn paired_info_at_dynamic_static_key_site() {
-        use crate::compare::subtype::{RULE_CLASS_STATIC_TYPE_CHANGED, RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY};
+        use crate::compare::subtype::{
+            RULE_CLASS_STATIC_TYPE_CHANGED, RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY,
+        };
         use crate::types::Severity;
         let mut old = make_class(vec![]);
         old.has_dynamic_static_key = true;
         let new = make_class(vec![]);
         let findings = compare_class_shapes(&old, &new, "C", &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_STATIC_TYPE_CHANGED),
-            "expected Minor class-static-type-changed; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Minor && f.rule == RULE_CLASS_STATIC_TYPE_CHANGED),
+            "expected Minor class-static-type-changed; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY),
-            "expected Info limitation: dynamic-static-member-key; got: {:?}", findings
+            findings.iter().any(|f| f.severity == Severity::Info
+                && f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY),
+            "expected Info limitation: dynamic-static-member-key; got: {:?}",
+            findings
         );
     }
 }

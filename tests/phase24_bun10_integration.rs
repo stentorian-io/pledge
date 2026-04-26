@@ -92,7 +92,8 @@ fn bun_10_multi_object_literal_arms_walked() {
         assert!(
             names.contains(&expected),
             "BUN-10: multi-object-literal walk lost {}. Got: {:?}",
-            expected, names
+            expected,
+            names
         );
     }
 }
@@ -173,7 +174,8 @@ fn bun_10_emotion_react_regression_clean_parse() {
         assert!(
             names.contains(&expected),
             "Emotion regression: {} not captured from real Preconstruct CJS. Got: {:?}",
-            expected, names
+            expected,
+            names
         );
     }
     // Negative: `__esModule` filtered out.
@@ -224,8 +226,18 @@ fn bun_10_assign_empty_base_diff_drops_removed_symbol() {
 
     // Both sides must capture `foo` and `kept`.
     for kept in ["foo", "kept"] {
-        assert!(old_names.contains(kept), "old missing {}: {:?}", kept, old_names);
-        assert!(new_names.contains(kept), "new missing {}: {:?}", kept, new_names);
+        assert!(
+            old_names.contains(kept),
+            "old missing {}: {:?}",
+            kept,
+            old_names
+        );
+        assert!(
+            new_names.contains(kept),
+            "new missing {}: {:?}",
+            kept,
+            new_names
+        );
     }
     // `removed` is in old but not new.
     assert!(

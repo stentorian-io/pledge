@@ -52,14 +52,22 @@ fn fixture_dir(pkg: &str) -> std::path::PathBuf {
 /// Mirrors src/main.rs:202-242 with `lsp_was_available=false` forced.
 /// Returns (exit_code, sorted_unique_rule_ids).
 fn run_pipeline(old_root: &Path, new_root: &Path) -> (i32, Vec<String>) {
-    let (old_exports, _w_old) = discover_exports(old_root).expect("discover_exports failed for old version");
-    let (new_exports, _w_new) = discover_exports(new_root).expect("discover_exports failed for new version");
+    let (old_exports, _w_old) =
+        discover_exports(old_root).expect("discover_exports failed for old version");
+    let (new_exports, _w_new) =
+        discover_exports(new_root).expect("discover_exports failed for new version");
 
     // LSP-degraded forced (RESEARCH §Pitfall 2).
-    let mut findings: Vec<Finding> = compare::compare_exports(&old_exports, &new_exports, new_root, false);
+    let mut findings: Vec<Finding> =
+        compare::compare_exports(&old_exports, &new_exports, new_root, false);
     findings.extend(compare::metadata::compare_metadata(old_root, new_root));
     findings.extend(compare::compare_exports_map_diff(old_root, new_root));
-    findings.extend(compare::compare_structural_diff(old_root, new_root, &old_exports, &new_exports));
+    findings.extend(compare::compare_structural_diff(
+        old_root,
+        new_root,
+        &old_exports,
+        &new_exports,
+    ));
     findings.extend(compare::compare_asset_diff(old_root, new_root));
 
     // Sort + dedup mirrors src/main.rs's two-pass dedup at lines 233-239.
@@ -69,7 +77,11 @@ fn run_pipeline(old_root: &Path, new_root: &Path) -> (i32, Vec<String>) {
     seen.clear();
     findings.retain(|f| seen.insert((f.rule, f.file.clone(), f.line, f.col, f.message.clone())));
 
-    let exit_code = if compare::has_breaking_changes(&findings) { 1 } else { 0 };
+    let exit_code = if compare::has_breaking_changes(&findings) {
+        1
+    } else {
+        0
+    };
     let mut rule_ids: Vec<String> = findings.iter().map(|f| f.rule.to_string()).collect();
     rule_ids.sort();
     rule_ids.dedup();

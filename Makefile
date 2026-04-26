@@ -1,4 +1,4 @@
-.PHONY: setup reference-suite reference-suite-regen
+.PHONY: setup reference-suite reference-suite-regen check
 
 setup:
 	git config core.hooksPath scripts/git-hooks
@@ -20,3 +20,17 @@ reference-suite-regen:
 	else \
 		./scripts/regen-reference-suite.sh; \
 	fi
+
+# Pre-publish quality gate — Phase 26 INT-01 SC5 closure (local gating story).
+# Runs the four cargo commands in sequence: fmt-check, clippy with -D warnings
+# across all targets, the full release-mode test suite, and the reference-suite
+# integration test. Any non-zero exit halts the chain because make stops on the
+# first failing recipe line by default. This is the canonical pre-`cargo
+# publish` gate; CI is permanently out of scope for the v0.3 milestone (see
+# .planning/phases/25-reference-suite-documented-limitations/25-VERIFICATION.md
+# §Deviations §2 for the rationale).
+check:
+	cargo fmt --all -- --check
+	cargo clippy --all-targets -- -D warnings
+	cargo test --release
+	cargo test --release --test reference_suite

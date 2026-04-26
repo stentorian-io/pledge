@@ -11,10 +11,10 @@
 
 use std::path::{Path, PathBuf};
 
-use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::compare::subtype::{
     RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
+use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::discover::discover_exports;
 use interlint::types::{Finding, Severity};
 

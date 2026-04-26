@@ -209,8 +209,18 @@ fn bun_11_umd_factory_returns_object_diff_drops_removed_symbol() {
             .collect();
 
     for kept in ["foo", "bar", "VERSION"] {
-        assert!(old_names.contains(kept), "old missing {}: {:?}", kept, old_names);
-        assert!(new_names.contains(kept), "new missing {}: {:?}", kept, new_names);
+        assert!(
+            old_names.contains(kept),
+            "old missing {}: {:?}",
+            kept,
+            old_names
+        );
+        assert!(
+            new_names.contains(kept),
+            "new missing {}: {:?}",
+            kept,
+            new_names
+        );
     }
     assert!(
         old_names.contains("removed_symbol"),
@@ -255,8 +265,18 @@ fn bun_11_umd_with_exports_arg_regression_diff() {
             .collect();
 
     for kept in ["foo", "bar", "qux"] {
-        assert!(old_names.contains(kept), "old missing {}: {:?}", kept, old_names);
-        assert!(new_names.contains(kept), "new missing {}: {:?}", kept, new_names);
+        assert!(
+            old_names.contains(kept),
+            "old missing {}: {:?}",
+            kept,
+            old_names
+        );
+        assert!(
+            new_names.contains(kept),
+            "new missing {}: {:?}",
+            kept,
+            new_names
+        );
     }
     assert!(
         old_names.contains("removed_symbol"),
@@ -303,12 +323,18 @@ fn bun_11_lodash_style_diff_drops_removed_member() {
     assert!(
         old_default.is_some(),
         "old fixture must produce a Default export. Got: {:?}",
-        old_raw.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        old_raw
+            .iter()
+            .map(|e| (&e.name, &e.kind))
+            .collect::<Vec<_>>()
     );
     assert!(
         new_default.is_some(),
         "new fixture must produce a Default export. Got: {:?}",
-        new_raw.iter().map(|e| (&e.name, &e.kind)).collect::<Vec<_>>()
+        new_raw
+            .iter()
+            .map(|e| (&e.name, &e.kind))
+            .collect::<Vec<_>>()
     );
 
     let old_members = &old_default.unwrap().compound_members;

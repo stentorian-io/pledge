@@ -89,7 +89,10 @@ fn cls_12_dynamic_key_limitation_fires() {
     let findings = run("dynamic-key");
     let limitation_hits: Vec<_> = findings
         .iter()
-        .filter(|f| f.message.contains("(limitation: dynamic-static-member-key)"))
+        .filter(|f| {
+            f.message
+                .contains("(limitation: dynamic-static-member-key)")
+        })
         .collect();
     assert_eq!(
         limitation_hits.len(),
@@ -114,9 +117,7 @@ fn cls_12_this_assignment_anon_class_fires() {
     let findings = run("this-assignment-anon-class");
     let hits: Vec<_> = findings
         .iter()
-        .filter(|f| {
-            f.rule == RULE_CLASS_METHOD_REMOVED && f.message.contains("version")
-        })
+        .filter(|f| f.rule == RULE_CLASS_METHOD_REMOVED && f.message.contains("version"))
         .collect();
     assert_eq!(
         hits.len(),

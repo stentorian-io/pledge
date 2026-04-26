@@ -1562,7 +1562,7 @@ mod tests {
 
     #[test]
     fn rob_05_parens_depth_exhaustion_no_panic() {
-        let input = "(".repeat(100) + &"string".to_string() + &")".repeat(100);
+        let input = "(".repeat(100) + "string" + &")".repeat(100);
         let shape = parse_type_string(&input);
         let _ = shape; // no panic
     }
@@ -1942,12 +1942,17 @@ mod tests {
         use crate::types::shape::TemplatePart;
         let parsed = parse_template_literal_type("`no-placeholder`").expect("should parse");
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0], TemplatePart::Literal("no-placeholder".to_string()));
+        assert_eq!(
+            parsed[0],
+            TemplatePart::Literal("no-placeholder".to_string())
+        );
     }
 
     #[test]
     fn ref_09_compare_template_literal_patterns_equal() {
-        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        use super::{
+            compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+        };
         let a = parse_template_literal_type("`on${string}`").unwrap();
         let b = parse_template_literal_type("`on${string}`").unwrap();
         assert_eq!(
@@ -1958,7 +1963,9 @@ mod tests {
 
     #[test]
     fn ref_09_compare_template_literal_patterns_narrowing() {
-        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        use super::{
+            compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+        };
         let old = parse_template_literal_type("`on${string}`").unwrap();
         let new = parse_template_literal_type("`onClick${string}`").unwrap();
         // `onClick` prefix extends `on` prefix -> new is narrower
@@ -1970,7 +1977,9 @@ mod tests {
 
     #[test]
     fn ref_09_compare_template_literal_patterns_widening() {
-        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        use super::{
+            compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+        };
         let old = parse_template_literal_type("`onClick${string}`").unwrap();
         let new = parse_template_literal_type("`on${string}`").unwrap();
         assert_eq!(
@@ -1981,7 +1990,9 @@ mod tests {
 
     #[test]
     fn ref_09_compare_template_literal_patterns_unrelated() {
-        use super::{compare_template_literal_patterns, parse_template_literal_type, PatternDirection};
+        use super::{
+            compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+        };
         let old = parse_template_literal_type("`abc${string}`").unwrap();
         let new = parse_template_literal_type("`xyz${string}`").unwrap();
         // Neither `abc` nor `xyz` is a prefix of the other

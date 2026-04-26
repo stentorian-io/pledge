@@ -1093,12 +1093,10 @@ pub fn diff_function_param_noinfer_removed(
     for i in 0..pair_count {
         let (
             TypeShape::Function {
-                params: old_params,
-                ..
+                params: old_params, ..
             },
             TypeShape::Function {
-                params: new_params,
-                ..
+                params: new_params, ..
             },
         ) = (&old_overloads[i], &new_overloads[i])
         else {
@@ -1170,8 +1168,10 @@ fn detect_noinfer_param_removal(old_shape: &TypeShape, new_shape: &TypeShape) ->
         // Avoid infinite recursion: only recurse if parsing gave us a
         // structurally different shape (anything other than another
         // pair of Opaque on the same texts).
-        if !matches!((&old_parsed, &new_parsed), (TypeShape::Opaque(_), TypeShape::Opaque(_)))
-            && detect_noinfer_param_removal(&old_parsed, &new_parsed)
+        if !matches!(
+            (&old_parsed, &new_parsed),
+            (TypeShape::Opaque(_), TypeShape::Opaque(_))
+        ) && detect_noinfer_param_removal(&old_parsed, &new_parsed)
         {
             return true;
         }
@@ -2660,8 +2660,16 @@ mod tests {
     #[test]
     fn beh_06_is_disc_union_two_kinds_returns_kind() {
         let members = vec![
-            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
-            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind(
+                "circle",
+                "radius",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
+            obj_kind(
+                "square",
+                "side",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
         ];
         assert_eq!(
             is_discriminated_union(&members),
@@ -2706,13 +2714,33 @@ mod tests {
     #[test]
     fn beh_06_added_discriminant_values_reports_new_variants() {
         let old = vec![
-            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
-            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind(
+                "circle",
+                "radius",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
+            obj_kind(
+                "square",
+                "side",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
         ];
         let new = vec![
-            obj_kind("circle", "radius", TypeShape::Primitive(PrimitiveKind::Number)),
-            obj_kind("square", "side", TypeShape::Primitive(PrimitiveKind::Number)),
-            obj_kind("triangle", "base", TypeShape::Primitive(PrimitiveKind::Number)),
+            obj_kind(
+                "circle",
+                "radius",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
+            obj_kind(
+                "square",
+                "side",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
+            obj_kind(
+                "triangle",
+                "base",
+                TypeShape::Primitive(PrimitiveKind::Number),
+            ),
         ];
         let added = added_discriminant_values("kind", &old, &new);
         assert_eq!(added.len(), 1, "exactly one variant added; got: {added:?}");
@@ -2723,8 +2751,8 @@ mod tests {
     // ── Phase 25 DOC-01: paired Severity::Info tests ───────────────────────────
 
     fn make_sym_with_satisfies(name: &str, has_narrowed: bool) -> crate::types::ExportSymbol {
+        use crate::types::shape::{PrimitiveKind, TypeShape};
         use crate::types::{ExportKind, ExportSymbol};
-        use crate::types::shape::{TypeShape, PrimitiveKind};
         let satisfies_type = Some(TypeShape::Satisfies {
             constraint: Box::new(TypeShape::Primitive(PrimitiveKind::Unknown)),
             narrowed: if has_narrowed {
@@ -2781,25 +2809,39 @@ mod tests {
 
     #[test]
     fn paired_info_at_satisfies_site() {
-        use crate::compare::subtype::{RULE_TYPE_NARROWING_WIDENED, RULE_LIMITATION_SATISFIES_NARROWED};
+        use crate::compare::subtype::{
+            RULE_LIMITATION_SATISFIES_NARROWED, RULE_TYPE_NARROWING_WIDENED,
+        };
         // old has satisfies with no narrowed (degraded) → new has no satisfies
         let old_sym = make_sym_with_satisfies("cfg", false);
         let new_sym = make_sym_plain("cfg");
         let findings = diff_satisfies_types(&old_sym, &new_sym, &PathBuf::from("f.ts"), 1, 1);
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_NARROWING_WIDENED),
-            "expected Minor type-narrowing-widened; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_NARROWING_WIDENED),
+            "expected Minor type-narrowing-widened; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_SATISFIES_NARROWED),
-            "expected Info limitation: satisfies-narrowed-type-not-verified; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Info
+                    && f.rule == RULE_LIMITATION_SATISFIES_NARROWED),
+            "expected Info limitation: satisfies-narrowed-type-not-verified; got: {:?}",
+            findings
         );
-        assert_eq!(findings.len(), 2, "expected exactly 2 findings (Minor + paired Info); got: {:?}", findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "expected exactly 2 findings (Minor + paired Info); got: {:?}",
+            findings
+        );
     }
 
     #[test]
     fn paired_info_at_typeof_import_site() {
-        use crate::compare::subtype::{RULE_TYPE_REFERENCE_REMOVED, RULE_LIMITATION_LSP_REQUIRED};
+        use crate::compare::subtype::{RULE_LIMITATION_LSP_REQUIRED, RULE_TYPE_REFERENCE_REMOVED};
         use crate::types::TypeofImportRef;
         use crate::types::{ExportKey, SymbolSpace};
 
@@ -2824,22 +2866,36 @@ mod tests {
 
         let mut findings: Vec<Finding> = Vec::new();
         diff_typeof_import_refs(
-            &old_sym, &new_sym,
-            &old_map, &new_map,
-            &key, &key,
+            &old_sym,
+            &new_sym,
+            &old_map,
+            &new_map,
+            &key,
+            &key,
             false, // lsp_was_available = false → degraded path
             &PathBuf::from("f.ts"),
             &mut findings,
         );
 
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_REFERENCE_REMOVED),
-            "expected Minor type-reference-removed; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Minor && f.rule == RULE_TYPE_REFERENCE_REMOVED),
+            "expected Minor type-reference-removed; got: {:?}",
+            findings
         );
         assert!(
-            findings.iter().any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_LSP_REQUIRED),
-            "expected Info limitation: lsp-required; got: {:?}", findings
+            findings
+                .iter()
+                .any(|f| f.severity == Severity::Info && f.rule == RULE_LIMITATION_LSP_REQUIRED),
+            "expected Info limitation: lsp-required; got: {:?}",
+            findings
         );
-        assert_eq!(findings.len(), 2, "expected exactly 2 findings (Minor + paired Info); got: {:?}", findings);
+        assert_eq!(
+            findings.len(),
+            2,
+            "expected exactly 2 findings (Minor + paired Info); got: {:?}",
+            findings
+        );
     }
 }

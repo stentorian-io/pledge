@@ -20,8 +20,7 @@ fn fixture_dir(case: &str) -> PathBuf {
 /// Asserts no `*<{prefix}` key in ExportMap and no warning containing `prefix`.
 fn assert_silent_skip(case: &str, prefix: &str) {
     let dir = fixture_dir(case);
-    let (exports, warnings) =
-        discover_exports(&dir).expect("discover_exports should not error");
+    let (exports, warnings) = discover_exports(&dir).expect("discover_exports should not error");
 
     let synthetic_marker = format!("*<{}", prefix);
     let leaked: Vec<_> = exports
@@ -90,8 +89,7 @@ fn res_02_file_url_silent_skip() {
 #[test]
 fn res_01_relative_shadow_resolves_normally() {
     let dir = fixture_dir("res-01-relative-shadow");
-    let (exports, warnings) =
-        discover_exports(&dir).expect("discover_exports should not error");
+    let (exports, warnings) = discover_exports(&dir).expect("discover_exports should not error");
 
     // The fixture's src/node-utils.ts exports `x`. If the classifier mis-
     // classified `./src/node-utils.js` as NodeBuiltin, `x` would be missing

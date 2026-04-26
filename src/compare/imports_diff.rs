@@ -20,8 +20,7 @@ use std::collections::BTreeMap;
 use crate::types::{Finding, Severity};
 
 use super::exports_diff::{
-    parse_condition_node, pkg_json_finding, strip_wildcard_to_base,
-    ConditionNode, SubpathEntry,
+    parse_condition_node, pkg_json_finding, strip_wildcard_to_base, ConditionNode, SubpathEntry,
 };
 use super::subtype::{
     RULE_IMPORT_ADDED, RULE_IMPORT_CONDITION_CHANGED, RULE_IMPORT_PATTERN_REFINED,
@@ -176,14 +175,10 @@ fn diff_import_condition_nodes(
 fn compare_imports_maps(old_map: &ImportsMap, new_map: &ImportsMap) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    let old_wildcards: Vec<&String> =
-        old_map.keys().filter(|k| k.contains('*')).collect();
-    let new_wildcards: Vec<&String> =
-        new_map.keys().filter(|k| k.contains('*')).collect();
-    let mut matched_old: std::collections::HashSet<&str> =
-        std::collections::HashSet::new();
-    let mut matched_new: std::collections::HashSet<&str> =
-        std::collections::HashSet::new();
+    let old_wildcards: Vec<&String> = old_map.keys().filter(|k| k.contains('*')).collect();
+    let new_wildcards: Vec<&String> = new_map.keys().filter(|k| k.contains('*')).collect();
+    let mut matched_old: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut matched_new: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
     // Wildcard refinement detection (mirror of GAP-15-08 in exports_diff)
     for old_wc in &old_wildcards {
@@ -333,9 +328,18 @@ mod tests {
         });
         let m = parse_imports_map(&v);
         assert_eq!(m.len(), 3);
-        assert!(matches!(m.get("#a").unwrap().node, ConditionNode::Leaf(Some(_))));
-        assert!(matches!(m.get("#b").unwrap().node, ConditionNode::Branch(_)));
-        assert!(matches!(m.get("#c").unwrap().node, ConditionNode::Leaf(None)));
+        assert!(matches!(
+            m.get("#a").unwrap().node,
+            ConditionNode::Leaf(Some(_))
+        ));
+        assert!(matches!(
+            m.get("#b").unwrap().node,
+            ConditionNode::Branch(_)
+        ));
+        assert!(matches!(
+            m.get("#c").unwrap().node,
+            ConditionNode::Leaf(None)
+        ));
     }
 
     #[test]
@@ -363,8 +367,9 @@ mod tests {
         let old = json!({ "imports": { "#a": "./a.js" } });
         let new = json!({ "imports": { "#a": "./b.js" } });
         let findings = compare_imports_diff(&old, &new);
-        assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_REROUTE
-            && f.severity == Severity::Major));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Major));
     }
 
     #[test]
@@ -372,8 +377,9 @@ mod tests {
         let old = json!({ "imports": { "#a": { "node": "./n.js", "default": "./d.js" } } });
         let new = json!({ "imports": { "#a": { "default": "./d.js" } } });
         let findings = compare_imports_diff(&old, &new);
-        assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED
-            && f.severity == Severity::Major));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
     }
 
     #[test]
@@ -381,8 +387,9 @@ mod tests {
         let old = json!({ "imports": { "#i/*": "./src/*.js" } });
         let new = json!({ "imports": { "#i/*.js": "./src/*.js" } });
         let findings = compare_imports_diff(&old, &new);
-        assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED
-            && f.severity == Severity::Major));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Major));
     }
 
     #[test]
@@ -390,8 +397,9 @@ mod tests {
         let old = json!({ "imports": { "#a": null } });
         let new = json!({ "imports": { "#a": "./a.js" } });
         let findings = compare_imports_diff(&old, &new);
-        assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_ADDED
-            && f.severity == Severity::Minor));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_IMPORT_ADDED && f.severity == Severity::Minor));
     }
 
     #[test]
@@ -399,7 +407,8 @@ mod tests {
         let old = json!({ "imports": { "#a": "./a.js" } });
         let new = json!({ "imports": { "#a": null } });
         let findings = compare_imports_diff(&old, &new);
-        assert!(findings.iter().any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED
-            && f.severity == Severity::Major));
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
     }
 }

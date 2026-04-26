@@ -12,17 +12,20 @@
 use std::path::{Path, PathBuf};
 
 use interlint::compare::subtype::{
-    RULE_DECORATOR_ADDED, RULE_DECORATOR_REMOVED, RULE_DECORATOR_ARGUMENTS_CHANGED,
-    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_CLASS_FIELD_MADE_PUBLIC,
-    RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS,
+    RULE_CLASS_FIELD_MADE_PRIVATE,
+    RULE_CLASS_FIELD_MADE_PUBLIC,
+    RULE_DECORATOR_ADDED,
+    RULE_DECORATOR_ARGUMENTS_CHANGED,
+    RULE_DECORATOR_REMOVED,
     RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
-    RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
-    RULE_LIMITATION_SATISFIES_NARROWED,
-    RULE_LIMITATION_LSP_REQUIRED,
     RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY,
     // Compile-time guard for the other 3 (referenced but not directly emitted in this test):
     RULE_LIMITATION_EXTERNAL_TYPE_REFERENCE,
+    RULE_LIMITATION_LSP_REQUIRED,
     RULE_LIMITATION_NOINFER_VIA_LOCAL_ALIAS,
+    RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
+    RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS,
+    RULE_LIMITATION_SATISFIES_NARROWED,
     RULE_LIMITATION_SYMBOL_FOR_REGISTRY,
 };
 use interlint::compare::{compare_exports, compare_structural_diff};
@@ -77,7 +80,11 @@ const _ALL_LIMITATIONS: &[&str] = &[
 fn all_nine_limitation_rule_ids_compile() {
     // The _ALL_LIMITATIONS const above provides the compile-time guard.
     // This test asserts the count at runtime as a triple-check.
-    assert_eq!(_ALL_LIMITATIONS.len(), 9, "Phase 25 DOC-01 enumerates 9 limitations");
+    assert_eq!(
+        _ALL_LIMITATIONS.len(),
+        9,
+        "Phase 25 DOC-01 enumerates 9 limitations"
+    );
 }
 
 // ── Test 1: Proxy-dispatched exports detection ──────────────────────────────
@@ -87,9 +94,14 @@ fn proxy_dispatched_exports_flag_set() {
     use interlint::discover::tree_query::{parse_exports, SourceLanguage};
     let source = b"module.exports = new Proxy({}, {});";
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
-    let default_exp = raw.iter().find(|e| e.name == "default")
+    let default_exp = raw
+        .iter()
+        .find(|e| e.name == "default")
         .expect("default export not captured from Proxy RHS");
-    assert!(default_exp.is_proxy_dispatched, "is_proxy_dispatched flag must be set for Proxy RHS");
+    assert!(
+        default_exp.is_proxy_dispatched,
+        "is_proxy_dispatched flag must be set for Proxy RHS"
+    );
 }
 
 #[test]
@@ -100,13 +112,19 @@ fn proxy_dispatched_exports_full_pipeline() {
     let (new_exports, _) = discover_exports(&new_dir).unwrap();
     let findings = compare_exports(&old_exports, &new_exports, &new_dir, false);
 
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS && f.severity == Severity::Info)
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS && f.severity == Severity::Info
+        })
         .collect();
     assert!(
         !info.is_empty(),
         "expected at least 1 Info limitation: proxy-dispatched-exports; got rules: {:?}",
-        findings.iter().map(|f| (f.rule, f.severity.clone())).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (f.rule, f.severity.clone()))
+            .collect::<Vec<_>>()
     );
 }
 
@@ -116,26 +134,39 @@ fn proxy_dispatched_exports_full_pipeline() {
 fn decorator_paired_info_emitted_for_added() {
     let findings = run_full_pipeline("decorator-added");
 
-    let added: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_DECORATOR_ADDED && f.severity == Severity::Major).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info).collect();
+    let added: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_DECORATOR_ADDED && f.severity == Severity::Major)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info
+        })
+        .collect();
     assert!(
         !added.is_empty(),
         "expected decorator-added Major; got rules: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
     assert_eq!(
-        added.len(), info.len(),
-        "every decorator-added must have a paired Info; added={}, info={}", added.len(), info.len()
+        added.len(),
+        info.len(),
+        "every decorator-added must have a paired Info; added={}, info={}",
+        added.len(),
+        info.len()
     );
     // Pairing: same (file, line, col)
     for a in &added {
-        let pair = info.iter().find(|i| i.file == a.file && i.line == a.line && i.col == a.col);
+        let pair = info
+            .iter()
+            .find(|i| i.file == a.file && i.line == a.line && i.col == a.col);
         assert!(
             pair.is_some(),
             "decorator-added at {}:{}:{} has no paired Info",
-            a.file.display(), a.line, a.col
+            a.file.display(),
+            a.line,
+            a.col
         );
     }
 }
@@ -144,18 +175,27 @@ fn decorator_paired_info_emitted_for_added() {
 fn decorator_paired_info_emitted_for_removed() {
     let findings = run_full_pipeline("decorator-removed");
 
-    let removed: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_DECORATOR_REMOVED && f.severity == Severity::Major).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info).collect();
+    let removed: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_DECORATOR_REMOVED && f.severity == Severity::Major)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info
+        })
+        .collect();
     assert!(
         !removed.is_empty(),
         "expected decorator-removed Major; got rules: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
     assert_eq!(
-        removed.len(), info.len(),
-        "every decorator-removed must have a paired Info; removed={}, info={}", removed.len(), info.len()
+        removed.len(),
+        info.len(),
+        "every decorator-removed must have a paired Info; removed={}, info={}",
+        removed.len(),
+        info.len()
     );
 }
 
@@ -163,18 +203,27 @@ fn decorator_paired_info_emitted_for_removed() {
 fn decorator_paired_info_emitted_for_arguments_changed() {
     let findings = run_full_pipeline("decorator-args-changed");
 
-    let changed: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED && f.severity == Severity::Major).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info).collect();
+    let changed: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED && f.severity == Severity::Major)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT && f.severity == Severity::Info
+        })
+        .collect();
     assert!(
         !changed.is_empty(),
         "expected decorator-arguments-changed Major; got rules: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
     assert_eq!(
-        changed.len(), info.len(),
-        "every decorator-arguments-changed must have a paired Info; changed={}, info={}", changed.len(), info.len()
+        changed.len(),
+        info.len(),
+        "every decorator-arguments-changed must have a paired Info; changed={}, info={}",
+        changed.len(),
+        info.len()
     );
 }
 
@@ -184,18 +233,25 @@ fn decorator_paired_info_emitted_for_arguments_changed() {
 fn private_brand_paired_info_on_made_private() {
     let findings = run_full_pipeline("cls11-made-private");
 
-    let made_private: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_CLASS_FIELD_MADE_PRIVATE && f.severity == Severity::Major).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS && f.severity == Severity::Info).collect();
+    let made_private: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_CLASS_FIELD_MADE_PRIVATE && f.severity == Severity::Major)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS && f.severity == Severity::Info)
+        .collect();
     assert!(
         !made_private.is_empty(),
         "expected class-field-made-private Major; got rules: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
     assert_eq!(
-        made_private.len(), info.len(),
-        "every class-field-made-private must have a paired Info; made_private={}, info={}", made_private.len(), info.len()
+        made_private.len(),
+        info.len(),
+        "every class-field-made-private must have a paired Info; made_private={}, info={}",
+        made_private.len(),
+        info.len()
     );
 }
 
@@ -203,18 +259,25 @@ fn private_brand_paired_info_on_made_private() {
 fn private_brand_paired_info_on_made_public() {
     let findings = run_full_pipeline("cls11-made-public");
 
-    let made_public: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_CLASS_FIELD_MADE_PUBLIC && f.severity == Severity::Minor).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS && f.severity == Severity::Info).collect();
+    let made_public: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_CLASS_FIELD_MADE_PUBLIC && f.severity == Severity::Minor)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_LIMITATION_PRIVATE_BRAND_ACCESS && f.severity == Severity::Info)
+        .collect();
     assert!(
         !made_public.is_empty(),
         "expected class-field-made-public Minor; got rules: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
     );
     assert_eq!(
-        made_public.len(), info.len(),
-        "every class-field-made-public must have a paired Info; made_public={}, info={}", made_public.len(), info.len()
+        made_public.len(),
+        info.len(),
+        "every class-field-made-public must have a paired Info; made_public={}, info={}",
+        made_public.len(),
+        info.len()
     );
 }
 
@@ -231,10 +294,14 @@ fn substring_promotion_satisfies_degraded() {
     // LSP-degraded forced for determinism (Pitfall 2)
     let findings = compare_exports(&old_exports, &new_exports, &new_dir, false);
 
-    let minor: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_TYPE_NARROWING_WIDENED && f.severity == Severity::Minor).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_SATISFIES_NARROWED && f.severity == Severity::Info).collect();
+    let minor: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_TYPE_NARROWING_WIDENED && f.severity == Severity::Minor)
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_LIMITATION_SATISFIES_NARROWED && f.severity == Severity::Info)
+        .collect();
 
     // Note: The satisfies path fires only when the OLD version has a satisfies type
     // but the NEW version does not. The fixture may not exercise this if tree-sitter
@@ -254,19 +321,35 @@ fn substring_promotion_dynamic_static_key() {
 
     let findings = run_full_pipeline("dynamic-static-key");
 
-    let minor: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_CLASS_STATIC_TYPE_CHANGED && f.severity == Severity::Minor
-            && f.message.contains("(limitation: dynamic-static-member-key)")).collect();
-    let info: Vec<_> = findings.iter()
-        .filter(|f| f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY && f.severity == Severity::Info).collect();
+    let minor: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_CLASS_STATIC_TYPE_CHANGED
+                && f.severity == Severity::Minor
+                && f.message
+                    .contains("(limitation: dynamic-static-member-key)")
+        })
+        .collect();
+    let info: Vec<_> = findings
+        .iter()
+        .filter(|f| {
+            f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY && f.severity == Severity::Info
+        })
+        .collect();
 
     assert!(
         !minor.is_empty(),
         "expected Minor class-static-type-changed with substring; got rules: {:?}",
-        findings.iter().map(|f| (f.rule, f.severity.clone(), &f.message)).collect::<Vec<_>>()
+        findings
+            .iter()
+            .map(|f| (f.rule, f.severity.clone(), &f.message))
+            .collect::<Vec<_>>()
     );
     assert_eq!(
-        minor.len(), info.len(),
-        "every dynamic-static-key Minor must have a paired Info; minor={}, info={}", minor.len(), info.len()
+        minor.len(),
+        info.len(),
+        "every dynamic-static-key Minor must have a paired Info; minor={}, info={}",
+        minor.len(),
+        info.len()
     );
 }

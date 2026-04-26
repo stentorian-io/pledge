@@ -380,7 +380,10 @@ mod tests {
         let dirs = idx.extract_directives();
         assert_eq!(dirs.len(), 1, "expected 1 directive; got {:?}", dirs);
         assert_eq!(dirs[0].name, "reference");
-        assert_eq!(dirs[0].attrs.get("path").map(|s| s.as_str()), Some("./x.ts"));
+        assert_eq!(
+            dirs[0].attrs.get("path").map(|s| s.as_str()),
+            Some("./x.ts")
+        );
     }
 
     #[test]
@@ -412,7 +415,10 @@ mod tests {
             dirs[0].attrs.get("preserve").map(|s| s.as_str()),
             Some("true")
         );
-        assert_eq!(dirs[0].attrs.get("path").map(|s| s.as_str()), Some("./x.ts"));
+        assert_eq!(
+            dirs[0].attrs.get("path").map(|s| s.as_str()),
+            Some("./x.ts")
+        );
     }
 
     #[test]
@@ -433,7 +439,8 @@ mod tests {
     #[test]
     fn inf_05_leading_plain_comments_do_not_block_directives() {
         // Plain comments before directives are OK. Only non-comment statements block.
-        let source = b"// preamble\n/* block */\n/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
+        let source =
+            b"// preamble\n/* block */\n/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);
         let idx = make_index(source, &tree);
         assert_eq!(idx.extract_directives().len(), 1);

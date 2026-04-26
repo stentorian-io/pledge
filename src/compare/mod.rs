@@ -169,11 +169,7 @@ pub fn compare_exports(
 /// `lsp_was_available` (INF-04, Phase 22): threaded to
 /// `diff_typeof_import_refs` to choose between Major-verified and
 /// Minor-limitation-annotated emission.
-fn compare_exports_core(
-    old: &ExportMap,
-    new: &ExportMap,
-    lsp_was_available: bool,
-) -> Vec<Finding> {
+fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: bool) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
     // META-04 / META-06 (Phase 19): Filter non-public release tags before comparison.
@@ -400,11 +396,8 @@ fn compare_exports_core(
     // the unfiltered maps (the @internal/@alpha/@beta filter that preceded
     // this block strips SYMBOLS; directives are unrelated to release tags).
     {
-        let all_files: std::collections::BTreeSet<&std::path::PathBuf> = old
-            .directives
-            .keys()
-            .chain(new.directives.keys())
-            .collect();
+        let all_files: std::collections::BTreeSet<&std::path::PathBuf> =
+            old.directives.keys().chain(new.directives.keys()).collect();
         let empty_vec: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
         for file in all_files {
             let old_dirs = old.directives.get(file).unwrap_or(&empty_vec).as_slice();
@@ -467,8 +460,7 @@ pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding
         Err(_) => return Vec::new(),
     };
 
-    let mut findings =
-        exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root);
+    let mut findings = exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root);
     findings.extend(imports_diff::compare_imports_diff(&old_pkg, &new_pkg));
     findings
 }
@@ -1203,23 +1195,23 @@ pub fn compare_structural_diff(
             continue;
         };
 
-        let Some((old_source, old_tree)) =
-            get_or_parse(&mut old_parse_cache, &old_path, &old_lang)
+        let Some((old_source, old_tree)) = get_or_parse(&mut old_parse_cache, &old_path, &old_lang)
         else {
             continue;
         };
-        let Some((new_source, new_tree)) =
-            get_or_parse(&mut new_parse_cache, &new_path, &new_lang)
+        let Some((new_source, new_tree)) = get_or_parse(&mut new_parse_cache, &new_path, &new_lang)
         else {
             continue;
         };
 
         // Extract all shapes from both versions
-        let Some(old_decl) = extract_declaration_from_tree(old_tree, old_source, name, old_sym.line)
+        let Some(old_decl) =
+            extract_declaration_from_tree(old_tree, old_source, name, old_sym.line)
         else {
             continue;
         };
-        let Some(new_decl) = extract_declaration_from_tree(new_tree, new_source, name, new_sym.line)
+        let Some(new_decl) =
+            extract_declaration_from_tree(new_tree, new_source, name, new_sym.line)
         else {
             continue;
         };

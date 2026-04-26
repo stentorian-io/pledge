@@ -76,7 +76,7 @@ pub fn classify(source: &[u8]) -> Option<SkipReason> {
     if source.len() > MAX_SOURCE_BYTES {
         return Some(SkipReason::Oversized { size: source.len() });
     }
-    if source.iter().any(|&b| b == b'\n') {
+    if source.contains(&b'\n') {
         let max_line = source
             .split(|&b| b == b'\n')
             .map(|l| l.len())
@@ -113,7 +113,13 @@ mod tests {
     #[test]
     fn at_threshold_size_is_kept() {
         let source = vec![b'a'; MAX_SOURCE_BYTES];
-        assert!(classify(&source).is_none() || matches!(classify(&source), Some(SkipReason::MinifiedSingleLine { .. })));
+        assert!(
+            classify(&source).is_none()
+                || matches!(
+                    classify(&source),
+                    Some(SkipReason::MinifiedSingleLine { .. })
+                )
+        );
     }
 
     #[test]
