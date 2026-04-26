@@ -23,7 +23,8 @@ use std::path::{Path, PathBuf};
 
 use crate::discover::tree_query;
 use crate::types::{
-    ClassShape, ConstructSignature, EnumShape, ExportMap, Finding, ReleaseTag, Severity, TypeParam,
+    ClassShape, ConstructSignature, EnumShape, ExportMap, ExportSymbol, Finding, ReleaseTag,
+    Severity, TypeParam,
 };
 use subtype::{RULE_AUGMENT_GLOBAL_CHANGED, RULE_AUGMENT_MODULE_CHANGED, RULE_EXPORT_DEPRECATED};
 
@@ -176,33 +177,23 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
     // Symbols tagged @internal, @alpha, or @beta are considered non-public per the
     // locked v0.3 Phase 19 decision (D-01); only @public and no-tag remain comparable.
     //
-    // WR-03 (Phase 19 review): `ExportMap::clone()` also deep-clones the
-    // `directives: BTreeMap<PathBuf, Vec<DirectiveRecord>>` sidecar, but the
-    // directive-diff block below reads from the UNFILTERED `old`/`new` maps
-    // (directives are a file-level concept and are unrelated to per-symbol
-    // release tags). Drop the cloned directives on the filtered copies so
-    // we are not carrying dead data through the retain calls.
-    let mut filtered_old = old.clone();
-    filtered_old.directives.clear();
-    filtered_old.retain(|_name, sym| {
+    // WR-03 (Phase 19 review, closed Phase 27): no clones — see is_public predicate
+    // below. Previous implementation cloned both ExportMaps and cleared the directive
+    // sidecars on the copies; current code borrows directly.
+    let is_public = |sym: &ExportSymbol| {
         !matches!(
             sym.release_tag,
             Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Beta)
         )
-    });
-    let mut filtered_new = new.clone();
-    filtered_new.directives.clear();
-    filtered_new.retain(|_name, sym| {
-        !matches!(
-            sym.release_tag,
-            Some(ReleaseTag::Internal) | Some(ReleaseTag::Alpha) | Some(ReleaseTag::Beta)
-        )
-    });
+    };
 
     // Removed exports (DET-01, DET-02)
-    for (key, sym) in &filtered_old {
+    for (key, sym) in old {
+        if !is_public(sym) {
+            continue;
+        }
         let name = key.name.as_str();
-        if !filtered_new.contains_key(key) {
+        if !new.get(key).map(|s| is_public(s)).unwrap_or(false) {
             // META-03: route augmentation member keys to specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -272,9 +263,12 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
     }
 
     // New exports (DET-03, DET-04, OUT-05): compatible additions reported as Minor
-    for (key, sym) in &filtered_new {
+    for (key, sym) in new {
+        if !is_public(sym) {
+            continue;
+        }
         let name = key.name.as_str();
-        if !filtered_old.contains_key(key) {
+        if !old.get(key).map(|s| is_public(s)).unwrap_or(false) {
             // META-03: augmentation member additions also use specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -324,9 +318,13 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
     }
 
     // META-04: Surface @deprecated symbols that exist in both old and new as Warning.
-    for (key, sym) in &filtered_new {
+    for (key, sym) in new {
+        if !is_public(sym) {
+            continue;
+        }
         let name = key.name.as_str();
-        if matches!(sym.release_tag, Some(ReleaseTag::Deprecated)) && filtered_old.contains_key(key)
+        if matches!(sym.release_tag, Some(ReleaseTag::Deprecated))
+            && old.get(key).map(|s| is_public(s)).unwrap_or(false)
         {
             findings.push(Finding {
                 severity: Severity::Warning,
@@ -341,9 +339,12 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
 
     // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
     // Use first overload (primary signature) for type diff
-    for (key, old_sym) in &filtered_old {
+    for (key, old_sym) in old {
+        if !is_public(old_sym) {
+            continue;
+        }
         let name = key.name.as_str();
-        if let Some(new_sym) = filtered_new.get(key) {
+        if let Some(new_sym) = new.get(key).filter(|s| is_public(s)) {
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {
@@ -370,11 +371,8 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
             // INF-04 (Phase 22): `typeof import('./y').Z` cross-file type
             // reference removal. Reads the typeof_targets sidecar; the diff
             // function returns nothing when old_sym has no typeof refs.
-            // The two ExportMaps to read sidecars from are the UNFILTERED
-            // `old`/`new` maps because the filtered_old/filtered_new copies
-            // dropped the `directives` sidecar — same applies to the new
-            // `typeof_targets` sidecar (file-level / per-symbol-LSP-result
-            // data unrelated to release-tag filtering).
+            // The unfiltered `old`/`new` maps carry the directives + typeof_targets
+            // sidecars used by the diff functions below.
             type_diff::diff_typeof_import_refs(
                 old_sym,
                 new_sym,
@@ -412,7 +410,10 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
     // The Major export-removed findings (above) already report the typed
     // surface that disappeared; this paired Info documents WHY (the new
     // surface is dynamically dispatched and not enumerable statically).
-    for (_key, sym) in &filtered_new {
+    for (_key, sym) in new {
+        if !is_public(sym) {
+            continue;
+        }
         if sym.is_proxy_dispatched {
             findings.push(Finding {
                 severity: Severity::Info,

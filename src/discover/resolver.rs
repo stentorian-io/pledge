@@ -437,10 +437,7 @@ fn normalize_chunk_path(path: &Path) -> PathBuf {
     // Extract the file_name from the CANONICAL (forward-slash) string so that
     // on Unix a Windows-style path like `dist\chunks\chunk-HASH.js` (treated
     // as a single component by the OS) still yields `chunk-HASH.js` here.
-    let file_name = canonical
-        .rsplit('/')
-        .next()
-        .unwrap_or("");
+    let file_name = canonical.rsplit('/').next().unwrap_or("");
     if !file_name.starts_with("chunk-") {
         return path.to_path_buf();
     }

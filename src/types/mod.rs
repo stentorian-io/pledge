@@ -290,7 +290,9 @@ impl ExportMap {
     ///   `/// <reference />` and zero exports) are legal.
     fn debug_assert_invariants(&self) {
         debug_assert!(
-            self.typeof_targets.keys().all(|k| self.inner.contains_key(k)),
+            self.typeof_targets
+                .keys()
+                .all(|k| self.inner.contains_key(k)),
             "ExportMap WR-01 invariant violated: typeof_targets contains key absent from inner"
         );
     }
@@ -1003,10 +1005,8 @@ mod tests {
         let key = ExportKey::new_root_value("x");
         map.inner.insert(key, make_sym("src/x.ts"));
         // Insert a directive for a DIFFERENT file (no matching ExportSymbol)
-        map.directives.insert(
-            PathBuf::from("dist/chunks/chunk-*.js"),
-            vec![],
-        );
+        map.directives
+            .insert(PathBuf::from("dist/chunks/chunk-*.js"), vec![]);
         // debug_assert_invariants is not called by directives mutation (by design);
         // call it explicitly to assert it does not panic.
         map.debug_assert_invariants();
@@ -1045,10 +1045,7 @@ mod tests {
         let mut map = ExportMap::new();
         let key = ExportKey::new_root_value("orphan");
         // Inject directly into typeof_targets WITHOUT adding to inner
-        map.typeof_targets
-            .entry(key)
-            .or_default()
-            .insert(0, None);
+        map.typeof_targets.entry(key).or_default().insert(0, None);
         // This call must panic because typeof_targets has a key absent from inner
         map.debug_assert_invariants();
     }
