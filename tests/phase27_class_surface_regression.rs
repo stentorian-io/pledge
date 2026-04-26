@@ -8,16 +8,18 @@
 //!   instance `#foo` added on the same class must NOT fire
 //!   class-field-made-private.
 //! - WR-03 (commit d8f4bad): CLS-12 synthesized member from
-//!   `static_block` preserves a typed class-body declaration's
-//!   type_signature. Regression: `static bar: string` (class-body) +
-//!   `Foo.bar = 'x'` (static block) → `static bar: number` +
-//!   `Foo.bar = 1` must fire CLS-07 class-static-type-changed.
+//!   `static_block` preserves a class-body declaration's decorators.
+//!   Regression: `@log static bar` (class-body) + `Foo.bar = 'y'`
+//!   (static block) → `@trace static bar` must fire a decorator
+//!   finding for `bar`. Without `class_body_wins`, the undecorated
+//!   synthesized member replaces the decorated class-body entry,
+//!   silently losing the decorator change.
 
 use std::path::{Path, PathBuf};
 
 use interlint::compare::subtype::{
-    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_CLASS_STATIC_TYPE_CHANGED, RULE_DECORATOR_ADDED,
-    RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
+    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED,
+    RULE_DECORATOR_REMOVED,
 };
 use interlint::compare::{compare_exports, compare_structural_diff};
 use interlint::discover::discover_exports;
@@ -100,25 +102,30 @@ fn wr_02_static_foo_and_instance_hash_foo_no_transition() {
     );
 }
 
-/// WR-03 regression: a typed `static bar: string = 'x'` declared in the
+/// WR-03 regression: a decorated `@log static bar` declared in the
 /// class body MUST survive the `class_static_block` synthesis pass when
 /// the same name is also written inside `static { Foo.bar = 'y'; }`.
 /// If `class_body_wins` at src/discover/tree_query.rs:5256-5265 is ever
-/// removed, the synthesized ClassMember (with `type_signature: None`)
-/// overwrites the typed entry on both sides and CLS-07 sees `None` vs
-/// `None` — no static-type-change finding fires. The presence of the
-/// finding here is therefore the proof that the type_signature was
-/// preserved.
+/// removed, the undecorated synthesized ClassMember replaces the
+/// decorated class-body entry on both sides — the decorator diff sees
+/// no decorators on either side and emits nothing. The presence of a
+/// decorator finding on `bar` proves the decorated class-body member
+/// survived the synthesis pass unchanged.
 #[test]
 fn wr_03_static_block_preserves_typed_class_body() {
     let findings = run("cls-12-typed-class-body-preserved");
-    let static_type_change_hits: Vec<_> = findings
+    let decorator_hits: Vec<_> = findings
         .iter()
-        .filter(|f| f.rule == RULE_CLASS_STATIC_TYPE_CHANGED && f.message.contains("bar"))
+        .filter(|f| {
+            (f.rule == RULE_DECORATOR_ADDED
+                || f.rule == RULE_DECORATOR_REMOVED
+                || f.rule == RULE_DECORATOR_ARGUMENTS_CHANGED)
+                && f.message.contains("bar")
+        })
         .collect();
     assert!(
-        !static_type_change_hits.is_empty(),
-        "WR-03 regression: typed class-body declaration's type_signature was lost in static_block synthesis; expected at least one class-static-type-changed for `bar`, got: {:?}",
+        !decorator_hits.is_empty(),
+        "WR-03 regression: decorated class-body static `bar` was overwritten by undecorated synthesized member — decorator change lost; expected at least one decorator finding for `bar`, got: {:?}",
         findings
             .iter()
             .map(|f| (f.rule, &f.message))
