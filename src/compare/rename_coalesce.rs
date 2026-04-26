@@ -167,6 +167,11 @@ fn source_has_alias_trailer(file: &Path, new_name: &str, old_name: &str) -> bool
     let Ok(source) = std::fs::read(file) else {
         return false;
     };
+    // Skip oversized + minified files before invoking tree-sitter (mirrors
+    // the guard in compare::compare_structural_diff and discover::collect_exports).
+    if crate::source_filter::classify(&source).is_some() {
+        return false;
+    }
     if std::str::from_utf8(&source).is_err() {
         return false;
     }

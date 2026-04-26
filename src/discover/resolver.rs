@@ -647,50 +647,12 @@ pub fn collect_exports(
         }
     };
 
-    // Rule 3 fix: Skip files larger than 512KB. Files of this size are almost certainly
-    // minified bundles or compiled engines (e.g., Prisma's WASM-base64 JS shims,
-    // React Native compiled bundles) rather than readable public API declarations.
-    // Parsing them exhausts memory without yielding meaningful export surface.
-    // 512KB threshold: accommodates generated .d.ts declaration files from large APIs
-    // (tanstack-query, graphql) while excluding multi-MB compiled artefacts.
-    const MAX_SOURCE_BYTES: usize = 512 * 1024; // 512 KiB
-    if source.len() > MAX_SOURCE_BYTES {
+    if let Some(reason) = crate::source_filter::classify(&source) {
         tracing::trace!(
-            "skipping oversized file {} ({} bytes > {} byte limit) — likely a compiled bundle",
+            "skipping {} {} ({:?})",
+            reason.label(),
             canonical.display(),
-            source.len(),
-            MAX_SOURCE_BYTES
-        );
-        return Ok(());
-    }
-
-    // Rule 3 fix: Skip heavily minified files. A file where any single line exceeds
-    // 10,000 bytes is almost certainly a minified bundle — not a source file with
-    // readable public API declarations. Parsing such files with tree-sitter creates
-    // enormous parse trees that exhaust memory (e.g., Prisma's client.js has a
-    // 68KB single-expression line; TanStack Query's minified bundles are similar).
-    // 10KB single-line threshold: the longest realistic non-minified generated line
-    // (e.g., a long generic type in a .d.ts file) is under 2KB.
-    const MAX_LINE_BYTES: usize = 10_000; // 10 KiB per line
-    if source.iter().any(|&b| b == b'\n') {
-        // Only scan for max-line-length if the file has newlines (non-minified check).
-        let max_line = source.split(|&b| b == b'\n').map(|l| l.len()).max().unwrap_or(0);
-        if max_line > MAX_LINE_BYTES {
-            tracing::trace!(
-                "skipping minified file {} (longest line {} bytes > {} byte limit)",
-                canonical.display(),
-                max_line,
-                MAX_LINE_BYTES
-            );
-            return Ok(());
-        }
-    } else if source.len() > MAX_LINE_BYTES {
-        // File has no newlines at all and exceeds the line threshold — it's a minified
-        // single-expression file. Skip it.
-        tracing::trace!(
-            "skipping single-line file {} ({} bytes, no newlines — likely minified)",
-            canonical.display(),
-            source.len()
+            reason
         );
         return Ok(());
     }

@@ -18,8 +18,8 @@ pub mod rename_coalesce;
 pub mod subtype;
 pub mod type_diff;
 
-use std::collections::HashSet;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use crate::discover::tree_query;
 use crate::types::{
@@ -553,12 +553,14 @@ fn is_async_arrow(arrow_node: tree_sitter::Node, source: &[u8]) -> bool {
 ///
 /// Returns `None` when the declaration cannot be located (e.g., unsupported
 /// language, parse failure, name not found in tree).
-fn extract_declaration(
+/// Parse `source` once with the language-specific tree-sitter grammar.
+/// Hot-path parses can be cached by the caller and passed to
+/// `extract_declaration_from_tree` to avoid re-parsing the same .d.ts file
+/// for every exported symbol it declares (#OOM-prisma).
+fn parse_source_for_extract(
     source: &[u8],
     lang: &tree_query::SourceLanguage,
-    name: &str,
-    hint_line: u32,
-) -> Option<ExtractedDecl> {
+) -> Option<tree_sitter::Tree> {
     // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX — strict superset
     // of LANGUAGE_TYPESCRIPT so every TS query still parses identically.
     let ts_lang: tree_sitter::Language = match lang {
@@ -571,7 +573,63 @@ fn extract_declaration(
 
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&ts_lang).ok()?;
-    let tree = parser.parse(source, None)?;
+    parser.parse(source, None)
+}
+
+/// Read + parse a source file with caching keyed by absolute path.
+///
+/// The cache stores `Option<(Vec<u8>, Tree)>` so that "unparseable" outcomes
+/// (read failure, oversized, minified, grammar load failure) are also memoised
+/// — every subsequent symbol referencing the same file returns immediately
+/// instead of re-stating the same fs read or re-attempting the same parse.
+///
+/// This is the hot-path mitigation for #OOM-prisma where a 100 KB+ .d.ts can
+/// be home to 50+ exported symbols and re-parsing per symbol blows resident
+/// memory past 8 GB.
+fn get_or_parse<'a>(
+    cache: &'a mut HashMap<PathBuf, Option<(Vec<u8>, tree_sitter::Tree)>>,
+    path: &Path,
+    lang: &tree_query::SourceLanguage,
+) -> Option<&'a (Vec<u8>, tree_sitter::Tree)> {
+    if !cache.contains_key(path) {
+        let parsed = std::fs::read(path).ok().and_then(|bytes| {
+            if crate::source_filter::classify(&bytes).is_some() {
+                return None;
+            }
+            let tree = parse_source_for_extract(&bytes, lang)?;
+            Some((bytes, tree))
+        });
+        cache.insert(path.to_path_buf(), parsed);
+    }
+    cache.get(path).and_then(|opt| opt.as_ref())
+}
+
+/// Test-only convenience wrapper that parses the source and extracts in a
+/// single call. Production code uses `parse_source_for_extract` +
+/// `extract_declaration_from_tree` separately so the parsed tree can be cached
+/// across many symbols sharing the same file (#OOM-prisma).
+#[cfg(test)]
+fn extract_declaration(
+    source: &[u8],
+    lang: &tree_query::SourceLanguage,
+    name: &str,
+    hint_line: u32,
+) -> Option<ExtractedDecl> {
+    let tree = parse_source_for_extract(source, lang)?;
+    extract_declaration_from_tree(&tree, source, name, hint_line)
+}
+
+/// Extract a declaration from a pre-parsed tree.
+///
+/// Caller-owned tree avoids re-parsing the same source bytes once per
+/// exported symbol when many symbols share a single .d.ts file (the
+/// `compare_structural_diff` hot path on packages like `@prisma/client`).
+fn extract_declaration_from_tree(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    name: &str,
+    hint_line: u32,
+) -> Option<ExtractedDecl> {
     let root = tree.root_node();
 
     // Walk top-level children of the program node looking for a declaration
@@ -977,27 +1035,13 @@ fn find_decl_in_node<'a>(
 /// Scans for `function_signature` nodes with matching name at the top level
 /// (exported overload declarations). Returns Vec of TypeShape::Function,
 /// one per function_signature node found.
-fn collect_overload_shapes(
+/// Used in the compare_structural_diff hot path; the tree is parsed once
+/// per file instead of once per overloaded symbol (#OOM-prisma).
+fn collect_overload_shapes_from_tree(
+    tree: &tree_sitter::Tree,
     source: &[u8],
-    lang: &tree_query::SourceLanguage,
     name: &str,
 ) -> Vec<crate::types::shape::TypeShape> {
-    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX so overload
-    // signatures in JSX-bearing .tsx files are still discoverable.
-    let ts_lang: tree_sitter::Language = match lang {
-        tree_query::SourceLanguage::TypeScript => {
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
-        }
-        tree_query::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
-    };
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-    let Some(tree) = parser.parse(source, None) else {
-        return Vec::new();
-    };
     let root = tree.root_node();
     let mut overloads = Vec::new();
     let mut cursor = root.walk();
@@ -1031,27 +1075,26 @@ fn collect_overload_shapes(
 /// Handles declaration merging (REQ-14-04): when two `interface Foo` declarations
 /// exist in the same file, their members are unioned. This matches TypeScript
 /// compiler behavior for merged interfaces.
+#[cfg(test)]
 fn collect_interface_members(
     source: &[u8],
     lang: &tree_query::SourceLanguage,
     name: &str,
 ) -> Vec<crate::types::ClassMember> {
-    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX so merged-
-    // interface members declared in JSX-bearing .tsx files are still collected.
-    let ts_lang: tree_sitter::Language = match lang {
-        tree_query::SourceLanguage::TypeScript => {
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
-        }
-        tree_query::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        tree_query::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
-    };
-    let mut parser = tree_sitter::Parser::new();
-    if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
-    }
-    let Some(tree) = parser.parse(source, None) else {
+    let Some(tree) = parse_source_for_extract(source, lang) else {
         return Vec::new();
     };
+    collect_interface_members_from_tree(&tree, source, name)
+}
+
+/// Pre-parsed-tree variant of `collect_interface_members`. Used in the
+/// compare_structural_diff hot path so the tree is parsed once per file
+/// instead of once per merged-interface symbol (#OOM-prisma).
+fn collect_interface_members_from_tree(
+    tree: &tree_sitter::Tree,
+    source: &[u8],
+    name: &str,
+) -> Vec<crate::types::ClassMember> {
     let root = tree.root_node();
     let mut all_members: Vec<crate::types::ClassMember> = Vec::new();
     let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -1128,6 +1171,20 @@ pub fn compare_structural_diff(
         .map(|k| k.name.clone())
         .collect();
 
+    // Cached parses (#OOM-prisma): on real-world packages like @prisma/client,
+    // a single 100 KB+ .d.ts is the home of 50+ exported symbols. The previous
+    // implementation re-read and re-parsed the same file once per symbol,
+    // accumulating ~80 MB of transient parse-tree allocations per call and
+    // pushing resident memory past 8 GB before the OS killed the process.
+    // Cache parsed Trees by file path so each file is parsed exactly once
+    // per compare call. The Option layer caches "this path is unparseable"
+    // (unreadable, oversized, minified, or grammar load failed) so subsequent
+    // symbols sharing the same file don't redo the failed work.
+    let mut old_parse_cache: HashMap<PathBuf, Option<(Vec<u8>, tree_sitter::Tree)>> =
+        HashMap::new();
+    let mut new_parse_cache: HashMap<PathBuf, Option<(Vec<u8>, tree_sitter::Tree)>> =
+        HashMap::new();
+
     for (key, old_sym) in old_exports {
         let name = key.name.as_str();
         let Some(new_sym) = new_exports.get(key) else {
@@ -1138,13 +1195,6 @@ pub fn compare_structural_diff(
         let old_path = old_root.join(&old_sym.file);
         let new_path = new_root.join(&new_sym.file);
 
-        let Ok(old_source) = std::fs::read(&old_path) else {
-            continue;
-        };
-        let Ok(new_source) = std::fs::read(&new_path) else {
-            continue;
-        };
-
         // Determine language from file extension
         let Some(old_lang) = tree_query::language_for_file(&old_sym.file) else {
             continue;
@@ -1153,11 +1203,24 @@ pub fn compare_structural_diff(
             continue;
         };
 
-        // Extract all shapes from both versions
-        let Some(old_decl) = extract_declaration(&old_source, &old_lang, name, old_sym.line) else {
+        let Some((old_source, old_tree)) =
+            get_or_parse(&mut old_parse_cache, &old_path, &old_lang)
+        else {
             continue;
         };
-        let Some(new_decl) = extract_declaration(&new_source, &new_lang, name, new_sym.line) else {
+        let Some((new_source, new_tree)) =
+            get_or_parse(&mut new_parse_cache, &new_path, &new_lang)
+        else {
+            continue;
+        };
+
+        // Extract all shapes from both versions
+        let Some(old_decl) = extract_declaration_from_tree(old_tree, old_source, name, old_sym.line)
+        else {
+            continue;
+        };
+        let Some(new_decl) = extract_declaration_from_tree(new_tree, new_source, name, new_sym.line)
+        else {
             continue;
         };
 
@@ -1180,8 +1243,8 @@ pub fn compare_structural_diff(
         // REQ-14-05: Interface member structural diff (degraded mode)
         // REQ-14-04: Declaration merging — collect members from ALL interface declarations
         if old_decl.is_interface && new_decl.is_interface {
-            let old_members = collect_interface_members(&old_source, &old_lang, name);
-            let new_members = collect_interface_members(&new_source, &new_lang, name);
+            let old_members = collect_interface_members_from_tree(old_tree, old_source, name);
+            let new_members = collect_interface_members_from_tree(new_tree, new_source, name);
             if !old_members.is_empty() || !new_members.is_empty() {
                 findings.extend(interface_diff::compare_interface_members(
                     &old_members,
@@ -1256,7 +1319,7 @@ pub fn compare_structural_diff(
 
         // Collect all overload shapes for functions (REF-01)
         if old_decl.is_function {
-            let collected = collect_overload_shapes(&old_source, &old_lang, name);
+            let collected = collect_overload_shapes_from_tree(old_tree, old_source, name);
             if !collected.is_empty() {
                 old_sym_augmented.overloads = collected;
             } else if old_sym_augmented.overloads.is_empty() && !old_decl.overloads.is_empty() {
@@ -1264,7 +1327,7 @@ pub fn compare_structural_diff(
             }
         }
         if new_decl.is_function {
-            let collected = collect_overload_shapes(&new_source, &new_lang, name);
+            let collected = collect_overload_shapes_from_tree(new_tree, new_source, name);
             if !collected.is_empty() {
                 new_sym_augmented.overloads = collected;
             } else if new_sym_augmented.overloads.is_empty() && !new_decl.overloads.is_empty() {
