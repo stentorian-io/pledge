@@ -193,7 +193,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
             continue;
         }
         let name = key.name.as_str();
-        if !new.get(key).map(|s| is_public(s)).unwrap_or(false) {
+        if !new.get(key).is_some_and(is_public) {
             // META-03: route augmentation member keys to specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -268,7 +268,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
             continue;
         }
         let name = key.name.as_str();
-        if !old.get(key).map(|s| is_public(s)).unwrap_or(false) {
+        if !old.get(key).is_some_and(is_public) {
             // META-03: augmentation member additions also use specific rules
             if name.starts_with("augment:global:") {
                 findings.push(Finding {
@@ -324,7 +324,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
         let name = key.name.as_str();
         if matches!(sym.release_tag, Some(ReleaseTag::Deprecated))
-            && old.get(key).map(|s| is_public(s)).unwrap_or(false)
+            && old.get(key).is_some_and(is_public)
         {
             findings.push(Finding {
                 severity: Severity::Warning,
