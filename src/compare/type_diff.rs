@@ -851,13 +851,26 @@ fn diff_functions(
     new_params: &[ParamShape],
     new_ret: &TypeShape,
     symbol_name: &str,
-    _field_path: &str,
+    field_path: &str,
     file: &Path,
     line: u32,
     col: u32,
     depth: usize,
     findings: &mut Vec<Finding>,
 ) {
+    // TypeScript permits assigning a readonly object to a mutable object type,
+    // but callers writing directly through a returned property still break.
+    let mut readonly_paths = Vec::new();
+    returned_readonly_additions(old_ret, new_ret, field_path, depth, &mut readonly_paths);
+    findings.extend(readonly_paths.into_iter().map(|path| Finding {
+        severity: Severity::Major,
+        rule: RULE_TYPE_ALIAS_READONLY_CHANGED,
+        file: file.to_path_buf(),
+        line,
+        col,
+        message: format!("returned field `{path}` of `{symbol_name}` became readonly"),
+    }));
+
     // SIG-05: Param reorder detection (check FIRST).
     // Find params that exist in both by name. If 2+ common params and their
     // relative order differs, emit param-reordered and return.
@@ -1054,6 +1067,78 @@ fn diff_functions(
             });
         }
         // else: new_subtypes_old (new is narrower or equal) — safe, no finding
+    }
+}
+
+fn returned_readonly_additions(
+    old: &TypeShape,
+    new: &TypeShape,
+    path: &str,
+    depth: usize,
+    paths: &mut Vec<String>,
+) {
+    if depth >= MAX_DEPTH || old == new {
+        return;
+    }
+    match (old, new) {
+        (TypeShape::Object(before), TypeShape::Object(after)) => {
+            for (name, old_field) in before {
+                let Some(new_field) = after.get(name) else {
+                    continue;
+                };
+                let child = make_path(path, name);
+                if !old_field.readonly && new_field.readonly {
+                    paths.push(child.clone());
+                }
+                returned_readonly_additions(
+                    &old_field.shape,
+                    &new_field.shape,
+                    &child,
+                    depth + 1,
+                    paths,
+                );
+            }
+        }
+        (TypeShape::Array(before), TypeShape::Array(after)) => {
+            returned_readonly_additions(before, after, path, depth + 1, paths);
+        }
+        (TypeShape::Tuple(before), TypeShape::Tuple(after)) => {
+            for (before, after) in before.iter().zip(after) {
+                returned_readonly_additions(&before.shape, &after.shape, path, depth + 1, paths);
+            }
+        }
+        (
+            TypeShape::Function {
+                return_type: before,
+                ..
+            },
+            TypeShape::Function {
+                return_type: after, ..
+            },
+        ) => {
+            returned_readonly_additions(before, after, path, depth + 1, paths);
+        }
+        (
+            TypeShape::Generic {
+                name: before_name,
+                args: before,
+            },
+            TypeShape::Generic {
+                name: after_name,
+                args: after,
+            },
+        ) if before_name == after_name => {
+            for (before, after) in before.iter().zip(after) {
+                returned_readonly_additions(before, after, path, depth + 1, paths);
+            }
+        }
+        (TypeShape::Union(before), TypeShape::Union(after))
+        | (TypeShape::Intersection(before), TypeShape::Intersection(after)) => {
+            for (before, after) in before.iter().zip(after) {
+                returned_readonly_additions(before, after, path, depth + 1, paths);
+            }
+        }
+        _ => {}
     }
 }
 

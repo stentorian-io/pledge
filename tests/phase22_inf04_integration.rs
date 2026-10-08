@@ -34,7 +34,7 @@ mod lsp_path {
     use interlint::discover::discover_exports;
     use interlint::lsp::enrich_exports;
     use interlint::types::{Finding, Severity};
-    use std::sync::Mutex;
+    use tokio::sync::Mutex;
 
     /// INF-04 (Phase 22, closed Phase 27): harness-level serialization for
     /// LSP-gated tests.
@@ -75,20 +75,11 @@ mod lsp_path {
     /// is a developer-only path. The `degraded_path` module exercises
     /// the same `(limitation: lsp-required)` annotation logic without
     /// any subprocess and runs in the canonical gate.
-    static LSP_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static LSP_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
     async fn run_with_lsp(form: &str) -> Vec<Finding> {
-        // INF-04 harness gate: serialize subprocess-spawning LSP tests so
-        // async-lsp 0.2.3's per-process tsserver client race cannot fire.
-        // Acquired BEFORE any path computation so the entire spawn -> request
-        // -> shutdown window for one test is exclusive against any other
-        // running test in this binary. `expect` is correct here — a poisoned
-        // mutex means a previous test panicked while holding the lock; a
-        // panic in a test should fail subsequent tests of the same binary
-        // hard rather than silently mask the LSP race.
-        let _lsp_guard = LSP_TEST_LOCK
-            .lock()
-            .expect("LSP_TEST_LOCK poisoned — a previous LSP test panicked while holding the lock");
+        // Keep shared-workspace server sessions separate without blocking the runtime.
+        let _lsp_guard = LSP_TEST_LOCK.lock().await;
 
         let old_dir = fixture_dir(form, "old");
         let new_dir = fixture_dir(form, "new");

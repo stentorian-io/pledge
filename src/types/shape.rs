@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
+use serde::Deserialize;
+
 /// All primitive TypeScript types.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PrimitiveKind {
     String,
     Number,
@@ -17,7 +19,7 @@ pub enum PrimitiveKind {
 }
 
 /// A literal type value.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LiteralKind {
     /// `"foo"` — string literal type
     String(std::string::String),
@@ -30,7 +32,7 @@ pub enum LiteralKind {
 }
 
 /// Modifiers on mapped type properties.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MappedModifier {
     Readonly,
     Optional,
@@ -38,7 +40,7 @@ pub enum MappedModifier {
 }
 
 /// A component of a template literal type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TemplatePart {
     /// A literal string segment.
     Literal(std::string::String),
@@ -47,7 +49,7 @@ pub enum TemplatePart {
 }
 
 /// A field in an object type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FieldShape {
     pub optional: bool,
     pub readonly: bool, // IFT-02 — readonly modifier on type alias object field
@@ -61,7 +63,7 @@ pub struct FieldShape {
 /// `tuple-label-reordered`, `tuple-label-dropped`, `tuple-label-added`) but
 /// are IGNORED by structural subtyping. `optional` and `rest` map to the
 /// per-position `?:` and `...` markers respectively.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct TupleElement {
     /// Label text (e.g., "x" in `[x: number]`). `None` for unlabeled elements.
     pub label: Option<std::string::String>,
@@ -74,7 +76,7 @@ pub struct TupleElement {
 }
 
 /// A parameter in a function type.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct ParamShape {
     pub name: std::string::String,
     pub optional: bool,
@@ -86,7 +88,7 @@ pub struct ParamShape {
 ///
 /// This enum covers all major TypeScript type constructs and is used as the
 /// canonical form for structural comparison between package versions.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TypeShape {
     /// Primitive types: `string`, `number`, `boolean`, `void`, etc.
     Primitive(PrimitiveKind),

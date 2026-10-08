@@ -13,10 +13,19 @@ levels, 4,096 steps per symbol, and 200,000 steps per package. Symbols are
 processed in a stable order so budget exhaustion is reproducible. Unresolved imported types
 also degrade analysis after language-server enrichment.
 
-The pass resolves declared structural types. It does not implement the full
-TypeScript compiler: arbitrary conditional and mapped type evaluation,
-inferred mixin inheritance, and all compiler-option combinations remain limits.
-The language server supplies inferred signatures where available. Private and
+Without enrichment, the source pass resolves declared structural types. With
+enrichment, the compiler paired with the language server evaluates the public
+contract, including concrete mapped and conditional types, key remapping,
+utility types, inherited fields, and JSDoc typedefs. Equivalent evaluated shapes
+remain compatible even when their alias expressions change. Making a returned
+property readonly is breaking, including properties inside nested objects.
+
+Compiler evaluation loads the package's tsconfig and retains strict nullability
+for public contracts. It does not execute package code. Unevaluated symbolic
+types (including uninstantiated mapped types), missing declarations, compiler
+failures, or exhausted budgets produce incomplete analysis. The compiler pass
+has a 30-second timeout, a 512 MiB heap limit, and a 16 MiB output limit in
+addition to the type expansion limits above. Private and
 protected class members are excluded from the expanded public object shape;
 separate class rules handle visibility and nominal-brand changes.
 

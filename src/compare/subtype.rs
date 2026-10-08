@@ -113,7 +113,12 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
     // Literal subtype of corresponding primitive
     match (sub, sup) {
         (Literal(LiteralKind::String(_)), Primitive(String)) => return true,
-        (Literal(LiteralKind::Number(_)), Primitive(Number)) => return true,
+        (Literal(LiteralKind::Number(number)), Primitive(Number)) if !number.ends_with('n') => {
+            return true
+        }
+        (Literal(LiteralKind::Number(number)), Primitive(Bigint)) if number.ends_with('n') => {
+            return true
+        }
         (Literal(LiteralKind::Boolean(_)), Primitive(Boolean)) => return true,
         (Literal(LiteralKind::Null), Primitive(Null)) => return true,
         _ => {}

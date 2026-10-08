@@ -2,6 +2,7 @@
 //! and populates ExportSymbol with resolved type signatures and TypeShape values.
 
 pub mod client;
+mod compiler;
 pub mod definition;
 pub mod hover;
 pub mod managed;
@@ -319,9 +320,13 @@ async fn enrich_with_binary(
         }
     }
 
-    incomplete.extend(crate::discover::type_graph::resolve_public_types(
-        exports, pkg_root, true,
-    ));
+    if let Some(issues) = compiler::resolve_public_types(exports, pkg_root, binary).await {
+        incomplete.extend(issues);
+    } else {
+        incomplete.extend(crate::discover::type_graph::resolve_public_types(
+            exports, pkg_root, true,
+        ));
+    }
 
     // Step 5: shutdown
     if let Err(e) = session.shutdown().await {

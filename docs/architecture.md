@@ -10,8 +10,9 @@ executable still use `interlint`.
    published tarball, and extracts both versions into temporary directories.
 2. `src/discover/` resolves package entry points and builds export maps with
    tree-sitter. It also captures directives, decorators, and release tags.
-3. `src/lsp/` manages the TypeScript language server and enriches discovered
-   symbols with resolved types and cross-file declaration information.
+3. `src/lsp/` manages the TypeScript language server and its paired compiler.
+   Hover and definition requests supply declaration information; compiler
+   evaluation supplies the concrete public type shapes used by comparison.
 4. `src/compare/` compares exports, types, metadata, structural declarations,
    assets, and directives. It pairs related symbols and consolidates findings.
 5. `src/report/` renders the findings. `src/main.rs` coordinates the passes,

@@ -1,0 +1,122 @@
+[
+  {
+    "name": "mapped-key-remapping",
+    "old": "interface Model { a: string } type Result = { [K in keyof Model as `get${Capitalize<K>}`]: () => Model[K] }; export declare function api(): Result;",
+    "new": "interface Model { b: string } type Result = { [K in keyof Model as `get${Capitalize<K>}`]: () => Model[K] }; export declare function api(): Result;",
+    "consumer": "api().getA();",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "keyof-private-model",
+    "old": "interface Model { a: string } export declare function api(key: keyof Model): void;",
+    "new": "interface Model { b: string } export declare function api(key: keyof Model): void;",
+    "consumer": "api(\"a\");",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "equivalent-pick-refactor",
+    "old": "interface Model { a: string; b: number } type Input = Pick<Model, \"a\">; export declare function api(input: Input): void;",
+    "new": "interface Model { a: string; b: number } type Input = {a:string}; export declare function api(input: Input): void;",
+    "consumer": "api({a:\"x\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "equivalent-conditional-argument",
+    "old": "type Result<T> = T extends string ? {x:string} : {x:number}; export declare function api(): Result<number>;",
+    "new": "type Result<T> = T extends string ? {x:string} : {x:number}; export declare function api(): Result<boolean>;",
+    "consumer": "const value: number = api().x;",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "conditional-private-flag",
+    "old": "type Flag=true; type Result=Flag extends true ? {x:string} : {x:number}; export declare function api(): Result;",
+    "new": "type Flag=false; type Result=Flag extends true ? {x:string} : {x:number}; export declare function api(): Result;",
+    "consumer": "const value:string=api().x;",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "jsdoc-private-type",
+    "old": "/** @typedef {{value:string}} Options */\n/** @param {Options} input */\nexport function api(input) {}",
+    "new": "/** @typedef {{value:number}} Options */\n/** @param {Options} input */\nexport function api(input) {}",
+    "consumer": "api({value:\"x\"});",
+    "breaking": true,
+    "extension": "js"
+  },
+  {
+    "name": "readonly-mapped-result",
+    "old": "interface Model { value:string } export declare function api():Model;",
+    "new": "interface Model { value:string } export declare function api():Readonly<Model>;",
+    "consumer": "api().value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "nullable-result",
+    "old": "export declare function api(): string;",
+    "new": "export declare function api(): string | null;",
+    "consumer": "const text: string = api();",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-parameter-is-compatible",
+    "old": "export declare function api(input: {value:string}): void;",
+    "new": "export declare function api(input: {readonly value:string}): void;",
+    "consumer": "api({value:\"x\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "mutable-result-is-compatible",
+    "old": "export declare function api(): {readonly value:string};",
+    "new": "export declare function api(): {value:string};",
+    "consumer": "const text: string = api().value;",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "nested-readonly-result",
+    "old": "export declare function api(): {nested: {value:string}};",
+    "new": "export declare function api(): {nested: {readonly value:string}};",
+    "consumer": "api().nested.value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "equivalent-overloaded-alias-refactor",
+    "old": "type Input = {value:string}; export declare function api(x:Input): string; export declare function api(x:number): number;",
+    "new": "type Options = {value:string}; export declare function api(x:Options): string; export declare function api(x:number): number;",
+    "consumer": "const text: string = api({value:\"x\"}); const number: number = api(1);",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "bigint-input-widening",
+    "old": "export declare function api(value: 1n): void;",
+    "new": "export declare function api(value: bigint): void;",
+    "consumer": "api(1n);",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "bigint-is-not-number",
+    "old": "export declare function api(value: 1n): void;",
+    "new": "export declare function api(value: number): void;",
+    "consumer": "api(1n);",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "mapped-readonly-removal-is-resolved",
+    "old": "interface Model { readonly value:string } type Mutable<T> = {-readonly [K in keyof T]: T[K]}; export declare function api(): Mutable<Model>;",
+    "new": "interface Model { readonly value:string } export declare function api(): Model;",
+    "consumer": "api().value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  }
+]
