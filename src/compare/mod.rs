@@ -1434,17 +1434,12 @@ pub fn compare_structural_diff(
             ));
         }
 
-        // TYPE-02 (Phase 20): type-alias shape diff.
-        // The base `compare_exports_core` diff_types path only fires when
-        // `sym.overloads` is populated — which happens only for functions
-        // via resolver-side extraction. For `type X = <type>` aliases
-        // `overloads` stays empty without LSP, so the (InferExtends,
-        // InferExtends) arm and all other shape diffs never fire on
-        // type-alias bodies. Here in `compare_structural_diff` we have
-        // re-parsed the declaration; `extract_declaration` populates
-        // `overloads[0]` with the type-alias RHS. Route that pair through
-        // `diff_types` so the structural shape diff runs on type aliases.
-        if old_decl.is_type_alias && new_decl.is_type_alias {
+        // Source-only fallback; resolved shapes were already compared by the
+        // primary type pass, so do not emit that same finding twice.
+        if old_decl.is_type_alias
+            && new_decl.is_type_alias
+            && (old_sym.overloads.is_empty() || new_sym.overloads.is_empty())
+        {
             if let (Some(old_shape), Some(new_shape)) =
                 (old_decl.overloads.first(), new_decl.overloads.first())
             {

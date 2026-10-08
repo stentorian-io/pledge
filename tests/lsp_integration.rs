@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use interlint::compare;
 use interlint::discover;
 use interlint::lsp;
-use interlint::types::{ExportKind, ExportSymbol, Finding, Severity};
+use interlint::types::{Finding, Severity};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -54,20 +54,20 @@ async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
 /// Validates STRUCT-01 (structural shape comparison) and STRUCT-02 (alias resolution).
 ///
 /// configure() param type changes from Config to Settings but shapes are identical —
-/// should NOT produce a `type-changed` finding.
+/// must not report a breaking change to configure().
 #[tokio::test]
 async fn renamed_type_alias_same_shape_no_false_positive() {
     let (findings, _) = run_pipeline("type-change-pkg/old", "type-change-pkg/new").await;
 
     // Config was removed (different export name), Settings was added
-    // But no type-changed finding for configure() param (Config vs Settings have same shape)
+    // Config and Settings expose the same parameter shape to configure().
     let configure_type_findings: Vec<_> = findings
         .iter()
-        .filter(|f| f.message.contains("configure") && f.rule == "type-changed")
+        .filter(|f| f.message.contains("configure") && f.severity == Severity::Major)
         .collect();
     assert!(
         configure_type_findings.is_empty(),
-        "configure() should not have type-changed when param shapes are identical: {:?}",
+        "configure() should not have breaking findings when parameter shapes are identical: {:?}",
         configure_type_findings
     );
 }
@@ -206,50 +206,20 @@ async fn sig_changes_detected_with_lsp() {
     assert!(has_breaking, "SIG changes should produce breaking findings");
 }
 
-/// Test: graceful degradation when LSP cannot initialize for a directory.
-/// Validates STRUCT-05 (graceful degradation — no panic, returns Degraded or Enriched).
-///
-/// We simulate LSP failure by passing a non-existent directory — the LSP cannot
-/// open files there, but enrich_exports should not panic or return Err.
+/// A workspace removed after discovery cannot produce a successful verdict.
 #[tokio::test]
-async fn graceful_degradation_without_lsp() {
-    let fake_root = PathBuf::from("/tmp/interlint-test-nonexistent-dir-a51e5386");
+async fn missing_workspace_degrades_analysis() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().to_path_buf();
+    std::fs::write(root.join("package.json"), r#"{"exports":"./index.ts"}"#).unwrap();
+    std::fs::write(root.join("index.ts"), "export const api = 1;").unwrap();
+    let (mut exports, _) = discover::discover_exports(&root).unwrap();
+    assert!(!exports.is_empty());
+    drop(directory);
 
-    // Build a minimal ExportMap with one symbol referencing the fake directory
-    let mut exports = interlint::types::ExportMap::new();
-    exports.insert(
-        "test".to_string(),
-        ExportSymbol {
-            name: "test".to_string(),
-            kind: ExportKind::Named,
-            file: fake_root.join("index.ts"),
-            line: 1,
-            col: 0,
-            type_signature: None,
-            type_shape: None,
-        },
+    let result = lsp::enrich_exports(&mut exports, &root).await;
+    assert!(
+        matches!(result, Ok(lsp::EnrichResult::Degraded(_))),
+        "{result:?}"
     );
-
-    let result = lsp::enrich_exports(&mut exports, &fake_root).await;
-
-    // Must not return Err — graceful degradation is required (D-16, D-18)
-    match result {
-        Ok(lsp::EnrichResult::Degraded(_)) => {
-            // Expected — LSP failed on nonexistent dir; exports unchanged
-            assert!(
-                exports["test"].type_shape.is_none(),
-                "Degraded mode: type_shape should remain None"
-            );
-        }
-        Ok(lsp::EnrichResult::Enriched) => {
-            // Also acceptable — LSP may initialize but find no files to resolve
-            // Exports should still have no type_shape since file doesn't exist
-        }
-        Err(e) => {
-            panic!(
-                "enrich_exports should not return Err — must degrade gracefully: {:?}",
-                e
-            );
-        }
-    }
 }

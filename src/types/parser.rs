@@ -249,7 +249,13 @@ impl<'a> TypeParser<'a> {
             '0'..='9' | '-' => self.parse_number_literal()?,
             _ => {
                 // Identifier-based: primitive, generic, type param
-                let ident = self.read_identifier()?;
+                let start = self.pos;
+                self.read_identifier()?;
+                while self.peek_char() == Some('.') && !self.peek_str("...") {
+                    self.advance();
+                    self.read_identifier()?;
+                }
+                let ident = &self.input[start..self.pos];
                 self.skip_whitespace();
                 match ident {
                     "string" => TypeShape::Primitive(PrimitiveKind::String),

@@ -191,7 +191,7 @@ async fn enrich_with_binary(
                         if symbol.type_signature.is_none() {
                             symbol.type_signature = type_signature.clone();
                         }
-                        if !overloads.is_empty() && symbol.overloads.is_empty() {
+                        if !overloads.is_empty() {
                             symbol.overloads = overloads.clone();
                         }
                         // TYPE-01 (Phase 20): if this symbol has an unfilled
@@ -318,6 +318,10 @@ async fn enrich_with_binary(
             }
         }
     }
+
+    incomplete.extend(crate::discover::type_graph::resolve_public_types(
+        exports, pkg_root, true,
+    ));
 
     // Step 5: shutdown
     if let Err(e) = session.shutdown().await {

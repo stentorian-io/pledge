@@ -168,6 +168,79 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
+    pub(crate) fn for_each_child_mut(&mut self, visit: &mut impl FnMut(&mut TypeShape)) {
+        match self {
+            Self::Array(inner) | Self::NoInferWrap(inner) => visit(inner),
+            Self::Tuple(elements) => {
+                for element in elements {
+                    visit(&mut element.shape);
+                }
+            }
+            Self::Object(fields) => {
+                for field in fields.values_mut() {
+                    visit(&mut field.shape);
+                }
+            }
+            Self::Union(members)
+            | Self::Intersection(members)
+            | Self::Generic { args: members, .. } => {
+                for member in members {
+                    visit(member);
+                }
+            }
+            Self::Function {
+                params,
+                return_type,
+            } => {
+                for param in params {
+                    visit(&mut param.shape);
+                }
+                visit(return_type);
+            }
+            Self::Conditional {
+                check,
+                extends,
+                then_type,
+                else_type,
+            } => {
+                visit(check);
+                visit(extends);
+                visit(then_type);
+                visit(else_type);
+            }
+            Self::Mapped {
+                key_type,
+                value_type,
+                ..
+            } => {
+                visit(key_type);
+                visit(value_type);
+            }
+            Self::Indexed { base, index } => {
+                visit(base);
+                visit(index);
+            }
+            Self::Satisfies {
+                constraint,
+                narrowed,
+            } => {
+                visit(constraint);
+                if let Some(shape) = narrowed {
+                    visit(shape);
+                }
+            }
+            Self::InferExtends { constraint, .. } => visit(constraint),
+            Self::Template(parts) => {
+                for part in parts {
+                    if let TemplatePart::Placeholder(shape) = part {
+                        visit(shape);
+                    }
+                }
+            }
+            Self::Primitive(_) | Self::Literal(_) | Self::TypeParam(_) | Self::Opaque(_) => {}
+        }
+    }
+
     /// Normalize a TypeShape by sorting Union and Intersection members
     /// into a canonical order (by Debug representation). Recurses into
     /// nested shapes. BTreeMap-based Object is already sorted.

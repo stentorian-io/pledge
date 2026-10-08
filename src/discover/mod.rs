@@ -3,6 +3,7 @@ pub mod comment_scan;
 pub mod entry_points;
 pub mod resolver;
 pub mod tree_query;
+pub(crate) mod type_graph;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -68,5 +69,10 @@ pub fn discover_exports(
         )?;
     }
 
+    warnings.extend(
+        type_graph::resolve_public_types(&mut map, pkg_root, false)
+            .into_iter()
+            .map(resolver::ResolveWarning::new),
+    );
     Ok((map, warnings))
 }
