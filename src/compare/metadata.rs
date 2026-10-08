@@ -156,26 +156,29 @@ fn compare_platform_field(
     let old_vals = extract_string_array(old_pkg, field);
     let new_vals = extract_string_array(new_pkg, field);
 
-    // If old was unrestricted (empty) and new restricts: narrowing
-    if old_vals.is_empty() && !new_vals.is_empty() {
-        findings.push(pkg_json_finding(
-            Severity::Major,
-            RULE_PLATFORM_NARROWED,
-            format!(
-                "`{field}` field added, restricting platform support to: {}",
-                new_vals.join(", ")
-            ),
-        ));
-        return;
-    }
-
-    // Check for removed platforms (old had it, new doesn't)
-    for platform in &old_vals {
-        if !new_vals.contains(platform) {
+    // A positive list is an allowlist; negative entries exclude names from it.
+    // Probe every mentioned name plus one unmentioned platform, representing
+    // the unrestricted remainder without hard-coding today's Node platforms.
+    let accepts = |entries: &[String], platform: &str| {
+        let allowed = !entries.iter().any(|s| !s.starts_with('!'))
+            || entries.iter().any(|s| s == "any" || s == platform);
+        allowed
+            && !entries
+                .iter()
+                .any(|s| s.strip_prefix('!') == Some(platform))
+    };
+    let mut platforms: std::collections::BTreeSet<&str> = old_vals
+        .iter()
+        .chain(&new_vals)
+        .map(|s| s.trim_start_matches('!'))
+        .collect();
+    platforms.insert("<other platforms>");
+    for platform in platforms {
+        if accepts(&old_vals, platform) && !accepts(&new_vals, platform) {
             findings.push(pkg_json_finding(
                 Severity::Major,
                 RULE_PLATFORM_NARROWED,
-                format!("platform `{platform}` removed from `{field}` field"),
+                format!("platform `{platform}` is no longer accepted by `{field}`"),
             ));
         }
     }
@@ -191,34 +194,22 @@ fn compare_platform(
     compare_platform_field(old_pkg, new_pkg, "cpu", findings);
 }
 
-/// Return true if the minimum satisfying version of `new_range` is strictly
-/// greater than the minimum satisfying version of `old_range`.
-///
-/// Uses `node_semver::Range::min_version()` to extract the minimum bound from
-/// each npm semver range. Falls back to string inequality when parsing fails.
-pub(crate) fn range_min_increased(old_range: &str, new_range: &str) -> bool {
+/// Whether any previously accepted version is excluded by the new range.
+/// Subtract each new disjunct separately: Range::difference on two unions
+/// subtracts pairs independently instead of subtracting the entire union.
+pub(crate) fn range_narrowed(old_range: &str, new_range: &str) -> bool {
     use node_semver::Range;
-
-    let old_parsed = Range::parse(old_range);
-    let new_parsed = Range::parse(new_range);
-
-    match (old_parsed, new_parsed) {
-        (Ok(old_r), Ok(new_r)) => {
-            let old_min = old_r.min_version();
-            let new_min = new_r.min_version();
-            match (old_min, new_min) {
-                (Some(o), Some(n)) => n > o,
-                // New range has no minimum (unbounded from below) — not more restrictive
-                (Some(_), None) => false,
-                // Old range had no minimum but new does — new is more restrictive
-                (None, Some(_)) => true,
-                // Both unbounded — not more restrictive
-                (None, None) => false,
-            }
-        }
-        // If either range doesn't parse, compare as strings; different == assume breaking
-        _ => old_range != new_range,
+    let Ok(old) = Range::parse(old_range) else {
+        return old_range != new_range;
+    };
+    let mut remaining = Some(old);
+    for branch in new_range.split("||") {
+        let Ok(new) = Range::parse(branch.trim()) else {
+            return old_range != new_range;
+        };
+        remaining = remaining.and_then(|range| range.difference(&new));
     }
+    remaining.is_some()
 }
 
 /// META-01, META-02, META-03: detect peer dependency changes.
@@ -255,12 +246,12 @@ fn compare_peer_deps(
     // META-01: version bumps for existing peer deps
     for (name, old_range_str) in &old_peers {
         if let Some(new_range_str) = new_peers.get(name.as_str()) {
-            if old_range_str != new_range_str && range_min_increased(old_range_str, new_range_str) {
+            if old_range_str != new_range_str && range_narrowed(old_range_str, new_range_str) {
                 findings.push(pkg_json_finding(
                     Severity::Major,
                     RULE_PEER_DEP_BUMPED,
                     format!(
-                        "peer dependency `{name}` minimum version bumped from `{old_range_str}` to `{new_range_str}`"
+                        "peer dependency `{name}` supported version range narrowed from `{old_range_str}` to `{new_range_str}`"
                     ),
                 ));
             }
@@ -291,12 +282,12 @@ fn compare_engines(
     // META-04: bumped engine requirements
     for (name, old_range_str) in &old_engines {
         if let Some(new_range_str) = new_engines.get(name.as_str()) {
-            if old_range_str != new_range_str && range_min_increased(old_range_str, new_range_str) {
+            if old_range_str != new_range_str && range_narrowed(old_range_str, new_range_str) {
                 findings.push(pkg_json_finding(
                     Severity::Major,
                     RULE_ENGINE_BUMPED,
                     format!(
-                        "engine `{name}` minimum version bumped from `{old_range_str}` to `{new_range_str}`"
+                        "engine `{name}` supported version range narrowed from `{old_range_str}` to `{new_range_str}`"
                     ),
                 ));
             }
@@ -779,21 +770,21 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // range_min_increased helpers
+    // range_narrowed helpers
     // -------------------------------------------------------------------------
 
     #[test]
-    fn test_range_min_increased_caret() {
+    fn test_range_narrowed_caret() {
         assert!(
-            range_min_increased("^17.0.0", "^18.0.0"),
+            range_narrowed("^17.0.0", "^18.0.0"),
             "^18 has higher min than ^17"
         );
     }
 
     #[test]
-    fn test_range_min_increased_minor() {
+    fn test_range_narrowed_minor() {
         assert!(
-            range_min_increased("^17.0.0", "^17.1.0"),
+            range_narrowed("^17.0.0", "^17.1.0"),
             "^17.1.0 has higher min than ^17.0.0"
         );
     }
@@ -801,8 +792,8 @@ mod tests {
     #[test]
     fn test_range_min_not_increased() {
         assert!(
-            !range_min_increased("^18.0.0", "^17.0.0"),
-            "^17 does not have higher min than ^18"
+            !range_narrowed("^18.0.0", ">=17.0.0"),
+            ">=17 still accepts all of ^18"
         );
     }
 
@@ -811,7 +802,7 @@ mod tests {
         // "*" parses to an unbounded range (min_version returns 0.0.0 in node-semver)
         // "^18.0.0" has min 18.0.0 which is > 0.0.0
         assert!(
-            range_min_increased("*", "^18.0.0"),
+            range_narrowed("*", "^18.0.0"),
             "^18 is more restrictive than *"
         );
     }
