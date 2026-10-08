@@ -1,61 +1,32 @@
-# `satisfies` narrowing (TYPE-01)
+# `satisfies` and public value types
 
-The TypeScript 4.9 `satisfies` operator lets a value be checked against a
-type without widening the inferred type of the value:
-
-```typescript
-export const routes = {
-  home: { path: '/' },
-  about: { path: '/about' },
-} satisfies Record<string, { path: string }>;
-// inferred type: `{ readonly home: { readonly path: "/"; }; ... }`
-```
-
-Removing the `satisfies` clause — even while keeping the value identical
-— widens the publicly-observable type. Consumers that relied on the
-narrowed literal types (e.g., `routes.home.path` having literal-string
-type `"/"`) will observe the wider `string` type.
-
-## Rule reference
-
-### `type-narrowing-widened` — Minor
-
-A `satisfies T` clause present on an exported const/let/var in the old
-version is absent in the new version.
+`satisfies` checks a value against a type while retaining its inferred type.
+Contextual typing can affect that inference, so removing the expression can
+change the public contract:
 
 ```typescript
-// old
-export const routes = {
-  home: { path: '/' },
-} satisfies Record<string, { path: string }>;
-
-// new — satisfies removed
-export const routes: Record<string, { path: string }> = {
-  home: { path: '/' },
-};
+// old: value has literal type true
+export const api = { value: true } satisfies { value: boolean };
+// new: value has type boolean
+export const api = { value: true };
 ```
 
-Severity is Minor: the value still satisfies the original constraint, so
-no hard compile break. However, consumers that inferred literal-string
-types from the narrowed form will now infer the declared type.
+A consumer assigning `api.value` to a variable of type `true` compiles only
+against the old version. Pledge compares the compiler-resolved value types and
+reports the incompatibility as Major. Removing `satisfies` also produces the
+Minor `type-narrowing-widened` context finding when the resolved type widens.
 
-## Limitations
+Removal does not always change the inferred type. For example, removing
+`satisfies { value: number }` from `{ value: 1 }` leaves `value: number` on both
+sides. When the compiler proves the new type still fits the old type, Pledge
+suppresses the narrowing finding.
 
-### `limitation: satisfies-narrowed-type-not-verified`
+Exported values use read compatibility: adding a property is compatible, while
+removing a readable property or widening its type can break a consumer. Adding
+`readonly` to a writable public property is also breaking.
 
-When `typescript-language-server` is unavailable (degraded mode),
-Interlint detects `satisfies` presence syntactically (via tree-sitter
-alone) but cannot confirm that the narrowed type was actually surfaced
-in the public signature through LSP hover. In that case, the finding
-message carries `limitation: satisfies-narrowed-type-not-verified` so
-users know narrowing direction was not confirmed. The rule still fires
-— Interlint never silently drops coverage.
-
-## Scope
-
-Interlint diffs `satisfies` on exported const/let/var bindings only.
-TypeScript does not currently permit `satisfies` on type-alias RHS
-(`type X = Y satisfies Z`) — see [TypeScript issue
-#52222](https://github.com/microsoft/TypeScript/issues/52222). If that
-syntax lands in a future TS release, support will be added as a
-follow-up.
+If compiler evidence is unavailable, syntactic removal is still reported with
+`limitation: satisfies-narrowed-type-not-verified`. Missing evidence keeps the
+overall analysis incomplete; the informational finding is not a compatibility
+verdict. Local and installed external types are resolved without requiring a
+language-server process.

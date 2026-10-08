@@ -1,5 +1,4 @@
-//! LSP enrichment module: spawns typescript-language-server, queries hover info,
-//! and populates ExportSymbol with resolved type signatures and TypeShape values.
+//! Public type enrichment through the TypeScript compiler, with reusable LSP clients.
 
 pub mod client;
 mod compiler;
@@ -8,9 +7,9 @@ pub mod hover;
 pub mod managed;
 mod position;
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::path::Path;
+#[cfg(all(test, feature = "lsp-tests"))]
+use std::{collections::HashMap, path::PathBuf, time::Instant};
 
 use thiserror::Error;
 
@@ -50,10 +49,8 @@ impl EnrichResult {
     }
 }
 
-/// Enrich all exports in the given map with type signatures from typescript-language-server.
-///
-/// Spawns a single LSP session per call, batches hover requests for all symbols,
-/// then shuts down. On LSP unavailability, returns `EnrichResult::Degraded` (not an error).
+/// Prepare dependencies and resolve public contracts and declaration locations.
+/// Missing compiler or type evidence returns `EnrichResult::Degraded`.
 pub async fn enrich_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
@@ -108,22 +105,30 @@ pub async fn enrich_prepared_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
-    // Step 1: resolve the LSP binary (managed cache → PATH → download)
-    let binary = match managed::resolve_lsp_binary(pkg_root).await {
-        Ok(b) => b,
-        Err(LspError::Unavailable(msg)) => return Ok(EnrichResult::Degraded(msg)),
-        Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),
+    let compiler = match managed::resolve_compiler(pkg_root).await {
+        Ok(compiler) => compiler,
+        Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
     };
-
-    enrich_with_binary(
-        exports,
-        pkg_root,
-        &binary,
-        std::time::Duration::from_secs(60),
-    )
-    .await
+    let mut issues = compiler::evaluate_public_types(exports, pkg_root, &compiler).await;
+    issues.extend(
+        exports
+            .keys()
+            .filter(|key| key.name.starts_with("*<"))
+            .map(|key| {
+                format!(
+                    "external export barrel `{}` has not been resolved",
+                    key.name
+                )
+            }),
+    );
+    if issues.is_empty() {
+        Ok(EnrichResult::Enriched)
+    } else {
+        Ok(EnrichResult::Degraded(issues.join("; ")))
+    }
 }
 
+#[cfg(all(test, feature = "lsp-tests"))]
 async fn enrich_with_binary(
     exports: &mut ExportMap,
     pkg_root: &Path,

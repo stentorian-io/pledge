@@ -25,8 +25,10 @@ make setup
 
 On other platforms, install the same tools with your preferred package manager.
 Keep `bun`, `cargo`, `node`, `npm`, and `typescript-language-server` on `PATH`.
-Use the JavaScript TypeScript compiler with `lib/tsserver.js`; a native `tsc`
-executable alone cannot serve LSP requests. The managed fallback downloads a
+Public type evaluation uses the JavaScript TypeScript compiler API; a native
+`tsc` executable alone does not provide it. Normal analysis can run with Node.js
+and the JavaScript compiler without a language server. The full integration
+suite additionally exercises language-server protocol behavior. The managed fallback downloads a
 complete, pinned language-server 5.1.3 and TypeScript 5.9.3 pair. LSP checks
 include a fresh managed installation and therefore require registry access.
 Consumer tests use strict TypeScript with NodeNext resolution and modern Node.js

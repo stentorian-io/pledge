@@ -351,7 +351,16 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {
-                let type_findings = type_diff::diff_types(
+                let compare_type = if old_sym
+                    .decl_kinds
+                    .contains(&crate::types::DeclarationKind::Variable)
+                    && !matches!(old_shape, crate::types::shape::TypeShape::Function { .. })
+                {
+                    type_diff::diff_values
+                } else {
+                    type_diff::diff_types
+                };
+                let type_findings = compare_type(
                     old_shape,
                     new_shape,
                     name,

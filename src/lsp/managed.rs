@@ -17,6 +17,39 @@ pub enum LspBinary {
     Managed { node: PathBuf, script: PathBuf },
 }
 
+pub(crate) struct CompilerBinary {
+    pub node: PathBuf,
+    pub library: PathBuf,
+}
+
+/// Compiler evaluation does not require a language-server process. Prefer the
+/// package's compiler, then PATH; the managed pair supplies an offline cache or
+/// installation fallback when neither has the JavaScript compiler API.
+pub(crate) async fn resolve_compiler(workspace: &Path) -> Result<CompilerBinary, LspError> {
+    let node = find_working_binary("node").await.ok_or_else(|| {
+        LspError::Unavailable("Node.js is required for TypeScript contract evaluation".into())
+    })?;
+    let server = workspace.ancestors().find_map(compiler_under).or_else(|| {
+        ["tsserver", "tsc"]
+            .iter()
+            .find_map(|name| compiler_near_binary(&find_in_path(name)?))
+    });
+    if let Some(library) = server
+        .and_then(|server| Some(server.parent()?.join("typescript.js")))
+        .filter(|library| library.is_file())
+    {
+        return Ok(CompilerBinary { node, library });
+    }
+    let binary = resolve_lsp_binary(workspace).await?;
+    let library = binary
+        .tsserver_path(workspace)
+        .and_then(|server| Some(server.parent()?.join("typescript.js")))
+        .ok_or_else(|| {
+            LspError::Unavailable("JavaScript TypeScript compiler API is unavailable".into())
+        })?;
+    Ok(CompilerBinary { node, library })
+}
+
 impl LspBinary {
     pub(crate) fn tsserver_path(&self, workspace: &Path) -> Option<PathBuf> {
         if let Self::Managed { script, .. } = self {

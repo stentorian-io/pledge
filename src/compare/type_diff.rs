@@ -74,6 +74,48 @@ pub fn diff_types(
     findings
 }
 
+/// Exported values are read by consumers, so their types have the same
+/// covariance and writable-property obligations as function results.
+pub fn diff_values(
+    old: &TypeShape,
+    new: &TypeShape,
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    if old == new {
+        return Vec::new();
+    }
+    if matches!(old, TypeShape::Opaque(_)) || matches!(new, TypeShape::Opaque(_)) {
+        return diff_types(old, new, name, file, line, col);
+    }
+    let mut findings = Vec::new();
+    diff_functions(
+        &[],
+        old,
+        &[],
+        new,
+        name,
+        "",
+        file,
+        line,
+        col,
+        0,
+        &mut findings,
+    );
+    for finding in &mut findings {
+        if finding.rule == RULE_RETURN_TYPE_WIDENED {
+            finding.rule = RULE_TYPE_INCOMPATIBLE;
+        }
+        finding.message = finding
+            .message
+            .replace("return type", "value type")
+            .replace("returned field", "exported field");
+    }
+    findings
+}
+
 /// BEH-06 (Phase 20): Heuristic — is this union of `TypeShape`s a
 /// discriminated (tagged) union? Returns the discriminant property name
 /// if so, `None` otherwise.
@@ -1355,6 +1397,18 @@ pub fn diff_satisfies_types(
     );
     if !old_has_satisfies || new_has_satisfies {
         return findings;
+    }
+    if let (
+        Some(TypeShape::Satisfies {
+            narrowed: Some(before),
+            ..
+        }),
+        Some(after),
+    ) = (&old_sym.satisfies_type, new_sym.overloads.first())
+    {
+        if is_subtype_of(after, before, 0) {
+            return findings;
+        }
     }
     // `satisfies` was present, now absent.
     let narrowed_was_verified = matches!(

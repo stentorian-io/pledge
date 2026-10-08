@@ -2,6 +2,7 @@
 // No package code is executed. Keep the wire format aligned with TypeShape's serde format.
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 const ts = require(input.compiler);
 const issues = new Set();
@@ -69,7 +70,7 @@ function signatureShape(signature, depth) {
 }
 function propertyName(symbol) {
   const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
-  return declaration?.name && ts.isComputedPropertyName(declaration.name)
+  return symbol.getName().startsWith('__@') && declaration?.name && ts.isComputedPropertyName(declaration.name)
     ? declaration.name.getText() : symbol.getName();
 }
 function isPrivate(symbol) {
@@ -198,6 +199,33 @@ function shape(type, depth = 0) {
   }
 }
 const fileIndexes = new Map();
+function sourcePosition(source, request) {
+  const line = Math.min(Math.max(0, request.line - 1), source.getLineStarts().length - 1);
+  const start = source.getLineStarts()[line];
+  const end = source.getLineStarts()[line + 1] || source.text.length;
+  return start + Buffer.from(source.text.slice(start, end)).subarray(0, Math.max(0, request.col - 1)).toString('utf8').length;
+}
+
+function commonjsType(request) {
+  const source = program.getSourceFile(request.file);
+  if (!source) return undefined;
+  const position = sourcePosition(source, request);
+  let expression;
+  const contains = node => node.getStart() <= position && position < node.getEnd();
+  function visit(node) {
+    if (!contains(node)) return;
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const target = node.left.getText().replace(/\s/g, '');
+      if ((target === 'module.exports' && request.name === 'default') ||
+          (/^(exports|module\.exports)[.[]/.test(target) && contains(node.left))) expression = node.right;
+    }
+    if (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name) && contains(node.name)) expression = node.initializer;
+    ts.forEachChild(node, visit);
+  }
+  visit(source);
+  return expression && checker.getTypeAtLocation(expression);
+}
+
 function declarationSymbol(request) {
   const source = program.getSourceFile(request.file);
   if (!source) return undefined;
@@ -215,11 +243,7 @@ function declarationSymbol(request) {
     visit(source);
     fileIndexes.set(source, index);
   }
-  const line = Math.min(Math.max(0, request.line - 1), source.getLineStarts().length - 1);
-  const lineStart = source.getLineStarts()[line];
-  const nextLine = source.getLineStarts()[line + 1] || source.text.length;
-  const column = Buffer.from(source.text.slice(lineStart, nextLine)).subarray(0, Math.max(0, request.col - 1)).toString('utf8').length;
-  const position = lineStart + column;
+  const position = sourcePosition(source, request);
   const candidates = index.get(request.local_name || request.name) || [];
   const nearest = [...candidates].sort((a, b) => Math.abs(a.getStart() - position) - Math.abs(b.getStart() - position));
   let symbol = nearest.length ? checker.getSymbolAtLocation(nearest[0]) : undefined;
@@ -230,6 +254,18 @@ function declarationSymbol(request) {
   if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   return symbol;
 }
+
+function definitionLocation(request) {
+  const symbol = declarationSymbol(request);
+  const declaration = symbol?.valueDeclaration || symbol?.declarations?.[0];
+  if (!declaration) return null;
+  const target = declaration.name || declaration;
+  const source = target.getSourceFile();
+  return { uri: pathToFileURL(source.fileName).href, range: {
+    start: source.getLineAndCharacterOfPosition(target.getStart()),
+    end: source.getLineAndCharacterOfPosition(target.getEnd()),
+  } };
+}
 const results = [];
 for (const request of input.symbols) {
   symbolWork = 4096;
@@ -239,17 +275,21 @@ for (const request of input.symbols) {
   parameterScope = 0;
   const symbol = declarationSymbol(request);
   let overloads = [];
-  if (symbol) {
-    for (const declaration of symbol.declarations || []) {
+  let signature = null;
+  const expressionType = commonjsType(request);
+  if (symbol || expressionType) {
+    for (const declaration of symbol?.declarations || []) {
       bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
     }
-    const type = symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
-      ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol);
+    const type = expressionType || (symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
+      ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol));
+    signature = checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
     if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
     else overloads = [shape(type)];
   } else currentIssues.add('compiler could not locate public declaration');
-  results.push({ id: request.id, overloads, issues: [...currentIssues] });
+  const typeof_targets = (request.refs || []).map(reference => definitionLocation({ ...reference, file: request.file }));
+  results.push({ id: request.id, overloads, signature, typeof_targets, issues: [...currentIssues] });
   if (packageWork < 0) {
     issues.add('compiler package expansion budget exhausted');
     break;

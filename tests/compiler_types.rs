@@ -83,6 +83,11 @@ async fn evaluated_public_types_agree_with_strict_consumers() {
                 "{name}: expected breaking={breaking}, got {findings:?}"
             ));
         }
+        if let Some(rule) = case["forbidden_rule"].as_str() {
+            if findings.iter().any(|finding| finding.rule == rule) {
+                failures.push(format!("{name}: unexpected {rule}: {findings:?}"));
+            }
+        }
         if let Some(rule) = case["required_rule"].as_str() {
             if !findings.iter().any(|finding| finding.rule == rule) {
                 failures.push(format!("{name}: missing {rule}: {findings:?}"));

@@ -18,17 +18,18 @@ inside these expressions; unresolved references still make analysis incomplete.
    entry points and builds export maps with tree-sitter. Discovery also captures
    directives, decorators, and release tags. Installation disables scripts and
    lockfile generation; a failed installation leaves analysis incomplete.
-3. `src/lsp/` manages the TypeScript language server and its paired compiler.
-   Hover and definition requests supply declaration information; compiler
-   evaluation supplies the concrete public type shapes used by comparison.
-   Source byte columns are converted to UTF-16 for hover and definition requests.
+3. `src/lsp/` evaluates public types and declaration locations with the JavaScript
+   TypeScript compiler. It uses the workspace/PATH compiler or a managed toolchain;
+   normal enrichment does not require a language-server process. Source byte
+   columns are converted to UTF-16 before resolving identifiers. The language-server
+   client remains available for protocol integrations and their regression tests.
 4. `src/compare/` compares exports, types, metadata, structural declarations,
    assets, and directives. It pairs related symbols and consolidates findings.
 5. `src/report/` renders the findings. `src/main.rs` coordinates the passes,
    deduplicates their results, and selects the process exit code.
 
 First-publish handling skips downloading a previous version and reports the
-discovered exports as additions. LSP failures produce an explicit degraded
+discovered exports as additions. Missing compiler evidence produces an explicit degraded
 result; structural comparisons can continue with the evidence available.
 
 Library callers can prepare dependencies with `lsp::client::prepare_dependencies`,

@@ -24,7 +24,7 @@ Interlint emits findings tagged with stable rule-IDs. Severity maps to CLI exit 
 |----------|-----------|---------|
 | Major | 1 | Breaking change — consumers will observe broken behavior |
 | Warning | 0 | Observable behavior change — exhaustive-switch breaks, deprecation. Reported but does not break the build. |
-| Degraded | 3 | Analysis could not complete cleanly (LSP unavailable, parse failure) |
+| Degraded | 3 | Analysis could not complete cleanly (compiler unavailable, unresolved types, parse failure) |
 | Minor | 0 | Non-breaking change worth noting |
 | Patch | 0 | Cosmetic / non-observable change |
 | Info | 0 | Documented limitation — analysis acknowledged but couldn't verify (Phase 25) |
@@ -57,7 +57,7 @@ See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and t
 
 | Rule ID | Severity | Trigger |
 |---------|----------|---------|
-| `type-narrowing-widened` | Minor | A `satisfies T` clause is removed from an exported const/let/var; consumers that relied on the narrowed type will observe the wider declared type |
+| `type-narrowing-widened` | Minor | A `satisfies T` clause is removed and the public value type widens, or type evidence is unavailable |
 | `infer-extends-constraint-changed` | Major | The `C` in `T extends infer U extends C ? ... : ...` on an exported conditional type is changed |
 | `generic-inference-constraint-removed` | Minor | A `NoInfer<T>` wrapper is removed from a function parameter position or generic constraint on an exported signature |
 | `union-variant-added` | Warning | A variant is added to an exported discriminated (tagged) union — may break exhaustive `switch`/`match` consumers |
@@ -65,7 +65,7 @@ See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and t
 
 When type enrichment is unavailable, findings identify missing evidence:
 
-- `limitation: satisfies-narrowed-type-not-verified` — TYPE-01 degraded mode (LSP unavailable); rule still fires syntactically but narrowing direction is not confirmed.
+- `limitation: satisfies-narrowed-type-not-verified` — TYPE-01 degraded mode (type evaluation unavailable); rule still fires syntactically but narrowing direction is not confirmed.
 
 See `docs/rules/type-narrowing.md`, `docs/rules/infer-extends.md`, `docs/rules/noinfer-wrapper.md`, `docs/rules/union-variant-added.md`, and `docs/rules/template-index-signature.md` for per-rule detail.
 
