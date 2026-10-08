@@ -63,10 +63,9 @@ See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and t
 | `union-variant-added` | Warning | A variant is added to an exported discriminated (tagged) union — may break exhaustive `switch`/`match` consumers |
 | `index-signature-key-pattern-changed` | Major (narrowing) / Minor (widening) | The template-literal key pattern of an exported index signature (e.g. `` [key: `on${string}`]: T ``) is narrowed or widened |
 
-Phase 20 also introduces two informational limitations surfaced in finding messages:
+When type enrichment is unavailable, findings identify missing evidence:
 
 - `limitation: satisfies-narrowed-type-not-verified` — TYPE-01 degraded mode (LSP unavailable); rule still fires syntactically but narrowing direction is not confirmed.
-- `limitation: noinfer-via-local-alias` — GEN-07; users aliasing `NoInfer<T>` locally (`type MyNoInfer<T> = NoInfer<T>`) evade detection.
 
 See `docs/rules/type-narrowing.md`, `docs/rules/infer-extends.md`, `docs/rules/noinfer-wrapper.md`, `docs/rules/union-variant-added.md`, and `docs/rules/template-index-signature.md` for per-rule detail.
 
@@ -91,7 +90,6 @@ Interlint detects what is statically detectable. For cases that fundamentally ca
 |---------|--------------|---------|
 | `limitation: lsp-required` | INF-04 (Phase 22) | LSP was unavailable; the typeof-import target could not be resolved across files. |
 | `limitation: external-type-reference` | INF-04 (Phase 22) | LSP resolved the typeof-import target to a file outside the package tarball (cross-package reference). |
-| `limitation: noinfer-via-local-alias` | GEN-07 (Phase 20) | The user aliased `NoInfer<T>` locally (`type MyNoInfer<T> = NoInfer<T>`) which evades the name-based detector. |
 | `limitation: satisfies-narrowed-type-not-verified` | TYPE-01 (Phase 20) | Degraded mode: `satisfies T` removal detected syntactically, but narrowing direction not LSP-confirmed. |
 | `limitation: symbol-for-registry-key-not-tracked` | ECF-13 (Phase 22) | `Symbol.for(...)` registry keys are private identity with no stable spec semantics; tracked but not diffed. |
 | `limitation: dynamic-static-member-key` | CLS-12 (Phase 21) | A class static initialization block contains computed-key assignments (`Foo[expr] = ...`); members behind dynamic keys are not diffed. |

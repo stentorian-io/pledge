@@ -42,11 +42,20 @@ let packageWork = 200000;
 let symbolWork;
 let active;
 let currentIssues;
+let parameterNames;
+let parameterScope;
+function bindParameters(parameters) {
+  const unbound = (parameters || []).filter(parameter => !parameterNames.has(parameter));
+  if (!unbound.length) return;
+  const scope = parameterScope++;
+  unbound.forEach((parameter, index) => parameterNames.set(parameter, `T${scope}_${index}`));
+}
 function incomplete(message, type) {
   currentIssues.add(message);
   return { Opaque: type ? checker.typeToString(type) : '<unresolved>' };
 }
 function signatureShape(signature, depth) {
+  bindParameters(signature.typeParameters);
   return { Function: {
     params: signature.getParameters().map(parameter => {
       const declaration = parameter.valueDeclaration || parameter.declarations?.[0];
@@ -83,9 +92,16 @@ function shape(type, depth = 0) {
   if (flags & ts.TypeFlags.StringLiteral) return { Literal: { String: type.value } };
   if (flags & ts.TypeFlags.NumberLiteral) return { Literal: { Number: String(type.value) } };
   if (flags & ts.TypeFlags.BigIntLiteral) return { Literal: { Number: `${type.value.negative ? '-' : ''}${type.value.base10Value}n` } };
-  if (flags & ts.TypeFlags.Substitution) return { NoInferWrap: shape(type.baseType, depth + 1) };
+  if (flags & ts.TypeFlags.Substitution) {
+    const base = shape(type.baseType, depth + 1);
+    return type.constraint.flags & ts.TypeFlags.Unknown ? { NoInferWrap: base }
+      : { Intersection: [base, shape(type.constraint, depth + 1)] };
+  }
   if (flags & ts.TypeFlags.BooleanLiteral) return { Literal: { Boolean: type.intrinsicName === 'true' } };
-  if (flags & ts.TypeFlags.TypeParameter) return { TypeParam: type.symbol?.getName() || checker.typeToString(type) };
+  if (flags & ts.TypeFlags.TypeParameter) {
+    bindParameters([type]);
+    return { TypeParam: parameterNames.get(type) };
+  }
   if (active.has(type)) return { TypeParam: '<recursive>' };
   active.add(type);
   try {
@@ -121,13 +137,32 @@ function shape(type, depth = 0) {
       });
       return { Template: parts };
     }
+    if (flags & ts.TypeFlags.StringMapping) return generic(type.symbol.getName(), [shape(type.type, depth + 1)]);
+    if (flags & ts.TypeFlags.Conditional) {
+      // Building the node asks the compiler to resolve the instantiated branches.
+      // Reading the original AST here would lose substitutions and private aliases.
+      checker.typeToTypeNode(type, undefined, formatFlags);
+      bindParameters(type.root.inferTypeParameters);
+      if (!type.resolvedTrueType || !type.resolvedFalseType) return incomplete('unresolved conditional branches', type);
+      return { Conditional: { check: shape(type.checkType, depth + 1), extends: shape(type.extendsType, depth + 1),
+        then_type: shape(type.resolvedTrueType, depth + 1), else_type: shape(type.resolvedFalseType, depth + 1) } };
+    }
     if (flags & ts.TypeFlags.IndexedAccess) return { Indexed: { base: shape(type.objectType, depth + 1), index: shape(type.indexType, depth + 1) } };
     if (flags & ts.TypeFlags.Index) return generic('keyof', [shape(type.type, depth + 1)]);
     if (flags & ts.TypeFlags.UniqueESSymbol) return { TypeParam: checker.typeToString(type) };
     if (!(flags & ts.TypeFlags.Object)) return incomplete('unevaluated compiler type', type);
 
     const node = checker.typeToTypeNode(type, undefined, formatFlags);
-    if (node && ts.isMappedTypeNode(node)) return incomplete('uninstantiated mapped public type', type);
+    if (node && ts.isMappedTypeNode(node)) {
+      // These cached compiler types retain instantiation and alias expansion. Guard
+      // their presence because MappedType's cache fields are not a public TS API.
+      if (!type.typeParameter || !type.constraintType || !type.templateType) return incomplete('unresolved mapped type components', type);
+      bindParameters([type.typeParameter]);
+      const polarity = token => token ? token.kind !== ts.SyntaxKind.MinusToken : null;
+      return { Mapped: { key_name: parameterNames.get(type.typeParameter), key_type: shape(type.constraintType, depth + 1),
+        name_type: type.nameType ? shape(type.nameType, depth + 1) : null, value_type: shape(type.templateType, depth + 1),
+        readonly: polarity(node.readonlyToken), optional: polarity(node.questionToken) } };
+    }
     const readonlyProperties = new Map();
     if (node && ts.isTypeLiteralNode(node)) {
       for (const member of node.members) {
@@ -200,9 +235,14 @@ for (const request of input.symbols) {
   symbolWork = 4096;
   active = new Set();
   currentIssues = new Set();
+  parameterNames = new Map();
+  parameterScope = 0;
   const symbol = declarationSymbol(request);
   let overloads = [];
   if (symbol) {
+    for (const declaration of symbol.declarations || []) {
+      bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
+    }
     const type = symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
       ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol);
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);

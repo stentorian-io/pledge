@@ -21,9 +21,8 @@ for the motivation.
 
 Removing `NoInfer<T>` allows consumers' previously-blocked inference
 paths to fire, changing the shape of inferred type parameters. This is
-not a hard compile break — consumer code continues to type-check —
-but inference behavior shifts and may cause the wider type to be
-derived.
+an inference change: the inferred result may become wider and affect
+consumers that relied on the previous result.
 
 ## Rule reference
 
@@ -63,9 +62,8 @@ export interface Store<T extends Base> { item: T; }
 
 Fires Minor `generic-inference-constraint-removed`.
 
-Severity is Minor. Removing `NoInfer` does not break the type
-contract; it changes the *inference* of the type parameter, which
-consumers may or may not have relied on.
+The inference-change finding is Minor. The ordinary type rules separately
+report observed parameter or return-type incompatibilities.
 
 ## Scope
 
@@ -89,22 +87,14 @@ If the removal was unintentional (e.g., a refactor stripped the
 wrapper), restore `NoInfer<T>` at the affected position to silence
 the rule.
 
-## Limitations
+## Alias resolution and degraded analysis
 
-### `limitation: noinfer-via-local-alias`
+Compiler enrichment resolves local and imported aliases of `NoInfer<T>` before
+comparison. An alias rename retains the same inference behavior; removing its
+wrapper produces `generic-inference-constraint-removed`. `NoInfer<T>` and `T`
+have the same assignability, so removing the wrapper alone is not reported as
+parameter narrowing.
 
-Interlint recognizes `NoInfer` only when the type is written verbatim.
-Users who alias `NoInfer` locally — e.g.,
-
-```typescript
-type MyNoInfer<T> = NoInfer<T>;
-export function f<T>(arg: MyNoInfer<T>): T;
-```
-
-— produce a `Generic { name: "MyNoInfer", args: [T] }` shape in the
-diff engine, not `NoInferWrap(T)`. Removing `MyNoInfer` in this case
-won't fire `generic-inference-constraint-removed` even though the
-inference effect is identical.
-
-This is a known limitation and surfaces in CLI output as
-`limitation: noinfer-via-local-alias`.
+Without compiler information, only the available source shapes can be compared.
+Missing type evidence produces incomplete analysis. There is no emitted
+`limitation: noinfer-via-local-alias` finding.

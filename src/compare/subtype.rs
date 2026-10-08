@@ -110,6 +110,14 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         return true;
     }
 
+    // NoInfer controls candidate collection during inference, not assignability.
+    // Inference changes are reported separately from parameter narrowing.
+    match (sub, sup) {
+        (NoInferWrap(inner), _) => return is_subtype_of(inner, sup, depth + 1),
+        (_, NoInferWrap(inner)) => return is_subtype_of(sub, inner, depth + 1),
+        _ => {}
+    }
+
     // Literal subtype of corresponding primitive
     match (sub, sup) {
         (Literal(LiteralKind::String(_)), Primitive(String)) => return true,
@@ -1006,7 +1014,7 @@ mod tests {
 
     #[test]
     fn test_incomparable_types_return_false() {
-        use crate::types::shape::{MappedModifier, TemplatePart};
+        use crate::types::shape::TemplatePart;
 
         let cond = TypeShape::Conditional {
             check: Box::new(string()),
@@ -1017,7 +1025,10 @@ mod tests {
         let mapped = TypeShape::Mapped {
             key_type: Box::new(string()),
             value_type: Box::new(number()),
-            modifier: Some(MappedModifier::Optional),
+            key_name: "K".into(),
+            name_type: None,
+            readonly: None,
+            optional: Some(true),
         };
         let indexed = TypeShape::Indexed {
             base: Box::new(TypeShape::Object(BTreeMap::new())),

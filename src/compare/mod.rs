@@ -1330,7 +1330,7 @@ pub fn compare_structural_diff(
         // Collect all overload shapes for functions (REF-01)
         if old_decl.is_function {
             let collected = collect_overload_shapes_from_tree(old_tree, old_source, name);
-            if !collected.is_empty() {
+            if old_sym_augmented.overloads.is_empty() && !collected.is_empty() {
                 old_sym_augmented.overloads = collected;
             } else if old_sym_augmented.overloads.is_empty() && !old_decl.overloads.is_empty() {
                 old_sym_augmented.overloads = old_decl.overloads.clone();
@@ -1338,7 +1338,7 @@ pub fn compare_structural_diff(
         }
         if new_decl.is_function {
             let collected = collect_overload_shapes_from_tree(new_tree, new_source, name);
-            if !collected.is_empty() {
+            if new_sym_augmented.overloads.is_empty() && !collected.is_empty() {
                 new_sym_augmented.overloads = collected;
             } else if new_sym_augmented.overloads.is_empty() && !new_decl.overloads.is_empty() {
                 new_sym_augmented.overloads = new_decl.overloads.clone();

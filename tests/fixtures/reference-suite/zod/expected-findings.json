@@ -2095,6 +2095,11 @@
     {
       "version": "new",
       "incomplete": true,
+      "message": "public type expansion limit reached for `RequiredInterfaceShape`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
       "message": "public type expansion limit reached for `SafeExtendShape`"
     },
     {
@@ -2331,11 +2336,6 @@
       "version": "new",
       "incomplete": true,
       "message": "public type expansion limit reached for `ZodMiniNullable`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `ZodMiniNumber`"
     },
     {
       "version": "new",
@@ -2595,6 +2595,11 @@
     {
       "version": "old",
       "incomplete": true,
+      "message": "public type expansion limit reached for `RequiredInterfaceShape`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
       "message": "public type expansion limit reached for `SafeExtendShape`"
     },
     {
@@ -2835,13 +2840,8 @@
     {
       "version": "old",
       "incomplete": true,
-      "message": "public type expansion limit reached for `ZodMiniNumber`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed package.json: exports mappings are unchanged. mini/index.cjs and v4-mini/index.cjs now explicitly export z via __importStar; these are the two Minor additions. Deprecated declarations remain Warning findings. Declaration barrels resolve .d.cts before adjacent .cjs, preventing spurious additions caused by runtime helper layouts. Existing types/runtime format differences are unchanged and are not new breaks. Source and expansion limitations remain explicit."
+  "_curation_notes": "Reviewed package.json: exports mappings are unchanged. mini/index.cjs and v4-mini/index.cjs now explicitly export z via __importStar; these are the two Minor additions. Deprecated declarations remain Warning findings. Declaration barrels resolve .d.cts before adjacent .cjs, preventing spurious additions caused by runtime helper layouts. Existing types/runtime format differences are unchanged and are not new breaks. Source and expansion limitations remain explicit. Reviewed symbolic mapped-type parsing: RequiredInterfaceShape now expands its remapped conditional keys instead of remaining opaque. This consumes the structural package budget earlier: both versions report its expansion limit, and the later ZodMiniNumber-specific limit is superseded by the existing package-budget warning. Public surfaces, findings, severities, and incomplete status are unchanged."
 }

@@ -53,52 +53,48 @@ pub fn compare_type_params(
         new_params.iter().map(|p| (p.name.as_str(), p)).collect();
 
     // GEN-02: param removed — old param not in new
-    for old_param in old_params {
-        if !new_by_name.contains_key(old_param.name.as_str()) {
+    for old_param in old_params.iter().skip(new_params.len()) {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_GENERIC_PARAM_REMOVED,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "type parameter `{}` was removed from `{}`",
+                old_param.name, symbol_name
+            ),
+        });
+    }
+
+    // GEN-01 and GEN-06: param added — new param not in old
+    for new_param in new_params.iter().skip(old_params.len()) {
+        if let Some(ref default_text) = new_param.default_text {
+            // GEN-06: added with default → Minor
             findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_GENERIC_PARAM_REMOVED,
+                severity: Severity::Minor,
+                rule: RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
                 file: file.to_path_buf(),
                 line,
                 col,
                 message: format!(
-                    "type parameter `{}` was removed from `{}`",
-                    old_param.name, symbol_name
+                    "type parameter `{}` was added to `{}` with default `{}`",
+                    new_param.name, symbol_name, default_text
                 ),
             });
-        }
-    }
-
-    // GEN-01 and GEN-06: param added — new param not in old
-    for new_param in new_params {
-        if !old_by_name.contains_key(new_param.name.as_str()) {
-            if let Some(ref default_text) = new_param.default_text {
-                // GEN-06: added with default → Minor
-                findings.push(Finding {
-                    severity: Severity::Minor,
-                    rule: RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT,
-                    file: file.to_path_buf(),
-                    line,
-                    col,
-                    message: format!(
-                        "type parameter `{}` was added to `{}` with default `{}`",
-                        new_param.name, symbol_name, default_text
-                    ),
-                });
-            } else {
-                // GEN-01: added without default → Major (required)
-                findings.push(Finding {
-                    severity: Severity::Major,
-                    rule: RULE_GENERIC_PARAM_ADDED,
-                    file: file.to_path_buf(),
-                    line,
-                    col,
-                    message: format!(
-                        "required type parameter `{}` was added to `{}` without default",
-                        new_param.name, symbol_name
-                    ),
-                });
-            }
+        } else {
+            // GEN-01: added without default → Major (required)
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_GENERIC_PARAM_ADDED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "required type parameter `{}` was added to `{}` without default",
+                    new_param.name, symbol_name
+                ),
+            });
         }
     }
 
@@ -132,12 +128,9 @@ pub fn compare_type_params(
     }
 
     // GEN-04 and GEN-05: per-param comparison for params present in both
-    for old_param in old_params {
-        let new_param = match new_by_name.get(old_param.name.as_str()) {
-            Some(p) => p,
-            None => continue, // already handled as removed
-        };
-
+    // Explicit type arguments are positional. A binder rename neither adds nor
+    // removes an argument and must still compare constraints at the same slot.
+    for (old_param, new_param) in old_params.iter().zip(new_params) {
         // GEN-04: constraint tightened
         check_constraint_tightened(
             old_param,

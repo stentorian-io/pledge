@@ -83,6 +83,11 @@ async fn evaluated_public_types_agree_with_strict_consumers() {
                 "{name}: expected breaking={breaking}, got {findings:?}"
             ));
         }
+        if let Some(rule) = case["required_rule"].as_str() {
+            if !findings.iter().any(|finding| finding.rule == rule) {
+                failures.push(format!("{name}: missing {rule}: {findings:?}"));
+            }
+        }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
@@ -91,7 +96,7 @@ async fn evaluated_public_types_agree_with_strict_consumers() {
 async fn unresolved_public_types_cannot_report_complete_analysis() {
     for source in [
         "export declare function api(): MissingType;",
-        "export type Open<T> = { [K in keyof T as `get${Capitalize<K & string>}`]: T[K] };",
+        "export type Open<T> = { [K in keyof T]: MissingType };",
     ] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(

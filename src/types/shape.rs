@@ -32,13 +32,6 @@ pub enum LiteralKind {
 }
 
 /// Modifiers on mapped type properties.
-#[derive(Deserialize, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum MappedModifier {
-    Readonly,
-    Optional,
-    ReadonlyOptional,
-}
-
 /// A component of a template literal type.
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TemplatePart {
@@ -132,9 +125,13 @@ pub enum TypeShape {
     },
     /// Mapped types: `{ [K in keyof T]: V }`
     Mapped {
+        key_name: std::string::String,
         key_type: Box<TypeShape>,
+        name_type: Option<Box<TypeShape>>,
         value_type: Box<TypeShape>,
-        modifier: Option<MappedModifier>,
+        /// None preserves the input modifier; true adds it and false removes it.
+        readonly: Option<bool>,
+        optional: Option<bool>,
     },
     /// Indexed access types: `T[K]`
     Indexed {
@@ -212,10 +209,14 @@ impl TypeShape {
             }
             Self::Mapped {
                 key_type,
+                name_type,
                 value_type,
                 ..
             } => {
                 visit(key_type);
+                if let Some(name_type) = name_type {
+                    visit(name_type);
+                }
                 visit(value_type);
             }
             Self::Indexed { base, index } => {
@@ -319,13 +320,19 @@ impl TypeShape {
                 else_type: Box::new(else_type.normalize()),
             },
             TypeShape::Mapped {
+                key_name,
                 key_type,
+                name_type,
                 value_type,
-                modifier,
+                readonly,
+                optional,
             } => TypeShape::Mapped {
+                key_name,
                 key_type: Box::new(key_type.normalize()),
+                name_type: name_type.map(|shape| Box::new(shape.normalize())),
                 value_type: Box::new(value_type.normalize()),
-                modifier,
+                readonly,
+                optional,
             },
             TypeShape::Indexed { base, index } => TypeShape::Indexed {
                 base: Box::new(base.normalize()),
@@ -343,7 +350,18 @@ impl TypeShape {
                 constraint: Box::new(constraint.normalize()),
             },
             TypeShape::NoInferWrap(inner) => TypeShape::NoInferWrap(Box::new(inner.normalize())),
-            // Primitive, Literal, TypeParam, Template, Opaque — already canonical
+            TypeShape::Template(parts) => TypeShape::Template(
+                parts
+                    .into_iter()
+                    .map(|part| match part {
+                        TemplatePart::Placeholder(shape) => {
+                            TemplatePart::Placeholder(Box::new(shape.normalize()))
+                        }
+                        literal => literal,
+                    })
+                    .collect(),
+            ),
+            // Primitive, Literal, TypeParam, Opaque — already canonical
             other => other,
         }
     }

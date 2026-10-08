@@ -4,6 +4,12 @@ The `interlint` CLI compares the public surface of a local npm package with its
 previously published version. Pledge is the repository name; the crate and
 executable still use `interlint`.
 
+Compiler shapes preserve deferred conditional branches, generic mapped keys,
+key remapping, modifier addition/removal, and intrinsic string operations.
+Type parameter identities follow their binding positions so renaming a generic
+parameter does not change its contract. The compiler expands private aliases
+inside these expressions; unresolved references still make analysis incomplete.
+
 ## Analysis pipeline
 
 1. `src/acquire/` packs the local package, reads registry metadata, downloads the

@@ -4,8 +4,7 @@
 //! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
 
 use crate::types::shape::{
-    FieldShape, LiteralKind, MappedModifier, ParamShape, PrimitiveKind, TemplatePart, TupleElement,
-    TypeShape,
+    FieldShape, LiteralKind, ParamShape, PrimitiveKind, TemplatePart, TupleElement, TypeShape,
 };
 use std::collections::BTreeMap;
 
@@ -245,7 +244,8 @@ impl<'a> TypeParser<'a> {
                 // Could be function type `(params) => T` or parenthesized type
                 self.parse_function_or_paren(depth + 1)?
             }
-            '"' | '\'' | '`' => self.parse_string_literal()?,
+            '"' | '\'' => self.parse_string_literal()?,
+            '`' => self.parse_template_literal(depth + 1)?,
             '0'..='9' | '-' => self.parse_number_literal()?,
             _ => {
                 // Identifier-based: primitive, generic, type param
@@ -339,15 +339,22 @@ impl<'a> TypeParser<'a> {
 
         // Check for mapped type: `{ [K in ...]: V }` or `{ readonly [K in ...]: V }`
         let saved = self.pos;
-        let has_readonly = if self.peek_str("readonly") {
+        let polarity = if matches!(self.peek_char(), Some('-' | '+')) {
+            let adds_modifier = self.peek_char() != Some('-');
+            self.advance();
+            adds_modifier
+        } else {
+            true
+        };
+        let readonly = if self.peek_str("readonly") {
             self.pos += KW_READONLY_LEN;
             self.skip_whitespace();
-            true
+            Some(polarity)
         } else {
-            false
+            None
         };
         if self.peek_char() == Some('[') {
-            if let Some(mapped) = self.try_parse_mapped_type(has_readonly, depth + 1) {
+            if let Some(mapped) = self.try_parse_mapped_type(readonly, depth + 1) {
                 return Some(mapped);
             }
         }
@@ -413,7 +420,7 @@ impl<'a> TypeParser<'a> {
 
     /// Try to parse a mapped type starting at `[` (after optional `readonly` prefix).
     /// Returns None and backtracks on failure so parse_object can fall through.
-    fn try_parse_mapped_type(&mut self, has_readonly: bool, depth: usize) -> Option<TypeShape> {
+    fn try_parse_mapped_type(&mut self, readonly: Option<bool>, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
             return None;
         }
@@ -421,7 +428,7 @@ impl<'a> TypeParser<'a> {
         self.expect_char('[')?;
         self.skip_whitespace();
         // Read the key variable name (e.g., `K`)
-        let _key_name = self.read_identifier()?;
+        let key_name = self.read_identifier()?.to_string();
         self.skip_whitespace();
         // Must see `in` keyword followed by whitespace to be a mapped type
         if !self.peek_str("in ") && !self.peek_str("in\t") {
@@ -433,6 +440,14 @@ impl<'a> TypeParser<'a> {
         // Parse key constraint type (e.g., `keyof T`, `string`, etc.)
         let key_type = self.parse_type(depth + 1)?;
         self.skip_whitespace();
+        let name_type = if self.peek_str("as ") || self.peek_str("as\t") {
+            self.pos += 2;
+            self.skip_whitespace();
+            Some(Box::new(self.parse_type(depth + 1)?))
+        } else {
+            None
+        };
+        self.skip_whitespace();
         // Expect closing `]`
         if self.expect_char(']').is_none() {
             self.pos = saved;
@@ -440,11 +455,18 @@ impl<'a> TypeParser<'a> {
         }
         self.skip_whitespace();
         // Check for `?` (optional modifier on the mapped property)
-        let has_optional = if self.peek_char() == Some('?') {
+        let polarity = if matches!(self.peek_char(), Some('-' | '+')) {
+            let adds_modifier = self.peek_char() != Some('-');
             self.advance();
-            true
+            adds_modifier
         } else {
-            false
+            true
+        };
+        let optional = if self.peek_char() == Some('?') {
+            self.advance();
+            Some(polarity)
+        } else {
+            None
         };
         self.skip_whitespace();
         // Expect `:`
@@ -465,16 +487,13 @@ impl<'a> TypeParser<'a> {
             self.pos = saved;
             return None;
         }
-        let modifier = match (has_readonly, has_optional) {
-            (true, true) => Some(MappedModifier::ReadonlyOptional),
-            (true, false) => Some(MappedModifier::Readonly),
-            (false, true) => Some(MappedModifier::Optional),
-            (false, false) => None,
-        };
         Some(TypeShape::Mapped {
+            key_name,
             key_type: Box::new(key_type),
+            name_type,
             value_type: Box::new(value_type),
-            modifier,
+            readonly,
+            optional,
         })
     }
 
@@ -798,6 +817,43 @@ impl<'a> TypeParser<'a> {
     fn parse_string_literal(&mut self) -> Option<TypeShape> {
         let value = self.read_quoted_string()?.to_string();
         Some(TypeShape::Literal(LiteralKind::String(value)))
+    }
+
+    fn parse_template_literal(&mut self, depth: usize) -> Option<TypeShape> {
+        if depth >= MAX_DEPTH {
+            return None;
+        }
+        self.expect_char('`')?;
+        let mut parts = Vec::new();
+        let mut literal = String::new();
+        loop {
+            let ch = self.peek_char()?;
+            if ch == '`' {
+                self.advance();
+                if parts.is_empty() {
+                    return Some(TypeShape::Literal(LiteralKind::String(literal)));
+                }
+                parts.push(TemplatePart::Literal(literal));
+                return Some(TypeShape::Template(parts));
+            }
+            if self.peek_str("${") {
+                self.pos += 2;
+                parts.push(TemplatePart::Literal(std::mem::take(&mut literal)));
+                self.skip_whitespace();
+                parts.push(TemplatePart::Placeholder(Box::new(
+                    self.parse_type(depth + 1)?,
+                )));
+                self.skip_whitespace();
+                self.expect_char('}')?;
+            } else {
+                literal.push(ch);
+                self.advance();
+                if ch == '\\' {
+                    literal.push(self.peek_char()?);
+                    self.advance();
+                }
+            }
+        }
     }
 
     fn parse_number_literal(&mut self) -> Option<TypeShape> {
@@ -1599,61 +1655,88 @@ mod tests {
         );
         if let TypeShape::Mapped {
             value_type,
-            modifier,
+            readonly,
+            optional,
             ..
         } = result
         {
             assert_eq!(*value_type, TypeShape::Primitive(PrimitiveKind::String));
-            assert_eq!(modifier, None);
+            assert_eq!((readonly, optional), (None, None));
         }
     }
 
     // Test: mapped type with readonly modifier
     #[test]
     fn test_mapped_readonly() {
-        use crate::types::shape::MappedModifier;
         let result = parse_type_string("{ readonly [K in keyof T]: string }");
         assert!(
             matches!(result, TypeShape::Mapped { .. }),
             "expected Mapped, got {:?}",
             result
         );
-        if let TypeShape::Mapped { modifier, .. } = result {
-            assert_eq!(modifier, Some(MappedModifier::Readonly));
+        if let TypeShape::Mapped {
+            readonly, optional, ..
+        } = result
+        {
+            assert_eq!((readonly, optional), (Some(true), None));
         }
     }
 
     // Test: mapped type with optional modifier
     #[test]
     fn test_mapped_optional() {
-        use crate::types::shape::MappedModifier;
         let result = parse_type_string("{ [K in keyof T]?: string }");
         assert!(
             matches!(result, TypeShape::Mapped { .. }),
             "expected Mapped, got {:?}",
             result
         );
-        if let TypeShape::Mapped { modifier, .. } = result {
-            assert_eq!(modifier, Some(MappedModifier::Optional));
+        if let TypeShape::Mapped {
+            readonly, optional, ..
+        } = result
+        {
+            assert_eq!((readonly, optional), (None, Some(true)));
         }
     }
 
     // Test: mapped type with readonly + optional modifier
     #[test]
     fn test_mapped_readonly_optional() {
-        use crate::types::shape::MappedModifier;
         let result = parse_type_string("{ readonly [K in keyof T]?: string }");
         assert!(
             matches!(result, TypeShape::Mapped { .. }),
             "expected Mapped, got {:?}",
             result
         );
-        if let TypeShape::Mapped { modifier, .. } = result {
-            assert_eq!(modifier, Some(MappedModifier::ReadonlyOptional));
+        if let TypeShape::Mapped {
+            readonly, optional, ..
+        } = result
+        {
+            assert_eq!((readonly, optional), (Some(true), Some(true)));
         }
     }
 
     // Test: indexed access T[K]
+    #[test]
+    fn mapped_keys_and_removed_modifiers_are_preserved() {
+        let shape = parse_type_string(
+            "{ -readonly [Key in keyof Model as `get${Key & string}`]-?: Model[Key] }",
+        );
+        let TypeShape::Mapped {
+            key_name,
+            name_type,
+            readonly,
+            optional,
+            ..
+        } = shape
+        else {
+            panic!("expected mapped type, got {shape:?}");
+        };
+        assert_eq!(key_name, "Key");
+        assert!(matches!(name_type.as_deref(), Some(TypeShape::Template(_))));
+        assert_eq!((readonly, optional), (Some(false), Some(false)));
+    }
+
     #[test]
     fn test_indexed_access_typeparam() {
         let result = parse_type_string("T[K]");
