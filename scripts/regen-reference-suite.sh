@@ -2,8 +2,8 @@
 # scripts/regen-reference-suite.sh
 #
 # Regenerates tests/fixtures/reference-suite/<pkg>/expected-findings.json
-# for one or all active reference packages by running the harness pipeline
-# in dump-baseline mode and writing the (exit_code, sorted_unique_rule_ids) result.
+# for one or all reference packages by running the harness pipeline
+# and writing candidate findings, public-surface counts, and incomplete evidence.
 #
 # Usage:
 #   ./scripts/regen-reference-suite.sh           # regenerate active packages
@@ -17,10 +17,7 @@
 
 set -euo pipefail
 
-# Active packages — zod and prisma are deferred until type parser allocation
-# is bounded. Pass them explicitly as $1 if you
-# want to regenerate them anyway (e.g., after the OOM fix lands).
-PKGS=("react" "tanstack-query" "trpc")
+PKGS=("react" "tanstack-query" "trpc" "zod" "prisma")
 if [[ $# -gt 1 ]]; then
     echo "Usage: $0 [react|tanstack-query|trpc|zod|prisma]" >&2
     exit 1
@@ -41,7 +38,7 @@ cargo build --locked --release --example reference_suite_dump
 for PKG in "${PKGS[@]}"; do
     OUT="tests/fixtures/reference-suite/$PKG/expected-findings.json"
     echo "[regen] Generating $OUT ..."
-    ./target/release/examples/reference_suite_dump "$PKG" > "$OUT.tmp"
+    cargo run --quiet --locked --release --example reference_suite_dump -- "$PKG" > "$OUT.tmp"
     # Validate JSON syntax before swap.
     if ! python3 -c "import json, sys; json.load(sys.stdin)" < "$OUT.tmp" 2>/dev/null; then
         echo "[regen] FAIL: generated $OUT.tmp is not valid JSON" >&2

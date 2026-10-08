@@ -36,3 +36,6 @@ are compared separately. An unused private map entry is not a public contract.
 Unresolvable entry points and source processing limits produce incomplete
 analysis warnings. See [Node package resolution](https://nodejs.org/api/packages.html)
 and [TypeScript extension substitution](https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution).
+
+A types/runtime format mismatch is reported only when newly introduced. An
+unchanged mismatch in both versions is not a breaking change between them.

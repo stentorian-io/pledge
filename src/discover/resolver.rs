@@ -600,6 +600,106 @@ pub fn collect_exports(
     subpath: &str,
     condition: Option<&str>,
 ) -> anyhow::Result<()> {
+    collect_exports_cached(
+        file,
+        pkg_root,
+        map,
+        visited,
+        warnings,
+        depth,
+        tsconfig,
+        imports_map,
+        subpath,
+        condition,
+        &mut ParseCache::default(),
+    )
+}
+
+#[derive(Default)]
+pub(crate) struct ParseCache {
+    resolved: HashMap<(PathBuf, String, Option<String>), ExportMap>,
+    files: HashMap<
+        PathBuf,
+        (
+            Vec<super::tree_query::RawExport>,
+            Vec<super::comment_scan::DirectiveRecord>,
+        ),
+    >,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn collect_exports_cached(
+    file: &Path,
+    pkg_root: &Path,
+    map: &mut ExportMap,
+    visited: &mut HashSet<PathBuf>,
+    warnings: &mut Vec<ResolveWarning>,
+    depth: usize,
+    tsconfig: Option<&TsconfigPaths>,
+    imports_map: Option<&ImportsMap>,
+    subpath: &str,
+    condition: Option<&str>,
+    cache: &mut ParseCache,
+) -> anyhow::Result<()> {
+    let canonical = file.canonicalize().unwrap_or_else(|_| file.to_path_buf());
+    let key = (
+        canonical.clone(),
+        subpath.to_string(),
+        condition.map(str::to_string),
+    );
+    if !visited.contains(&canonical) {
+        if let Some(resolved) = cache.resolved.get(&key) {
+            map.extend(
+                resolved
+                    .iter()
+                    .map(|(key, symbol)| (key.clone(), symbol.clone())),
+            );
+            map.directives.extend(resolved.directives.clone());
+            return Ok(());
+        }
+    }
+    let mut resolved = ExportMap::new();
+    let warning_count = warnings.len();
+    collect_exports_uncached(
+        file,
+        pkg_root,
+        &mut resolved,
+        visited,
+        warnings,
+        depth,
+        tsconfig,
+        imports_map,
+        subpath,
+        condition,
+        cache,
+    )?;
+    // Cyclic or incomplete results depend on the active path and cannot be reused.
+    if warning_count == warnings.len() {
+        cache.resolved.insert(key, resolved.clone());
+    }
+    map.extend(
+        resolved
+            .iter()
+            .map(|(key, symbol)| (key.clone(), symbol.clone())),
+    );
+    map.directives.extend(resolved.directives);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_exports_uncached(
+    file: &Path,
+    pkg_root: &Path,
+    map: &mut ExportMap,
+    visited: &mut HashSet<PathBuf>,
+    warnings: &mut Vec<ResolveWarning>,
+    depth: usize,
+    tsconfig: Option<&TsconfigPaths>,
+    imports_map: Option<&ImportsMap>,
+    subpath: &str,
+    condition: Option<&str>,
+    cache: &mut ParseCache,
+) -> anyhow::Result<()> {
     if depth > MAX_RESOLVE_DEPTH {
         warnings.push(ResolveWarning::new(format!(
             "maximum resolution depth ({MAX_RESOLVE_DEPTH}) reached at {}",
@@ -633,154 +733,166 @@ pub fn collect_exports(
         return Ok(());
     }
 
-    let lang = match language_for_file(file) {
-        Some(l) => l,
-        None => {
-            warnings.push(ResolveWarning::new(format!(
-                "unsupported file extension: {}",
-                file.display()
-            )));
-            return Ok(());
-        }
-    };
+    let (mut raw_exports, file_directives) = if let Some(parsed) = cache.files.get(&canonical) {
+        parsed.clone()
+    } else {
+        let lang = match language_for_file(file) {
+            Some(l) => l,
+            None => {
+                warnings.push(ResolveWarning::new(format!(
+                    "unsupported file extension: {}",
+                    file.display()
+                )));
+                return Ok(());
+            }
+        };
 
-    // ROB-01: Read the file bytes, then validate UTF-8 before passing to the parser.
-    // tree-sitter accepts raw bytes but subsequent processing expects valid UTF-8.
-    // Invalid UTF-8 (e.g., from binary blobs accidentally named .ts) is treated as
-    // a per-file warning rather than aborting analysis on remaining files.
-    let source = match std::fs::read(&canonical) {
-        Ok(bytes) => bytes,
-        Err(e) => {
+        // ROB-01: Read the file bytes, then validate UTF-8 before passing to the parser.
+        // tree-sitter accepts raw bytes but subsequent processing expects valid UTF-8.
+        // Invalid UTF-8 (e.g., from binary blobs accidentally named .ts) is treated as
+        // a per-file warning rather than aborting analysis on remaining files.
+        let source = match std::fs::read(&canonical) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                warnings.push(ResolveWarning::new(format!(
+                    "failed to read {}: {} \u{2014} skipping file",
+                    canonical.display(),
+                    e
+                )));
+                return Ok(());
+            }
+        };
+
+        if let Some(reason) = crate::source_filter::classify(&source) {
             warnings.push(ResolveWarning::new(format!(
-                "failed to read {}: {} \u{2014} skipping file",
+                "analysis skipped {}: {} source exceeds processing limits",
                 canonical.display(),
-                e
+                reason.label()
             )));
             return Ok(());
         }
-    };
 
-    if let Some(reason) = crate::source_filter::classify(&source) {
-        warnings.push(ResolveWarning::new(format!(
-            "analysis skipped {}: {} source exceeds processing limits",
-            canonical.display(),
-            reason.label()
-        )));
-        return Ok(());
-    }
-
-    // ROB-01: Validate UTF-8 explicitly. tree-sitter can technically handle arbitrary
-    // bytes, but a file that is not valid UTF-8 is almost certainly not a real JS/TS
-    // source file; treat it as a parse failure and emit a warning.
-    if std::str::from_utf8(&source).is_err() {
-        warnings.push(ResolveWarning::new(format!(
-            "parse failed for {}: invalid UTF-8 encoding \u{2014} skipping file",
-            canonical.display()
-        )));
-        return Ok(());
-    }
-
-    // ROB-01: parse_exports Err is treated as a per-file warning rather than a
-    // global error — this keeps analysis running on remaining files.
-    let mut raw_exports = match parse_exports(&source, lang) {
-        Ok(rx) => rx,
-        Err(e) => {
+        // ROB-01: Validate UTF-8 explicitly. tree-sitter can technically handle arbitrary
+        // bytes, but a file that is not valid UTF-8 is almost certainly not a real JS/TS
+        // source file; treat it as a parse failure and emit a warning.
+        if std::str::from_utf8(&source).is_err() {
             warnings.push(ResolveWarning::new(format!(
-                "parse failed for {}: {} \u{2014} skipping file",
-                canonical.display(),
-                e
+                "parse failed for {}: invalid UTF-8 encoding \u{2014} skipping file",
+                canonical.display()
             )));
             return Ok(());
         }
-    };
 
-    // META-06 (Phase 19): backfill release_tag on every RawExport uniformly.
-    // Single populate pass using the CommentIndex sidecar — avoids editing
-    // all 48 RawExport construction sites in tree_query.rs. Idempotent:
-    // existing populated tags from DECL_EXPORT_QUERY (tree_query.rs:1505)
-    // and AMBIENT_DECL_EXPORT_QUERY (tree_query.rs:1575) are preserved
-    // via the `is_none()` guard.
-    //
-    // The comment_scan pass re-parses the source to own a Tree; tree-sitter
-    // parsing is iterative and fast so the duplicate parse is acceptable
-    // for Phase 19 (future optimization: thread the Tree from parse_exports).
-    // INF-05 (Phase 19): collect directive records from the SAME CommentIndex
-    // we use for META-06. Captured here as a local Vec so we can insert into
-    // the ExportMap.directives sidecar once `rel_path` is computed below.
-    let mut file_directives: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
-    {
-        let language = super::tree_query::get_language(&lang);
-        let mut parser = tree_sitter::Parser::new();
-        if parser.set_language(&language).is_ok() {
-            if let Some(tree) = parser.parse(&source, None) {
-                let comment_index = CommentIndex::build(&tree, &source, lang);
-                for rx in raw_exports.iter_mut() {
-                    if rx.release_tag.is_none() {
-                        rx.release_tag = comment_index.release_tag_for_export_at(rx.line, rx.col);
-                    }
-                }
-                // INF-05: extract triple-slash directives (honors the TS
-                // compiler position rule: only directives at the top of the
-                // file, before any non-comment statement, are recognized).
-                file_directives = comment_index.extract_directives();
+        // ROB-01: parse_exports Err is treated as a per-file warning rather than a
+        // global error — this keeps analysis running on remaining files.
+        let mut raw_exports = match parse_exports(&source, lang) {
+            Ok(rx) => rx,
+            Err(e) => {
+                warnings.push(ResolveWarning::new(format!(
+                    "parse failed for {}: {} \u{2014} skipping file",
+                    canonical.display(),
+                    e
+                )));
+                return Ok(());
+            }
+        };
 
-                // TYPE-01 (Phase 20): backfill satisfies_type on eligible
-                // RawExports. Mirrors the META-06 populate pass directly above
-                // — same tree/source pair, single post-parse scan, no need to
-                // edit individual RawExport construction sites.
-                //
-                // Grammar gate: `satisfies_expression` is a TypeScript AST node
-                // only; `extract_satisfies_types` internally returns an empty
-                // map on JavaScript inputs so the loop is a no-op there.
-                let satisfies_map =
-                    super::tree_query::extract_satisfies_types(tree.root_node(), &source, lang);
-                if !satisfies_map.is_empty() {
+        // META-06 (Phase 19): backfill release_tag on every RawExport uniformly.
+        // Single populate pass using the CommentIndex sidecar — avoids editing
+        // all 48 RawExport construction sites in tree_query.rs. Idempotent:
+        // existing populated tags from DECL_EXPORT_QUERY (tree_query.rs:1505)
+        // and AMBIENT_DECL_EXPORT_QUERY (tree_query.rs:1575) are preserved
+        // via the `is_none()` guard.
+        //
+        // The comment_scan pass re-parses the source to own a Tree; tree-sitter
+        // parsing is iterative and fast so the duplicate parse is acceptable
+        // for Phase 19 (future optimization: thread the Tree from parse_exports).
+        // INF-05 (Phase 19): collect directive records from the SAME CommentIndex
+        // we use for META-06. Captured here as a local Vec so we can insert into
+        // the ExportMap.directives sidecar once `rel_path` is computed below.
+        let mut file_directives: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
+        {
+            let language = super::tree_query::get_language(&lang);
+            let mut parser = tree_sitter::Parser::new();
+            if parser.set_language(&language).is_ok() {
+                if let Some(tree) = parser.parse(&source, None) {
+                    let comment_index = CommentIndex::build(&tree, &source, lang);
                     for rx in raw_exports.iter_mut() {
-                        if rx.satisfies_type.is_some() {
-                            continue;
-                        }
-                        if let Some(satisfies_text) = satisfies_map.get(&rx.name) {
-                            let constraint =
-                                crate::types::parser::parse_type_string(satisfies_text);
-                            rx.satisfies_type = Some(crate::types::shape::TypeShape::Satisfies {
-                                constraint: Box::new(constraint),
-                                narrowed: None,
-                            });
+                        if rx.release_tag.is_none() {
+                            rx.release_tag =
+                                comment_index.release_tag_for_export_at(rx.line, rx.col);
                         }
                     }
-                }
+                    // INF-05: extract triple-slash directives (honors the TS
+                    // compiler position rule: only directives at the top of the
+                    // file, before any non-comment statement, are recognized).
+                    file_directives = comment_index.extract_directives();
 
-                // INF-04 (Phase 22): walk the tree once for `typeof import('./x').Y`
-                // / `import('./x').Y` member-expression shapes. Bucket each ref to
-                // its owning RawExport by the greatest export line <= ref line.
-                // Both single-line `export type X = typeof import('./y').Z;` and
-                // multi-line declarations are handled — the bucketing is by line
-                // ordering rather than line equality.
-                let all_typeof_refs = super::tree_query::extract_typeof_import_refs(
-                    tree.root_node(),
-                    source.as_slice(),
-                );
-                if !all_typeof_refs.is_empty() {
-                    let mut export_lines: Vec<(u32, usize)> = raw_exports
-                        .iter()
-                        .enumerate()
-                        .map(|(i, rx)| (rx.line, i))
-                        .collect();
-                    export_lines.sort_by_key(|(line, _)| *line);
-                    for r in &all_typeof_refs {
-                        let owner_idx = export_lines
+                    // TYPE-01 (Phase 20): backfill satisfies_type on eligible
+                    // RawExports. Mirrors the META-06 populate pass directly above
+                    // — same tree/source pair, single post-parse scan, no need to
+                    // edit individual RawExport construction sites.
+                    //
+                    // Grammar gate: `satisfies_expression` is a TypeScript AST node
+                    // only; `extract_satisfies_types` internally returns an empty
+                    // map on JavaScript inputs so the loop is a no-op there.
+                    let satisfies_map =
+                        super::tree_query::extract_satisfies_types(tree.root_node(), &source, lang);
+                    if !satisfies_map.is_empty() {
+                        for rx in raw_exports.iter_mut() {
+                            if rx.satisfies_type.is_some() {
+                                continue;
+                            }
+                            if let Some(satisfies_text) = satisfies_map.get(&rx.name) {
+                                let constraint =
+                                    crate::types::parser::parse_type_string(satisfies_text);
+                                rx.satisfies_type =
+                                    Some(crate::types::shape::TypeShape::Satisfies {
+                                        constraint: Box::new(constraint),
+                                        narrowed: None,
+                                    });
+                            }
+                        }
+                    }
+
+                    // INF-04 (Phase 22): walk the tree once for `typeof import('./x').Y`
+                    // / `import('./x').Y` member-expression shapes. Bucket each ref to
+                    // its owning RawExport by the greatest export line <= ref line.
+                    // Both single-line `export type X = typeof import('./y').Z;` and
+                    // multi-line declarations are handled — the bucketing is by line
+                    // ordering rather than line equality.
+                    let all_typeof_refs = super::tree_query::extract_typeof_import_refs(
+                        tree.root_node(),
+                        source.as_slice(),
+                    );
+                    if !all_typeof_refs.is_empty() {
+                        let mut export_lines: Vec<(u32, usize)> = raw_exports
                             .iter()
-                            .rev()
-                            .find(|(line, _)| *line <= r.property_line)
-                            .map(|(_, idx)| *idx);
-                        if let Some(idx) = owner_idx {
-                            raw_exports[idx].typeof_import_refs.push(r.clone());
+                            .enumerate()
+                            .map(|(i, rx)| (rx.line, i))
+                            .collect();
+                        export_lines.sort_by_key(|(line, _)| *line);
+                        for r in &all_typeof_refs {
+                            let owner_idx = export_lines
+                                .iter()
+                                .rev()
+                                .find(|(line, _)| *line <= r.property_line)
+                                .map(|(_, idx)| *idx);
+                            if let Some(idx) = owner_idx {
+                                raw_exports[idx].typeof_import_refs.push(r.clone());
+                            }
                         }
                     }
                 }
             }
         }
-    }
+
+        cache.files.insert(
+            canonical.clone(),
+            (raw_exports.clone(), file_directives.clone()),
+        );
+        (raw_exports, file_directives)
+    };
 
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
     // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
@@ -845,7 +957,7 @@ pub fn collect_exports(
             if let Some(target) = target {
                 if !reexport_cache.contains_key(&target) {
                     let mut resolved = ExportMap::new();
-                    collect_exports(
+                    collect_exports_cached(
                         &target,
                         pkg_root,
                         &mut resolved,
@@ -856,6 +968,7 @@ pub fn collect_exports(
                         imports_map,
                         subpath,
                         condition,
+                        cache,
                     )?;
                     reexport_cache.insert(target.clone(), resolved);
                 }
@@ -1094,7 +1207,7 @@ pub fn collect_exports(
                                 if let Some(target) =
                                     resolve_imports_subpath(im, specifier, pkg_root, condition)
                                 {
-                                    collect_exports(
+                                    collect_exports_cached(
                                         &target,
                                         pkg_root,
                                         map,
@@ -1105,6 +1218,7 @@ pub fn collect_exports(
                                         imports_map,
                                         subpath,
                                         condition,
+                                        cache,
                                     )?;
                                     continue;
                                 }
@@ -1132,7 +1246,7 @@ pub fn collect_exports(
                                     // Phase 18: propagate current subpath/condition into the
                                     // recursive resolution so all exports reached through this
                                     // re-export chain are keyed consistently.
-                                    collect_exports(
+                                    collect_exports_cached(
                                         &target,
                                         pkg_root,
                                         map,
@@ -1143,6 +1257,7 @@ pub fn collect_exports(
                                         imports_map,
                                         subpath,
                                         condition,
+                                        cache,
                                     )?;
                                 }
                                 None => {
@@ -1473,13 +1588,18 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
 
     let mut candidates = Vec::with_capacity(20);
 
-    // 1. Exact path as-is (handles already-extensioned imports).
-    candidates.push(joined.clone());
+    let typescript = matches!(
+        from_file
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("ts" | "tsx" | "mts" | "cts")
+    );
+    if !typescript {
+        candidates.push(joined.clone());
+    }
 
-    // GAP-13-06: TypeScript moduleResolution node16/bundler — .js → .ts probing.
-    // When specifier ends with .js/.mjs/.cjs, probe TypeScript equivalents.
-    // Must come BEFORE generic extension probing to get correct priority:
-    // foo.js (exact) → foo.ts → foo.tsx → foo.d.ts → (then generic extensions)
+    // TypeScript substitutes declarations/source before an existing JS target.
+    // Runtime JS traversal retains the exact runtime file as its first choice.
     if let Some(ext) = joined.extension() {
         let ext_str = ext.to_string_lossy();
         match ext_str.as_ref() {
@@ -1510,6 +1630,10 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
             }
             _ => {}
         }
+    }
+
+    if typescript {
+        candidates.push(joined.clone());
     }
 
     // 2. TypeScript source extensions (higher priority for TS projects).

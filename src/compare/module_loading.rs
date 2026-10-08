@@ -79,7 +79,12 @@ impl<'a> ModuleGraph<'a> {
         }
     }
 
-    fn analyze(&mut self, path: &Path, active: &mut HashSet<PathBuf>, depth: usize) -> AsyncResult {
+    fn analyze(
+        &mut self,
+        path: &Path,
+        visited: &mut HashSet<PathBuf>,
+        depth: usize,
+    ) -> AsyncResult {
         if depth >= 64 {
             return Err("module traversal depth limit reached".into());
         }
@@ -89,11 +94,10 @@ impl<'a> ModuleGraph<'a> {
         if let Some(result) = self.cache.get(&path) {
             return result.clone();
         }
-        if !active.insert(path.clone()) {
+        if !visited.insert(path.clone()) {
             return Ok(None);
         }
-        let result = self.analyze_file(&path, active, depth);
-        active.remove(&path);
+        let result = self.analyze_file(&path, visited, depth);
         // A cycle-dependent negative result must not hide await in another root.
         if !matches!(result, Ok(None)) {
             self.cache.insert(path, result.clone());
@@ -104,7 +108,7 @@ impl<'a> ModuleGraph<'a> {
     fn analyze_file(
         &mut self,
         path: &Path,
-        active: &mut HashSet<PathBuf>,
+        visited: &mut HashSet<PathBuf>,
         depth: usize,
     ) -> AsyncResult {
         if matches!(
@@ -155,7 +159,7 @@ impl<'a> ModuleGraph<'a> {
             };
             let target = target
                 .ok_or_else(|| format!("cannot resolve `{specifier}` from {}", path.display()))?;
-            if let Some(cause) = self.analyze(&target, active, depth + 1)? {
+            if let Some(cause) = self.analyze(&target, visited, depth + 1)? {
                 return Ok(Some(cause));
             }
         }

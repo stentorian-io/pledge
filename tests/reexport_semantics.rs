@@ -129,3 +129,55 @@ fn namespace_stars_expose_members_under_the_namespace() {
         .keys()
         .any(|k| k.name == "api" || k.name == "default"));
 }
+
+#[test]
+fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
+    let (send, receive) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        for (directory, leaf) in [(&old, "export const api = 1;"), (&new, "export {};")] {
+            std::fs::write(
+                directory.path().join("package.json"),
+                r#"{"type":"module","exports":{"./a":"./a0.mjs","./b":"./b0.mjs"}}"#,
+            )
+            .unwrap();
+            for depth in 0..18 {
+                let source = format!(
+                    "export * from './a{}.mjs'; export * from './b{}.mjs';",
+                    depth + 1,
+                    depth + 1
+                );
+                for branch in ["a", "b"] {
+                    std::fs::write(
+                        directory.path().join(format!("{branch}{depth}.mjs")),
+                        &source,
+                    )
+                    .unwrap();
+                }
+            }
+            for branch in ["a", "b"] {
+                std::fs::write(directory.path().join(format!("{branch}18.mjs")), leaf).unwrap();
+            }
+        }
+        // Both paths must reach the same binding, so the two leaves re-export it.
+        std::fs::write(old.path().join("b18.mjs"), "export * from './a18.mjs';").unwrap();
+        let (before, warnings) = interlint::discover::discover_exports(old.path()).unwrap();
+        assert!(warnings.is_empty());
+        let (after, warnings) = interlint::discover::discover_exports(new.path()).unwrap();
+        assert!(warnings.is_empty());
+        let findings = interlint::compare::compare_exports(&before, &after, new.path(), false);
+        assert_eq!(
+            findings
+                .iter()
+                .filter(|finding| finding.rule == "export-removed")
+                .count(),
+            2
+        );
+        assert!(interlint::compare::compare_exports_map_diff(old.path(), new.path()).is_empty());
+        send.send(()).unwrap();
+    });
+    receive
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("shared graph traversal exceeded its time bound");
+}

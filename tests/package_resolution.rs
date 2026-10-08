@@ -178,3 +178,35 @@ fn missing_public_entry_points_report_incomplete_analysis() {
         .iter()
         .any(|w| w.incomplete && w.message.contains("missing.js")));
 }
+
+#[test]
+fn declaration_barrels_prefer_declarations_over_existing_runtime_files() {
+    for (entry, runtime, declaration) in [
+        ("index.d.ts", "impl.js", "impl.d.ts"),
+        ("index.d.mts", "impl.mjs", "impl.d.mts"),
+        ("index.d.cts", "impl.cjs", "impl.d.cts"),
+    ] {
+        let directory = package(
+            json!({"exports":{"types":format!("./{entry}"),"default":format!("./{runtime}")}}),
+            &[
+                (entry, &format!("export {{ api }} from './{runtime}';")),
+                (runtime, "export const api = x => x;"),
+                (declaration, "export declare function api(x: string): void;"),
+            ],
+        );
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let types = exports
+            .iter()
+            .find(|(key, _)| key.name == "api" && key.condition.as_deref() == Some("types"))
+            .unwrap()
+            .1;
+        assert!(types.file.ends_with(declaration), "{types:?}");
+        let runtime_symbol = exports
+            .iter()
+            .find(|(key, _)| key.name == "api" && key.condition.as_deref() == Some("default"))
+            .unwrap()
+            .1;
+        assert!(runtime_symbol.file.ends_with(runtime), "{runtime_symbol:?}");
+    }
+}

@@ -131,3 +131,39 @@ fn generic_parameters_shadow_local_declarations() {
     );
     assert!(!has_breaking_changes(&findings), "{findings:?}");
 }
+
+#[test]
+fn package_type_expansion_is_bounded_and_deterministic() {
+    let mut source = String::from("type Leaf = { x: string; y: number };\n");
+    for depth in 0..6 {
+        let previous = if depth == 0 {
+            "Leaf".into()
+        } else {
+            format!("Level{}", depth - 1)
+        };
+        source.push_str(&format!(
+            "type Level{depth} = {{ a: {previous}; b: {previous}; c: {previous} }};\n"
+        ));
+    }
+    for index in 0..100 {
+        source.push_str(&format!(
+            "export declare function api{index:03}(): Level5;\n"
+        ));
+    }
+    let directory = package(&source, "");
+    let (_, first) = discover_exports(directory.path()).unwrap();
+    let (_, second) = discover_exports(directory.path()).unwrap();
+    assert!(first
+        .iter()
+        .any(|warning| warning.incomplete && warning.message.contains("budget exhausted")));
+    assert_eq!(
+        first
+            .iter()
+            .map(|warning| &warning.message)
+            .collect::<Vec<_>>(),
+        second
+            .iter()
+            .map(|warning| &warning.message)
+            .collect::<Vec<_>>()
+    );
+}

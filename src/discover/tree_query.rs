@@ -7,6 +7,31 @@ use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
 use crate::types::DeclarationKind;
 
+// Query compilation dominates repeated barrel traversal. Only fixed queries and
+// the three supported grammars enter this cache; source text is never retained.
+fn cached_query(
+    language: &tree_sitter::Language,
+    source: &'static str,
+) -> anyhow::Result<std::sync::Arc<Query>> {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    type Cache = HashMap<(tree_sitter::Language, &'static str), Result<Arc<Query>, String>>;
+    static QUERIES: OnceLock<Mutex<Cache>> = OnceLock::new();
+    let mut queries = QUERIES
+        .get_or_init(Mutex::default)
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    queries
+        .entry((language.clone(), source))
+        .or_insert_with(|| {
+            Query::new(language, source)
+                .map(Arc::new)
+                .map_err(|error| error.to_string())
+        })
+        .clone()
+        .map_err(anyhow::Error::msg)
+}
+
 // ---------------------------------------------------------------------------
 // Language selection
 // ---------------------------------------------------------------------------
@@ -1039,7 +1064,7 @@ fn collect_ambient_decls(
     ];
 
     for (query_str, kind, capture_type) in queries {
-        let Ok(q) = Query::new(&language, query_str) else {
+        let Ok(q) = cached_query(&language, query_str) else {
             continue;
         };
         let mut cursor = QueryCursor::new();
@@ -1151,7 +1176,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // identifier-based queries miss it.
 
     // 1. `export { default as Named } from './foo'` — re-export with alias
-    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
         while let Some(m) = matches_iter.next() {
@@ -1196,7 +1221,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     // 2. `export { default } from './foo'` — re-export default (no alias)
-    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_REEXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, DEFAULT_SPECIFIER_REEXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
         while let Some(m) = matches_iter.next() {
@@ -1237,7 +1262,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     // 3. `export { default as Named }` — local default aliased to Named (no from clause)
-    if let Ok(query) = Query::new(&language, DEFAULT_SPECIFIER_ALIAS_QUERY) {
+    if let Ok(query) = cached_query(&language, DEFAULT_SPECIFIER_ALIAS_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
         while let Some(m) = matches_iter.next() {
@@ -1276,7 +1301,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     let mut alias_local_positions: std::collections::HashSet<(u32, u32)> =
         std::collections::HashSet::new();
     {
-        let query = Query::new(&language, NAMED_EXPORT_ALIAS_QUERY)
+        let query = cached_query(&language, NAMED_EXPORT_ALIAS_QUERY)
             .context("failed to compile NAMED_EXPORT_ALIAS_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -1345,7 +1370,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // which the identifier-typed NAMED_EXPORT_ALIAS_QUERY cannot match.
     // Shares `alias_local_positions` with the existing ALIAS loop for dedup.
     if matches!(lang, SourceLanguage::JavaScript) {
-        if let Ok(query) = Query::new(&language, NAMED_EXPORT_ALIAS_DEFAULT_QUERY_JS) {
+        if let Ok(query) = cached_query(&language, NAMED_EXPORT_ALIAS_DEFAULT_QUERY_JS) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -1393,7 +1418,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Process non-aliased named exports: `export { foo }`.
     // Skip positions already handled by the alias query or re-export query.
     {
-        let query = Query::new(&language, NAMED_EXPORT_QUERY)
+        let query = cached_query(&language, NAMED_EXPORT_QUERY)
             .context("failed to compile NAMED_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -1455,7 +1480,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             std::collections::HashSet::new();
 
         // Process `export type { Foo as Bar }` (no from clause)
-        if let Ok(query) = Query::new(&language, TYPE_ONLY_ALIAS_EXPORT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, TYPE_ONLY_ALIAS_EXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1504,7 +1529,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // Process `export type { Foo as Bar } from './bar'` (with source)
-        if let Ok(query) = Query::new(&language, TYPE_ONLY_ALIAS_REEXPORT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, TYPE_ONLY_ALIAS_REEXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1553,7 +1578,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // Process `export type { Foo }` (no alias, no from clause)
-        if let Ok(query) = Query::new(&language, TYPE_ONLY_NAMED_EXPORT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, TYPE_ONLY_NAMED_EXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1606,7 +1631,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // Process `export type { Foo } from './bar'` (no alias, with source)
-        if let Ok(query) = Query::new(&language, TYPE_ONLY_NAMED_REEXPORT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, TYPE_ONLY_NAMED_REEXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1667,7 +1692,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // (e.g. `export default 42`, `export default obj`, `export default function() {}`).
     // Named default declarations (`export default class Foo {}`) are handled below.
     {
-        let query = Query::new(&language, DEFAULT_EXPORT_QUERY)
+        let query = cached_query(&language, DEFAULT_EXPORT_QUERY)
             .context("failed to compile DEFAULT_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -1703,7 +1728,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // which appear as `declaration:` children rather than `value:` children.
     // We only emit a "default" entry if one hasn't already been added above.
     {
-        let query = Query::new(&language, DEFAULT_DECL_EXPORT_QUERY)
+        let query = cached_query(&language, DEFAULT_DECL_EXPORT_QUERY)
             .context("failed to compile DEFAULT_DECL_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -1748,7 +1773,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         lang,
         SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
     ) {
-        if let Ok(query) = Query::new(&language, EXPORT_ASSIGNMENT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, EXPORT_ASSIGNMENT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1799,8 +1824,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx => DECL_EXPORT_QUERY_TS,
             SourceLanguage::JavaScript => DECL_EXPORT_QUERY_JS,
         };
-        let query =
-            Query::new(&language, decl_query_str).context("failed to compile DECL_EXPORT_QUERY")?;
+        let query = cached_query(&language, decl_query_str)
+            .context("failed to compile DECL_EXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -1874,7 +1899,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         lang,
         SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
     ) {
-        if let Ok(query) = Query::new(&language, AMBIENT_DECL_EXPORT_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, AMBIENT_DECL_EXPORT_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -1947,7 +1972,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Works for both JS and TS.
 
     // Shorthand patterns: `export const { foo, bar } = obj`
-    if let Ok(query) = Query::new(&language, DESTRUCTURED_EXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, DESTRUCTURED_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -1981,7 +2006,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     // Pair patterns: `export const { foo: renamed } = obj` — key is the public name
-    if let Ok(query) = Query::new(&language, DESTRUCTURED_PAIR_EXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, DESTRUCTURED_PAIR_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -2017,7 +2042,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // --- Star re-exports (plain `export * from '...'`) ------------------------
     // The JS/TS grammar represents `export * from '...'` with a bare `*` token
     // directly inside the export_statement (no namespace_export child node).
-    if let Ok(query) = Query::new(&language, STAR_EXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, STAR_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
         while let Some(m) = matches.next() {
@@ -2093,7 +2118,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // --- Namespace re-exports (`export * as name from '...'`) -----------------
     // NAMESPACE_EXPORT_QUERY captures: index 0 = @ns_name, index 1 = @source.
     {
-        if let Ok(query) = Query::new(&language, NAMESPACE_EXPORT_QUERY) {
+        if let Ok(query) = cached_query(&language, NAMESPACE_EXPORT_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches = cursor.matches(&query, root, source);
             while let Some(m) = matches.next() {
@@ -2156,7 +2181,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     let mut reexport_alias_local_positions: std::collections::HashSet<(u32, u32)> =
         std::collections::HashSet::new();
     {
-        let query = Query::new(&language, NAMED_REEXPORT_ALIAS_QUERY)
+        let query = cached_query(&language, NAMED_REEXPORT_ALIAS_QUERY)
             .context("failed to compile NAMED_REEXPORT_ALIAS_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -2205,7 +2230,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
     {
-        let query = Query::new(&language, NAMED_REEXPORT_QUERY)
+        let query = cached_query(&language, NAMED_REEXPORT_QUERY)
             .context("failed to compile NAMED_REEXPORT_QUERY")?;
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&query, root, source);
@@ -2260,7 +2285,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     // --- Array destructuring: `export const [a, b] = arr` (GAP-13-04) ----------
-    if let Ok(query) = Query::new(&language, ARRAY_DESTRUCTURED_EXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, ARRAY_DESTRUCTURED_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
         while let Some(m) = matches_iter.next() {
@@ -2294,7 +2319,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     // Rest patterns: `export const [a, ...rest] = arr`
-    if let Ok(query) = Query::new(&language, ARRAY_DESTRUCTURED_REST_EXPORT_QUERY) {
+    if let Ok(query) = cached_query(&language, ARRAY_DESTRUCTURED_REST_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
         while let Some(m) = matches_iter.next() {
@@ -2339,7 +2364,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             (variable_declarator
               name: [(object_pattern) (array_pattern)] @pattern)))
         "#;
-        if let Ok(query) = Query::new(&language, nested_query_str) {
+        if let Ok(query) = cached_query(&language, nested_query_str) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2453,7 +2478,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // since #eq? predicates are not automatically applied by cursor.matches().
     if matches!(lang, SourceLanguage::JavaScript) {
         // 1. module.exports = { foo, bar } — shorthand properties
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_SHORTHAND_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_SHORTHAND_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2502,7 +2527,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // 2. module.exports = { key: value } — explicit pair properties
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_PAIR_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_PAIR_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2549,7 +2574,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // 3. exports.foo = bar — property-by-property
-        if let Ok(query) = Query::new(&language, CJS_EXPORTS_PROPERTY_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_EXPORTS_PROPERTY_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2597,7 +2622,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // 4a. module.exports = class { ... } — CJS inline class export (GAP-15-01)
         // Run BEFORE query #4 (module.exports = Identifier) so the dedup check on "default"
         // skips the identifier-form query when an inline class was already emitted.
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_CLASS_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_CLASS_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2640,7 +2665,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // 4b. module.exports = function/arrow — CJS inline function export (GAP-15-01)
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_FUNCTION_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_FUNCTION_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2686,7 +2711,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // Only when @obj is "exports" (NOT "module"). The existing CJS_EXPORTS_PROPERTY_QUERY
         // already emits these as Variable; we emit a more specific Function decl_kind version.
         // Use a dedup check on name to avoid double-emitting with the existing query (#3).
-        if let Ok(query) = Query::new(&language, CJS_EXPORTS_PROPERTY_FUNCTION_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_EXPORTS_PROPERTY_FUNCTION_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2739,7 +2764,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // 4. module.exports = SomeIdentifier — default-like export
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_DEFAULT_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_DEFAULT_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2785,7 +2810,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // DOC-01 (Phase 25): module.exports = new Proxy(...) | Reflect.construct(...)
-        if let Ok(query) = Query::new(&language, CJS_MODULE_EXPORTS_PROXY_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_PROXY_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2871,7 +2896,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Some packages use a chained assignment pattern to alias exports and module.exports.
     // GAP-16-09.
     if matches!(lang, SourceLanguage::JavaScript) {
-        if let Ok(query) = Query::new(&language, CJS_EXPORTS_ALIASING_QUERY) {
+        if let Ok(query) = cached_query(&language, CJS_EXPORTS_ALIASING_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -2977,7 +3002,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
     ) {
         // declare module 'express' { ... }
-        if let Ok(query) = Query::new(&language, DECLARE_MODULE_AUGMENTATION_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, DECLARE_MODULE_AUGMENTATION_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3036,7 +3061,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // We match ambient_declaration nodes whose first named child is statement_block and
         // have no preceding module-name node — that distinguishes `declare global` from
         // `declare module 'foo' { }` (which has a module child with a string name).
-        if let Ok(query) = Query::new(&language, DECLARE_GLOBAL_AUGMENTATION_QUERY_TS) {
+        if let Ok(query) = cached_query(&language, DECLARE_GLOBAL_AUGMENTATION_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3101,7 +3126,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // GAP-16-05: supports 2+ levels of nesting.
     {
         let ns_query_str = "(export_statement (internal_module name: (identifier) @ns_name body: (statement_block) @ns_body))";
-        if let Ok(query) = Query::new(&language, ns_query_str) {
+        if let Ok(query) = cached_query(&language, ns_query_str) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3142,7 +3167,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // other queries so BUN-06a can resolve __defProp aliases.
         let mut cjs_aliases: std::collections::HashMap<String, (String, String)> =
             std::collections::HashMap::new();
-        if let Ok(query) = Query::new(&language, ESBUILD_DEFPROP_ALIAS_QUERY) {
+        if let Ok(query) = cached_query(&language, ESBUILD_DEFPROP_ALIAS_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3174,7 +3199,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // BUN-01: esbuild `0 && (module.exports = { ... })` tree-shake wrapper
-        if let Ok(query) = Query::new(&language, ESBUILD_TREE_SHAKE_WRAPPER_QUERY) {
+        if let Ok(query) = cached_query(&language, ESBUILD_TREE_SHAKE_WRAPPER_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3260,7 +3285,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // BUN-02: esbuild `__export(target, { foo: () => foo })` helper
-        if let Ok(query) = Query::new(&language, ESBUILD_EXPORT_HELPER_QUERY) {
+        if let Ok(query) = cached_query(&language, ESBUILD_EXPORT_HELPER_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3330,7 +3355,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // BUN-04: tsc `exports.foo = void 0;` placeholder
-        if let Ok(query) = Query::new(&language, TSC_VOID_EXPORTS_QUERY) {
+        if let Ok(query) = cached_query(&language, TSC_VOID_EXPORTS_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3400,7 +3425,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 function: (identifier) @req_fn
                 arguments: (arguments (string) @req_path)))
             "#;
-            if let Ok(rq) = Query::new(&language, require_query_str) {
+            if let Ok(rq) = cached_query(&language, require_query_str) {
                 let mut cur = QueryCursor::new();
                 let mut mit = cur.matches(&rq, root, source);
                 while let Some(rm) = mit.next() {
@@ -3430,7 +3455,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 }
             }
         }
-        if let Ok(query) = Query::new(&language, SWC_STAR_REEXPORT_SHIM_QUERY) {
+        if let Ok(query) = cached_query(&language, SWC_STAR_REEXPORT_SHIM_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3500,7 +3525,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // BUN-06a: Object.defineProperty / defineProperties / assign exports
-        if let Ok(query) = Query::new(&language, OBJECT_DEFINE_EXPORT_QUERY) {
+        if let Ok(query) = cached_query(&language, OBJECT_DEFINE_EXPORT_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3730,7 +3755,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // BUN-06b: `exports["foo"] = bar;` bracket-subscript assignment
-        if let Ok(query) = Query::new(&language, BRACKET_SUBSCRIPT_EXPORT_QUERY) {
+        if let Ok(query) = cached_query(&language, BRACKET_SUBSCRIPT_EXPORT_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3793,7 +3818,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // regression-tests this.
 
         // Query 1: bare `exports` LHS
-        if let Ok(query) = Query::new(&language, SYMBOL_SUBSCRIPT_ON_EXPORTS_QUERY) {
+        if let Ok(query) = cached_query(&language, SYMBOL_SUBSCRIPT_ON_EXPORTS_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -3859,7 +3884,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // exports_prop == "prototype" here. The exports_prop == "exports"
         // gate below rejects anything other than the real `module.exports`
         // binding.
-        if let Ok(query) = Query::new(&language, SYMBOL_SUBSCRIPT_ON_MODULE_EXPORTS_QUERY) {
+        if let Ok(query) = cached_query(&language, SYMBOL_SUBSCRIPT_ON_MODULE_EXPORTS_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -4057,7 +4082,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // Capture indices are stable by declaration order in the query string:
         //   0 = @umd_root_param, 1 = @umd_factory_param, 2 = @umd_global_arg,
         //   3 = @umd_factory_params, 4 = @umd_factory_body.
-        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY) {
+        if let Ok(query) = cached_query(&language, UMD_FACTORY_WRAPPER_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -4068,7 +4093,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
 
         // Form 2: `(func(args))` — capture index 4 = @umd_factory_body.
-        if let Ok(query) = Query::new(&language, UMD_FACTORY_WRAPPER_QUERY_FORM2) {
+        if let Ok(query) = cached_query(&language, UMD_FACTORY_WRAPPER_QUERY_FORM2) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -4092,7 +4117,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // gate, collecting every `<ident>.<member> = …` assignment as a
         // compound_member. The post-pass after attach_compound_members renames the
         // synthetic export's `name` from the binding to "default".
-        if let Ok(query) = Query::new(&language, LODASH_STYLE_DEFAULT_QUERY) {
+        if let Ok(query) = cached_query(&language, LODASH_STYLE_DEFAULT_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
@@ -4182,7 +4207,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // its `target` matches a binding identifier in `umd_default_bindings`,
         // which contains only identifiers we just synthesized as Default.
         if !umd_default_bindings.is_empty() {
-            if let Ok(query) = Query::new(&language, BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY) {
+            if let Ok(query) = cached_query(&language, BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY) {
                 let mut cursor = QueryCursor::new();
                 let mut matches_iter = cursor.matches(&query, root, source);
                 while let Some(m) = matches_iter.next() {
@@ -4486,7 +4511,7 @@ fn attach_compound_members(
     };
 
     // Form 1: `Target.Member = X;` top-level.
-    if let Ok(q) = Query::new(language, COMPOUND_ASSIGN_MEMBER_QUERY) {
+    if let Ok(q) = cached_query(language, COMPOUND_ASSIGN_MEMBER_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&q, root, source);
         while let Some(m) = matches.next() {
@@ -4509,7 +4534,7 @@ fn attach_compound_members(
 
     // Form 3: `Object.assign(Target, { Member: X, ... })`.
     // Guard with a runtime @obj == "Object" && @assign_prop == "assign" check.
-    if let Ok(q) = Query::new(language, COMPOUND_OBJECT_ASSIGN_QUERY) {
+    if let Ok(q) = cached_query(language, COMPOUND_OBJECT_ASSIGN_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&q, root, source);
         while let Some(m) = matches.next() {
@@ -6048,7 +6073,7 @@ pub fn extract_satisfies_types(
             (_) @satisfies_type))
     "#;
 
-    let query = match Query::new(&language, query_src) {
+    let query = match cached_query(&language, query_src) {
         Ok(q) => q,
         Err(_) => return out,
     };
@@ -6645,7 +6670,7 @@ fn collect_reexport_positions(
     let root = tree.root_node();
 
     // Collect positions from the plain re-export query (@name = index 0).
-    let query = Query::new(language, NAMED_REEXPORT_QUERY)
+    let query = cached_query(language, NAMED_REEXPORT_QUERY)
         .context("failed to compile NAMED_REEXPORT_QUERY for dedup")?;
     {
         let mut cursor = QueryCursor::new();
@@ -6664,7 +6689,7 @@ fn collect_reexport_positions(
     }
 
     // Also collect local-name positions from the alias re-export query (@local_name = index 0).
-    if let Ok(alias_query) = Query::new(language, NAMED_REEXPORT_ALIAS_QUERY) {
+    if let Ok(alias_query) = cached_query(language, NAMED_REEXPORT_ALIAS_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches = cursor.matches(&alias_query, root, source);
         while let Some(m) = matches.next() {
@@ -6706,6 +6731,23 @@ mod tests {
     use super::*;
     use crate::types::{ClassMemberKind, EnumValueKind, Visibility};
     use tree_sitter::Parser;
+
+    #[test]
+    fn compiled_queries_are_reused_within_each_grammar() {
+        let ts = get_language(&SourceLanguage::TypeScript);
+        let js = get_language(&SourceLanguage::JavaScript);
+        let first = cached_query(&ts, NAMED_EXPORT_QUERY).unwrap();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &cached_query(&ts, NAMED_EXPORT_QUERY).unwrap()
+        ));
+        assert!(!std::sync::Arc::ptr_eq(
+            &first,
+            &cached_query(&js, NAMED_EXPORT_QUERY).unwrap()
+        ));
+        assert!(cached_query(&js, "(nonexistent_node)").is_err());
+        assert!(cached_query(&js, "(nonexistent_node)").is_err());
+    }
 
     /// Parse a TypeScript source string and return the root node and source bytes.
     fn parse_ts(source: &str) -> (tree_sitter::Tree, Vec<u8>) {

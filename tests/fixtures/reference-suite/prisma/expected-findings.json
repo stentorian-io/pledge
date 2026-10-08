@@ -1,0 +1,909 @@
+{
+  "package": "@prisma/client",
+  "from_version": "7.7.0",
+  "to_version": "7.8.0",
+  "analysis_mode": "structural-only",
+  "exit_code": 3,
+  "breaking": false,
+  "old_surfaces": {
+    ". | import/browser | Value": 1,
+    ". | require/browser | Value": 1,
+    "./extension | types | Namespace": 1,
+    "./extension | types | Type": 6,
+    "./extension | types | Value": 7,
+    "./extension.d.ts | default | Namespace": 1,
+    "./extension.d.ts | default | Type": 6,
+    "./extension.d.ts | default | Value": 7,
+    "./extension.js | types | Namespace": 1,
+    "./extension.js | types | Type": 6,
+    "./extension.js | types | Value": 7,
+    "./index-browser | default | Value": 1,
+    "./index-browser | import | Value": 1,
+    "./index-browser | require | Value": 1,
+    "./index-browser.js | default | Value": 1,
+    "./runtime/client | default/types | Namespace": 1,
+    "./runtime/client | default/types | Type": 175,
+    "./runtime/client | default/types | Value": 55,
+    "./runtime/client | import/types | Namespace": 1,
+    "./runtime/client | import/types | Type": 175,
+    "./runtime/client | import/types | Value": 55,
+    "./runtime/client | types | Namespace": 1,
+    "./runtime/client | types | Type": 175,
+    "./runtime/client | types | Value": 55,
+    "./runtime/client.d.mts | default | Namespace": 1,
+    "./runtime/client.d.mts | default | Type": 175,
+    "./runtime/client.d.mts | default | Value": 55,
+    "./runtime/client.d.ts | default | Namespace": 1,
+    "./runtime/client.d.ts | default | Type": 175,
+    "./runtime/client.d.ts | default | Value": 55,
+    "./runtime/client.js | types | Namespace": 1,
+    "./runtime/client.js | types | Type": 175,
+    "./runtime/client.js | types | Value": 55,
+    "./runtime/client.mjs | types | Namespace": 1,
+    "./runtime/client.mjs | types | Type": 175,
+    "./runtime/client.mjs | types | Value": 55,
+    "./runtime/index-browser | default | Value": 12,
+    "./runtime/index-browser | default/types | Value": 13,
+    "./runtime/index-browser | import | Value": 12,
+    "./runtime/index-browser | import/types | Value": 13,
+    "./runtime/index-browser | require | Value": 12,
+    "./runtime/index-browser | types | Value": 13,
+    "./runtime/index-browser.d.mts | default | Value": 13,
+    "./runtime/index-browser.d.ts | default | Value": 13,
+    "./runtime/index-browser.js | default | Value": 12,
+    "./runtime/index-browser.js | types | Value": 13,
+    "./runtime/index-browser.mjs | default | Value": 12,
+    "./runtime/index-browser.mjs | types | Value": 13,
+    "./runtime/query_compiler_fast_bg.cockroachdb.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.cockroachdb.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.mysql.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.mysql.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.postgresql.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.postgresql.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlite.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlite.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlserver.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlserver.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.cockroachdb.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.cockroachdb.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.mysql.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.mysql.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.postgresql.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.postgresql.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlite.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlite.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlserver.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlserver.mjs | default | Value": 39,
+    "./runtime/wasm-compiler-edge | types | Namespace": 1,
+    "./runtime/wasm-compiler-edge | types | Type": 175,
+    "./runtime/wasm-compiler-edge | types | Value": 55,
+    "./runtime/wasm-compiler-edge.d.ts | default | Namespace": 1,
+    "./runtime/wasm-compiler-edge.d.ts | default | Type": 175,
+    "./runtime/wasm-compiler-edge.d.ts | default | Value": 55,
+    "./runtime/wasm-compiler-edge.js | types | Namespace": 1,
+    "./runtime/wasm-compiler-edge.js | types | Type": 175,
+    "./runtime/wasm-compiler-edge.js | types | Value": 55,
+    "./scripts/default-index.d.ts | default | Namespace": 1,
+    "./scripts/default-index.d.ts | default | Type": 6,
+    "./scripts/default-index.d.ts | default | Value": 7,
+    "./scripts/default-index.js | default | Value": 2,
+    "./scripts/default-index.js | types | Namespace": 1,
+    "./scripts/default-index.js | types | Type": 6,
+    "./scripts/default-index.js | types | Value": 7
+  },
+  "new_surfaces": {
+    ". | import/browser | Value": 1,
+    ". | require/browser | Value": 1,
+    "./extension | types | Namespace": 1,
+    "./extension | types | Type": 6,
+    "./extension | types | Value": 7,
+    "./extension.d.ts | default | Namespace": 1,
+    "./extension.d.ts | default | Type": 6,
+    "./extension.d.ts | default | Value": 7,
+    "./extension.js | types | Namespace": 1,
+    "./extension.js | types | Type": 6,
+    "./extension.js | types | Value": 7,
+    "./index-browser | default | Value": 1,
+    "./index-browser | import | Value": 1,
+    "./index-browser | require | Value": 1,
+    "./index-browser.js | default | Value": 1,
+    "./runtime/client | default/types | Namespace": 1,
+    "./runtime/client | default/types | Type": 175,
+    "./runtime/client | default/types | Value": 55,
+    "./runtime/client | import/types | Namespace": 1,
+    "./runtime/client | import/types | Type": 175,
+    "./runtime/client | import/types | Value": 55,
+    "./runtime/client | types | Namespace": 1,
+    "./runtime/client | types | Type": 175,
+    "./runtime/client | types | Value": 55,
+    "./runtime/client.d.mts | default | Namespace": 1,
+    "./runtime/client.d.mts | default | Type": 175,
+    "./runtime/client.d.mts | default | Value": 55,
+    "./runtime/client.d.ts | default | Namespace": 1,
+    "./runtime/client.d.ts | default | Type": 175,
+    "./runtime/client.d.ts | default | Value": 55,
+    "./runtime/client.js | types | Namespace": 1,
+    "./runtime/client.js | types | Type": 175,
+    "./runtime/client.js | types | Value": 55,
+    "./runtime/client.mjs | types | Namespace": 1,
+    "./runtime/client.mjs | types | Type": 175,
+    "./runtime/client.mjs | types | Value": 55,
+    "./runtime/index-browser | default | Value": 12,
+    "./runtime/index-browser | default/types | Value": 13,
+    "./runtime/index-browser | import | Value": 12,
+    "./runtime/index-browser | import/types | Value": 13,
+    "./runtime/index-browser | require | Value": 12,
+    "./runtime/index-browser | types | Value": 13,
+    "./runtime/index-browser.d.mts | default | Value": 13,
+    "./runtime/index-browser.d.ts | default | Value": 13,
+    "./runtime/index-browser.js | default | Value": 12,
+    "./runtime/index-browser.js | types | Value": 13,
+    "./runtime/index-browser.mjs | default | Value": 12,
+    "./runtime/index-browser.mjs | types | Value": 13,
+    "./runtime/query_compiler_fast_bg.cockroachdb.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.cockroachdb.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.mysql.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.mysql.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.postgresql.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.postgresql.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlite.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlite.mjs | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlserver.js | default | Value": 39,
+    "./runtime/query_compiler_fast_bg.sqlserver.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.cockroachdb.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.cockroachdb.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.mysql.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.mysql.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.postgresql.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.postgresql.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlite.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlite.mjs | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlserver.js | default | Value": 39,
+    "./runtime/query_compiler_small_bg.sqlserver.mjs | default | Value": 39,
+    "./runtime/wasm-compiler-edge | types | Namespace": 1,
+    "./runtime/wasm-compiler-edge | types | Type": 175,
+    "./runtime/wasm-compiler-edge | types | Value": 55,
+    "./runtime/wasm-compiler-edge.d.ts | default | Namespace": 1,
+    "./runtime/wasm-compiler-edge.d.ts | default | Type": 175,
+    "./runtime/wasm-compiler-edge.d.ts | default | Value": 55,
+    "./runtime/wasm-compiler-edge.js | types | Namespace": 1,
+    "./runtime/wasm-compiler-edge.js | types | Type": 175,
+    "./runtime/wasm-compiler-edge.js | types | Value": 55,
+    "./scripts/default-index.d.ts | default | Namespace": 1,
+    "./scripts/default-index.d.ts | default | Type": 6,
+    "./scripts/default-index.d.ts | default | Value": 7,
+    "./scripts/default-index.js | default | Value": 2,
+    "./scripts/default-index.js | types | Namespace": 1,
+    "./scripts/default-index.js | types | Type": 6,
+    "./scripts/default-index.js | types | Value": 7
+  },
+  "findings": [
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./default.js`: cannot resolve `.prisma/client/default` from <old>/default.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./edge.js`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./edge`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./generator-build/index.js`: oversized source skipped: <old>/generator-build/index.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./generator-build`: oversized source skipped: <old>/generator-build/index.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./index-browser.js`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./index-browser`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./index.js`: cannot resolve `.prisma/client/default` from <old>/index.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./index`: cannot resolve `.prisma/client/default` from <old>/index.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/client.js`: minified (long line) source skipped: <old>/runtime/client.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/client.mjs`: minified (long line) source skipped: <old>/runtime/client.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge.js`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge.mjs`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./sql.js`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./sql.mjs`: cannot resolve `../../.prisma/client/sql/index.mjs` from <old>/sql.mjs"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `./sql`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `.`: cannot resolve `.prisma/client/default` from <old>/default.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify synchronous loading of `.`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.mts",
+      "line": 205,
+      "col": 21,
+      "message": "type of `ClientBuiltInProp` could not be compared (unresolvable type)"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.mts",
+      "line": 634,
+      "col": 21,
+      "message": "type of `DynamicClientExtensionThisBuiltin` could not be compared (unresolvable type)"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.mts",
+      "line": 2029,
+      "col": 21,
+      "message": "type of `PrismaClientOptions` could not be compared (unresolvable type)"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.ts",
+      "line": 205,
+      "col": 21,
+      "message": "type of `ClientBuiltInProp` could not be compared (unresolvable type)"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.ts",
+      "line": 634,
+      "col": 21,
+      "message": "type of `DynamicClientExtensionThisBuiltin` could not be compared (unresolvable type)"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "runtime/client.d.ts",
+      "line": 2029,
+      "col": 21,
+      "message": "type of `PrismaClientOptions` could not be compared (unresolvable type)"
+    }
+  ],
+  "warnings": [
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/generator-build/index.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/client.js: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/client.mjs: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.mysql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.mysql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.mysql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.postgresql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.sqlite.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/wasm-compiler-edge.js: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "analysis skipped <new>/runtime/wasm-compiler-edge.mjs: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve star re-export '../../.prisma/client/sql/index.mjs' from <new>/sql.mjs"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/default' from <new>/default.d.ts"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/default' from <new>/index.d.ts"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/edge' from <new>/edge.d.ts"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/sql' from <new>/sql.d.ts"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Document`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `defineExtension`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `serializeJsonQuery`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "unsupported file extension: <new>/package.json"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/generator-build/index.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/client.js: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/client.mjs: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.js: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs: oversized source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/wasm-compiler-edge.js: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "analysis skipped <old>/runtime/wasm-compiler-edge.mjs: minified (long line) source exceeds processing limits"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve star re-export '../../.prisma/client/sql/index.mjs' from <old>/sql.mjs"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/default' from <old>/default.d.ts"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/default' from <old>/index.d.ts"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/edge' from <old>/edge.d.ts"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve star re-export '.prisma/client/sql' from <old>/sql.d.ts"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Document`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `defineExtension`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `serializeJsonQuery`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "unsupported file extension: <old>/package.json"
+    }
+  ],
+  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained."
+}

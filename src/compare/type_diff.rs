@@ -2,7 +2,7 @@
 //
 // Design decisions:
 // - D-08: recursive shape diff
-// - D-10: Opaque/unresolvable types assume breaking (changed from D-09 skip behavior)
+// - Unresolvable changed types produce incomplete analysis.
 // - D-11: normalization applied before comparison
 // - D-02: all findings use fine-grained rule IDs — no generic "type-changed" rule
 // - D-04: finding messages include both old and new type values
@@ -41,7 +41,7 @@ fn is_any_shape(s: &TypeShape) -> bool {
 /// `file`: file path for the finding location
 /// `line`, `col`: source position for the finding
 ///
-/// Per D-10: if either shape is Opaque, emits type-incompatible (assume breaking).
+/// Changed opaque shapes cannot establish compatibility and emit incomplete analysis.
 /// Per D-11: recursion depth capped at 20 levels.
 pub fn diff_types(
     old: &TypeShape,
@@ -53,17 +53,17 @@ pub fn diff_types(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    // D-10: Opaque on either side at the top level — assume breaking
+    // Changed opaque syntax is insufficient evidence for a breaking verdict.
     if matches!(old, TypeShape::Opaque(_)) || matches!(new, TypeShape::Opaque(_)) {
         if old != new {
             findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_TYPE_INCOMPATIBLE,
+                severity: Severity::Warning,
+                rule: "analysis-incomplete",
                 file: file.to_path_buf(),
                 line,
                 col,
                 message: format!(
-                    "type of `{symbol_name}` changed incompatibly (unresolvable type)"
+                    "type of `{symbol_name}` could not be compared (unresolvable type)"
                 ),
             });
         }
@@ -172,8 +172,8 @@ fn diff_recursive(
     // D-11: stop at max depth with a warning-level finding
     if depth >= MAX_DEPTH {
         findings.push(Finding {
-            severity: Severity::Patch,
-            rule: "type-comparison-truncated",
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
             file: file.to_path_buf(),
             line,
             col,
@@ -182,15 +182,15 @@ fn diff_recursive(
         return;
     }
 
-    // D-10: Opaque on either side — assume breaking
+    // Preserve uncertainty when either shape is opaque.
     if matches!(old, TypeShape::Opaque(_)) || matches!(new, TypeShape::Opaque(_)) {
         findings.push(Finding {
-            severity: Severity::Major,
-            rule: RULE_TYPE_INCOMPATIBLE,
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
             file: file.to_path_buf(),
             line,
             col,
-            message: format!("type of `{symbol_name}` changed incompatibly (unresolvable type)"),
+            message: format!("type of `{symbol_name}` could not be compared (unresolvable type)"),
         });
         return;
     }
@@ -214,12 +214,12 @@ fn diff_recursive(
         (TypeShape::Opaque(_), _) | (_, TypeShape::Opaque(_)) => {
             let display = make_display_name(symbol_name, field_path);
             findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_TYPE_INCOMPATIBLE,
+                severity: Severity::Warning,
+                rule: "analysis-incomplete",
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!("type of `{display}` changed incompatibly (unresolvable type)"),
+                message: format!("type of `{display}` could not be compared (unresolvable type)"),
             });
         }
 
@@ -1734,7 +1734,7 @@ mod tests {
     // Test 11: Opaque on either side — CRITICAL: D-10 behavior change
     // Phase 3: Opaque now produces type-incompatible Major (not empty findings)
     #[test]
-    fn test_opaque_produces_type_incompatible() {
+    fn changed_opaque_types_report_incomplete_analysis() {
         // Opaque on old side
         let findings = diff(
             TypeShape::Opaque("x".to_string()),
@@ -1743,8 +1743,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "Opaque old + Primitive new should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "Opaque old + Primitive new should produce incomplete analysis"
         );
 
         // Opaque on new side
@@ -1755,11 +1755,11 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "Primitive old + Opaque new should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "Primitive old + Opaque new should produce incomplete analysis"
         );
 
-        // Both Opaque but different — still incompatible
+        // Both Opaque but different — still incomplete
         let findings = diff(
             TypeShape::Opaque("x".to_string()),
             TypeShape::Opaque("y".to_string()),
@@ -1767,8 +1767,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "different Opaques should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "different Opaques should produce incomplete analysis"
         );
     }
 
@@ -1835,7 +1835,7 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-comparison-truncated"),
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
             "should have truncation finding at depth 20"
         );
     }
@@ -2273,7 +2273,7 @@ mod tests {
 
     // Test 24: Opaque produces type-incompatible Major (D-10 explicit test)
     #[test]
-    fn test_opaque_either_side_no_findings() {
+    fn opaque_type_changes_preserve_uncertainty() {
         // Note: test name kept for backward compat, but behavior is now opposite:
         // Phase 3 D-10: Opaque produces type-incompatible Major
 
@@ -2285,8 +2285,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "Opaque old + Primitive new should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "Opaque old + Primitive new should produce incomplete analysis"
         );
 
         // Opaque on new side
@@ -2297,8 +2297,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "Primitive old + Opaque new should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "Primitive old + Opaque new should produce incomplete analysis"
         );
 
         // Both Opaque but different values
@@ -2309,8 +2309,8 @@ mod tests {
         assert!(
             findings
                 .iter()
-                .any(|f| f.rule == "type-incompatible" && f.severity == Severity::Major),
-            "different Opaques should produce type-incompatible Major"
+                .any(|f| f.rule == "analysis-incomplete" && f.severity == Severity::Warning),
+            "different Opaques should produce incomplete analysis"
         );
     }
 

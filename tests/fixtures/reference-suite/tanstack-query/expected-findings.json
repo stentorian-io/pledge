@@ -1,10 +1,529 @@
 {
-  "_curation_notes": "Resolving re-export declarations exposes existing @deprecated tags on isCancelledError (src/retryer.ts) and isServer (src/utils.ts). Both are warning-only; this patch release has no breaking findings.",
-  "exit_code": 0,
+  "package": "@tanstack/query-core",
   "from_version": "5.100.4",
-  "package": "tanstack-query",
-  "rule_ids": [
-    "export-deprecated"
+  "to_version": "5.100.5",
+  "analysis_mode": "structural-only",
+  "exit_code": 3,
+  "breaking": false,
+  "old_surfaces": {
+    ". | @tanstack/custom-condition | Type": 107,
+    ". | @tanstack/custom-condition | Value": 35,
+    ". | import/default | Value": 35,
+    ". | import/types | Type": 107,
+    ". | import/types | Value": 35,
+    ". | require/default | Value": 32,
+    ". | require/types | Type": 107,
+    ". | require/types | Value": 35
+  },
+  "new_surfaces": {
+    ". | @tanstack/custom-condition | Type": 107,
+    ". | @tanstack/custom-condition | Value": 35,
+    ". | import/default | Value": 35,
+    ". | import/types | Type": 107,
+    ". | import/types | Value": 35,
+    ". | require/default | Value": 32,
+    ". | require/types | Type": 107,
+    ". | require/types | Value": 35
+  },
+  "findings": [
+    {
+      "severity": "Warning",
+      "rule": "export-deprecated",
+      "file": "src/retryer.ts",
+      "line": 72,
+      "col": 17,
+      "message": "export `isCancelledError` is marked @deprecated"
+    },
+    {
+      "severity": "Warning",
+      "rule": "export-deprecated",
+      "file": "src/utils.ts",
+      "line": 92,
+      "col": 14,
+      "message": "export `isServer` is marked @deprecated"
+    }
   ],
-  "to_version": "5.100.5"
+  "warnings": [
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion budget exhausted for this package"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultedInfiniteQueryObserverOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultedQueryObserverOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DehydrateOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `EnsureInfiniteQueryDataOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `EnsureQueryDataOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `FetchInfiniteQueryOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `FetchQueryOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `HydrateOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InfiniteQueryObserverOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InfiniteQueryObserver`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InvalidateQueryFilters`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutateFunction`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutateOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationCacheNotifyEvent`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationCache`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFilters`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFunctionContext`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFunction`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverBaseResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverErrorResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverIdleResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverLoadingResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverSuccessResult`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserver`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Mutation`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `PlaceholderDataFunction`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueriesObserver`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryBooleanOption`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryCacheNotifyEvent`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryCache`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryClientConfig`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryClient`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryFilters`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryObserverOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryObserver`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryOptions`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryPersister`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Query`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `RefetchQueryFilters`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `StaleTimeFunction`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `ThrowOnError`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `dehydrate`"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "unsupported file extension: <new>/package.json"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion budget exhausted for this package"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultedInfiniteQueryObserverOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DefaultedQueryObserverOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `DehydrateOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `EnsureInfiniteQueryDataOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `EnsureQueryDataOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `FetchInfiniteQueryOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `FetchQueryOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `HydrateOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InfiniteQueryObserverOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InfiniteQueryObserver`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `InvalidateQueryFilters`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutateFunction`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutateOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationCacheNotifyEvent`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationCache`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFilters`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFunctionContext`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationFunction`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverBaseResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverErrorResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverIdleResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverLoadingResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserverSuccessResult`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationObserver`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `MutationOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Mutation`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `PlaceholderDataFunction`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueriesObserver`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryBooleanOption`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryCacheNotifyEvent`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryCache`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryClientConfig`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryClient`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryFilters`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryObserverOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryObserver`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryOptions`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `QueryPersister`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `Query`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `RefetchQueryFilters`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `StaleTimeFunction`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `ThrowOnError`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "public type expansion limit reached for `dehydrate`"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "unsupported file extension: <old>/package.json"
+    }
+  ],
+  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit."
 }

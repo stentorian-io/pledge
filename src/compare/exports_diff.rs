@@ -643,7 +643,15 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
         if let Some(new_entry) = new_map.get(subpath) {
             diff_condition_nodes(subpath, &old_entry.node, &new_entry.node, &mut findings);
             check_format_migration(subpath, old_entry, new_entry, &mut findings);
-            check_types_runtime_mismatch(subpath, new_entry, &mut findings);
+            let mut previous = Vec::new();
+            let mut current = Vec::new();
+            check_types_runtime_mismatch(subpath, old_entry, &mut previous);
+            check_types_runtime_mismatch(subpath, new_entry, &mut current);
+            findings.extend(
+                current
+                    .into_iter()
+                    .filter(|finding| !previous.iter().any(|old| old.message == finding.message)),
+            );
         }
     }
 
@@ -807,7 +815,7 @@ mod tests {
         let new =
             make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
         let old =
-            make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
+            make_pkg(r#"{"exports": {".": {"types": "./index.d.mts", "import": "./index.mjs"}}}"#);
         let findings = diff_with_empty_dirs(&old, &new);
         let mismatch: Vec<_> = findings
             .iter()
@@ -818,6 +826,10 @@ mod tests {
             1,
             "expected 1 types-runtime-mismatch finding, got: {:?}",
             findings
+        );
+        assert!(
+            diff_with_empty_dirs(&new, &new).is_empty(),
+            "an unchanged package is not a breaking change"
         );
         assert_eq!(mismatch[0].severity, Severity::Major);
         assert!(mismatch[0].message.contains(".d.cts"));

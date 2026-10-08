@@ -41,11 +41,25 @@ pub(crate) fn resolve_public_types(
 ) -> Vec<String> {
     let mut graph = TypeGraph::default();
     let mut issues = Vec::new();
-    for symbol in exports.values_mut() {
+    let mut remaining_package_work = 200_000usize;
+    let mut keys: Vec<_> = exports.keys().cloned().collect();
+    keys.sort_by_key(|key| {
+        format!(
+            "{}|{:?}|{:?}|{}",
+            key.subpath, key.condition, key.space, key.name
+        )
+    });
+    for key in keys {
+        if remaining_package_work == 0 {
+            issues.push("public type expansion budget exhausted for this package".into());
+            break;
+        }
+        let symbol = exports.get_mut(&key).expect("key collected from this map");
         let file = root.join(&symbol.file);
         let file = file.canonicalize().unwrap_or(file);
         let name = symbol.local_name.as_deref().unwrap_or(&symbol.name);
-        graph.remaining = 4096;
+        let symbol_budget = remaining_package_work.min(4096);
+        graph.remaining = symbol_budget;
         graph.truncated = false;
         let source_shapes = graph.named(&file, name, &[], 0);
         let needs_source = symbol.overloads.is_empty()
@@ -76,6 +90,7 @@ pub(crate) fn resolve_public_types(
                 .map(|shape| graph.expand(shape.clone(), &file, &bindings, 0))
                 .collect();
         }
+        remaining_package_work -= symbol_budget - graph.remaining;
         if graph.truncated {
             issues.push(format!(
                 "public type expansion limit reached for `{}`",

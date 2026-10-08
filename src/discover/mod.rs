@@ -54,8 +54,9 @@ pub fn discover_exports(
         .map(resolver::ResolveWarning::new)
         .collect();
 
+    let mut parse_cache = resolver::ParseCache::default();
     for entry in entry_points {
-        resolver::collect_exports(
+        resolver::collect_exports_cached(
             &entry.path,
             pkg_root,
             &mut map,
@@ -66,6 +67,7 @@ pub fn discover_exports(
             imports_map.as_ref(),
             &entry.subpath,
             entry.condition.as_deref(),
+            &mut parse_cache,
         )?;
     }
 

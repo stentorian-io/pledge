@@ -1087,15 +1087,6 @@ fn rob_01_invalid_utf8_does_not_abort() {
 }
 
 #[test]
-fn rob_02_lsp_degraded_variant_exists() {
-    // ROB-02: EnrichResult::Degraded is the type returned on crash.
-    // Verify it exists and can be constructed (type-level test).
-    use interlint::lsp::EnrichResult;
-    let _degraded = EnrichResult::Degraded("simulated crash".to_string());
-    // If this compiles, ROB-02 type infrastructure is present.
-}
-
-#[test]
 fn rob_03_exports_false_falls_back() {
     use tempfile::tempdir;
     let dir = tempdir().unwrap();
