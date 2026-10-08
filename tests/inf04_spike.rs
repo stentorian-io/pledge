@@ -28,7 +28,7 @@ async fn inf04_spike_definition_resolves_property() {
     let pkg_root =
         PathBuf::from(manifest).join("tests/fixtures/phase-22/inf-04-typeof-import/clean/old");
 
-    let binary = interlint::lsp::managed::resolve_lsp_binary()
+    let binary = interlint::lsp::managed::resolve_lsp_binary(&pkg_root)
         .await
         .expect("LSP binary must be resolvable for spike");
     let session = interlint::lsp::client::start_session(&binary, &pkg_root)

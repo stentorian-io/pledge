@@ -1,210 +1,202 @@
-//! Managed typescript-language-server binary resolution.
-//!
-//! Check order: managed cache -> PATH -> download and cache.
-//! Per decisions D-21, D-22.
+//! Resolve a language server together with the JavaScript TypeScript compiler.
 
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use flate2::read::GzDecoder;
 use tar::Archive;
 
 use super::LspError;
 
-/// Pinned typescript-language-server version for managed download.
 pub const PINNED_VERSION: &str = "5.1.3";
+pub const TYPESCRIPT_VERSION: &str = "5.9.3";
 
-/// Resolved typescript-language-server binary specification.
 pub enum LspBinary {
-    /// Direct executable on PATH (e.g., user's global npm install)
     Direct(PathBuf),
-    /// Managed cache: run via `node <script_path> --stdio`
     Managed { node: PathBuf, script: PathBuf },
 }
 
-/// Resolve the path to a typescript-language-server binary.
-///
-/// Check order:
-/// 1. Managed cache (`<platform_cache>/interlint/typescript-language-server-{VERSION}.mjs`)
-/// 2. `typescript-language-server` on PATH
-/// 3. Download from npm registry and cache
-///
-/// Returns `LspError::Unavailable` with a prescriptive message if all options fail.
-pub async fn resolve_lsp_binary() -> Result<LspBinary, LspError> {
+impl LspBinary {
+    pub(crate) fn tsserver_path(&self, workspace: &Path) -> Option<PathBuf> {
+        if let Self::Managed { script, .. } = self {
+            // A managed installation is a tested pair, independent of workspace tooling.
+            return compiler_under(script.parent()?.parent()?);
+        }
+        workspace
+            .ancestors()
+            .find_map(compiler_under)
+            .or_else(|| {
+                let Self::Direct(binary) = self else {
+                    return None;
+                };
+                compiler_near_binary(binary)
+            })
+            .or_else(|| {
+                ["tsserver", "tsc"]
+                    .iter()
+                    .find_map(|name| compiler_near_binary(&find_in_path(name)?))
+            })
+    }
+}
+
+fn compiler_under(root: &Path) -> Option<PathBuf> {
+    let compiler = root.join("node_modules/typescript/lib/tsserver.js");
+    compiler.is_file().then_some(compiler)
+}
+
+fn compiler_near_binary(binary: &Path) -> Option<PathBuf> {
+    let resolved = binary.canonicalize().ok()?;
+    let sibling = resolved.parent()?.join("tsserver.js");
+    if sibling.is_file() {
+        return Some(sibling);
+    }
+    resolved.ancestors().find_map(compiler_under)
+}
+
+fn cache_complete(root: &Path) -> bool {
+    root.join("lib/cli.mjs").is_file()
+        && root.join("package.json").is_file()
+        && compiler_under(root).is_some()
+        && root
+            .join("node_modules/typescript/lib/typescript.js")
+            .is_file()
+        && root.join("node_modules/typescript/lib/lib.d.ts").is_file()
+        && root.join("node_modules/typescript/package.json").is_file()
+}
+
+/// Prefer a complete managed pair, then a usable PATH installation, then download.
+pub async fn resolve_lsp_binary(workspace: &Path) -> Result<LspBinary, LspError> {
     let cache_dir = dirs::cache_dir()
-        .ok_or_else(|| {
-            LspError::Unavailable("cannot determine platform cache directory".to_string())
-        })?
+        .ok_or_else(|| LspError::Unavailable("cannot determine platform cache directory".into()))?
         .join("interlint");
-
-    let cached_script = cache_dir.join(format!("typescript-language-server-{PINNED_VERSION}.mjs"));
-
-    // 1. Check managed cache first
-    if cached_script.exists() {
-        if let Some(node) = find_node_binary().await {
-            tracing::debug!(
-                "Using managed typescript-language-server from {}",
-                cached_script.display()
-            );
+    let root = cache_dir.join(format!(
+        "tls-{PINNED_VERSION}-typescript-{TYPESCRIPT_VERSION}"
+    ));
+    let node = find_working_binary("node").await;
+    if cache_complete(&root) {
+        if let Some(node) = node.clone() {
             return Ok(LspBinary::Managed {
                 node,
-                script: cached_script,
+                script: root.join("lib/cli.mjs"),
             });
         }
-        // Managed cache exists but node is not available — fall through to PATH check
-        tracing::warn!(
-            "Managed LSP cache found but `node` not on PATH; checking PATH for typescript-language-server"
-        );
     }
-
-    // 2. Check PATH for typescript-language-server
-    if let Some(direct) = find_direct_binary().await {
-        tracing::debug!(
-            "Using typescript-language-server from PATH: {}",
-            direct.display()
-        );
-        return Ok(LspBinary::Direct(direct));
+    if let Some(path) = find_working_binary("typescript-language-server").await {
+        let binary = LspBinary::Direct(path);
+        if binary.tsserver_path(workspace).is_some() {
+            return Ok(binary);
+        }
     }
-
-    // 3. Attempt managed download
-    tracing::info!(
-        "typescript-language-server not found; downloading version {PINNED_VERSION} to cache"
-    );
-
-    // Need node to run managed binary
-    let node = find_node_binary().await.ok_or_else(|| {
+    let node = node.ok_or_else(|| {
         LspError::Unavailable(
-            "typescript-language-server not found. Install with: npm install -g typescript-language-server".to_string()
+            "Node.js is required; install Node.js, typescript@5.9.3 and typescript-language-server"
+                .into(),
         )
     })?;
-
-    match download_and_cache(&cache_dir, &cached_script).await {
-        Ok(()) => {
-            tracing::info!(
-                "Downloaded typescript-language-server to {}",
-                cached_script.display()
-            );
-            Ok(LspBinary::Managed {
-                node,
-                script: cached_script,
-            })
-        }
-        Err(e) => {
-            tracing::warn!("Failed to download typescript-language-server: {e}");
-            Err(LspError::Unavailable(
-                "typescript-language-server not found. Install with: npm install -g typescript-language-server".to_string()
-            ))
-        }
-    }
+    download_and_cache(&cache_dir, &root).await.map_err(|error| LspError::Unavailable(format!(
+        "could not install the managed TypeScript toolchain: {error}; install typescript@5.9.3 and typescript-language-server"
+    )))?;
+    Ok(LspBinary::Managed {
+        node,
+        script: root.join("lib/cli.mjs"),
+    })
 }
 
-/// Check if `typescript-language-server` is directly on PATH.
-async fn find_direct_binary() -> Option<PathBuf> {
-    let output = tokio::process::Command::new("typescript-language-server")
+async fn find_working_binary(name: &str) -> Option<PathBuf> {
+    let path = find_in_path(name)?;
+    let mut command = tokio::process::Command::new(&path);
+    command
         .arg("--version")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .output()
+        .kill_on_drop(true);
+    let status = tokio::time::timeout(Duration::from_secs(5), command.status())
         .await
+        .ok()?
         .ok()?;
-
-    if output.status.success() {
-        // Find it via `which`-like approach
-        find_in_path("typescript-language-server")
-    } else {
-        None
-    }
+    status.success().then_some(path)
 }
 
-/// Check if `node` is on PATH and return its full path.
-async fn find_node_binary() -> Option<PathBuf> {
-    let output = tokio::process::Command::new("node")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
-
-    if output.status.success() {
-        find_in_path("node")
-    } else {
-        None
-    }
-}
-
-/// Find a binary in PATH by spawning `which` (Unix) or equivalent.
 fn find_in_path(name: &str) -> Option<PathBuf> {
-    // Use std::env::var("PATH") to scan for the binary
-    let path_env = std::env::var("PATH").ok()?;
-    for dir in std::env::split_paths(&path_env) {
+    for dir in std::env::split_paths(&std::env::var_os("PATH")?) {
         let candidate = dir.join(name);
-        if candidate.exists() {
+        if candidate.is_file() {
             return Some(candidate);
         }
-        // On Windows, also try with .cmd / .exe
         #[cfg(target_os = "windows")]
-        {
-            let with_cmd = dir.join(format!("{name}.cmd"));
-            if with_cmd.exists() {
-                return Some(with_cmd);
-            }
-            let with_exe = dir.join(format!("{name}.exe"));
-            if with_exe.exists() {
-                return Some(with_exe);
+        for extension in ["cmd", "exe"] {
+            let candidate = dir.join(format!("{name}.{extension}"));
+            if candidate.is_file() {
+                return Some(candidate);
             }
         }
     }
     None
 }
 
-/// Download typescript-language-server tarball and extract `package/lib/cli.mjs` to cache.
-async fn download_and_cache(
-    cache_dir: &std::path::Path,
-    cached_script: &std::path::Path,
-) -> anyhow::Result<()> {
-    let url = format!(
-        "https://registry.npmjs.org/typescript-language-server/-/typescript-language-server-{PINNED_VERSION}.tgz"
-    );
+async fn download_and_cache(cache_dir: &Path, destination: &Path) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(60))
+        .build()?;
+    let server = download_package(&client, "typescript-language-server", PINNED_VERSION).await?;
+    let compiler = download_package(&client, "typescript", TYPESCRIPT_VERSION).await?;
+    install_toolchain(cache_dir, destination, &server, &compiler)
+}
 
-    tracing::debug!("Downloading typescript-language-server from {url}");
-
-    let client = reqwest::Client::new();
-    let resp = client.get(&url).send().await.map_err(|e| {
-        anyhow::anyhow!("network error downloading typescript-language-server: {e}")
-    })?;
-
-    if !resp.status().is_success() {
-        anyhow::bail!(
-            "HTTP {} downloading typescript-language-server",
-            resp.status()
-        );
-    }
-
-    let bytes = resp
+async fn download_package(
+    client: &reqwest::Client,
+    name: &str,
+    version: &str,
+) -> anyhow::Result<Vec<u8>> {
+    let url = format!("https://registry.npmjs.org/{name}/-/{name}-{version}.tgz");
+    Ok(client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
         .bytes()
-        .await
-        .map_err(|e| anyhow::anyhow!("failed to read tarball bytes: {e}"))?;
+        .await?
+        .to_vec())
+}
 
-    // Extract package/lib/cli.mjs from the tarball
-    let script_bytes = extract_file_from_tgz(&bytes, "package/lib/cli.mjs")?;
-
-    // Write to cache directory
-    std::fs::create_dir_all(cache_dir).map_err(|e| {
-        anyhow::anyhow!("cannot create cache directory {}: {e}", cache_dir.display())
-    })?;
-
-    std::fs::write(cached_script, &script_bytes)
-        .map_err(|e| anyhow::anyhow!("cannot write cached script: {e}"))?;
-
-    // Make executable on Unix
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(cached_script, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| anyhow::anyhow!("cannot set executable permissions: {e}"))?;
+fn install_toolchain(
+    cache_dir: &Path,
+    destination: &Path,
+    server: &[u8],
+    compiler: &[u8],
+) -> anyhow::Result<()> {
+    std::fs::create_dir_all(cache_dir)?;
+    let staging = tempfile::tempdir_in(cache_dir)?;
+    let modules = staging.path().join("node_modules");
+    std::fs::create_dir(&modules)?;
+    Archive::new(GzDecoder::new(Cursor::new(compiler))).unpack(&modules)?;
+    std::fs::rename(modules.join("package"), modules.join("typescript"))?;
+    std::fs::create_dir(staging.path().join("lib"))?;
+    std::fs::write(
+        staging.path().join("package.json"),
+        extract_file_from_tgz(server, "package/package.json")?,
+    )?;
+    std::fs::write(
+        staging.path().join("lib/cli.mjs"),
+        extract_file_from_tgz(server, "package/lib/cli.mjs")?,
+    )?;
+    anyhow::ensure!(
+        cache_complete(staging.path()),
+        "downloaded toolchain is incomplete"
+    );
+    // Only completed installations become visible. Another process may win this race.
+    if cache_complete(destination) {
+        return Ok(());
     }
-
+    if destination.exists() {
+        std::fs::remove_dir_all(destination)?;
+    }
+    if let Err(error) = std::fs::rename(staging.path(), destination) {
+        if !cache_complete(destination) {
+            return Err(error.into());
+        }
+    }
     Ok(())
 }
 
@@ -233,9 +225,7 @@ fn extract_file_from_tgz(bytes: &[u8], target_path: &str) -> anyhow::Result<Vec<
     anyhow::bail!("file '{target_path}' not found in tarball")
 }
 
-/// Remove the managed typescript-language-server cache directory.
-///
-/// Used by the `--clear-cache` CLI flag (D-21).
+/// Remove the managed language-server and compiler cache.
 pub fn clear_cache() -> anyhow::Result<()> {
     let cache_dir = dirs::cache_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine platform cache directory"))?
@@ -254,8 +244,108 @@ pub fn clear_cache() -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    fn tarball(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        for (path, bytes) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive.append_data(&mut header, path, *bytes).unwrap();
+        }
+        archive.into_inner().unwrap().finish().unwrap()
+    }
+
     #[test]
-    fn test_pinned_version_constant() {
-        assert_eq!(PINNED_VERSION, "5.1.3");
+    fn cache_requires_a_complete_compiler_and_server_pair() {
+        let cache = tempfile::tempdir().unwrap();
+        let destination = cache.path().join("toolchain");
+        let server = tarball(&[
+            ("package/lib/cli.mjs", b"server"),
+            ("package/package.json", b"{}"),
+        ]);
+        let incomplete = tarball(&[("package/lib/tsserver.js", b"compiler")]);
+        assert!(install_toolchain(cache.path(), &destination, &server, &incomplete).is_err());
+        assert!(!destination.exists());
+        let compiler = tarball(&[
+            ("package/lib/tsserver.js", b"compiler"),
+            ("package/lib/typescript.js", b"implementation"),
+            ("package/lib/lib.d.ts", b"declarations"),
+            ("package/package.json", b"{}"),
+        ]);
+        install_toolchain(cache.path(), &destination, &server, &compiler).unwrap();
+        assert!(cache_complete(&destination));
+        install_toolchain(cache.path(), &destination, &server, &compiler).unwrap();
+        assert_eq!(
+            std::fs::read(destination.join("lib/cli.mjs")).unwrap(),
+            b"server"
+        );
+        assert!(extract_file_from_tgz(&compiler, "missing").is_err());
+        let binary = LspBinary::Managed {
+            node: "node".into(),
+            script: destination.join("lib/cli.mjs"),
+        };
+        assert_eq!(
+            binary.tsserver_path(cache.path()),
+            compiler_under(&destination)
+        );
+    }
+
+    #[test]
+    fn workspace_compiler_is_found_without_a_global_installation() {
+        let workspace = tempfile::tempdir().unwrap();
+        let lib = workspace.path().join("node_modules/typescript/lib");
+        std::fs::create_dir_all(&lib).unwrap();
+        std::fs::write(lib.join("tsserver.js"), "").unwrap();
+        let binary = LspBinary::Direct(workspace.path().join("absent-server"));
+        assert_eq!(
+            binary.tsserver_path(workspace.path()),
+            Some(lib.join("tsserver.js"))
+        );
+        assert_eq!(
+            compiler_near_binary(&lib.join("tsserver.js")),
+            Some(lib.join("tsserver.js").canonicalize().unwrap())
+        );
+    }
+
+    #[cfg(feature = "lsp-tests")]
+    #[tokio::test]
+    async fn downloaded_toolchain_enriches_without_workspace_typescript() {
+        let cache = tempfile::tempdir().unwrap();
+        let destination = cache.path().join("toolchain");
+        download_and_cache(cache.path(), &destination)
+            .await
+            .unwrap();
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::write(
+            workspace.path().join("package.json"),
+            r#"{"name":"managed-test","exports":"./index.ts"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace.path().join("index.ts"),
+            "export function api(input: string | number): string { return String(input); }",
+        )
+        .unwrap();
+        let root = workspace.path().canonicalize().unwrap();
+        let (mut exports, _) = crate::discover::discover_exports(&root).unwrap();
+        let binary = LspBinary::Managed {
+            node: find_working_binary("node").await.unwrap(),
+            script: destination.join("lib/cli.mjs"),
+        };
+        let result =
+            crate::lsp::enrich_with_binary(&mut exports, &root, &binary, Duration::from_secs(30))
+                .await
+                .unwrap();
+        assert!(
+            matches!(result, crate::lsp::EnrichResult::Enriched),
+            "{result:?}"
+        );
+        assert!(exports.values().all(|symbol| symbol
+            .type_signature
+            .as_ref()
+            .is_some_and(|signature| signature.contains("string | number"))));
+        assert!(!root.join("node_modules/typescript").exists());
     }
 }

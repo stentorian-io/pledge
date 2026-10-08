@@ -45,7 +45,7 @@ pub async fn enrich_exports(
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
     // Step 1: resolve the LSP binary (managed cache → PATH → download)
-    let binary = match managed::resolve_lsp_binary().await {
+    let binary = match managed::resolve_lsp_binary(pkg_root).await {
         Ok(b) => b,
         Err(LspError::Unavailable(msg)) => return Ok(EnrichResult::Degraded(msg)),
         Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),

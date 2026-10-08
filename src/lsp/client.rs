@@ -135,6 +135,9 @@ pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSes
     #[allow(deprecated)] // Required by typescript-language-server for workspace TS discovery.
     let initialize = server.initialize(InitializeParams {
         root_uri: Some(root_uri.clone()),
+        initialization_options: binary.tsserver_path(root_dir).map(|path| {
+            serde_json::json!({"tsserver": {"path": path}, "disableAutomaticTypingAcquisition": true})
+        }),
         workspace_folders: Some(vec![WorkspaceFolder {
             uri: root_uri,
             name: "root".into(),

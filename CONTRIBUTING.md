@@ -19,12 +19,16 @@ by the full local checks:
 ```sh
 rustup component add rustfmt clippy llvm-tools-preview
 cargo install cargo-llvm-cov --locked
-npm install -g typescript typescript-language-server
+npm install -g typescript@5.9.3 typescript-language-server@5.1.3
 make setup
 ```
 
 On other platforms, install the same tools with your preferred package manager.
 Keep `bun`, `cargo`, `node`, `npm`, and `typescript-language-server` on `PATH`.
+Use the JavaScript TypeScript compiler with `lib/tsserver.js`; a native `tsc`
+executable alone cannot serve LSP requests. The managed fallback downloads a
+complete, pinned language-server 5.1.3 and TypeScript 5.9.3 pair. LSP checks
+include a fresh managed installation and therefore require registry access.
 
 `make setup` sets this clone's `core.hooksPath` to `scripts/hooks`. It replaces an
 older hook path without overwriting files in `.git/hooks`. The tracked wrappers
