@@ -39,3 +39,10 @@ and [TypeScript extension substitution](https://www.typescriptlang.org/docs/hand
 
 A types/runtime format mismatch is reported only when newly introduced. An
 unchanged mismatch in both versions is not a breaking change between them.
+
+CommonJS entry points forward literal `require()` targets, including bound
+require aliases and object spreads. `process.env` equality/inequality branches
+retain separate conditions; compatible rewrites of the same predicate preserve
+identity. Installed dependencies and generated dot-prefixed package directories
+are resolved through `node_modules`. Missing generated output is incomplete
+evidence; Pledge does not execute package generators or lifecycle scripts.

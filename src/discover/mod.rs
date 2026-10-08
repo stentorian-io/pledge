@@ -1,5 +1,6 @@
 // Export discovery: tree-sitter parsing, entry point resolution
 pub mod comment_scan;
+mod commonjs;
 pub mod entry_points;
 pub mod resolver;
 pub mod tree_query;

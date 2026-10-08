@@ -5,8 +5,42 @@
   "analysis_mode": "structural-only",
   "exit_code": 3,
   "breaking": false,
-  "old_surfaces": {},
-  "new_surfaces": {},
+  "old_surfaces": {
+    ". | default/cjs:NODE_ENV!=production | Value": 44,
+    ". | default/cjs:NODE_ENV=production | Value": 42,
+    ". | react-server/cjs:NODE_ENV!=production | Value": 22,
+    ". | react-server/cjs:NODE_ENV=production | Value": 22,
+    "./compiler-runtime | default/cjs:NODE_ENV!=production | Value": 1,
+    "./compiler-runtime | default/cjs:NODE_ENV=production | Value": 1,
+    "./compiler-runtime | react-server/cjs:NODE_ENV!=production | Value": 1,
+    "./compiler-runtime | react-server/cjs:NODE_ENV=production | Value": 1,
+    "./jsx-dev-runtime | default/cjs:NODE_ENV!=production | Value": 2,
+    "./jsx-dev-runtime | default/cjs:NODE_ENV=production | Value": 2,
+    "./jsx-dev-runtime | react-server/cjs:NODE_ENV!=production | Value": 4,
+    "./jsx-dev-runtime | react-server/cjs:NODE_ENV=production | Value": 4,
+    "./jsx-runtime | default/cjs:NODE_ENV!=production | Value": 3,
+    "./jsx-runtime | default/cjs:NODE_ENV=production | Value": 3,
+    "./jsx-runtime | react-server/cjs:NODE_ENV!=production | Value": 4,
+    "./jsx-runtime | react-server/cjs:NODE_ENV=production | Value": 4
+  },
+  "new_surfaces": {
+    ". | default/cjs:NODE_ENV!=production | Value": 44,
+    ". | default/cjs:NODE_ENV=production | Value": 42,
+    ". | react-server/cjs:NODE_ENV!=production | Value": 22,
+    ". | react-server/cjs:NODE_ENV=production | Value": 22,
+    "./compiler-runtime | default/cjs:NODE_ENV!=production | Value": 1,
+    "./compiler-runtime | default/cjs:NODE_ENV=production | Value": 1,
+    "./compiler-runtime | react-server/cjs:NODE_ENV!=production | Value": 1,
+    "./compiler-runtime | react-server/cjs:NODE_ENV=production | Value": 1,
+    "./jsx-dev-runtime | default/cjs:NODE_ENV!=production | Value": 2,
+    "./jsx-dev-runtime | default/cjs:NODE_ENV=production | Value": 2,
+    "./jsx-dev-runtime | react-server/cjs:NODE_ENV!=production | Value": 4,
+    "./jsx-dev-runtime | react-server/cjs:NODE_ENV=production | Value": 4,
+    "./jsx-runtime | default/cjs:NODE_ENV!=production | Value": 3,
+    "./jsx-runtime | default/cjs:NODE_ENV=production | Value": 3,
+    "./jsx-runtime | react-server/cjs:NODE_ENV!=production | Value": 4,
+    "./jsx-runtime | react-server/cjs:NODE_ENV=production | Value": 4
+  },
   "findings": [],
   "warnings": [
     {
@@ -20,5 +54,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "No findings between the pinned patch releases. Conditional CommonJS wrappers currently yield no symbols; this is incomplete structural coverage, not a compatibility verdict. The package.json asset entry also produces an unsupported-extension warning."
+  "_curation_notes": "Both versions expose 160 symbols across public entry points and NODE_ENV branches. A real Node consumer regression verifies exact root export names in production and development. No export changes in this patch release. Structural-only mode and the package.json asset warning remain explicit."
 }

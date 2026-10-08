@@ -505,7 +505,7 @@ pub(crate) fn classify_specifier(spec: &str) -> SpecifierKind {
     if spec.starts_with('#') {
         return SpecifierKind::ImportsField;
     }
-    if spec.starts_with('.') || spec.starts_with('/') {
+    if spec.starts_with("./") || spec.starts_with("../") || spec.starts_with('/') {
         return SpecifierKind::Relative;
     }
     SpecifierKind::Bare
@@ -618,13 +618,14 @@ pub fn collect_exports(
 #[derive(Default)]
 pub(crate) struct ParseCache {
     resolved: HashMap<(PathBuf, String, Option<String>), ExportMap>,
-    files: HashMap<
-        PathBuf,
-        (
-            Vec<super::tree_query::RawExport>,
-            Vec<super::comment_scan::DirectiveRecord>,
-        ),
-    >,
+    files: HashMap<PathBuf, ParsedSource>,
+}
+
+#[derive(Clone)]
+struct ParsedSource {
+    exports: Vec<super::tree_query::RawExport>,
+    directives: Vec<super::comment_scan::DirectiveRecord>,
+    forwards: Vec<super::commonjs::Forward>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -733,7 +734,11 @@ fn collect_exports_uncached(
         return Ok(());
     }
 
-    let (mut raw_exports, file_directives) = if let Some(parsed) = cache.files.get(&canonical) {
+    let ParsedSource {
+        exports: mut raw_exports,
+        directives: file_directives,
+        forwards,
+    } = if let Some(parsed) = cache.files.get(&canonical) {
         parsed.clone()
     } else {
         let lang = match language_for_file(file) {
@@ -810,12 +815,14 @@ fn collect_exports_uncached(
         // INF-05 (Phase 19): collect directive records from the SAME CommentIndex
         // we use for META-06. Captured here as a local Vec so we can insert into
         // the ExportMap.directives sidecar once `rel_path` is computed below.
+        let mut forwards = Vec::new();
         let mut file_directives: Vec<crate::discover::comment_scan::DirectiveRecord> = Vec::new();
         {
             let language = super::tree_query::get_language(&lang);
             let mut parser = tree_sitter::Parser::new();
             if parser.set_language(&language).is_ok() {
                 if let Some(tree) = parser.parse(&source, None) {
+                    forwards = super::commonjs::forwards(tree.root_node(), &source);
                     let comment_index = CommentIndex::build(&tree, &source, lang);
                     for rx in raw_exports.iter_mut() {
                         if rx.release_tag.is_none() {
@@ -887,11 +894,13 @@ fn collect_exports_uncached(
             }
         }
 
-        cache.files.insert(
-            canonical.clone(),
-            (raw_exports.clone(), file_directives.clone()),
-        );
-        (raw_exports, file_directives)
+        let parsed = ParsedSource {
+            exports: raw_exports,
+            directives: file_directives,
+            forwards,
+        };
+        cache.files.insert(canonical.clone(), parsed.clone());
+        parsed
     };
 
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
@@ -909,6 +918,61 @@ fn collect_exports_uncached(
         map.directives
             .insert(normalize_chunk_path(&rel_path), file_directives);
     }
+
+    for forward in &forwards {
+        if forward.uncertain {
+            warnings.push(ResolveWarning::new(format!(
+                "unsupported CommonJS branch predicate at {}:{}",
+                canonical.display(),
+                forward.line
+            )));
+        }
+        let context = match (&forward.condition, condition) {
+            (Some(branch), Some(parent)) => Some(format!("{parent}/cjs:{branch}")),
+            (Some(branch), None) => Some(format!("cjs:{branch}")),
+            (None, parent) => parent.map(str::to_string),
+        };
+        let target = if classify_specifier(&forward.specifier) == SpecifierKind::Bare {
+            resolve_package_path(&canonical, &forward.specifier, Some("require"))
+        } else {
+            resolve_module_path(&canonical, &forward.specifier)
+                .into_iter()
+                .find(|path| path.is_file())
+        };
+        if let Some(target) = target {
+            let mut resolved = ExportMap::new();
+            collect_exports_cached(
+                &target,
+                pkg_root,
+                &mut resolved,
+                visited,
+                warnings,
+                depth + 1,
+                tsconfig,
+                imports_map,
+                subpath,
+                context.as_deref(),
+                cache,
+            )?;
+            for (key, mut symbol) in resolved.drain() {
+                if forward.shadowed.contains(&key.name) {
+                    continue;
+                }
+                symbol.is_reexport = true;
+                map.insert(key, symbol);
+            }
+        } else {
+            warnings.push(ResolveWarning::new(format!(
+                "cannot resolve CommonJS forwarding target `{}` from {}",
+                forward.specifier,
+                canonical.display()
+            )));
+        }
+    }
+    raw_exports.retain(|export| {
+        !(export.kind == RawExportKind::Default
+            && forwards.iter().any(|forward| forward.line == export.line))
+    });
 
     // META-05: Accumulate named re-export failures keyed by specifier so we can
     // aggregate them into a single "barrel" warning when ≥3 from the same barrel
@@ -949,7 +1013,10 @@ fn collect_exports_uncached(
                     if let Some(tc) = tsconfig {
                         paths.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
                     }
-                    paths.into_iter().find(|p| p.is_file())
+                    paths
+                        .into_iter()
+                        .find(|p| p.is_file())
+                        .or_else(|| resolve_package_path(&canonical, specifier, condition))
                 } else {
                     None
                 }
@@ -1561,6 +1628,105 @@ fn collect_exports_uncached(
     Ok(())
 }
 
+/// Resolve an installed dependency, including generated dot-prefixed packages.
+pub(crate) fn resolve_package_path(
+    from_file: &Path,
+    specifier: &str,
+    condition: Option<&str>,
+) -> Option<PathBuf> {
+    if classify_specifier(specifier) != SpecifierKind::Bare {
+        return None;
+    }
+    let parts: Vec<_> = specifier.split('/').collect();
+    let package_len = if specifier.starts_with('@') { 2 } else { 1 };
+    if parts.len() < package_len {
+        return None;
+    }
+    let name = parts[..package_len].join("/");
+    let subpath = if parts.len() == package_len {
+        ".".into()
+    } else {
+        format!("./{}", parts[package_len..].join("/"))
+    };
+    let typescript = matches!(
+        from_file
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("ts" | "tsx" | "mts" | "cts")
+    );
+    let mut active: HashSet<_> = condition.unwrap_or("").split('/').collect();
+    active.insert("node");
+    if typescript {
+        active.insert("types");
+    }
+    if !active.contains("import") && !active.contains("require") {
+        active.insert(
+            if from_file
+                .extension()
+                .is_some_and(|extension| extension == "cjs" || extension == "cts")
+            {
+                "require"
+            } else {
+                "import"
+            },
+        );
+    }
+    for ancestor in from_file.ancestors().skip(1) {
+        let root = ancestor.join("node_modules").join(&name);
+        if !root.is_dir() {
+            continue;
+        }
+        let manifest = std::fs::read(root.join("package.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        if let Some(manifest) = manifest.as_ref() {
+            if manifest.get("exports").is_some() {
+                let entries = super::entry_points::resolve_entry_points(&root).ok()?;
+                return entries
+                    .into_iter()
+                    .filter(|entry| entry.subpath == subpath)
+                    .find(|entry| {
+                        entry
+                            .condition
+                            .as_deref()
+                            .unwrap_or("default")
+                            .split('/')
+                            .all(|flag| flag == "default" || active.contains(flag))
+                    })
+                    .map(|entry| entry.path);
+            }
+        }
+        let target = if subpath == "." {
+            manifest
+                .as_ref()
+                .and_then(|manifest| {
+                    if typescript {
+                        manifest
+                            .get("types")
+                            .or_else(|| manifest.get("typings"))
+                            .or_else(|| manifest.get("main"))
+                    } else {
+                        manifest.get("main")
+                    }
+                })
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("./index")
+                .to_string()
+        } else {
+            subpath.clone()
+        };
+        let probe = root.join(if typescript {
+            "__resolution__.ts"
+        } else {
+            "__resolution__.cjs"
+        });
+        return resolve_module_path(&probe, &target)
+            .into_iter()
+            .find(|path| path.is_file());
+    }
+    None
+}
+
 /// Append an extension to a path without replacing existing extensions.
 ///
 /// Unlike `PathBuf::with_extension()`, this preserves compound file stems.
@@ -1634,6 +1800,12 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
 
     if typescript {
         candidates.push(joined.clone());
+    }
+
+    if !typescript && joined.extension().is_none() {
+        for extension in ["js", "json", "node", "cjs", "mjs"] {
+            candidates.push(append_extension(&joined, extension));
+        }
     }
 
     // 2. TypeScript source extensions (higher priority for TS projects).

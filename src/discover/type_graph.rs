@@ -148,6 +148,11 @@ impl TypeGraph {
 
     fn target(&self, file: &Path, specifier: &str) -> Option<PathBuf> {
         let mut paths = resolver::resolve_module_path(file, specifier);
+        paths.extend(resolver::resolve_package_path(
+            file,
+            specifier,
+            Some("types"),
+        ));
         if !specifier.starts_with('.') && !specifier.starts_with('/') && !specifier.starts_with('#')
         {
             let parts: Vec<_> = specifier.split('/').collect();

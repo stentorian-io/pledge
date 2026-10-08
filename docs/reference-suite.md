@@ -10,7 +10,7 @@ finding is observable even when another finding has the same rule.
 
 | Package | From | To | Exercises |
 | --- | --- | --- | --- |
-| react | 19.2.4 | 19.2.5 | Conditional CommonJS wrappers and discovery limitations |
+| react | 19.2.4 | 19.2.5 | Conditional CommonJS forwarding |
 | @tanstack/query-core | 5.100.4 | 5.100.5 | Class surfaces, imports mappings, and deprecation |
 | @trpc/server | 11.15.2 | 11.16.0 | Generated types and conditional exports |
 | zod | 4.3.5 | 4.3.6 | Large barrel graphs, generics, and namespaces |
@@ -27,9 +27,10 @@ References deliberately omit LSP for reproducibility. Their analysis mode is
 The separate `breaking` field records whether any Major findings were produced.
 A snapshot with no findings does not establish compatibility.
 
-The React fixture currently yields no discovered symbols from its conditional
-CommonJS wrappers. Generated type expansion and minified/oversized sources also
-produce explicit incomplete evidence in these packages. Snapshots preserve
+React discovery includes both NODE_ENV branches of its CommonJS wrappers; the
+consumer suite checks its root export names against Node in both environments.
+Generated type expansion and minified/oversized sources still produce explicit
+incomplete evidence in these packages. Snapshots preserve
 those gaps; they are regression checks, not ecosystem-completeness claims.
 
 The opt-in `consumer_compatibility` suite independently compiles TypeScript and

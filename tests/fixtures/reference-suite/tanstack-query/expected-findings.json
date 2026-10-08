@@ -11,7 +11,7 @@
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
     ". | import/types | Value": 35,
-    ". | require/default | Value": 32,
+    ". | require/default | Value": 35,
     ". | require/types | Type": 107,
     ". | require/types | Value": 35
   },
@@ -21,7 +21,7 @@
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
     ". | import/types | Value": 35,
-    ". | require/default | Value": 32,
+    ". | require/default | Value": 35,
     ". | require/types | Type": 107,
     ". | require/types | Value": 35
   },
@@ -525,5 +525,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit."
+  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged."
 }

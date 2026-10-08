@@ -6,21 +6,19 @@
   "exit_code": 3,
   "breaking": false,
   "old_surfaces": {
-    ". | import/browser | Value": 1,
-    ". | require/browser | Value": 1,
+    "./extension | default | Value": 2,
+    "./extension | import | Value": 2,
+    "./extension | require | Value": 2,
     "./extension | types | Namespace": 1,
     "./extension | types | Type": 6,
     "./extension | types | Value": 7,
     "./extension.d.ts | default | Namespace": 1,
     "./extension.d.ts | default | Type": 6,
     "./extension.d.ts | default | Value": 7,
+    "./extension.js | default | Value": 2,
     "./extension.js | types | Namespace": 1,
     "./extension.js | types | Type": 6,
     "./extension.js | types | Value": 7,
-    "./index-browser | default | Value": 1,
-    "./index-browser | import | Value": 1,
-    "./index-browser | require | Value": 1,
-    "./index-browser.js | default | Value": 1,
     "./runtime/client | default/types | Namespace": 1,
     "./runtime/client | default/types | Type": 175,
     "./runtime/client | default/types | Value": 55,
@@ -92,21 +90,19 @@
     "./scripts/default-index.js | types | Value": 7
   },
   "new_surfaces": {
-    ". | import/browser | Value": 1,
-    ". | require/browser | Value": 1,
+    "./extension | default | Value": 2,
+    "./extension | import | Value": 2,
+    "./extension | require | Value": 2,
     "./extension | types | Namespace": 1,
     "./extension | types | Type": 6,
     "./extension | types | Value": 7,
     "./extension.d.ts | default | Namespace": 1,
     "./extension.d.ts | default | Type": 6,
     "./extension.d.ts | default | Value": 7,
+    "./extension.js | default | Value": 2,
     "./extension.js | types | Namespace": 1,
     "./extension.js | types | Type": 6,
     "./extension.js | types | Value": 7,
-    "./index-browser | default | Value": 1,
-    "./index-browser | import | Value": 1,
-    "./index-browser | require | Value": 1,
-    "./index-browser.js | default | Value": 1,
     "./runtime/client | default/types | Namespace": 1,
     "./runtime/client | default/types | Type": 175,
     "./runtime/client | default/types | Value": 55,
@@ -692,6 +688,31 @@
     {
       "version": "new",
       "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <new>/default.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <new>/index.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/edge` from <new>/edge.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/index-browser` from <new>/index-browser.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/sql` from <new>/sql.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
       "message": "could not resolve star re-export '../../.prisma/client/sql/index.mjs' from <new>/sql.mjs"
     },
     {
@@ -862,6 +883,31 @@
     {
       "version": "old",
       "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <old>/default.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <old>/index.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/edge` from <old>/edge.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/index-browser` from <old>/index-browser.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "cannot resolve CommonJS forwarding target `.prisma/client/sql` from <old>/sql.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
       "message": "could not resolve star re-export '../../.prisma/client/sql/index.mjs' from <old>/sql.mjs"
     },
     {
@@ -905,5 +951,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained."
+  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained. CommonJS forwarding now explicitly identifies each missing generated .prisma/client target. Installed generated targets are covered by a separate regression."
 }
