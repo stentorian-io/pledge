@@ -31,6 +31,12 @@ Interlint emits findings tagged with stable rule-IDs. Severity maps to CLI exit 
 
 Exit code 2 is reserved for tool-internal errors (e.g., I/O failure, registry unavailable). It is NOT used for any finding severity.
 
+Incomplete analysis takes precedence over breaking findings and exits 3. This
+includes failed or empty type requests, exhausted analysis budgets, unreadable
+public sources, and files skipped by source processing limits. Findings from
+completed analysis are still reported; an incomplete result does not establish
+compatibility.
+
 ### Phase 19 rule-IDs (comment-scan pass)
 
 | Rule ID | Severity | Trigger |

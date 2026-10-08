@@ -40,9 +40,9 @@ pub struct LspSession {
 impl LspSession {
     /// Gracefully shut down the LSP server.
     pub async fn shutdown(mut self) -> Result<(), LspError> {
-        self.server
-            .shutdown(())
+        tokio::time::timeout(std::time::Duration::from_secs(5), self.server.shutdown(()))
             .await
+            .map_err(|_| LspError::Timeout("shutdown".into()))?
             .map_err(|e| LspError::RequestFailed(e.to_string()))?;
         // Send exit notification (best-effort)
         let _ = self.server.exit(());
@@ -132,22 +132,25 @@ pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSes
     let root_uri = async_lsp::lsp_types::Url::from_file_path(root_dir)
         .map_err(|_| LspError::InitFailed(format!("invalid root path: {}", root_dir.display())))?;
 
-    server
-        .initialize(InitializeParams {
-            workspace_folders: Some(vec![WorkspaceFolder {
-                uri: root_uri,
-                name: "root".into(),
-            }]),
-            capabilities: ClientCapabilities {
-                window: Some(WindowClientCapabilities {
-                    work_done_progress: Some(true),
-                    ..WindowClientCapabilities::default()
-                }),
-                ..ClientCapabilities::default()
-            },
-            ..InitializeParams::default()
-        })
+    #[allow(deprecated)] // Required by typescript-language-server for workspace TS discovery.
+    let initialize = server.initialize(InitializeParams {
+        root_uri: Some(root_uri.clone()),
+        workspace_folders: Some(vec![WorkspaceFolder {
+            uri: root_uri,
+            name: "root".into(),
+        }]),
+        capabilities: ClientCapabilities {
+            window: Some(WindowClientCapabilities {
+                work_done_progress: Some(true),
+                ..WindowClientCapabilities::default()
+            }),
+            ..ClientCapabilities::default()
+        },
+        ..InitializeParams::default()
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(15), initialize)
         .await
+        .map_err(|_| LspError::Timeout("initialize".into()))?
         .map_err(|e| LspError::InitFailed(format!("initialize request failed: {e}")))?;
 
     // Must send `initialized` notification after receiving `initialize` response (Pitfall 2)

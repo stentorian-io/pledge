@@ -470,12 +470,14 @@ fn normalize_chunk_path(path: &Path) -> PathBuf {
 #[derive(Debug, Clone)]
 pub struct ResolveWarning {
     pub message: String,
+    pub incomplete: bool,
 }
 
 impl ResolveWarning {
-    fn new(msg: impl Into<String>) -> Self {
+    pub(crate) fn new(msg: impl Into<String>) -> Self {
         Self {
             message: msg.into(),
+            incomplete: true,
         }
     }
 }
@@ -645,10 +647,13 @@ pub fn collect_exports(
         .with_context(|| format!("failed to canonicalize {}", file.display()))?;
 
     if !visited.insert(canonical.clone()) {
-        warnings.push(ResolveWarning::new(format!(
-            "circular re-export detected at {}, skipping",
-            file.display()
-        )));
+        warnings.push(ResolveWarning {
+            message: format!(
+                "circular re-export detected at {}, skipping",
+                file.display()
+            ),
+            incomplete: false,
+        });
         return Ok(());
     }
 
@@ -680,12 +685,11 @@ pub fn collect_exports(
     };
 
     if let Some(reason) = crate::source_filter::classify(&source) {
-        tracing::trace!(
-            "skipping {} {} ({:?})",
-            reason.label(),
+        warnings.push(ResolveWarning::new(format!(
+            "analysis skipped {}: {} source exceeds processing limits",
             canonical.display(),
-            reason
-        );
+            reason.label()
+        )));
         return Ok(());
     }
 

@@ -80,9 +80,12 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // ROB-07: Second dedup pass after sort — collapses cross-pass duplicates
             // that the sort may have brought into adjacency.
             dedup_findings(&mut findings);
-            report::print_report(&findings, &all_warnings, false);
+            let degraded = all_warnings.iter().any(|warning| warning.incomplete);
+            report::print_report(&findings, &all_warnings, degraded);
 
-            if compare::has_breaking_changes(&findings) {
+            if degraded {
+                Ok(RunOutcome::Degraded)
+            } else if compare::has_breaking_changes(&findings) {
                 Ok(RunOutcome::Breaking)
             } else {
                 Ok(RunOutcome::Clean)
@@ -123,7 +126,11 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
 
             // Determine degradation status
             let degraded = matches!(&old_enrich, lsp::EnrichResult::Degraded(_))
-                || matches!(&new_enrich, lsp::EnrichResult::Degraded(_));
+                || matches!(&new_enrich, lsp::EnrichResult::Degraded(_))
+                || old_warnings
+                    .iter()
+                    .chain(&new_warnings)
+                    .any(|warning| warning.incomplete);
 
             if degraded {
                 // Print prescriptive warning (D-16)
@@ -133,7 +140,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                     eprintln!("warning: {msg}");
                 }
                 eprintln!(
-                    "warning: Continuing with structural analysis only. Type-level changes will not be detected."
+                    "warning: Analysis is incomplete. Available findings are reported, but compatibility could not be established."
                 );
             }
 

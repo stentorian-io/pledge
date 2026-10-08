@@ -30,7 +30,7 @@ pub enum LspError {
 /// Result of LSP enrichment — either successful enrichment or graceful degradation.
 #[derive(Debug)]
 pub enum EnrichResult {
-    /// Types were resolved (possibly partially — some symbols may have type_shape: None)
+    /// All requested exports returned type information.
     Enriched,
     /// LSP was unavailable — no types resolved, analysis continues in degraded mode
     Degraded(String),
@@ -51,8 +51,23 @@ pub async fn enrich_exports(
         Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),
     };
 
+    enrich_with_binary(
+        exports,
+        pkg_root,
+        &binary,
+        std::time::Duration::from_secs(60),
+    )
+    .await
+}
+
+async fn enrich_with_binary(
+    exports: &mut ExportMap,
+    pkg_root: &Path,
+    binary: &managed::LspBinary,
+    total_budget: std::time::Duration,
+) -> Result<EnrichResult, LspError> {
     // Step 2: start an LSP session
-    let session = match client::start_session(&binary, pkg_root).await {
+    let session = match client::start_session(binary, pkg_root).await {
         Ok(s) => s,
         Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),
     };
@@ -70,7 +85,7 @@ pub async fn enrich_exports(
 
     // Step 4: iterate files, send hover requests; respect total budget (60s per D-06)
     let budget_start = Instant::now();
-    let total_budget = std::time::Duration::from_secs(60);
+    let mut incomplete = Vec::new();
 
     // Collect file list first so we can process without holding borrow on exports
     let file_list: Vec<(PathBuf, Vec<crate::types::ExportKey>)> = file_groups.into_iter().collect();
@@ -87,6 +102,8 @@ pub async fn enrich_exports(
             tracing::warn!(
                 "LSP total budget (60s) exceeded; remaining symbols will lack type info"
             );
+            incomplete
+                .push("LSP total budget exhausted before all exports were resolved".to_string());
             break;
         }
 
@@ -118,13 +135,23 @@ pub async fn enrich_exports(
         // Any error from the LSP request path (server exit, channel closed, timeout)
         // increments the failure counter. On CRASH_THRESHOLD consecutive failures,
         // return Degraded to avoid spinning through all remaining files.
-        let results = match hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs).await
-        {
+        let response = tokio::time::timeout(
+            total_budget.saturating_sub(budget_start.elapsed()),
+            hover::hover_file_symbols(&session, &abs_file_path, &hover_inputs),
+        )
+        .await
+        .unwrap_or_else(|_| {
+            Err(LspError::Timeout(
+                "total enrichment budget exhausted".into(),
+            ))
+        });
+        let results = match response {
             Ok(r) => {
                 consecutive_failures = 0; // reset on success
                 r
             }
             Err(e) => {
+                incomplete.push(e.to_string());
                 consecutive_failures += 1;
                 tracing::warn!("hover failed for {}: {e}", abs_file_path.display());
                 if consecutive_failures >= CRASH_THRESHOLD {
@@ -152,6 +179,12 @@ pub async fn enrich_exports(
         // `is_none()` / `is_empty()` preserves the pre-Phase-18 first-write-wins
         // semantic for type_signature on the same key.
         for (name, type_signature, overloads) in results {
+            if type_signature.is_none() {
+                incomplete.push(format!(
+                    "no type information for `{name}` in {}",
+                    rel_file_path.display()
+                ));
+            }
             for key in symbol_keys {
                 if key.name == name {
                     if let Some(symbol) = exports.get_mut(key) {
@@ -220,6 +253,8 @@ pub async fn enrich_exports(
                 tracing::warn!(
                     "LSP total budget exhausted before resolving all typeof_import_refs"
                 );
+                incomplete
+                    .push("LSP total budget exhausted during definition resolution".to_string());
                 break;
             }
 
@@ -258,6 +293,7 @@ pub async fn enrich_exports(
                         exports.record_typeof_target(&key, idx, location_opt);
                     }
                     Err(e) => {
+                        incomplete.push(e.to_string());
                         definition_failures += 1;
                         tracing::warn!(
                             "typeof-import definition failed for {} ref#{idx}: {e}",
@@ -288,7 +324,13 @@ pub async fn enrich_exports(
         tracing::warn!("LSP shutdown error: {e}");
     }
 
-    Ok(EnrichResult::Enriched)
+    if incomplete.is_empty() {
+        Ok(EnrichResult::Enriched)
+    } else {
+        incomplete.sort();
+        incomplete.dedup();
+        Ok(EnrichResult::Degraded(incomplete.join("; ")))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -325,3 +367,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "lsp-tests"))]
+mod failure_tests;

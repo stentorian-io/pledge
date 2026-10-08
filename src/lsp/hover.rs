@@ -92,7 +92,7 @@ fn extract_from_markdown(value: &str) -> Option<String> {
 
 /// Send a hover request for a single export symbol.
 ///
-/// Returns the raw type string if resolved, or None on timeout / no hover.
+/// Returns the raw type string if resolved, None for no hover, or a request error.
 /// Implements per-request timeout of 5 seconds (D-06).
 ///
 /// LSP positions are 0-indexed; `line` and `col` parameters are 1-indexed
@@ -116,14 +116,10 @@ pub async fn hover_symbol(
     });
 
     match tokio::time::timeout(Duration::from_secs(HOVER_TIMEOUT_SECS), hover_fut).await {
-        Err(_elapsed) => {
-            // Timeout — symbol simply won't have type info (D-18: not an error)
-            Ok(None)
-        }
-        Ok(Err(e)) => {
-            tracing::debug!("hover request error: {e}");
-            Ok(None)
-        }
+        Err(_) => Err(LspError::Timeout(
+            "hover request exceeded five seconds".into(),
+        )),
+        Ok(Err(e)) => Err(LspError::RequestFailed(e.to_string())),
         Ok(Ok(None)) => Ok(None),
         Ok(Ok(Some(hover))) => Ok(extract_type_string(&hover)),
     }
@@ -156,7 +152,10 @@ pub async fn hover_file_symbols(
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("cannot read {}: {e}", file_path.display());
-            return Ok(Vec::new());
+            return Err(LspError::RequestFailed(format!(
+                "cannot read {}: {e}",
+                file_path.display()
+            )));
         }
     };
 
@@ -183,7 +182,7 @@ pub async fn hover_file_symbols(
 
     for input in inputs {
         let type_sig =
-            hover_with_retry(session, file_uri.clone(), input.line, input.col, is_first).await;
+            hover_with_retry(session, file_uri.clone(), input.line, input.col, is_first).await?;
         is_first = false;
 
         tracing::debug!(
@@ -217,19 +216,16 @@ async fn hover_with_retry(
     line: u32,
     col: u32,
     with_retry: bool,
-) -> Option<String> {
+) -> Result<Option<String>, LspError> {
     if !with_retry {
-        return hover_symbol(session, file_uri, line, col)
-            .await
-            .ok()
-            .flatten();
+        return hover_symbol(session, file_uri, line, col).await;
     }
 
     // First hover — retry up to 3 times if None is returned
     const MAX_RETRIES: u32 = 3;
     for attempt in 0..MAX_RETRIES {
         match hover_symbol(session, file_uri.clone(), line, col).await {
-            Ok(Some(sig)) => return Some(sig),
+            Ok(Some(sig)) => return Ok(Some(sig)),
             Ok(None) => {
                 if attempt < MAX_RETRIES - 1 {
                     tracing::debug!(
@@ -241,11 +237,11 @@ async fn hover_with_retry(
             }
             Err(e) => {
                 tracing::debug!("hover error on attempt {}: {e}", attempt + 1);
-                break;
+                return Err(e);
             }
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]
