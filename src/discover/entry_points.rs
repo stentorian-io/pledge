@@ -29,6 +29,13 @@ pub struct EntryPoint {
 /// Duplicate resolved paths are deduplicated.
 #[allow(dead_code)]
 pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> {
+    resolve_entry_points_with_warnings(pkg_root).map(|(entries, _)| entries)
+}
+
+pub(crate) fn resolve_entry_points_with_warnings(
+    pkg_root: &Path,
+) -> anyhow::Result<(Vec<EntryPoint>, Vec<String>)> {
+    let mut warnings = Vec::new();
     let pkg_json_path = pkg_root.join("package.json");
     let raw = std::fs::read_to_string(&pkg_json_path)
         .with_context(|| format!("failed to read {}", pkg_json_path.display()))?;
@@ -38,7 +45,13 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
     let mut results: Vec<EntryPoint> = Vec::new();
 
     if let Some(exports) = pkg.get("exports") {
-        resolve_exports_value(exports, pkg_root, None, &mut results);
+        results.extend(resolve_exports_value_with_warnings(
+            exports,
+            pkg_root,
+            None,
+            ".",
+            &mut warnings,
+        ));
     } else {
         // Fall back to main / module / types / typings in priority order.
         // Note: `typings` is the legacy TypeScript alias for `types`; we check
@@ -145,8 +158,31 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
         }
     }
 
+    // TypeScript substitutes source/declaration extensions even when exports
+    // names a JavaScript file. Preserve the runtime surface in its own bucket.
+    let mut declarations = Vec::new();
+    for entry in &results {
+        if let Some(path) = declaration_companion(&entry.path) {
+            let condition = Some(match &entry.condition {
+                Some(c) => format!("{c}/types"),
+                None => "types".to_string(),
+            });
+            if !results
+                .iter()
+                .any(|e| e.path == path && e.subpath == entry.subpath)
+            {
+                declarations.push(EntryPoint {
+                    path,
+                    condition,
+                    subpath: entry.subpath.clone(),
+                });
+            }
+        }
+    }
+    results.extend(declarations);
+
     // Canonicalize + filter non-existent + deduplicate.
-    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut seen = HashSet::new();
     let mut filtered: Vec<EntryPoint> = Vec::new();
     for mut entry in results {
         // Canonicalize to an absolute path (resolves symlinks, `.`, `..`).
@@ -155,46 +191,25 @@ pub fn resolve_entry_points(pkg_root: &Path) -> anyhow::Result<Vec<EntryPoint>> 
             Ok(p) => p,
             Err(_) => {
                 // File does not exist — skip per D-14.
-                eprintln!(
-                    "[warn] entry point does not exist: {}",
+                warnings.push(format!(
+                    "entry point does not exist: {}",
                     entry.path.display()
-                );
+                ));
                 continue;
             }
         };
 
-        if seen.insert(canonical.clone()) {
+        if seen.insert((
+            canonical.clone(),
+            entry.subpath.clone(),
+            entry.condition.clone(),
+        )) {
             entry.path = canonical;
             filtered.push(entry);
         }
     }
 
-    Ok(filtered)
-}
-
-/// Recursively walk a `serde_json::Value` from the `exports` field, collecting
-/// leaf string values as `EntryPoint`s.
-///
-/// The `condition` argument tracks the current condition key (e.g., "import") from an
-/// ancestor object. Subpath keys (starting with ".") are treated as separate export
-/// roots and do not propagate their key as the condition name.
-fn resolve_exports_value(
-    value: &serde_json::Value,
-    base_path: &Path,
-    condition: Option<&str>,
-    results: &mut Vec<EntryPoint>,
-) {
-    let mut warnings = Vec::new();
-    results.extend(resolve_exports_value_with_warnings(
-        value,
-        base_path,
-        condition,
-        ".",
-        &mut warnings,
-    ));
-    // Non-standard value warnings are currently discarded here (caller doesn't thread warnings).
-    // When callers are updated to thread warnings, pass the vec through.
-    let _ = warnings;
+    Ok((filtered, warnings))
 }
 
 /// ROB-03: Like `resolve_exports_value` but also emits warnings for non-standard
@@ -227,7 +242,16 @@ pub(crate) fn resolve_exports_value_with_warnings(
                 if key.starts_with('.') {
                     if key.contains('*') {
                         // GAP-16-06: Subpath wildcard key like "./*" or "./features/*".
-                        expand_subpath_wildcard(key, child, base_path, &mut results);
+                        let expanded =
+                            expand_subpath_wildcard(key, child, base_path, condition, warnings);
+                        results.extend(expanded.into_iter().filter(|entry| {
+                            !map.keys().any(|other| {
+                                other != key
+                                    && subpath_matches(other, &entry.subpath)
+                                    && (other == &entry.subpath
+                                        || pattern_priority(other) > pattern_priority(key))
+                            })
+                        }));
                     } else {
                         // Subpath export like "./utils" — recurse with the subpath key,
                         // preserving the inherited condition (Phase 18 D-02: subpath-key
@@ -243,49 +267,36 @@ pub(crate) fn resolve_exports_value_with_warnings(
                         ));
                     }
                 } else {
-                    // Condition key like "import", "require", "types", "default".
-                    // Phase 18: preserve the current subpath — condition-key recursion
-                    // does NOT reset subpath context.
-                    //
-                    // Rule 3 fix: Skip vendor-specific/tool-specific export conditions
-                    // (those starting with "@", e.g., "@zod/source", "@bundler/module").
-                    // These are not Node.js/TypeScript standard conditions and typically
-                    // point to raw source files (.ts) intended for special build pipelines
-                    // rather than consumer-facing public API surfaces. Resolving them
-                    // causes interlint to analyse internal source files that are outside
-                    // the package's public interface and can cause OOM on large packages.
-                    if key.starts_with('@') {
-                        tracing::trace!(
-                            "skipping vendor export condition {:?} (not a standard Node.js/TS condition)",
-                            key
-                        );
-                        continue;
-                    }
+                    let nested = match condition {
+                        Some(parent) => format!("{parent}/{key}"),
+                        None => key.clone(),
+                    };
                     results.extend(resolve_exports_value_with_warnings(
                         child,
                         base_path,
-                        Some(key.as_str()),
+                        Some(&nested),
                         subpath,
                         warnings,
                     ));
+                    // Later siblings are unreachable once the default matches.
+                    if key == "default" {
+                        break;
+                    }
                 }
             }
         }
         serde_json::Value::Array(items) => {
-            // GAP-16-07: Per Node.js spec, try each candidate in order and use the first
-            // one whose file exists on disk.
             for item in items {
-                // ROB-03: Warn on non-string entries in the array.
-                if !item.is_string() && !item.is_object() && !item.is_array() {
-                    warnings.push(format!(
-                        "non-string entry in exports array: {:?} \u{2014} skipping",
-                        item
-                    ));
-                    continue;
+                if item.is_null() {
+                    break;
                 }
-                results.extend(resolve_exports_value_with_warnings(
+                let candidates = resolve_exports_value_with_warnings(
                     item, base_path, condition, subpath, warnings,
-                ));
+                );
+                if !candidates.is_empty() {
+                    results.extend(candidates);
+                    break;
+                }
             }
         }
         // ROB-03: Non-standard scalar exports values — emit warning and return empty.
@@ -302,13 +313,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
                     .to_string(),
             );
         }
-        serde_json::Value::Null => {
-            // ROB-03: Explicitly disabled export — emit warning.
-            warnings.push(
-                "non-standard `exports` value: null \u{2014} falling back to main/module/types"
-                    .to_string(),
-            );
-        }
+        serde_json::Value::Null => {} // Explicitly blocked public subpath.
         serde_json::Value::Number(n) => {
             warnings.push(format!(
                 "non-standard `exports` value: {} (numeric) \u{2014} falling back to main/module/types",
@@ -319,105 +324,94 @@ pub(crate) fn resolve_exports_value_with_warnings(
     results
 }
 
-/// Expand a subpath wildcard pattern like `"./*": "./dist/*.js"` to actual files on disk.
-///
-/// Scans the target directory for files matching the suffix and creates an EntryPoint for each.
-/// GAP-16-06.
-///
-/// Phase 18 D-02: `key` is the subpath-wildcard pattern (e.g., `"./*"`); the expanded
-/// entries carry the concrete subpath inferred from the matched filename where possible,
-/// falling back to the pattern key itself (e.g., `"./*"`). Downstream compare/dedup
-/// treats the pattern key as a per-expansion subpath — refinement to per-match concrete
-/// subpaths is deferred to Phase 18 Plan 2/4 integration.
+fn pattern_priority(pattern: &str) -> (usize, usize) {
+    (pattern.find('*').unwrap_or(pattern.len()), pattern.len())
+}
+
+fn subpath_matches(pattern: &str, subpath: &str) -> bool {
+    match pattern.split_once('*') {
+        Some((prefix, suffix)) => {
+            subpath.starts_with(prefix)
+                && subpath.ends_with(suffix)
+                && subpath.len() >= prefix.len() + suffix.len()
+        }
+        None => pattern == subpath,
+    }
+}
+
 fn expand_subpath_wildcard(
     key: &str,
     value: &serde_json::Value,
     base_path: &Path,
-    results: &mut Vec<EntryPoint>,
-) {
-    let target_strings = collect_string_leaves(value);
-    for target in target_strings {
-        if !target.contains('*') {
-            // No wildcard in target value — treat as a literal path.
-            let path = base_path.join(target.trim_start_matches("./"));
-            results.push(EntryPoint {
-                path,
-                condition: None,
-                subpath: key.to_string(),
-            });
+    condition: Option<&str>,
+    warnings: &mut Vec<String>,
+) -> Vec<EntryPoint> {
+    let leaves = resolve_exports_value_with_warnings(value, base_path, condition, key, warnings);
+    let mut results = Vec::new();
+    let files = package_source_files(base_path);
+    for leaf in leaves {
+        let target = leaf.path.to_string_lossy();
+        let Some((prefix, suffix)) = target.split_once('*') else {
+            results.push(leaf);
             continue;
-        }
-        // Split target on `*` to get the directory prefix and file suffix.
-        // e.g., "./dist/*.js" -> dir_part="dist/", suffix=".js"
-        let clean_target = target.trim_start_matches("./");
-        let star_pos = match clean_target.find('*') {
-            Some(p) => p,
-            None => continue,
         };
-        let dir_part = &clean_target[..star_pos];
-        let suffix = &clean_target[star_pos + 1..];
-        let scan_dir = base_path.join(dir_part);
-
-        if scan_dir.is_dir() {
-            if let Ok(entries_iter) = std::fs::read_dir(&scan_dir) {
-                for entry in entries_iter.flatten() {
-                    let file_path = entry.path();
-                    if file_path.is_file() {
-                        let file_name =
-                            file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        // Check that the file matches the suffix pattern.
-                        if suffix.is_empty() || file_name.ends_with(suffix) {
-                            // Phase 18: derive per-expansion concrete subpath when
-                            // possible. For key="./*" and a matched basename "alpha.js"
-                            // with suffix=".js", the concrete subpath is "./alpha".
-                            // Falls back to the pattern key ("./*") for patterns we
-                            // can't cleanly invert.
-                            let concrete_subpath = if key.contains('*') {
-                                // Strip the file suffix from file_name to recover
-                                // the wildcard slot's text.
-                                let stem = if !suffix.is_empty() && file_name.ends_with(suffix) {
-                                    &file_name[..file_name.len() - suffix.len()]
-                                } else {
-                                    file_name
-                                };
-                                key.replace('*', stem)
-                            } else {
-                                key.to_string()
-                            };
-                            results.push(EntryPoint {
-                                path: file_path,
-                                condition: None,
-                                subpath: concrete_subpath,
-                            });
-                        }
-                    }
-                }
+        for file in &files {
+            let path = file.to_string_lossy();
+            if let Some(slot) = path
+                .strip_prefix(prefix)
+                .and_then(|s| s.strip_suffix(suffix))
+            {
+                results.push(EntryPoint {
+                    path: file.clone(),
+                    condition: leaf.condition.clone(),
+                    subpath: key.replace('*', slot),
+                });
             }
         }
     }
+    results
 }
 
-/// Collect all string leaf values from a JSON value tree (traversing objects and arrays).
-///
-/// Used to extract concrete file path strings from nested condition objects within
-/// a wildcard export value.
-fn collect_string_leaves(value: &serde_json::Value) -> Vec<&str> {
-    let mut leaves = Vec::new();
-    match value {
-        serde_json::Value::String(s) => leaves.push(s.as_str()),
-        serde_json::Value::Object(map) => {
-            for (_k, v) in map {
-                leaves.extend(collect_string_leaves(v));
+pub(crate) fn package_source_files(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.starts_with('.') || name == "node_modules" {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if kind.is_dir() {
+                walk(&entry.path(), files);
+            } else if kind.is_file()
+                && super::tree_query::language_for_file(&entry.path()).is_some()
+            {
+                files.push(entry.path());
             }
         }
-        serde_json::Value::Array(arr) => {
-            for v in arr {
-                leaves.extend(collect_string_leaves(v));
-            }
-        }
-        _ => {}
     }
-    leaves
+    let mut files = Vec::new();
+    walk(root, &mut files);
+    files.sort();
+    files
+}
+
+fn declaration_companion(path: &Path) -> Option<PathBuf> {
+    let extensions: &[&str] = match path.extension()?.to_str()? {
+        "js" | "jsx" => &["ts", "tsx", "d.ts"],
+        "mjs" => &["mts", "d.mts"],
+        "cjs" => &["cts", "d.cts"],
+        _ => return None,
+    };
+    extensions
+        .iter()
+        .map(|ext| path.with_extension(ext))
+        .find(|p| p.is_file())
 }
 
 // ---------------------------------------------------------------------------
@@ -563,25 +557,11 @@ mod tests {
 
     // GAP-16-07: exports array fallback tests
     #[test]
-    fn test_exports_array_first_existing_wins() {
-        // Array with 3 candidates; only the 2nd exists on disk.
-        // Should discover the 2nd entry (the first existing one).
-        let pkg_json = r#"{
-            "name": "mypkg",
-            "exports": ["./dist/missing1.js", "./dist/real.js", "./dist/missing2.js"]
-        }"#;
-        let dir = make_pkg(pkg_json, &["dist/real.js"]);
-        let entries = resolve_entry_points(dir.path()).unwrap();
-        assert_eq!(
-            entries.len(),
-            1,
-            "only the existing candidate should be returned; got: {entries:?}"
-        );
-        assert!(
-            entries[0].path.to_string_lossy().ends_with("real.js"),
-            "should pick the first existing file; got: {:?}",
-            entries[0].path
-        );
+    fn exports_array_does_not_fall_back_on_missing_file() {
+        let dir = make_pkg(r#"{"exports":["./missing.js","./real.js"]}"#, &["real.js"]);
+        let (entries, warnings) = resolve_entry_points_with_warnings(dir.path()).unwrap();
+        assert!(entries.is_empty());
+        assert!(warnings.iter().any(|w| w.contains("missing.js")));
     }
 
     #[test]
@@ -722,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_03_exports_null_produces_warning() {
+    fn exports_null_blocks_without_warning() {
         let v = serde_json::Value::Null;
         let mut warnings: Vec<String> = Vec::new();
         let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
@@ -730,10 +710,7 @@ mod tests {
             res.is_empty(),
             "ROB-03: exports=null should produce empty results"
         );
-        assert!(
-            warnings.iter().any(|w| w.contains("null")),
-            "ROB-03: expected warning mentioning 'null'; got: {warnings:?}"
-        );
+        assert!(warnings.is_empty());
     }
 
     #[test]

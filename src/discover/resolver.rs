@@ -646,6 +646,8 @@ pub fn collect_exports(
         .canonicalize()
         .with_context(|| format!("failed to canonicalize {}", file.display()))?;
 
+    let mut active = visited.clone();
+    let visited = &mut active;
     if !visited.insert(canonical.clone()) {
         warnings.push(ResolveWarning {
             message: format!(
@@ -809,14 +811,17 @@ pub fn collect_exports(
     // Compute the file path relative to pkg_root for storage in ExportSymbol.
     // CHUNK-01: Normalize hashed chunk filenames (e.g., chunk-A1B2C3D4.js → chunk-*.js)
     // so that rollup/vite rebuilds produce stable paths for diff comparison.
-    let rel_path = normalize_chunk_path(canonical.strip_prefix(pkg_root).unwrap_or(&canonical));
+    let rel_path = canonical
+        .strip_prefix(pkg_root)
+        .unwrap_or(&canonical)
+        .to_path_buf();
 
     // INF-05 (Phase 19): flow extracted directives into the ExportMap sidecar.
     // Key by the rel_path so compare_directives can pair old/new directive
     // lists per-file. Files with no directives are absent from the map.
     if !file_directives.is_empty() {
         map.directives
-            .insert(rel_path.to_path_buf(), file_directives);
+            .insert(normalize_chunk_path(&rel_path), file_directives);
     }
 
     // META-05: Accumulate named re-export failures keyed by specifier so we can
@@ -1361,7 +1366,7 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     };
 
     // Strip leading "./" from the specifier before joining.
-    let clean = specifier.trim_start_matches("./");
+    let clean = specifier.strip_prefix("./").unwrap_or(specifier);
     let joined = base_dir.join(clean);
 
     let mut candidates = Vec::with_capacity(20);
@@ -2173,9 +2178,8 @@ mod tests {
         let chunk_abs = pkg_root.join(chunk_rel);
         std::fs::create_dir_all(chunk_abs.parent().unwrap()).unwrap();
         // Rollup chunk with a triple-slash directive at the top followed by
-        // a regular export. Both the directive (in ExportMap.directives)
-        // and the export (in ExportMap.inner) must end up keyed/stamped
-        // with the SAME normalized path.
+        // a regular export. Directives use a stable comparison key while
+        // symbols retain their readable physical source path.
         std::fs::write(
             &chunk_abs,
             b"/// <reference path=\"./chunk.d.ts\" />\nexport const x = 1;\n",
@@ -2214,15 +2218,12 @@ mod tests {
         assert_eq!(recs.len(), 1, "exactly one directive expected");
         assert_eq!(recs[0].name, "reference");
 
-        // (2) ExportSymbol.file stamped with the SAME normalized path.
-        //     If these ever drift the directive-diff union-walk in
-        //     compare_exports_core can't route findings back to a
-        //     symbol-bearing file.
+        // Symbol paths must remain usable by LSP and structural analysis.
         let x_key = ExportKey::new_root_value("x");
         let x_sym = map.get(&x_key).expect("x export present");
         assert_eq!(
-            x_sym.file, normalized,
-            "WR-02: ExportSymbol.file must equal the directives sidecar key"
+            x_sym.file, chunk_rel,
+            "ExportSymbol.file must identify the physical source"
         );
     }
 

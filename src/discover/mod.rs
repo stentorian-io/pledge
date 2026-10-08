@@ -18,7 +18,25 @@ use crate::types::ExportMap;
 pub fn discover_exports(
     pkg_root: &Path,
 ) -> anyhow::Result<(ExportMap, Vec<resolver::ResolveWarning>)> {
-    let entry_points = entry_points::resolve_entry_points(pkg_root)?;
+    let (mut entry_points, entry_warnings) =
+        entry_points::resolve_entry_points_with_warnings(pkg_root)?;
+    let package: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(pkg_root.join("package.json"))?)?;
+    if package.get("exports").is_none() {
+        let explicit: HashSet<_> = entry_points.iter().map(|e| e.path.clone()).collect();
+        for path in entry_points::package_source_files(pkg_root) {
+            let canonical = path.canonicalize()?;
+            if explicit.contains(&canonical) {
+                continue;
+            }
+            let subpath = format!("./{}", path.strip_prefix(pkg_root)?.to_string_lossy());
+            entry_points.push(entry_points::EntryPoint {
+                path: canonical,
+                subpath,
+                condition: None,
+            });
+        }
+    }
 
     // GAP-15-04: Parse tsconfig.json for path alias resolution
     let tsconfig = resolver::parse_tsconfig_paths(pkg_root);
@@ -28,7 +46,10 @@ pub fn discover_exports(
 
     let mut map = ExportMap::new();
     let mut visited: HashSet<PathBuf> = HashSet::new();
-    let mut warnings: Vec<resolver::ResolveWarning> = Vec::new();
+    let mut warnings: Vec<_> = entry_warnings
+        .into_iter()
+        .map(resolver::ResolveWarning::new)
+        .collect();
 
     for entry in entry_points {
         resolver::collect_exports(

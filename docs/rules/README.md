@@ -9,6 +9,7 @@ an exhaustive list of every implemented rule.
 | --- | --- |
 | Tuples | [Tuple compatibility](tuple-compatibility.md) |
 | Package requirements | [Version ranges and platforms](package-requirements.md) |
+| Public exports | [Export resolution](export-resolution.md) |
 | Triple-slash directives | [Directive changes](directive.md) |
 | Decorators | [Decorator changes](decorator.md) |
 | Class visibility | [Public/private transitions](class-field-visibility-transition.md) |

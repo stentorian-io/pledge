@@ -231,7 +231,11 @@ fn exp_14_imports_field_wins_over_tsconfig_paths() {
     let dir = fixture_dir("exp-14-tsconfig-imports-overlap", "new");
     let (exports, warnings) = discover_exports(&dir).expect("discover_exports must not error");
 
-    let names: Vec<&str> = exports.keys().map(|k| k.name.as_str()).collect();
+    let names: Vec<&str> = exports
+        .keys()
+        .filter(|k| k.subpath == ".")
+        .map(|k| k.name.as_str())
+        .collect();
 
     // POSITIVE: the imports-mapped symbol resolves
     assert!(

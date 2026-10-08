@@ -511,46 +511,20 @@ fn gap_16_06_subpath_wildcard_expansion() {
 // ─── GAP-16-07: Exports array fallback order ─────────────────────────────────
 
 #[test]
-fn gap_16_07_exports_array_first_existing_wins() {
-    let pkg_dir = tempfile::tempdir().unwrap();
-
-    // Only exists.js and also-exists.js are on disk; not-exist.js is absent
-    std::fs::write(pkg_dir.path().join("exists.js"), b"// exists").unwrap();
-    std::fs::write(pkg_dir.path().join("also-exists.js"), b"// also").unwrap();
-
-    let pkg = serde_json::json!({
-        "name": "mypkg",
-        "version": "1.0.0",
-        "exports": {
-            ".": ["./not-exist.js", "./exists.js", "./also-exists.js"]
-        }
-    });
+fn exports_array_does_not_retry_missing_files() {
+    let dir = tempfile::tempdir().unwrap();
     std::fs::write(
-        pkg_dir.path().join("package.json"),
-        serde_json::to_string_pretty(&pkg).unwrap(),
+        dir.path().join("package.json"),
+        r#"{"exports":["./missing.js","./existing.js"]}"#,
     )
     .unwrap();
-
-    let entry_points = resolve_entry_points(pkg_dir.path()).unwrap();
-    let paths: Vec<String> = entry_points
+    std::fs::write(dir.path().join("existing.js"), "export const api = 1;").unwrap();
+    let (exports, warnings) = interlint::discover::discover_exports(dir.path()).unwrap();
+    assert!(exports.is_empty());
+    assert!(warnings
         .iter()
-        .map(|e| e.path.file_name().unwrap().to_string_lossy().to_string())
-        .collect();
-
-    // not-exist.js should be filtered out; exists.js should be present
-    assert!(
-        paths.contains(&"exists.js".to_string()),
-        "first existing file should be in results; got: {:?}",
-        paths
-    );
-    assert!(
-        !paths.contains(&"not-exist.js".to_string()),
-        "non-existent file should be filtered out; got: {:?}",
-        paths
-    );
+        .any(|w| w.incomplete && w.message.contains("missing.js")));
 }
-
-// ─── GAP-16-08: Nested destructuring ─────────────────────────────────────────
 
 #[test]
 fn gap_16_08_nested_object_destructuring() {
