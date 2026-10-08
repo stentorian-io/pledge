@@ -54,14 +54,14 @@ impl LspSession {
 
 /// Spawn and initialize a typescript-language-server for the given project root.
 ///
-/// Writes a synthetic tsconfig.json (per D-14), runs npm install (per D-15),
+/// Writes a synthetic tsconfig.json and installs declared dependencies,
 /// then starts the LSP session and completes the initialize handshake.
 pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSession, LspError> {
     // Synthesize tsconfig.json if not already present (D-14)
     maybe_write_tsconfig(root_dir).await?;
 
-    // Run npm install --production (D-15, non-fatal)
-    run_npm_install(root_dir).await;
+    // Failed dependency installation makes type analysis incomplete.
+    run_npm_install(root_dir).await?;
 
     // Build the command
     let mut cmd = build_command(binary);
@@ -217,25 +217,85 @@ async fn maybe_write_tsconfig(root_dir: &Path) -> Result<(), LspError> {
     Ok(())
 }
 
-/// Run `npm install --production --ignore-scripts` in the package root.
-/// Per D-15: non-fatal — failure just means node_modules won't resolve.
-async fn run_npm_install(root_dir: &Path) {
-    // Use async Command to avoid blocking the tokio runtime (Pitfall 4)
-    match tokio::process::Command::new("npm")
-        .args(["install", "--production", "--ignore-scripts"])
+/// Install analysis dependencies without creating or rewriting package lockfiles.
+async fn run_npm_install(root_dir: &Path) -> Result<(), LspError> {
+    let manifest = std::fs::read(root_dir.join("package.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+    let has_dependencies = manifest.as_ref().is_some_and(|manifest| {
+        ["dependencies", "optionalDependencies", "peerDependencies"]
+            .iter()
+            .any(|field| {
+                manifest
+                    .get(field)
+                    .and_then(serde_json::Value::as_object)
+                    .is_some_and(|entries| !entries.is_empty())
+            })
+    });
+    if !has_dependencies {
+        return Ok(());
+    }
+    let mut command = tokio::process::Command::new("npm");
+    command
+        .args([
+            "install",
+            "--omit=dev",
+            "--ignore-scripts",
+            "--package-lock=false",
+            "--no-audit",
+            "--no-fund",
+        ])
         .current_dir(root_dir)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .kill_on_drop(true);
+    let status = tokio::time::timeout(std::time::Duration::from_secs(30), command.status())
         .await
-    {
-        Ok(status) => {
-            if !status.success() {
-                tracing::debug!("npm install exited with {status}; node_modules may be incomplete");
-            }
-        }
-        Err(e) => {
-            tracing::debug!("npm install failed (non-fatal): {e}");
-        }
+        .map_err(|_| LspError::Timeout("dependency installation".into()))?
+        .map_err(|error| {
+            LspError::InitFailed(format!("dependency installation failed: {error}"))
+        })?;
+    if !status.success() {
+        return Err(LspError::InitFailed(format!(
+            "dependency installation exited with {status}"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(all(test, feature = "lsp-tests"))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dependency_installation_preserves_package_inputs() {
+        let directory = tempfile::tempdir().unwrap();
+        let dependency = directory.path().join("dependency");
+        let package = directory.path().join("package");
+        std::fs::create_dir(&dependency).unwrap();
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(
+            dependency.join("package.json"),
+            r#"{"name":"local-dependency","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let manifest = r#"{"name":"test-package","version":"1.0.0","dependencies":{"local-dependency":"file:../dependency"}}"#;
+        std::fs::write(package.join("package.json"), manifest).unwrap();
+        run_npm_install(&package).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(package.join("package.json")).unwrap(),
+            manifest
+        );
+        assert!(!package.join("package-lock.json").exists());
+        assert!(package
+            .join("node_modules/local-dependency/package.json")
+            .exists());
+        let lock = r#"{"name":"test-package","lockfileVersion":3,"packages":{}}"#;
+        std::fs::write(package.join("package-lock.json"), lock).unwrap();
+        run_npm_install(&package).await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(package.join("package-lock.json")).unwrap(),
+            lock
+        );
     }
 }
