@@ -56,6 +56,10 @@ pub(super) fn resolve(node: Node<'_>, source: &[u8]) -> Option<PropertyKey> {
     evaluate(node, source, 0)
 }
 
+pub(super) fn initializer<'tree>(node: Node<'tree>, source: &[u8]) -> Option<Node<'tree>> {
+    binding(node, text(node, source), source).flatten()
+}
+
 pub(super) fn is_unbound(node: Node<'_>, name: &str, source: &[u8]) -> bool {
     binding(node, name, source).is_none()
 }

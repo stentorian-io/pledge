@@ -437,11 +437,23 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
     // The Major export-removed findings (above) already report the typed
     // surface that disappeared; this paired Info documents WHY (the new
     // surface is dynamically dispatched and not enumerable statically).
-    for (_key, sym) in new {
+    let mut dispatched = std::collections::HashSet::new();
+    for (key, sym) in old.iter().chain(new.iter()) {
         if !is_public(sym) {
             continue;
         }
-        if sym.is_proxy_dispatched {
+        if sym.is_proxy_dispatched && dispatched.insert(key) {
+            findings.push(Finding {
+                severity: Severity::Warning,
+                rule: "analysis-incomplete",
+                file: sym.file.clone(),
+                line: sym.line,
+                col: sym.col,
+                message: format!(
+                    "runtime dispatch of export `{}` requires handler or consumer evidence",
+                    sym.name
+                ),
+            });
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: subtype::RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS,
@@ -449,8 +461,8 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 line: sym.line,
                 col: sym.col,
                 message: format!(
-                    "default export of `{}` is dispatched through a Proxy/Reflect handler \u{2014} surface is dynamically dispatched and cannot be enumerated statically",
-                    sym.file.display()
+                    "export `{}` in `{}` uses runtime dispatch; the handler's observable surface is not established",
+                    sym.name, sym.file.display()
                 ),
             });
         }

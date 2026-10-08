@@ -95,7 +95,7 @@ to implement.
 | `limitation: lsp-required` | Type resolution was unavailable for a `typeof import` reference. |
 | `limitation: satisfies-narrowed-type-not-verified` | A `satisfies` removal was detected without resolved narrowed-type evidence. |
 | `limitation: dynamic-static-member-key` | A computed class key depends on an unresolved expression; paired with `analysis-incomplete`. |
-| `limitation: proxy-dispatched-exports` | An exported proxy or reflective construction requires runtime surface analysis. |
+| `limitation: proxy-dispatched-exports` | An exported proxy or reflective construction has unresolved dispatch; paired with `analysis-incomplete` on either side of the comparison. |
 | `limitation: decorator-runtime-effect-opaque` | A decorator change was detected; its arbitrary runtime effects are not proven. |
 | `limitation: private-brand-access-not-checkable` | A public/private field transition was detected; actual consumer reliance is unknown. |
 
@@ -104,6 +104,13 @@ compiler. Symbol-keyed exports include all standard well-known symbols and
 constant `Symbol.for` registry keys, which have specified identity semantics.
 See [computed properties](docs/rules/computed-properties.md) for coverage and
 unresolved-key reporting.
+
+Fresh empty proxy handlers and direct `Reflect` trap forwarding preserve the
+target's property surface. Ordinary `Reflect.construct` calls retain the
+constructed type. Arbitrary traps, mutable handler aliases, and custom
+construction prototypes require runtime evidence. These checks describe the
+property surface; they do not prove arbitrary method behavior or private-brand
+checks through a proxy.
 
 See [the rule reference](docs/rules/README.md) for individual rules.
 

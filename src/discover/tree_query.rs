@@ -4212,6 +4212,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     }
 
     link_export_declarations(root, source, &mut exports);
+    for export in &mut exports {
+        let (line, col) = export.declaration_site.unwrap_or((export.line, export.col));
+        if let Some(dispatched) = super::runtime_surface::dispatch_at(root, source, line, col) {
+            export.is_proxy_dispatched = dispatched;
+        }
+    }
     Ok(exports)
 }
 
@@ -9182,8 +9188,8 @@ mod phase25_proxy_detection_tests {
             .find(|e| e.name == "default")
             .expect("default not captured");
         assert!(
-            default_exp.is_proxy_dispatched,
-            "Proxy RHS should set is_proxy_dispatched"
+            !default_exp.is_proxy_dispatched,
+            "an empty proxy handler forwards its target"
         );
     }
 
@@ -9196,8 +9202,8 @@ mod phase25_proxy_detection_tests {
             .find(|e| e.name == "default")
             .expect("default not captured");
         assert!(
-            default_exp.is_proxy_dispatched,
-            "Reflect.construct RHS should set is_proxy_dispatched"
+            !default_exp.is_proxy_dispatched,
+            "ordinary Reflect.construct retains its target instance surface"
         );
     }
 

@@ -92,7 +92,7 @@ fn all_nine_limitation_rule_ids_compile() {
 #[test]
 fn proxy_dispatched_exports_flag_set() {
     use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-    let source = b"module.exports = new Proxy({}, {});";
+    let source = b"module.exports = new Proxy({}, { get: () => process.env.VALUE });";
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let default_exp = raw
         .iter()

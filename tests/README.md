@@ -22,7 +22,7 @@ be cumbersome to isolate through a complete package.
 | Informational limitations | `phase25_doc01_integration.rs` |
 | Real language server enrichment | `lsp_integration.rs`, `phase22_inf04_integration.rs`, `inf04_spike.rs`, `compiler_availability.rs` |
 | Pinned published packages | `reference_suite.rs` |
-| TypeScript/Node consumer compatibility | `consumer_compatibility.rs`, `compiler_types.rs`, `module_loading.rs`, `computed_properties.rs` |
+| TypeScript/Node consumer compatibility | `consumer_compatibility.rs`, `compiler_types.rs`, `module_loading.rs`, `computed_properties.rs`, `runtime_contracts.rs` |
 
 The numbered filenames are inherited from the earlier development process.
 Use descriptive behavior names for new suites and fixtures. Extend an existing

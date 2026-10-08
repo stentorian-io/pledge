@@ -1,1 +1,1 @@
-module.exports = new Proxy({}, {});
+module.exports = new Proxy({}, { get: () => process.env.VALUE });
