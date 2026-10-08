@@ -20,7 +20,7 @@
 use std::time::Duration;
 
 use async_lsp::lsp_types::{
-    GotoDefinitionParams, GotoDefinitionResponse, Location, Position, TextDocumentIdentifier,
+    GotoDefinitionParams, GotoDefinitionResponse, Location, TextDocumentIdentifier,
     TextDocumentPositionParams, Url, WorkDoneProgressParams,
 };
 use async_lsp::LanguageServer;
@@ -38,8 +38,8 @@ const DEFINITION_TIMEOUT_SECS: u64 = 5;
 /// channel closed). The Err path lets the caller's CRASH_THRESHOLD branch
 /// fire, mirroring the hover pass at `src/lsp/hover.rs:118-127`.
 ///
-/// Position conversion: `ExportSymbol`/`TypeofImportRef` store 1-indexed
-/// positions; LSP uses 0-indexed. Pitfall 1 precedent.
+/// Source positions are one-based UTF-8 byte offsets; LSP requests use
+/// zero-based UTF-16 positions, including after non-ASCII text.
 ///
 /// `GotoDefinitionResponse` has three variants — Scalar (single Location),
 /// Array (Vec<Location>), Link (Vec<LocationLink>). Per RESEARCH Pitfall 7
@@ -51,13 +51,12 @@ pub async fn resolve_definition_location(
     line: u32,
     col: u32,
 ) -> Result<Option<Location>, LspError> {
-    let lsp_line = line.saturating_sub(1);
-    let lsp_col = col.saturating_sub(1);
+    let position = super::position::source_position(&file_uri, line, col).await?;
 
     let fut = session.server.clone().definition(GotoDefinitionParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: file_uri },
-            position: Position::new(lsp_line, lsp_col),
+            position,
         },
         work_done_progress_params: WorkDoneProgressParams::default(),
         partial_result_params: Default::default(),

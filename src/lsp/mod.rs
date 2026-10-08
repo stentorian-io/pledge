@@ -6,6 +6,7 @@ mod compiler;
 pub mod definition;
 pub mod hover;
 pub mod managed;
+mod position;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -31,10 +32,22 @@ pub enum LspError {
 /// Result of LSP enrichment — either successful enrichment or graceful degradation.
 #[derive(Debug)]
 pub enum EnrichResult {
-    /// All requested exports returned type information.
+    /// All requested exports returned type information and compiler evaluation completed.
     Enriched,
-    /// LSP was unavailable — no types resolved, analysis continues in degraded mode
+    /// Some analysis was unavailable or incomplete; resolved evidence remains usable.
     Degraded(String),
+}
+
+impl EnrichResult {
+    /// Retain source/discovery failures while retiring limits resolved by the compiler.
+    pub fn reconcile_discovery_warnings(
+        &self,
+        warnings: &mut Vec<crate::discover::resolver::ResolveWarning>,
+    ) {
+        if matches!(self, Self::Enriched) {
+            warnings.retain(|warning| !warning.type_expansion_only);
+        }
+    }
 }
 
 /// Enrich all exports in the given map with type signatures from typescript-language-server.
@@ -49,7 +62,7 @@ pub async fn enrich_exports(
         Ok(installed) => installed,
         Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
     };
-    let mut incomplete = Vec::new();
+    let mut discovery_warnings = Vec::new();
     if installed {
         // Low-level callers may have discovered before dependencies existed.
         // Replace forwarding placeholders and add the newly reachable exports.
@@ -57,12 +70,7 @@ pub async fn enrich_exports(
             Ok(result) => result,
             Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
         };
-        incomplete.extend(
-            warnings
-                .into_iter()
-                .filter(|warning| warning.incomplete)
-                .map(|warning| warning.message),
-        );
+        discovery_warnings = warnings;
         exports.retain(|key, symbol| !symbol.is_reexport || discovered.contains_key(key));
         for (key, symbol) in discovered.drain() {
             if exports
@@ -77,6 +85,12 @@ pub async fn enrich_exports(
         exports.typeof_targets.retain(|key, _| keys.contains(key));
     }
     let result = enrich_prepared_exports(exports, pkg_root).await?;
+    result.reconcile_discovery_warnings(&mut discovery_warnings);
+    let mut incomplete: Vec<_> = discovery_warnings
+        .into_iter()
+        .filter(|warning| warning.incomplete)
+        .map(|warning| warning.message)
+        .collect();
     if incomplete.is_empty() {
         Ok(result)
     } else {

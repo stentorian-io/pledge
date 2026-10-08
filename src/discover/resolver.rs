@@ -445,6 +445,8 @@ fn normalize_chunk_path(path: &Path) -> PathBuf {
 pub struct ResolveWarning {
     pub message: String,
     pub incomplete: bool,
+    /// A complete compiler pass can supersede a source type expansion limit.
+    pub type_expansion_only: bool,
 }
 
 impl ResolveWarning {
@@ -452,6 +454,7 @@ impl ResolveWarning {
         Self {
             message: msg.into(),
             incomplete: true,
+            type_expansion_only: false,
         }
     }
 }
@@ -730,6 +733,7 @@ fn collect_exports_uncached(
                 file.display()
             ),
             incomplete: false,
+            type_expansion_only: false,
         });
         return Ok(());
     }

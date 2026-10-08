@@ -95,22 +95,20 @@ fn extract_from_markdown(value: &str) -> Option<String> {
 /// Returns the raw type string if resolved, None for no hover, or a request error.
 /// Implements per-request timeout of 5 seconds (D-06).
 ///
-/// LSP positions are 0-indexed; `line` and `col` parameters are 1-indexed
-/// (as stored in ExportSymbol) and are adjusted here.
+/// Source positions are one-based UTF-8 byte offsets, as stored in ExportSymbol.
+/// Requests use zero-based UTF-16 positions, including after non-ASCII text.
 pub async fn hover_symbol(
     session: &LspSession,
     file_uri: Url,
     line: u32,
     col: u32,
 ) -> Result<Option<String>, LspError> {
-    // ExportSymbol stores 1-indexed positions; LSP uses 0-indexed
-    let lsp_line = line.saturating_sub(1);
-    let lsp_col = col.saturating_sub(1);
+    let position = super::position::source_position(&file_uri, line, col).await?;
 
     let hover_fut = session.server.clone().hover(HoverParams {
         text_document_position_params: TextDocumentPositionParams {
             text_document: TextDocumentIdentifier { uri: file_uri },
-            position: async_lsp::lsp_types::Position::new(lsp_line, lsp_col),
+            position,
         },
         work_done_progress_params: WorkDoneProgressParams::default(),
     });

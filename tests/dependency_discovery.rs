@@ -110,3 +110,25 @@ async fn missing_dependencies_degrade_instead_of_enriching_placeholders() {
         "{result:?}"
     );
 }
+
+#[tokio::test]
+async fn compiler_resolves_dependencies_that_publish_only_an_exports_map() {
+    let directory = package("api");
+    let root = directory.path().join("package");
+    let dependency = directory.path().join("dependency");
+    std::fs::remove_file(dependency.join("index.d.ts")).unwrap();
+    std::fs::create_dir(dependency.join("dist")).unwrap();
+    std::fs::write(dependency.join("package.json"), json!({"name":"local-contract","version":"1.0.0","exports":{"types":"./dist/contracts.d.ts"}}).to_string()).unwrap();
+    std::fs::write(
+        dependency.join("dist/contracts.d.ts"),
+        "export interface Options {value:string}",
+    )
+    .unwrap();
+    std::fs::write(root.join("index.d.ts"), "import type {Options} from 'local-contract'; export declare function api(input: Options): void;").unwrap();
+    let (mut exports, _) = discover_exports(&root).unwrap();
+    let result = lsp::enrich_exports(&mut exports, &root).await.unwrap();
+    assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+    assert!(exports.values().any(|symbol| symbol.name == "api" && symbol.overloads.iter().any(|shape| {
+        matches!(shape, interlint::types::shape::TypeShape::Function { params, .. } if matches!(&params[0].shape, interlint::types::shape::TypeShape::Object(fields) if fields.contains_key("value")))
+    })), "{exports:?}");
+}

@@ -85,6 +85,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 warnings.push(discover::resolver::ResolveWarning {
                     message: error.to_string(),
                     incomplete: true,
+                    type_expansion_only: false,
                 });
             }
             spinner.finish_and_clear();
@@ -122,8 +123,8 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 lsp::client::prepare_dependencies(&previous_root),
                 lsp::client::prepare_dependencies(&current_root),
             );
-            let (mut new_exports, new_warnings) = discover::discover_exports(&current_root)?;
-            let (mut old_exports, old_warnings) = discover::discover_exports(&previous_root)?;
+            let (mut new_exports, mut new_warnings) = discover::discover_exports(&current_root)?;
+            let (mut old_exports, mut old_warnings) = discover::discover_exports(&previous_root)?;
             spinner.finish_and_clear();
 
             // Step 2: LSP enrichment (D-07: two servers in parallel)
@@ -145,6 +146,9 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                     )
                 }
             };
+
+            old_enrich.reconcile_discovery_warnings(&mut old_warnings);
+            new_enrich.reconcile_discovery_warnings(&mut new_warnings);
 
             // Determine degradation status
             let degraded = matches!(&old_enrich, lsp::EnrichResult::Degraded(_))

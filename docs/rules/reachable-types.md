@@ -12,6 +12,10 @@ work limits produce incomplete analysis warnings. Expansion is limited to 32
 levels, 4,096 steps per symbol, and 200,000 steps per package. Symbols are
 processed in a stable order so budget exhaustion is reproducible. Unresolved imported types
 also degrade analysis after language-server enrichment.
+When compiler evaluation completes, it supersedes warnings about the source
+type expansion limit. Other discovery failures remain incomplete. Library
+callers can apply `EnrichResult::reconcile_discovery_warnings` to retain only
+the outstanding warnings.
 
 Without enrichment, the source pass resolves declared structural types. With
 enrichment, the compiler paired with the language server evaluates the public
@@ -21,7 +25,9 @@ remain compatible even when their alias expressions change. Making a returned
 property readonly is breaking, including properties inside nested objects.
 
 Compiler evaluation loads the package's tsconfig and retains strict nullability
-for public contracts. It does not execute package code. Unevaluated symbolic
+for public contracts. Packages without a tsconfig receive strict NodeNext
+resolution, including dependencies that publish types only through `exports`.
+It does not execute package code. Unevaluated symbolic
 types (including uninstantiated mapped types), missing declarations, compiler
 failures, or exhausted budgets produce incomplete analysis. The compiler pass
 has a 30-second timeout, a 512 MiB heap limit, and a 16 MiB output limit in

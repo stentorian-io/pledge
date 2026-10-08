@@ -15,6 +15,7 @@ executable still use `interlint`.
 3. `src/lsp/` manages the TypeScript language server and its paired compiler.
    Hover and definition requests supply declaration information; compiler
    evaluation supplies the concrete public type shapes used by comparison.
+   Source byte columns are converted to UTF-16 for hover and definition requests.
 4. `src/compare/` compares exports, types, metadata, structural declarations,
    assets, and directives. It pairs related symbols and consolidates findings.
 5. `src/report/` renders the findings. `src/main.rs` coordinates the passes,

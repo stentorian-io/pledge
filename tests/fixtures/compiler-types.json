@@ -118,5 +118,13 @@
     "consumer": "api().value=\"changed\";",
     "breaking": true,
     "extension": "ts"
+  },
+  {
+    "name": "unicode-source-column",
+    "old": "/* 🧭🧭🧭🧭🧭🧭🧭🧭 café */ export declare function api(): string;",
+    "new": "/* 🧭🧭🧭🧭🧭🧭🧭🧭 café */ export declare function api(): number;",
+    "consumer": "const text: string = api();",
+    "breaking": true,
+    "extension": "ts"
   }
 ]

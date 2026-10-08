@@ -110,3 +110,43 @@ async fn unresolved_public_types_cannot_report_complete_analysis() {
         );
     }
 }
+
+#[tokio::test]
+async fn completed_compiler_evaluation_retires_only_source_type_limits() {
+    for missing_source in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("package.json"),
+            r#"{"name":"type-limits","exports":"./index.d.ts"}"#,
+        )
+        .unwrap();
+        let mut source = String::from("type T0 = {value:string};\n");
+        for index in 1..50 {
+            source.push_str(&format!("type T{index} = T{};\n", index - 1));
+        }
+        source.push_str("export declare function api(): T49;\n");
+        if missing_source {
+            source.push_str("export * from './missing.js';\n");
+        }
+        std::fs::write(directory.path().join("index.d.ts"), source).unwrap();
+        let (mut exports, mut warnings) = discover_exports(directory.path()).unwrap();
+        assert!(
+            warnings.iter().any(|warning| warning.type_expansion_only),
+            "{warnings:?}"
+        );
+        let result = lsp::enrich_exports(&mut exports, directory.path())
+            .await
+            .unwrap();
+        assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+        result.reconcile_discovery_warnings(&mut warnings);
+        assert_eq!(
+            warnings.iter().any(|warning| warning.incomplete),
+            missing_source,
+            "{warnings:?}"
+        );
+        assert!(
+            warnings.iter().all(|warning| !warning.type_expansion_only),
+            "{warnings:?}"
+        );
+    }
+}

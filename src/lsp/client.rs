@@ -182,7 +182,7 @@ fn build_command(binary: &LspBinary) -> tokio::process::Command {
 }
 
 /// Write a minimal `tsconfig.json` to `root_dir` if one does not already exist.
-/// Per D-14: permissive settings to enable JS/TS analysis without strict checks.
+/// Preserve consumer-visible nullability and modern package export resolution.
 async fn maybe_write_tsconfig(root_dir: &Path) -> Result<(), LspError> {
     let tsconfig_path = root_dir.join("tsconfig.json");
     if tsconfig_path.exists() {
@@ -191,12 +191,12 @@ async fn maybe_write_tsconfig(root_dir: &Path) -> Result<(), LspError> {
 
     let tsconfig = serde_json::json!({
         "compilerOptions": {
-            "strict": false,
+            "strict": true,
             "allowJs": true,
             "checkJs": true,
-            "moduleResolution": "node",
-            "target": "ES2020",
-            "module": "commonjs",
+            "moduleResolution": "NodeNext",
+            "target": "ES2022",
+            "module": "NodeNext",
             "esModuleInterop": true,
             "skipLibCheck": true,
             "resolveJsonModule": true

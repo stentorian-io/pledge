@@ -75,7 +75,11 @@ pub fn discover_exports(
     warnings.extend(
         type_graph::resolve_public_types(&mut map, pkg_root, false)
             .into_iter()
-            .map(resolver::ResolveWarning::new),
+            .map(|message| resolver::ResolveWarning {
+                message,
+                incomplete: true,
+                type_expansion_only: true,
+            }),
     );
     Ok((map, warnings))
 }
