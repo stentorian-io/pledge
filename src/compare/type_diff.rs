@@ -445,13 +445,13 @@ fn diff_recursive(
                 if reorder_detected {
                     let display = make_display_name(symbol_name, field_path);
                     findings.push(Finding {
-                        severity: Severity::Major,
+                        severity: Severity::Patch,
                         rule: RULE_TUPLE_LABEL_REORDERED,
                         file: file.to_path_buf(),
                         line,
                         col,
                         message: format!(
-                            "tuple labels on type `{display}` were reordered — positional destructuring on the consumer side will bind different values"
+                            "tuple labels on type `{display}` were reordered (labels do not affect positional types)"
                         ),
                     });
                 }
@@ -463,6 +463,19 @@ fn diff_recursive(
                     } else {
                         format!("{field_path}[{i}]")
                     };
+                    if (old_elem.optional && !new_elem.optional) || old_elem.rest != new_elem.rest {
+                        let display = make_display_name(symbol_name, &idx_path);
+                        findings.push(Finding {
+                            severity: Severity::Major,
+                            rule: RULE_TYPE_INCOMPATIBLE,
+                            file: file.to_path_buf(),
+                            line,
+                            col,
+                            message: format!(
+                                "tuple element `{display}` changed optional or rest requirements"
+                            ),
+                        });
+                    }
                     // Recurse on shape (label-blind structural diff).
                     diff_recursive(
                         &old_elem.shape,
@@ -499,7 +512,7 @@ fn diff_recursive(
                         }
                         (Some(a), None) => {
                             findings.push(Finding {
-                                severity: Severity::Major,
+                                severity: Severity::Patch,
                                 rule: RULE_TUPLE_LABEL_DROPPED,
                                 file: file.to_path_buf(),
                                 line,

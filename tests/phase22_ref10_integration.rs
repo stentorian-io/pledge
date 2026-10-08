@@ -1,9 +1,9 @@
 //! Phase 22 REF-10 integration tests: tuple-label detection.
 //!
-//! CONTEXT.md D-08 locks 4 granular rule-IDs:
+//! Tuple labels are documentation metadata; they do not change assignability.
 //!   - tuple-label-renamed (Minor)
-//!   - tuple-label-reordered (Major) — multiset-preserved, position-changed pre-pass
-//!   - tuple-label-dropped (Major)
+//!   - tuple-label-reordered (Patch) — multiset-preserved, position-changed pre-pass
+//!   - tuple-label-dropped (Patch)
 //!   - tuple-label-added (Minor)
 
 use std::path::{Path, PathBuf};
@@ -67,7 +67,7 @@ fn ref_10_label_renamed_minor() {
 }
 
 #[test]
-fn ref_10_label_reordered_major() {
+fn ref_10_label_reordered_cosmetic() {
     let findings = run("reorder");
     let reorder_hits: Vec<_> = findings
         .iter()
@@ -83,8 +83,8 @@ fn ref_10_label_reordered_major() {
             .collect::<Vec<_>>()
     );
     assert!(
-        matches!(reorder_hits[0].severity, Severity::Major),
-        "tuple-label-reordered must be Major; got {:?}",
+        matches!(reorder_hits[0].severity, Severity::Patch),
+        "tuple-label-reordered must be Patch; got {:?}",
         reorder_hits[0].severity
     );
     let rename_hits: Vec<_> = findings
@@ -100,7 +100,7 @@ fn ref_10_label_reordered_major() {
 }
 
 #[test]
-fn ref_10_label_dropped_major() {
+fn ref_10_label_dropped_cosmetic() {
     let findings = run("drop");
     let hits: Vec<_> = findings
         .iter()
@@ -116,8 +116,8 @@ fn ref_10_label_dropped_major() {
             .collect::<Vec<_>>()
     );
     assert!(
-        matches!(hits[0].severity, Severity::Major),
-        "tuple-label-dropped must be Major; got {:?}",
+        matches!(hits[0].severity, Severity::Patch),
+        "tuple-label-dropped must be Patch; got {:?}",
         hits[0].severity
     );
     assert!(

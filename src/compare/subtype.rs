@@ -177,19 +177,8 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         // Array: covariant in element type
         (Array(sub_inner), Array(sup_inner)) => is_subtype_of(sub_inner, sup_inner, depth + 1),
 
-        // Tuple: same length and each position covariant.
-        //
-        // REF-10 (Phase 22): labels are nominal metadata and are NOT part of
-        // structural subtyping — subtype checks compare only `.shape` per
-        // position. Label diffs are the diff pipeline's responsibility
-        // (see `compare::type_diff::diff_recursive`).
-        (Tuple(sub_elems), Tuple(sup_elems)) => {
-            sub_elems.len() == sup_elems.len()
-                && sub_elems
-                    .iter()
-                    .zip(sup_elems.iter())
-                    .all(|(s, p)| is_subtype_of(&s.shape, &p.shape, depth + 1))
-        }
+        // Labels have no effect on assignability; optional/rest markers do.
+        (Tuple(sub_elems), Tuple(sup_elems)) => tuple_is_subtype(sub_elems, sup_elems, depth),
 
         // Function: contravariant params, covariant return
         // TypeScript callback compatibility: a function with fewer params is a subtype.
@@ -258,6 +247,63 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
 /// Produce a human-readable string representation of a TypeShape.
 ///
 /// Used by D-04: finding messages include old/new type values.
+fn tuple_is_subtype(
+    sub: &[crate::types::shape::TupleElement],
+    sup: &[crate::types::shape::TupleElement],
+    depth: usize,
+) -> bool {
+    // Unresolved variadic generics and middle rest elements cannot be expanded
+    // safely here. Equality remains safe; other cases are conservative.
+    if sub == sup {
+        return true;
+    }
+    let split = |elems: &[crate::types::shape::TupleElement]| {
+        elems.iter().position(|e| e.rest).unwrap_or(elems.len())
+    };
+    let sub_fixed = split(sub);
+    let sup_fixed = split(sup);
+    if sub_fixed + 1 < sub.len() || sup_fixed + 1 < sup.len() {
+        return false;
+    }
+    let min_len = |elems: &[crate::types::shape::TupleElement]| {
+        elems.iter().filter(|e| !e.optional && !e.rest).count()
+    };
+    if min_len(sub) < min_len(sup) {
+        return false;
+    }
+    if sup_fixed == sup.len() && (sub_fixed != sub.len() || sub.len() > sup.len()) {
+        return false;
+    }
+    fn at(
+        elems: &[crate::types::shape::TupleElement],
+        fixed: usize,
+        index: usize,
+    ) -> Option<(&TypeShape, bool)> {
+        if index < fixed {
+            return Some((&elems[index].shape, elems[index].optional));
+        }
+        match elems.get(fixed).map(|e| &e.shape) {
+            Some(TypeShape::Array(inner)) => Some((inner, false)),
+            _ => None,
+        }
+    }
+    for index in 0..sub_fixed.max(sup_fixed) + 1 {
+        let Some((s, optional)) = at(sub, sub_fixed, index) else {
+            if index >= sub_fixed && sub_fixed != sub.len() {
+                return false;
+            }
+            continue;
+        };
+        let Some((p, accepts_optional)) = at(sup, sup_fixed, index) else {
+            return false;
+        };
+        if (optional && !accepts_optional) || !is_subtype_of(s, p, depth + 1) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Example: `format_type(&Union([String, Number]))` returns `"string | number"`.
 pub fn format_type(shape: &TypeShape) -> String {
     use PrimitiveKind::*;
@@ -305,7 +351,7 @@ pub fn format_type(shape: &TypeShape) -> String {
                         Some(lbl) => {
                             format!("{rest_prefix}{lbl}{opt_suffix}: {}", format_type(&e.shape))
                         }
-                        None => format!("{rest_prefix}{}", format_type(&e.shape)),
+                        None => format!("{rest_prefix}{}{opt_suffix}", format_type(&e.shape)),
                     }
                 })
                 .collect::<Vec<_>>()
