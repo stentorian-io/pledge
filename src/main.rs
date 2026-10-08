@@ -5,6 +5,17 @@ use interlint::acquire::{self, AcquireResult};
 use interlint::cli::Cli;
 use interlint::{compare, discover, lsp, report};
 
+async fn enrich_after_preparation(
+    exports: &mut interlint::types::ExportMap,
+    root: &std::path::Path,
+    preparation: Result<bool, lsp::LspError>,
+) -> Result<lsp::EnrichResult, lsp::LspError> {
+    match preparation {
+        Ok(_) => lsp::enrich_prepared_exports(exports, root).await,
+        Err(error) => Ok(lsp::EnrichResult::Degraded(error.to_string())),
+    }
+}
+
 /// Remove duplicate findings by a 5-tuple key: (rule, file, line, col, message).
 ///
 /// ROB-07: The key was widened from (rule, file, line) to include `col` and `message`.
@@ -68,7 +79,14 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
         // First-publish case (PKG-03): no previous version exists
         AcquireResult::FirstPublish { current_root, .. } => {
             let spinner = report::create_spinner("Analyzing exports...");
-            let (exports, warnings) = discover::discover_exports(&current_root)?;
+            let preparation = lsp::client::prepare_dependencies(&current_root).await;
+            let (exports, mut warnings) = discover::discover_exports(&current_root)?;
+            if let Err(error) = preparation {
+                warnings.push(discover::resolver::ResolveWarning {
+                    message: error.to_string(),
+                    incomplete: true,
+                });
+            }
             spinner.finish_and_clear();
 
             let all_warnings: Vec<_> = warnings.into_iter().collect();
@@ -100,6 +118,10 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
         } => {
             // Step 1: Discover exports
             let spinner = report::create_spinner("Analyzing exports...");
+            let (old_preparation, new_preparation) = tokio::join!(
+                lsp::client::prepare_dependencies(&previous_root),
+                lsp::client::prepare_dependencies(&current_root),
+            );
             let (mut new_exports, new_warnings) = discover::discover_exports(&current_root)?;
             let (mut old_exports, old_warnings) = discover::discover_exports(&previous_root)?;
             spinner.finish_and_clear();
@@ -107,8 +129,8 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // Step 2: LSP enrichment (D-07: two servers in parallel)
             let spinner = report::create_spinner("Resolving types...");
             let enrich_result = tokio::try_join!(
-                lsp::enrich_exports(&mut old_exports, &previous_root),
-                lsp::enrich_exports(&mut new_exports, &current_root),
+                enrich_after_preparation(&mut old_exports, &previous_root, old_preparation),
+                enrich_after_preparation(&mut new_exports, &current_root, new_preparation),
             );
             spinner.finish_and_clear();
 

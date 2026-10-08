@@ -54,14 +54,11 @@ impl LspSession {
 
 /// Spawn and initialize a typescript-language-server for the given project root.
 ///
-/// Writes a synthetic tsconfig.json and installs declared dependencies,
-/// then starts the LSP session and completes the initialize handshake.
+/// Writes a synthetic tsconfig.json, then starts the LSP session and completes
+/// the initialize handshake. Dependencies must be prepared before discovery.
 pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSession, LspError> {
     // Synthesize tsconfig.json if not already present (D-14)
     maybe_write_tsconfig(root_dir).await?;
-
-    // Failed dependency installation makes type analysis incomplete.
-    run_npm_install(root_dir).await?;
 
     // Build the command
     let mut cmd = build_command(binary);
@@ -218,7 +215,8 @@ async fn maybe_write_tsconfig(root_dir: &Path) -> Result<(), LspError> {
 }
 
 /// Install analysis dependencies without creating or rewriting package lockfiles.
-async fn run_npm_install(root_dir: &Path) -> Result<(), LspError> {
+/// Returns whether the package declares dependencies that needed preparation.
+pub async fn prepare_dependencies(root_dir: &Path) -> Result<bool, LspError> {
     let manifest = std::fs::read(root_dir.join("package.json"))
         .ok()
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
@@ -233,7 +231,7 @@ async fn run_npm_install(root_dir: &Path) -> Result<(), LspError> {
             })
     });
     if !has_dependencies {
-        return Ok(());
+        return Ok(false);
     }
     let mut command = tokio::process::Command::new("npm");
     command
@@ -260,7 +258,7 @@ async fn run_npm_install(root_dir: &Path) -> Result<(), LspError> {
             "dependency installation exited with {status}"
         )));
     }
-    Ok(())
+    Ok(true)
 }
 
 #[cfg(all(test, feature = "lsp-tests"))]
@@ -281,7 +279,7 @@ mod tests {
         .unwrap();
         let manifest = r#"{"name":"test-package","version":"1.0.0","dependencies":{"local-dependency":"file:../dependency"}}"#;
         std::fs::write(package.join("package.json"), manifest).unwrap();
-        run_npm_install(&package).await.unwrap();
+        prepare_dependencies(&package).await.unwrap();
         assert_eq!(
             std::fs::read_to_string(package.join("package.json")).unwrap(),
             manifest
@@ -292,7 +290,7 @@ mod tests {
             .exists());
         let lock = r#"{"name":"test-package","lockfileVersion":3,"packages":{}}"#;
         std::fs::write(package.join("package-lock.json"), lock).unwrap();
-        run_npm_install(&package).await.unwrap();
+        prepare_dependencies(&package).await.unwrap();
         assert_eq!(
             std::fs::read_to_string(package.join("package-lock.json")).unwrap(),
             lock

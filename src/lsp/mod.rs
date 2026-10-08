@@ -45,6 +45,55 @@ pub async fn enrich_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
+    let installed = match client::prepare_dependencies(pkg_root).await {
+        Ok(installed) => installed,
+        Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
+    };
+    let mut incomplete = Vec::new();
+    if installed {
+        // Low-level callers may have discovered before dependencies existed.
+        // Replace forwarding placeholders and add the newly reachable exports.
+        let (mut discovered, warnings) = match crate::discover::discover_exports(pkg_root) {
+            Ok(result) => result,
+            Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
+        };
+        incomplete.extend(
+            warnings
+                .into_iter()
+                .filter(|warning| warning.incomplete)
+                .map(|warning| warning.message),
+        );
+        exports.retain(|key, symbol| !symbol.is_reexport || discovered.contains_key(key));
+        for (key, symbol) in discovered.drain() {
+            if exports
+                .get(&key)
+                .is_none_or(|existing| existing.is_reexport)
+            {
+                exports.insert(key, symbol);
+            }
+        }
+        exports.directives.extend(discovered.directives);
+        let keys: std::collections::HashSet<_> = exports.keys().cloned().collect();
+        exports.typeof_targets.retain(|key, _| keys.contains(key));
+    }
+    let result = enrich_prepared_exports(exports, pkg_root).await?;
+    if incomplete.is_empty() {
+        Ok(result)
+    } else {
+        if let EnrichResult::Degraded(issue) = result {
+            incomplete.push(issue);
+        }
+        Ok(EnrichResult::Degraded(incomplete.join("; ")))
+    }
+}
+
+/// Enrich a map discovered after successful dependency preparation.
+/// Use `client::prepare_dependencies` before discovery, or `enrich_exports`
+/// to prepare and refresh a previously discovered map automatically.
+pub async fn enrich_prepared_exports(
+    exports: &mut ExportMap,
+    pkg_root: &Path,
+) -> Result<EnrichResult, LspError> {
     // Step 1: resolve the LSP binary (managed cache → PATH → download)
     let binary = match managed::resolve_lsp_binary(pkg_root).await {
         Ok(b) => b,
@@ -87,6 +136,17 @@ async fn enrich_with_binary(
     // Step 4: iterate files, send hover requests; respect total budget (60s per D-06)
     let budget_start = Instant::now();
     let mut incomplete = Vec::new();
+    incomplete.extend(
+        exports
+            .keys()
+            .filter(|key| key.name.starts_with("*<"))
+            .map(|key| {
+                format!(
+                    "external export barrel `{}` has not been resolved",
+                    key.name
+                )
+            }),
+    );
 
     // Collect file list first so we can process without holding borrow on exports
     let file_list: Vec<(PathBuf, Vec<crate::types::ExportKey>)> = file_groups.into_iter().collect();

@@ -8,8 +8,10 @@ executable still use `interlint`.
 
 1. `src/acquire/` packs the local package, reads registry metadata, downloads the
    published tarball, and extracts both versions into temporary directories.
-2. `src/discover/` resolves package entry points and builds export maps with
-   tree-sitter. It also captures directives, decorators, and release tags.
+2. Declared dependencies are installed before `src/discover/` resolves package
+   entry points and builds export maps with tree-sitter. Discovery also captures
+   directives, decorators, and release tags. Installation disables scripts and
+   lockfile generation; a failed installation leaves analysis incomplete.
 3. `src/lsp/` manages the TypeScript language server and its paired compiler.
    Hover and definition requests supply declaration information; compiler
    evaluation supplies the concrete public type shapes used by comparison.
@@ -21,6 +23,11 @@ executable still use `interlint`.
 First-publish handling skips downloading a previous version and reports the
 discovered exports as additions. LSP failures produce an explicit degraded
 result; structural comparisons can continue with the evidence available.
+
+Library callers can prepare dependencies with `lsp::client::prepare_dependencies`,
+discover exports, and call `lsp::enrich_prepared_exports`. The convenience
+`lsp::enrich_exports` prepares dependencies and refreshes dependency-backed
+exports when given a map discovered before installation.
 
 ## Ownership boundaries
 
