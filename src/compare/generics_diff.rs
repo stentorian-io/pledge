@@ -18,6 +18,55 @@ use super::subtype::{
 };
 use crate::types::{Finding, Severity, TypeParam};
 
+pub(crate) fn compare_parameter_shapes(
+    before: &[crate::types::shape::TypeParameterShape],
+    after: &[crate::types::shape::TypeParameterShape],
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    let parameters = |shapes: &[crate::types::shape::TypeParameterShape]| {
+        shapes
+            .iter()
+            .enumerate()
+            .map(|(index, parameter)| TypeParam {
+                name: format!("T{index}"),
+                constraint_text: parameter.constraint.as_ref().map(format_type),
+                constraint_shape: parameter.constraint.clone(),
+                default_text: parameter.default.as_ref().map(format_type),
+                is_const: parameter.is_const,
+                variance: parameter.variance.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut findings = compare_type_params(
+        &parameters(before),
+        &parameters(after),
+        name,
+        file,
+        line,
+        col,
+    );
+    for (index, (before, after)) in before.iter().zip(after).enumerate() {
+        if let (Some(before), Some(after)) = (&before.default, &after.default) {
+            if before != after && format_type(before) == format_type(after) {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_GENERIC_DEFAULT_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "default type for parameter T{index} changed structurally in `{name}`"
+                    ),
+                });
+            }
+        }
+    }
+    findings
+}
+
 /// Compare two TypeParam slices and produce findings for generic-related breaking changes.
 ///
 /// Detects:

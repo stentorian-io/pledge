@@ -51,13 +51,19 @@ function bindParameters(parameters) {
   const scope = parameterScope++;
   unbound.forEach((parameter, index) => parameterNames.set(parameter, `T${scope}_${index}`));
 }
+function withParameters(parameters, resolve) {
+  const previousNames = new Map(parameterNames), previousScope = parameterScope;
+  bindParameters(parameters);
+  try { return resolve(); }
+  finally { parameterNames = previousNames; parameterScope = previousScope; }
+}
 function incomplete(message, type) {
   currentIssues.add(message);
   return { Opaque: type ? checker.typeToString(type) : '<unresolved>' };
 }
 function signatureShape(signature, depth) {
-  bindParameters(signature.typeParameters);
-  return { Function: {
+  return withParameters(signature.typeParameters, () => {
+  const body = { Function: {
     params: signature.getParameters().map(parameter => {
       const declaration = parameter.valueDeclaration || parameter.declarations?.[0];
       return { name: parameter.getName(),
@@ -67,6 +73,26 @@ function signatureShape(signature, depth) {
     }),
     return_type: shape(checker.getReturnTypeOfSignature(signature), depth + 1),
   } };
+  return genericDeclaration(signature.typeParameters, body, depth);
+  });
+}
+
+function genericDeclaration(parameters, body, depth) {
+  if (!parameters?.length) return body;
+  return { GenericDeclaration: { params: parameters.map(parameter => {
+    const declaration = parameter.symbol?.declarations?.find(ts.isTypeParameterDeclaration);
+    // Ask the checker to initialize its immediate constraint cache; the base
+    // constraint alone would erase U extends T when T also has a constraint.
+    const baseConstraint = checker.getBaseConstraintOfType(parameter);
+    const constraint = declaration?.constraint ? parameter.constraint || baseConstraint || checker.getTypeFromTypeNode(declaration.constraint) : null;
+    const defaultType = checker.getDefaultFromTypeParameter(parameter);
+    const modifiers = declaration?.modifiers || [];
+    const has = kind => modifiers.some(modifier => modifier.kind === kind);
+    const inward = has(ts.SyntaxKind.InKeyword), outward = has(ts.SyntaxKind.OutKeyword);
+    return { constraint: constraint ? shape(constraint, depth + 1) : null,
+      default: defaultType ? shape(defaultType, depth + 1) : null,
+      is_const: has(ts.SyntaxKind.ConstKeyword), variance: inward && outward ? 'InOut' : inward ? 'In' : outward ? 'Out' : null };
+  }), body } };
 }
 function propertyName(symbol) {
   const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
@@ -114,7 +140,7 @@ function shape(type, depth = 0) {
     if (type.isIntersection()) return { Intersection: type.types.map(member => shape(member, depth + 1)) };
     if (checker.isTupleType(type)) {
       const target = type.target;
-      return { Tuple: checker.getTypeArguments(type).map((element, index) => {
+      const tuple = { Tuple: checker.getTypeArguments(type).map((element, index) => {
         const elementFlags = target.elementFlags[index];
         const rest = !!(elementFlags & (ts.ElementFlags.Rest | ts.ElementFlags.Variadic));
         let elementShape = shape(element, depth + 1);
@@ -122,8 +148,12 @@ function shape(type, depth = 0) {
         return { label: target.labeledElementDeclarations?.[index]?.name?.getText() || null,
           optional: !!(elementFlags & ts.ElementFlags.Optional), rest, shape: elementShape };
       }) };
+      return target.readonly ? generic('Readonly', [tuple]) : tuple;
     }
-    if (checker.isArrayType(type)) return { Array: shape(checker.getTypeArguments(type)[0], depth + 1) };
+    if (checker.isArrayType(type)) {
+      const element = shape(checker.getTypeArguments(type)[0], depth + 1);
+      return type.symbol?.getName() === 'ReadonlyArray' ? generic('ReadonlyArray', [element]) : { Array: element };
+    }
     const name = type.symbol?.getName();
     const isLibraryType = type.symbol?.declarations?.some(declaration => program.isSourceFileDefaultLibrary(declaration.getSourceFile()));
     if (isLibraryType && (builtins.has(name) || name === 'ReadonlyArray')) {
@@ -143,10 +173,9 @@ function shape(type, depth = 0) {
       // Building the node asks the compiler to resolve the instantiated branches.
       // Reading the original AST here would lose substitutions and private aliases.
       checker.typeToTypeNode(type, undefined, formatFlags);
-      bindParameters(type.root.inferTypeParameters);
       if (!type.resolvedTrueType || !type.resolvedFalseType) return incomplete('unresolved conditional branches', type);
-      return { Conditional: { check: shape(type.checkType, depth + 1), extends: shape(type.extendsType, depth + 1),
-        then_type: shape(type.resolvedTrueType, depth + 1), else_type: shape(type.resolvedFalseType, depth + 1) } };
+      return withParameters(type.root.inferTypeParameters, () => ({ Conditional: { check: shape(type.checkType, depth + 1), extends: shape(type.extendsType, depth + 1),
+        then_type: shape(type.resolvedTrueType, depth + 1), else_type: shape(type.resolvedFalseType, depth + 1) } }));
     }
     if (flags & ts.TypeFlags.IndexedAccess) return { Indexed: { base: shape(type.objectType, depth + 1), index: shape(type.indexType, depth + 1) } };
     if (flags & ts.TypeFlags.Index) return generic('keyof', [shape(type.type, depth + 1)]);
@@ -158,11 +187,10 @@ function shape(type, depth = 0) {
       // These cached compiler types retain instantiation and alias expansion. Guard
       // their presence because MappedType's cache fields are not a public TS API.
       if (!type.typeParameter || !type.constraintType || !type.templateType) return incomplete('unresolved mapped type components', type);
-      bindParameters([type.typeParameter]);
       const polarity = token => token ? token.kind !== ts.SyntaxKind.MinusToken : null;
-      return { Mapped: { key_name: parameterNames.get(type.typeParameter), key_type: shape(type.constraintType, depth + 1),
+      return withParameters([type.typeParameter], () => ({ Mapped: { key_name: parameterNames.get(type.typeParameter), key_type: shape(type.constraintType, depth + 1),
         name_type: type.nameType ? shape(type.nameType, depth + 1) : null, value_type: shape(type.templateType, depth + 1),
-        readonly: polarity(node.readonlyToken), optional: polarity(node.questionToken) } };
+        readonly: polarity(node.readonlyToken), optional: polarity(node.questionToken) } }));
     }
     const readonlyProperties = new Map();
     if (node && ts.isTypeLiteralNode(node)) {
@@ -287,6 +315,11 @@ for (const request of input.symbols) {
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
     if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
     else overloads = [shape(type)];
+    if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
+      const declaration = symbol.declarations?.find(declaration => declaration.typeParameters?.length);
+      const parameters = declaration?.typeParameters.map(parameter => checker.getTypeAtLocation(parameter));
+      overloads = overloads.map(body => genericDeclaration(parameters, body, 0));
+    }
   } else currentIssues.add('compiler could not locate public declaration');
   const typeof_targets = (request.refs || []).map(reference => definitionLocation({ ...reference, file: request.file }));
   results.push({ id: request.id, overloads, signature, typeof_targets, issues: [...currentIssues] });

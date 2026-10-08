@@ -115,6 +115,55 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
     match (sub, sup) {
         (NoInferWrap(inner), _) => return is_subtype_of(inner, sup, depth + 1),
         (_, NoInferWrap(inner)) => return is_subtype_of(sub, inner, depth + 1),
+        (
+            GenericDeclaration {
+                params: offered,
+                body: offered_body,
+            },
+            GenericDeclaration {
+                params: required,
+                body: required_body,
+            },
+        ) => {
+            if offered.len() < required.len()
+                || offered[required.len()..]
+                    .iter()
+                    .any(|parameter| parameter.default.is_none())
+            {
+                return false;
+            }
+            let unknown = Primitive(Unknown);
+            let accepts = offered.iter().zip(required).all(|(offered, required)| {
+                is_subtype_of(
+                    required.constraint.as_ref().unwrap_or(&unknown),
+                    offered.constraint.as_ref().unwrap_or(&unknown),
+                    depth + 1,
+                ) && (required.default.is_none() || required.default == offered.default)
+                    && required.is_const == offered.is_const
+                    && required.variance == offered.variance
+            });
+            return accepts && is_subtype_of(offered_body, required_body, depth + 1);
+        }
+        (_, Generic { name, args }) if name == "Readonly" && args.len() == 1 => {
+            let sub = match sub {
+                Generic { name, args } if name == "Readonly" && args.len() == 1 => &args[0],
+                other => other,
+            };
+            return is_subtype_of(sub, &args[0], depth + 1);
+        }
+        (_, Generic { name, args }) if name == "ReadonlyArray" && args.len() == 1 => {
+            let sub = match sub {
+                Generic { name, args } if name == "Readonly" && args.len() == 1 => &args[0],
+                other => other,
+            };
+            match sub {
+                Array(element) => return is_subtype_of(element, &args[0], depth + 1),
+                Tuple(_) => {
+                    return is_subtype_of(sub, &Array(Box::new(args[0].clone())), depth + 1)
+                }
+                _ => {}
+            }
+        }
         _ => {}
     }
 
@@ -189,6 +238,18 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
 
         // Array: covariant in element type
         (Array(sub_inner), Array(sup_inner)) => is_subtype_of(sub_inner, sup_inner, depth + 1),
+        (Tuple(elements), Array(element)) => elements.iter().all(|entry| {
+            let shape = if entry.rest {
+                match &entry.shape {
+                    Array(inner) => inner.as_ref(),
+                    other => other,
+                }
+            } else {
+                &entry.shape
+            };
+            is_subtype_of(shape, element, depth + 1)
+                && (!entry.optional || is_subtype_of(&Primitive(Undefined), element, depth + 1))
+        }),
 
         // Labels have no effect on assignability; optional/rest markers do.
         (Tuple(sub_elems), Tuple(sup_elems)) => tuple_is_subtype(sub_elems, sup_elems, depth),
@@ -388,6 +449,27 @@ pub fn format_type(shape: &TypeShape) -> String {
             args.iter().map(format_type).collect::<Vec<_>>().join(", ")
         ),
         TypeParam(name) => name.clone(),
+        GenericDeclaration { params, body } => {
+            let parameters = params
+                .iter()
+                .enumerate()
+                .map(|(index, parameter)| {
+                    let constraint = parameter
+                        .constraint
+                        .as_ref()
+                        .map(|shape| format!(" extends {}", format_type(shape)))
+                        .unwrap_or_default();
+                    let default = parameter
+                        .default
+                        .as_ref()
+                        .map(|shape| format!(" = {}", format_type(shape)))
+                        .unwrap_or_default();
+                    format!("T{index}{constraint}{default}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("<{parameters}> {}", format_type(body))
+        }
         // Opaque carries already-human-readable raw text
         Opaque(s) => s.clone(),
         // Fallback for Conditional, Mapped, Indexed, Template
@@ -505,6 +587,7 @@ pub const RULE_DECORATOR_ARGUMENTS_CHANGED: &str = "decorator-arguments-changed"
 // ─── Phase 20: TS type-system features ──────────────────────────────────────
 pub const RULE_TYPE_NARROWING_WIDENED: &str = "type-narrowing-widened"; // TYPE-01 Minor
 pub const RULE_INFER_EXTENDS_CONSTRAINT_CHANGED: &str = "infer-extends-constraint-changed"; // TYPE-02 Major
+pub const RULE_GENERIC_INFERENCE_CONSTRAINT_ADDED: &str = "generic-inference-constraint-added";
 pub const RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED: &str = "generic-inference-constraint-removed"; // GEN-07 Minor
 pub const RULE_UNION_VARIANT_ADDED: &str = "union-variant-added"; // BEH-06 Warning
 pub const RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED: &str = "index-signature-key-pattern-changed"; // REF-09 Major (narrowing) / Minor (widening)

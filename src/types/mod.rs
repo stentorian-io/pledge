@@ -465,7 +465,7 @@ pub struct EnumShape {
 
 /// TLF-05: Generic type parameter variance modifier.
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum Variance {
     In,
     Out,

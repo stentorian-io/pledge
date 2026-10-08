@@ -9,6 +9,10 @@ key remapping, modifier addition/removal, and intrinsic string operations.
 Type parameter identities follow their binding positions so renaming a generic
 parameter does not change its contract. The compiler expands private aliases
 inside these expressions; unresolved references still make analysis incomplete.
+Generic binders retain resolved constraints, defaults, const inference, and
+variance annotations, including nested and returned callables. Readonly arrays
+and tuples retain their write restrictions; mutable results can satisfy readonly
+consumers, while removing accepted readonly inputs is breaking.
 
 ## Analysis pipeline
 

@@ -252,6 +252,78 @@ fn diff_recursive(
     }
 
     match (&old_n, &new_n) {
+        (
+            TypeShape::GenericDeclaration {
+                params: before,
+                body: old_body,
+            },
+            TypeShape::GenericDeclaration {
+                params: after,
+                body: new_body,
+            },
+        ) => {
+            findings.extend(super::generics_diff::compare_parameter_shapes(
+                before,
+                after,
+                symbol_name,
+                file,
+                line,
+                col,
+            ));
+            diff_recursive(
+                old_body,
+                new_body,
+                symbol_name,
+                field_path,
+                file,
+                line,
+                col,
+                depth + 1,
+                findings,
+            );
+        }
+        (TypeShape::GenericDeclaration { params, body }, other) => {
+            findings.extend(super::generics_diff::compare_parameter_shapes(
+                params,
+                &[],
+                symbol_name,
+                file,
+                line,
+                col,
+            ));
+            diff_recursive(
+                body,
+                other,
+                symbol_name,
+                field_path,
+                file,
+                line,
+                col,
+                depth + 1,
+                findings,
+            );
+        }
+        (other, TypeShape::GenericDeclaration { params, body }) => {
+            findings.extend(super::generics_diff::compare_parameter_shapes(
+                &[],
+                params,
+                symbol_name,
+                file,
+                line,
+                col,
+            ));
+            diff_recursive(
+                other,
+                body,
+                symbol_name,
+                field_path,
+                file,
+                line,
+                col,
+                depth + 1,
+                findings,
+            );
+        }
         // Opaque after normalization (shouldn't happen due to early return above, but be safe)
         (TypeShape::Opaque(_), _) | (_, TypeShape::Opaque(_)) => {
             let display = make_display_name(symbol_name, field_path);
@@ -932,7 +1004,12 @@ fn diff_functions(
             .copied()
             .collect();
 
-        if common_in_old.len() >= 2 && common_in_old != common_in_new {
+        let positions_changed = old_params.iter().zip(new_params).any(|(before, after)| {
+            before.shape != after.shape
+                || before.optional != after.optional
+                || before.rest != after.rest
+        });
+        if common_in_old.len() >= 2 && common_in_old != common_in_new && positions_changed {
             let fn_name = symbol_name;
             findings.push(Finding {
                 severity: Severity::Major,
@@ -1231,6 +1308,57 @@ pub fn diff_function_param_noinfer_removed(
     // (the count mismatch is REF-01 territory, not GEN-07's concern).
     let pair_count = old_overloads.len().min(new_overloads.len());
     for i in 0..pair_count {
+        let before = old_overloads[i].without_type_parameters();
+        let after = new_overloads[i].without_type_parameters();
+        let mut nested = |before: &TypeShape, after: &TypeShape| {
+            findings.extend(diff_function_param_noinfer_removed(
+                std::slice::from_ref(before),
+                std::slice::from_ref(after),
+                symbol_name,
+                file,
+                line,
+                col,
+            ));
+        };
+        match (before, after) {
+            (TypeShape::Object(before), TypeShape::Object(after)) => {
+                for (name, before) in before {
+                    if let Some(after) = after.get(name) {
+                        nested(&before.shape, &after.shape);
+                    }
+                }
+            }
+            (TypeShape::Array(before), TypeShape::Array(after)) => nested(before, after),
+            (TypeShape::Tuple(before), TypeShape::Tuple(after)) => {
+                for (before, after) in before.iter().zip(after) {
+                    nested(&before.shape, &after.shape);
+                }
+            }
+            (
+                TypeShape::Generic {
+                    name: before_name,
+                    args: before,
+                },
+                TypeShape::Generic {
+                    name: after_name,
+                    args: after,
+                },
+            ) if before_name == after_name => {
+                for (before, after) in before.iter().zip(after) {
+                    nested(before, after);
+                }
+            }
+            (
+                TypeShape::Function {
+                    return_type: before,
+                    ..
+                },
+                TypeShape::Function {
+                    return_type: after, ..
+                },
+            ) => nested(before, after),
+            _ => {}
+        }
         let (
             TypeShape::Function {
                 params: old_params, ..
@@ -1238,7 +1366,7 @@ pub fn diff_function_param_noinfer_removed(
             TypeShape::Function {
                 params: new_params, ..
             },
-        ) = (&old_overloads[i], &new_overloads[i])
+        ) = (before, after)
         else {
             continue; // not both Function — nothing to walk
         };
@@ -1260,6 +1388,13 @@ pub fn diff_function_param_noinfer_removed(
                         "`NoInfer<T>` wrapper removed from parameter `{}` (position {}) of `{}` — consumer inference behavior may change",
                         new_p.name, pos, symbol_name
                     ),
+                });
+            } else if detect_noinfer_param_removal(&new_p.shape, &old_p.shape) {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: super::subtype::RULE_GENERIC_INFERENCE_CONSTRAINT_ADDED,
+                    file: file.to_path_buf(), line, col,
+                    message: format!("`NoInfer<T>` added to parameter `{}` of `{symbol_name}` blocks previously accepted inference", new_p.name),
                 });
             }
         }

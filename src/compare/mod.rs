@@ -354,8 +354,10 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 let compare_type = if old_sym
                     .decl_kinds
                     .contains(&crate::types::DeclarationKind::Variable)
-                    && !matches!(old_shape, crate::types::shape::TypeShape::Function { .. })
-                {
+                    && !matches!(
+                        old_shape.without_type_parameters(),
+                        crate::types::shape::TypeShape::Function { .. }
+                    ) {
                     type_diff::diff_values
                 } else {
                     type_diff::diff_types
@@ -369,6 +371,19 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                     new_sym.col,
                 );
                 findings.extend(type_findings);
+            }
+            if !old_sym
+                .decl_kinds
+                .contains(&crate::types::DeclarationKind::Function)
+            {
+                findings.extend(type_diff::diff_function_param_noinfer_removed(
+                    &old_sym.overloads,
+                    &new_sym.overloads,
+                    name,
+                    &new_sym.file,
+                    new_sym.line,
+                    new_sym.col,
+                ));
             }
             // TYPE-01 (Phase 20): `satisfies T` removal emits Minor
             // `type-narrowing-widened`. Fires regardless of TypeShape overload
@@ -1303,7 +1318,17 @@ pub fn compare_structural_diff(
         }
 
         // GEN-01..06: generic type param diff — applies to ALL constructs per D-06
-        if !old_decl.type_params.is_empty() || !new_decl.type_params.is_empty() {
+        let has_resolved_parameters = [old_sym, new_sym].iter().any(|symbol| {
+            symbol.overloads.iter().any(|shape| {
+                matches!(
+                    shape,
+                    crate::types::shape::TypeShape::GenericDeclaration { .. }
+                )
+            })
+        });
+        if (!old_decl.type_params.is_empty() || !new_decl.type_params.is_empty())
+            && !has_resolved_parameters
+        {
             findings.extend(generics_diff::compare_type_params(
                 &old_decl.type_params,
                 &new_decl.type_params,

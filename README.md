@@ -59,6 +59,7 @@ See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and t
 |---------|----------|---------|
 | `type-narrowing-widened` | Minor | A `satisfies T` clause is removed and the public value type widens, or type evidence is unavailable |
 | `infer-extends-constraint-changed` | Major | The `C` in `T extends infer U extends C ? ... : ...` on an exported conditional type is changed |
+| `generic-inference-constraint-added` | Major | A `NoInfer<T>` wrapper blocks previously accepted argument inference |
 | `generic-inference-constraint-removed` | Minor | A `NoInfer<T>` wrapper is removed from a function parameter position or generic constraint on an exported signature |
 | `union-variant-added` | Warning | A variant is added to an exported discriminated (tagged) union — may break exhaustive `switch`/`match` consumers |
 | `index-signature-key-pattern-changed` | Major (narrowing) / Minor (widening) | The template-literal key pattern of an exported index signature (e.g. `` [key: `on${string}`]: T ``) is narrowed or widened |

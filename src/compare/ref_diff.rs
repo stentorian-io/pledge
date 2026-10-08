@@ -400,7 +400,7 @@ pub(crate) fn diff_template_literal_key_pairs<'a>(
 
 /// Count the number of required (non-optional) parameters in a TypeShape::Function.
 fn count_required_arity(shape: &TypeShape) -> usize {
-    match shape {
+    match shape.without_type_parameters() {
         TypeShape::Function { params, .. } => {
             params.iter().filter(|p| !p.optional && !p.rest).count()
         }
@@ -461,7 +461,7 @@ fn check_rest_param_narrowed(
 /// corresponding new required param type (either direction — we accept any overlap as
 /// "compatible" to avoid false-positive overload-removed findings).
 fn overload_params_compatible(old: &TypeShape, new: &TypeShape) -> bool {
-    match (old, new) {
+    match (old.without_type_parameters(), new.without_type_parameters()) {
         (
             TypeShape::Function {
                 params: old_params, ..
@@ -495,7 +495,7 @@ fn overload_params_compatible(old: &TypeShape, new: &TypeShape) -> bool {
 
 /// Find the rest parameter's type shape in a function signature.
 fn find_rest_param(shape: &TypeShape) -> Option<&TypeShape> {
-    match shape {
+    match shape.without_type_parameters() {
         TypeShape::Function { params, .. } => params.iter().find(|p| p.rest).map(|p| &p.shape),
         _ => None,
     }

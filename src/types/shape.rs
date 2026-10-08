@@ -77,6 +77,16 @@ pub struct ParamShape {
     pub shape: TypeShape,
 }
 
+/// A generic binder's contract. References in its body use canonical positions,
+/// so source names are deliberately absent from semantic equality.
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TypeParameterShape {
+    pub constraint: Option<TypeShape>,
+    pub default: Option<TypeShape>,
+    pub is_const: bool,
+    pub variance: Option<crate::types::Variance>,
+}
+
 /// Structural representation of a TypeScript type.
 ///
 /// This enum covers all major TypeScript type constructs and is used as the
@@ -111,6 +121,10 @@ pub enum TypeShape {
     },
     /// Type parameter reference: `T`, `K`, `V`
     TypeParam(std::string::String),
+    GenericDeclaration {
+        params: Vec<TypeParameterShape>,
+        body: Box<TypeShape>,
+    },
     /// Function types: `(x: string, y: number) => boolean`
     Function {
         params: Vec<ParamShape>,
@@ -167,6 +181,13 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
+    pub(crate) fn without_type_parameters(&self) -> &Self {
+        match self {
+            Self::GenericDeclaration { body, .. } => body.without_type_parameters(),
+            other => other,
+        }
+    }
+
     pub(crate) fn for_each_child_mut(&mut self, visit: &mut impl FnMut(&mut TypeShape)) {
         match self {
             Self::Array(inner) | Self::NoInferWrap(inner) => visit(inner),
@@ -195,6 +216,17 @@ impl TypeShape {
                     visit(&mut param.shape);
                 }
                 visit(return_type);
+            }
+            Self::GenericDeclaration { params, body } => {
+                for parameter in params {
+                    if let Some(constraint) = &mut parameter.constraint {
+                        visit(constraint);
+                    }
+                    if let Some(default) = &mut parameter.default {
+                        visit(default);
+                    }
+                }
+                visit(body);
             }
             Self::Conditional {
                 check,
@@ -293,6 +325,16 @@ impl TypeShape {
                 name,
                 args: args.into_iter().map(|a| a.normalize()).collect(),
             },
+            TypeShape::GenericDeclaration { mut params, body } => {
+                for parameter in &mut params {
+                    parameter.constraint = parameter.constraint.take().map(TypeShape::normalize);
+                    parameter.default = parameter.default.take().map(TypeShape::normalize);
+                }
+                TypeShape::GenericDeclaration {
+                    params,
+                    body: Box::new(body.normalize()),
+                }
+            }
             TypeShape::Function {
                 params,
                 return_type,

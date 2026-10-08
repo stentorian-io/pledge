@@ -65,15 +65,20 @@ Fires Minor `generic-inference-constraint-removed`.
 The inference-change finding is Minor. The ordinary type rules separately
 report observed parameter or return-type incompatibilities.
 
+### `generic-inference-constraint-added` — Major
+
+Adding `NoInfer<T>` can reject calls that previously inferred `T` from multiple
+arguments. For example, `<T extends string>(value:T, fallback:T)` accepts
+`("red", "blue")`; changing the second parameter to `NoInfer<T>` rejects that
+call. Local aliases and generic callables returned by an API are included.
+
 ## Scope
 
 Interlint tracks `NoInfer` at the two positions above.
 
-Return-type positions are NOT tracked — return-type inference doesn't
-have the same consumer-observable semantics as parameter inference,
-and a consumer's observable behavior at a return position is
-dominated by the return type itself rather than by what got inferred
-for the type parameter.
+Callable contracts returned by an API, or exposed as object properties, are
+also inspected. A `NoInfer` wrapper used only as a non-callable result type does
+not change that result's assignability.
 
 ## How to fix
 
