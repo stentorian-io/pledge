@@ -21,7 +21,8 @@ for the language feature.
 | `Foo.bar = expr` | Yes | Object must textually match the enclosing class name |
 | `this.bar = expr` | Yes | Supports anonymous `export default class` |
 | `Foo.Bar.baz = expr` | No | Depth-2+ member chains out of scope (depth-1 only) |
-| `Foo[computed()] = expr` | No | Subscript expressions surface a `limitation:` annotation (see below) |
+| `Foo["name"]`, `this[KEY]`, `Foo[Symbol.iterator]`, `Foo[Symbol.for("key")]` | Yes | Constant keys are resolved, including local immutable aliases and template strings |
+| `Foo[computed()] = expr` | No | Unresolved expressions produce incomplete analysis (see below) |
 | Non-assignment statements | No | Side-effects without a member assignment are ignored |
 | Nested block scope | No | `static { { Foo.x = 1 } }` — only direct children of `static { }` are walked |
 
@@ -50,26 +51,17 @@ walked — tree-sitter emits each as a separate `class_static_block` child.
 
 ### `limitation: dynamic-static-member-key`
 
-When a static block contains a subscript-expression LHS like
-`Foo[computed()] = x` or `Foo[Symbol.iterator] = x`, Interlint cannot
-statically determine the property name and does not extract the assignment.
-Instead, a Minor `class-static-type-changed` finding is paired with an
-Info `limitation: dynamic-static-member-key` finding so consumers know
-Interlint declined to diff these members:
+Computed keys are folded when their value follows from a literal, immutable
+local binding, template string, or standard symbol expression. TypeScript
+parentheses and `as` casts around the class reference do not hide assignments.
+Changing a constant key removes the old public member. Equivalent key aliases
+and escaped spellings do not produce a false break.
 
-```typescript
-export class Registry {
-  static {
-    Registry[key] = 'value';
-    // Interlint emits: "static initialization block on class `Registry`
-    //  contains dynamic-key assignment(s) — members behind computed
-    //  keys are not diffed (limitation: dynamic-static-member-key)"
-  }
-}
-```
-
-Well-known Symbol exports have separate detection rules. Generic computed
-static-block keys remain under this limitation.
+Unresolved keys produce an `analysis-incomplete` warning as well as the existing
+Minor `class-static-type-changed` and Info
+`limitation: dynamic-static-member-key` findings. A runtime environment key or
+unknown function result requires additional evidence; an unrelated object's
+computed assignment does not affect the class surface.
 
 ### Nested scope and depth-2 member chains
 

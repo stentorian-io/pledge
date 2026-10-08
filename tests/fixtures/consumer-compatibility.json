@@ -746,5 +746,525 @@
         "lib/extra.js": "export {};"
       }
     }
+  },
+  {
+    "name": "registered-symbol-key-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports[Symbol.for(\"a\")]=()=>1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports[Symbol.for(\"b\")]=()=>1;"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); api[Symbol.for(\"a\")]();",
+    "breaking": true
+  },
+  {
+    "name": "registered-symbol-constant-alias",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "const KEY=Symbol.for(\"a\"); exports[KEY]=()=>1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "const TOKEN=Symbol.for(\"a\"); exports[TOKEN]=()=>1;"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); api[Symbol.for(\"a\")]();",
+    "breaking": false
+  },
+  {
+    "name": "registered-symbol-object-property",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={ [Symbol.for(\"a\")]:()=>1 };"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={ [Symbol.for(\"b\")]:()=>1 };"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); api[Symbol.for(\"a\")]();",
+    "breaking": true
+  },
+  {
+    "name": "symbol-key-distinct-from-string",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.iterator]=()=>1; exports[\"@@iterator\"]=()=>2;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[\"@@iterator\"]=()=>2;"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); api[Symbol.iterator]();",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-match",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.match]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.match] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-matchAll",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.matchAll]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.matchAll] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-replace",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.replace]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.replace] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-search",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.search]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.search] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-species",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.species]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.species] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-split",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.split]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.split] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-isConcatSpreadable",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.isConcatSpreadable]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.isConcatSpreadable] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-unscopables",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.unscopables]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.unscopables] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-dispose",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.dispose]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.dispose] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "symbol-protocol-asyncDispose",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "exports[Symbol.asyncDispose]=1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.cjs"
+      },
+      "files": {
+        "index.cjs": "module.exports={};"
+      }
+    },
+    "consumer": "import {createRequire} from 'node:module'; const api=createRequire(import.meta.url)('./index.cjs'); if (api[Symbol.asyncDispose] !== 1) throw Error(\"missing protocol\");",
+    "breaking": true
+  },
+  {
+    "name": "static-literal-key-removal",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"x\"]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api {}"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": true
+  },
+  {
+    "name": "static-constant-key-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { static { this[KEY]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"y\"; export class api { static { this[KEY]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": true
+  },
+  {
+    "name": "static-template-key-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { static { this[`get${KEY}`]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"y\"; export class api { static { this[`get${KEY}`]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.getx!==1) throw Error(\"missing key\");",
+    "breaking": true
+  },
+  {
+    "name": "static-symbol-registry-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[Symbol.for(\"x\")]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[Symbol.for(\"y\")]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api[Symbol.for(\"x\")]!==1) throw Error(\"missing key\");",
+    "breaking": true
+  },
+  {
+    "name": "computed-method-key-alias-rename",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { [KEY]() {return 1} }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const ALIAS=\"x\"; export class api { [ALIAS]() {return 1} }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; new api().x();",
+    "breaking": false
+  },
+  {
+    "name": "static-escaped-key-refactor",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"\\u0078\"]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"x\"]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": false
   }
 ]

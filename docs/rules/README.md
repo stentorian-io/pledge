@@ -26,3 +26,5 @@ For a new rule, document the exact emitted identifier, severity, trigger,
 before/after example, and false-positive boundaries. Distinguish emitted
 informational findings from unsupported cases that only have documentation.
 Use behavior names in explanations rather than development phase numbers.
+
+- [Computed properties and symbol keys](computed-properties.md): constant key resolution and incomplete runtime keys.

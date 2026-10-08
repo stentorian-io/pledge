@@ -151,6 +151,8 @@ pub struct TypeofImportRef {
 #[allow(dead_code)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum SymbolSpace {
+    /// Runtime symbol properties, distinct from string-named exports.
+    Symbol,
     Type,
     Value,
     Namespace,

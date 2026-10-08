@@ -80,24 +80,31 @@ A field rename within the private space (`#foo` → `#bar`) is deliberately sile
 
 See `docs/rules/class-field-visibility-transition.md` for matching heuristic, limitations, and decorator interaction.
 
-CLS-12 (class static initialization block member extraction) reuses the existing `class-method-removed` rule-ID for removed static-block assignments (`class Foo { static { Foo.bar = 1 } }` — removing `Foo.bar` fires Major `class-method-removed` with the `static property` noun) and surfaces the `limitation: dynamic-static-member-key` annotation under the existing `class-static-type-changed` rule-ID for subscript-expression LHS (`Foo[x] = ...`). See [docs/rules/class-static-block.md](docs/rules/class-static-block.md).
+CLS-12 (class static initialization block member extraction) reuses the existing `class-method-removed` rule-ID for removed static-block assignments (`class Foo { static { Foo.bar = 1 } }` — removing `Foo.bar` fires Major `class-method-removed` with the `static property` noun) and resolves literal, constant, template, and symbol keys. Unresolved runtime keys carry `limitation: dynamic-static-member-key` and make analysis incomplete. See [docs/rules/class-static-block.md](docs/rules/class-static-block.md).
 
 ### Limitations (first-class `limitation:` rule-IDs)
 
-Interlint detects what is statically detectable. For cases that fundamentally cannot be verified by static analysis, it emits a paired Severity::Info finding tagged `limitation: <id>` so the boundary is visible in CLI output. All limitation findings exit 0 — they document analysis ceilings, not breakages.
+Missing compiler evidence, unresolved inputs, and processing limits produce incomplete
+analysis (exit 3). Informational limitation findings explain the affected rule;
+they do not establish that a change is compatible or that a feature is impossible
+to implement.
 
-| Rule ID | Origin phase | Trigger |
-|---------|--------------|---------|
-| `limitation: lsp-required` | INF-04 (Phase 22) | LSP was unavailable; the typeof-import target could not be resolved across files. |
-| `limitation: external-type-reference` | INF-04 (Phase 22) | LSP resolved the typeof-import target to a file outside the package tarball (cross-package reference). |
-| `limitation: satisfies-narrowed-type-not-verified` | TYPE-01 (Phase 20) | Degraded mode: `satisfies T` removal detected syntactically, but narrowing direction not LSP-confirmed. |
-| `limitation: symbol-for-registry-key-not-tracked` | ECF-13 (Phase 22) | `Symbol.for(...)` registry keys are private identity with no stable spec semantics; tracked but not diffed. |
-| `limitation: dynamic-static-member-key` | CLS-12 (Phase 21) | A class static initialization block contains computed-key assignments (`Foo[expr] = ...`); members behind dynamic keys are not diffed. |
-| `limitation: proxy-dispatched-exports` | DOC-01 (Phase 25) | Package entrypoint exports a `Proxy` or `Reflect.construct(...)` value; the surface is dynamically dispatched and cannot be enumerated statically. |
-| `limitation: decorator-runtime-effect-opaque` | DOC-01 (Phase 25) | A decorator addition/removal/argument-change is detected, but the semantic runtime effect is not verified. |
-| `limitation: private-brand-access-not-checkable` | DOC-01 (Phase 25) | A class field crosses the public/private boundary (CLS-11); consumer reliance on `#foo` private-brand checks cannot be statically proven. |
+| Emitted limitation ID | Trigger |
+| --- | --- |
+| `limitation: lsp-required` | Type resolution was unavailable for a `typeof import` reference. |
+| `limitation: satisfies-narrowed-type-not-verified` | A `satisfies` removal was detected without resolved narrowed-type evidence. |
+| `limitation: dynamic-static-member-key` | A computed class key depends on an unresolved expression; paired with `analysis-incomplete`. |
+| `limitation: proxy-dispatched-exports` | An exported proxy or reflective construction requires runtime surface analysis. |
+| `limitation: decorator-runtime-effect-opaque` | A decorator change was detected; its arbitrary runtime effects are not proven. |
+| `limitation: private-brand-access-not-checkable` | A public/private field transition was detected; actual consumer reliance is unknown. |
 
-See `docs/rules/<name>.md` for individual rule documentation. Phase 25 elevates these from substring-in-message annotations (Phases 19-22) to first-class `Finding.rule` values backed by Severity::Info.
+Local `NoInfer` aliases and installed external type references are resolved by the
+compiler. Symbol-keyed exports include all standard well-known symbols and
+constant `Symbol.for` registry keys, which have specified identity semantics.
+See [computed properties](docs/rules/computed-properties.md) for coverage and
+unresolved-key reporting.
+
+See [the rule reference](docs/rules/README.md) for individual rules.
 
 ## Development
 

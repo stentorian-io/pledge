@@ -827,6 +827,16 @@ fn collect_exports_uncached(
             if parser.set_language(&language).is_ok() {
                 if let Some(tree) = parser.parse(&source, None) {
                     forwards = super::commonjs::forwards(tree.root_node(), &source);
+                    for (node, key) in super::commonjs::computed_exports(tree.root_node(), &source)
+                    {
+                        if key.is_none() {
+                            warnings.push(ResolveWarning::new(format!(
+                                "unresolved computed CommonJS export key at {}:{}",
+                                canonical.display(),
+                                node.start_position().row + 1
+                            )));
+                        }
+                    }
                     let comment_index = CommentIndex::build(&tree, &source, lang);
                     for rx in raw_exports.iter_mut() {
                         if rx.release_tag.is_none() {
@@ -1111,11 +1121,15 @@ fn collect_exports_uncached(
             }
         }
         match export.kind {
-            RawExportKind::Named => {
+            RawExportKind::Named | RawExportKind::Symbol => {
                 // Phase 18 D-13: pre-merge at insertion. Construct ExportKey with
                 // current subpath/condition context, then branch on get_mut to
                 // union decl_kinds for declaration-merging hybrids.
-                let space = space_for(export.decl_kind.as_ref());
+                let space = if export.kind == RawExportKind::Symbol {
+                    SymbolSpace::Symbol
+                } else {
+                    space_for(export.decl_kind.as_ref())
+                };
                 let key = ExportKey {
                     subpath: subpath.to_string(),
                     condition: condition.map(|c| c.to_string()),

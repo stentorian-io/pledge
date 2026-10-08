@@ -316,40 +316,20 @@ fn substring_promotion_satisfies_degraded() {
 }
 
 #[test]
-fn substring_promotion_dynamic_static_key() {
-    use interlint::compare::subtype::RULE_CLASS_STATIC_TYPE_CHANGED;
-
+fn constant_static_keys_are_compared_without_a_runtime_limitation() {
     let findings = run_full_pipeline("dynamic-static-key");
-
-    let minor: Vec<_> = findings
-        .iter()
-        .filter(|f| {
-            f.rule == RULE_CLASS_STATIC_TYPE_CHANGED
-                && f.severity == Severity::Minor
-                && f.message
-                    .contains("(limitation: dynamic-static-member-key)")
-        })
-        .collect();
-    let info: Vec<_> = findings
-        .iter()
-        .filter(|f| {
-            f.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY && f.severity == Severity::Info
-        })
-        .collect();
-
     assert!(
-        !minor.is_empty(),
-        "expected Minor class-static-type-changed with substring; got rules: {:?}",
         findings
             .iter()
-            .map(|f| (f.rule, f.severity.clone(), &f.message))
-            .collect::<Vec<_>>()
+            .any(|finding| finding.rule == "class-method-removed"
+                && finding.severity == Severity::Major
+                && finding.message.contains("foo")),
+        "{findings:?}"
     );
-    assert_eq!(
-        minor.len(),
-        info.len(),
-        "every dynamic-static-key Minor must have a paired Info; minor={}, info={}",
-        minor.len(),
-        info.len()
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.rule == RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY),
+        "{findings:?}"
     );
 }

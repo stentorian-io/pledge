@@ -206,3 +206,70 @@ fn walk(
         walk(child, source, bindings, conditions, uncertain, forwards);
     }
 }
+
+/// Computed writes on the module's own export object, excluding deferred bodies.
+pub(super) fn computed_exports<'tree>(
+    root: Node<'tree>,
+    source: &[u8],
+) -> Vec<(Node<'tree>, Option<super::property_key::PropertyKey>)> {
+    fn visit<'tree>(
+        node: Node<'tree>,
+        source: &[u8],
+        result: &mut Vec<(Node<'tree>, Option<super::property_key::PropertyKey>)>,
+    ) {
+        if matches!(
+            node.kind(),
+            "function_declaration"
+                | "function_expression"
+                | "arrow_function"
+                | "method_definition"
+                | "class_declaration"
+        ) {
+            return;
+        }
+        if node.kind() == "assignment_expression" {
+            if let Some(left) = node.child_by_field_name("left") {
+                if left.kind() == "subscript_expression" {
+                    if let (Some(object), Some(index)) = (
+                        left.child_by_field_name("object"),
+                        left.child_by_field_name("index"),
+                    ) {
+                        let target: String = text(object, source)
+                            .chars()
+                            .filter(|ch| !ch.is_whitespace())
+                            .collect();
+                        if (target == "exports"
+                            && super::property_key::is_unbound(object, "exports", source))
+                            || (target == "module.exports"
+                                && super::property_key::is_unbound(object, "module", source))
+                        {
+                            result.push((index, super::property_key::resolve(index, source)));
+                        }
+                    }
+                } else if text(left, source) == "module.exports" {
+                    if let Some(object) = node
+                        .child_by_field_name("right")
+                        .filter(|node| node.kind() == "object")
+                    {
+                        for member in object.named_children(&mut object.walk()) {
+                            if let Some(key) = member
+                                .child_by_field_name("key")
+                                .or_else(|| member.child_by_field_name("name"))
+                            {
+                                if key.kind() == "computed_property_name" {
+                                    result.push((key, super::property_key::resolve(key, source)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for child in node.named_children(&mut node.walk()) {
+            visit(child, source, result);
+        }
+    }
+    let mut result = Vec::new();
+    visit(root, source, &mut result);
+    result
+}

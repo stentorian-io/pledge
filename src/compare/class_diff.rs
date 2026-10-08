@@ -701,13 +701,23 @@ pub fn compare_class_shapes(
     // project-wide.
     if old.has_dynamic_static_key || new.has_dynamic_static_key {
         findings.push(Finding {
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!(
+                "computed member keys on class `{symbol_name}` require runtime information"
+            ),
+        });
+        findings.push(Finding {
             severity: Severity::Minor,
             rule: RULE_CLASS_STATIC_TYPE_CHANGED,
             file: file.to_path_buf(),
             line,
             col,
             message: format!(
-                "static initialization block on class `{}` contains dynamic-key assignment(s) \u{2014} members behind computed keys are not diffed (limitation: dynamic-static-member-key)",
+                "class `{}` contains unresolved computed keys \u{2014} members behind these keys are not diffed (limitation: dynamic-static-member-key)",
                 symbol_name,
             ),
         });

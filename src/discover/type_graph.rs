@@ -483,7 +483,13 @@ fn object_shape(body: Node, source: &[u8]) -> TypeShape {
         let Some(name) = member.child_by_field_name("name") else {
             continue;
         };
-        let name = text(name, source).trim_matches(['\'', '"']);
+        let name = if name.kind() == "computed_property_name" {
+            super::property_key::resolve(name, source)
+                .map(|key| key.member_name())
+                .unwrap_or_else(|| text(name, source).to_string())
+        } else {
+            text(name, source).trim_matches(['\'', '"']).to_string()
+        };
         let mut cursor = member.walk();
         let modifiers: Vec<_> = member
             .children(&mut cursor)
