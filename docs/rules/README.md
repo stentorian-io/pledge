@@ -15,6 +15,7 @@ an exhaustive list of every implemented rule.
 | Triple-slash directives | [Directive changes](directive.md) |
 | Decorators | [Decorator changes](decorator.md) |
 | Class visibility | [Public/private transitions](class-field-visibility-transition.md) |
+| Accessors and subclasses | [Read and write contracts](accessor-contracts.md) |
 | Static initialization | [Class static blocks](class-static-block.md) |
 | `satisfies` | [Type narrowing](type-narrowing.md) |
 | Constrained `infer` | [Inference constraints](infer-extends.md) |

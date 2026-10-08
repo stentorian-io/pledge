@@ -514,6 +514,7 @@ fn object_shape(body: Node, source: &[u8]) -> TypeShape {
         fields.insert(
             name.to_string(),
             FieldShape {
+                write_type: None,
                 optional: modifiers.contains(&"?"),
                 readonly: modifiers.contains(&"readonly"),
                 shape: shape.unwrap_or(TypeShape::Primitive(PrimitiveKind::Unknown)),

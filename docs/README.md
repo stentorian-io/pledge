@@ -1,5 +1,7 @@
 # Documentation
 
+- [Accessor contracts](rules/accessor-contracts.md): independent read/write types and subclass compatibility.
+
 - [Architecture](architecture.md): analysis pipeline and code ownership.
 - [Rule reference](rules/README.md): behavior, severities, and limitations.
 - [Reference suite](reference-suite.md): pinned packages and baseline curation.

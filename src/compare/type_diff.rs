@@ -421,6 +421,18 @@ fn diff_recursive(
                     }
 
                     let child_path = make_path(field_path, field_name);
+                    if !old_field.readonly
+                        && !new_field.readonly
+                        && (old_field.write_type.is_some() || new_field.write_type.is_some())
+                    {
+                        let before = old_field.write_type.as_ref().unwrap_or(&old_field.shape);
+                        let after = new_field.write_type.as_ref().unwrap_or(&new_field.shape);
+                        if !is_subtype_of(before, after, depth + 1) {
+                            findings.push(Finding { severity: Severity::Major, rule: RULE_FIELD_TYPE_CHANGED,
+                                file: file.to_path_buf(), line, col,
+                                message: format!("setter `{child_path}` in `{symbol_name}` stopped accepting `{}` (now `{}`)", format_type(before), format_type(after)) });
+                        }
+                    }
                     if old_field.shape != new_field.shape {
                         // Use subtype check to decide: try recursion first for more specific findings.
                         // If recursion produces nothing, emit field-type-changed with old/new values.
@@ -1742,6 +1754,7 @@ mod tests {
         old_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1750,6 +1763,7 @@ mod tests {
         old_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -1759,6 +1773,7 @@ mod tests {
         new_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1782,6 +1797,7 @@ mod tests {
         old_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1791,6 +1807,7 @@ mod tests {
         new_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -1823,6 +1840,7 @@ mod tests {
         old_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1832,6 +1850,7 @@ mod tests {
         new_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1840,6 +1859,7 @@ mod tests {
         new_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -1860,6 +1880,7 @@ mod tests {
         old_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1869,6 +1890,7 @@ mod tests {
         new_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1877,6 +1899,7 @@ mod tests {
         new_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: true,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -1896,6 +1919,7 @@ mod tests {
         inner_old.insert(
             "timeout".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1905,6 +1929,7 @@ mod tests {
         inner_new.insert(
             "timeout".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -1915,6 +1940,7 @@ mod tests {
         old_fields.insert(
             "config".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Object(inner_old),
@@ -1924,6 +1950,7 @@ mod tests {
         new_fields.insert(
             "config".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Object(inner_new),
@@ -2071,6 +2098,7 @@ mod tests {
                 fields.insert(
                     "a".to_string(),
                     FieldShape {
+                        write_type: None,
                         optional: false,
                         readonly: false,
                         shape: nested_object(depth - 1),
@@ -2090,6 +2118,7 @@ mod tests {
                 fields.insert(
                     "a".to_string(),
                     FieldShape {
+                        write_type: None,
                         optional: false,
                         readonly: false,
                         shape: nested_object_num(depth - 1),
@@ -2214,6 +2243,7 @@ mod tests {
         fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -2222,6 +2252,7 @@ mod tests {
         fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: true,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -2735,6 +2766,7 @@ mod tests {
         old_fields.insert(
             "name".to_string(),
             FieldShape {
+                write_type: None,
                 optional: true,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -2744,6 +2776,7 @@ mod tests {
         new_fields.insert(
             "name".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -2763,6 +2796,7 @@ mod tests {
 
     fn make_field(optional: bool, readonly: bool) -> FieldShape {
         FieldShape {
+            write_type: None,
             optional,
             readonly,
             shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -2926,6 +2960,7 @@ mod tests {
 
     fn field(shape: TypeShape) -> FieldShape {
         FieldShape {
+            write_type: None,
             optional: false,
             readonly: false,
             shape,

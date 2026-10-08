@@ -398,6 +398,7 @@ impl<'a> TypeParser<'a> {
             fields.insert(
                 key,
                 FieldShape {
+                    write_type: None,
                     optional,
                     readonly,
                     shape,
@@ -1195,6 +1196,7 @@ mod tests {
         fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -1203,6 +1205,7 @@ mod tests {
         fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::String),

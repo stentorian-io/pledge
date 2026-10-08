@@ -45,6 +45,33 @@ let active;
 let currentIssues;
 let parameterNames;
 let parameterScope;
+let accessorMappers;
+function mappedParameter(type, mapper, depth = 0) {
+  if (!mapper) return type;
+  if (depth > 32) { currentIssues.add('accessor type substitution limit reached'); return type; }
+  switch (mapper.kind) {
+    case 0: return type === mapper.source ? mapper.target : type;
+    case 1:
+    case 2: {
+      const index = mapper.sources.indexOf(type);
+      if (index < 0) return type;
+      return mapper.kind === 2 ? mapper.targets[index]() : mapper.targets?.[index] || checker.getAnyType();
+    }
+    case 3: return mapper.func(type);
+    case 4:
+    case 5: return mappedParameter(mappedParameter(type, mapper.mapper1, depth + 1), mapper.mapper2, depth + 1);
+    default: currentIssues.add('unsupported accessor type substitution'); return type;
+  }
+}
+function accessorWriteShape(property, setter, depth) {
+  if (!setter?.parameters[0]) return null;
+  // Instantiated accessor symbols carry the same substitutions used for their
+  // read type. Preserve them when serializing the separate setter parameter.
+  const mapper = property.links?.mapper;
+  if (mapper) accessorMappers.push(mapper);
+  try { return shape(property.links?.writeType || checker.getTypeAtLocation(setter.parameters[0]), depth); }
+  finally { if (mapper) accessorMappers.pop(); }
+}
 function bindParameters(parameters) {
   const unbound = (parameters || []).filter(parameter => !parameterNames.has(parameter));
   if (!unbound.length) return;
@@ -150,7 +177,7 @@ function propertyName(symbol) {
 function isPrivate(symbol) {
   return symbol?.declarations?.some(declaration =>
     declaration.name && ts.isPrivateIdentifier(declaration.name) ||
-    declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword || modifier.kind === ts.SyntaxKind.ProtectedKeyword));
+    declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword));
 }
 function shape(type, depth = 0, staticClass = null) {
   if (--symbolWork < 0 || --packageWork < 0 || depth > 32) return incomplete('compiler public type expansion limit reached', type);
@@ -174,6 +201,9 @@ function shape(type, depth = 0, staticClass = null) {
   }
   if (flags & ts.TypeFlags.BooleanLiteral) return { Literal: { Boolean: type.intrinsicName === 'true' } };
   if (flags & ts.TypeFlags.TypeParameter) {
+    let instantiated = type;
+    for (const mapper of [...accessorMappers].reverse()) instantiated = mappedParameter(instantiated, mapper);
+    if (instantiated !== type) return shape(instantiated, depth + 1);
     bindParameters([type]);
     return { TypeParam: parameterNames.get(type) };
   }
@@ -258,7 +288,9 @@ function shape(type, depth = 0, staticClass = null) {
       const readonly = readonlyProperties.get(propertyName(property)) ?? (
         declarations.some(declaration => declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) ||
         declarations.some(ts.isGetAccessorDeclaration) && !declarations.some(ts.isSetAccessorDeclaration));
+      const setter = declarations.find(ts.isSetAccessorDeclaration);
       fields[propertyName(property)] = { optional: !!(property.flags & ts.SymbolFlags.Optional), readonly,
+        write_type: accessorWriteShape(property, setter, depth + 1),
         shape: shape(checker.getTypeOfSymbol(property), depth + 1) };
     }
     const classDeclaration = staticClass || (type.objectFlags & ts.ObjectFlags.Anonymous && type.symbol?.flags & ts.SymbolFlags.Class
@@ -427,6 +459,7 @@ for (const request of input.symbols) {
   currentIssues = new Set();
   parameterNames = new Map();
   parameterScope = 0;
+  accessorMappers = [];
   const symbol = declarationSymbol(request);
   let overloads = [];
   let signature = null;

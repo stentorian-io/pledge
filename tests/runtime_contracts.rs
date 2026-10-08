@@ -216,8 +216,14 @@ async fn registered_symbol_identity_agrees_with_node_consumers() {
 
 #[cfg(feature = "lsp-tests")]
 #[tokio::test]
-async fn class_static_initialization_agrees_with_node_consumers() {
+async fn class_runtime_contracts_agree_with_node_consumers() {
     let cases = [
+        (
+            "get value(){return 'x';} set value(input){}",
+            "set value(input){}",
+            "new api().value.toUpperCase();",
+            true,
+        ),
         (
             "static { { this.value='x'; } }",
             "",
@@ -345,6 +351,22 @@ fn conditional_static_members_are_explicit_without_compiler_evidence() {
         findings
             .iter()
             .any(|finding| finding.rule == "analysis-incomplete"),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn static_decorator_changes_are_not_hidden_by_instance_namesakes() {
+    let old = package("export class api { @before static use(){} use(){} }", "ts");
+    let new = package("export class api { @after static use(){} use(){} }", "ts");
+    let (before, _) = discover_exports(old.path()).unwrap();
+    let (after, _) = discover_exports(new.path()).unwrap();
+    let findings = compare::compare_structural_diff(old.path(), new.path(), &before, &after);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule.starts_with("decorator-")
+                && finding.severity == interlint::types::Severity::Major),
         "{findings:?}"
     );
 }

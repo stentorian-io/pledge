@@ -484,6 +484,7 @@ fn ift_02_type_alias_readonly_flip_fires_major() {
     fields_old.insert(
         "x".to_string(),
         FieldShape {
+            write_type: None,
             optional: false,
             readonly: false,
             shape: TypeShape::Opaque("number".to_string()),
@@ -493,6 +494,7 @@ fn ift_02_type_alias_readonly_flip_fires_major() {
     fields_new.insert(
         "x".to_string(),
         FieldShape {
+            write_type: None,
             optional: false,
             readonly: true,
             shape: TypeShape::Opaque("number".to_string()),

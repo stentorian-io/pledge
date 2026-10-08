@@ -476,6 +476,7 @@ fn test_ref_06_property_made_required() {
     old_fields.insert(
         "name".to_string(),
         FieldShape {
+            write_type: None,
             optional: true,
             readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::String),
@@ -486,6 +487,7 @@ fn test_ref_06_property_made_required() {
     new_fields.insert(
         "name".to_string(),
         FieldShape {
+            write_type: None,
             optional: false,
             readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::String),

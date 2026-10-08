@@ -270,17 +270,17 @@ pub fn compare_class_shapes(
     // dedicated public↔private transition pass below; including them here
     // would let a rename-in-private-space (`#foo` → `#bar`) leak as a
     // spurious CLS-03 `class-method-removed`. Approach A per 21-PATTERNS.md.
-    let old_members: HashMap<&str, &ClassMember> = old
+    let old_members: HashMap<(&str, bool), &ClassMember> = old
         .members
         .iter()
         .filter(|m| !m.is_private)
-        .map(|m| (m.name.as_str(), m))
+        .map(|m| ((m.name.as_str(), m.is_static), m))
         .collect();
-    let new_members: HashMap<&str, &ClassMember> = new
+    let new_members: HashMap<(&str, bool), &ClassMember> = new
         .members
         .iter()
         .filter(|m| !m.is_private)
-        .map(|m| (m.name.as_str(), m))
+        .map(|m| ((m.name.as_str(), m.is_static), m))
         .collect();
 
     // ── CLS-11 (Phase 21): public↔private visibility transition ──────────────
@@ -401,7 +401,11 @@ pub fn compare_class_shapes(
 
     // CLS-03: Method or constructor removed (also covers getters and setters)
     // Breaking: call sites that invoke the method/getter/setter will fail to compile.
-    for (name, old_member) in &old_members {
+    for (key, old_member) in &old_members {
+        let name = key.0;
+        if old_member.visibility == Visibility::Private {
+            continue;
+        }
         // CLS-11 (Phase 21) suppression: if this (bare_name, is_static) slot
         // transitioned public↔private, the CLS-11 block above already emitted
         // the canonical finding. Skip CLS-03 to avoid double-reporting the
@@ -430,7 +434,7 @@ pub fn compare_class_shapes(
                 | ClassMemberKind::Setter
         ) || (matches!(old_member.kind, ClassMemberKind::Property)
             && old_member.is_static);
-        if is_removable_kind && !new_members.contains_key(name) {
+        if is_removable_kind && !new_members.contains_key(key) {
             let noun = if matches!(old_member.kind, ClassMemberKind::Property) {
                 "static property"
             } else {
@@ -450,11 +454,48 @@ pub fn compare_class_shapes(
         }
     }
 
+    // A setter's apparent TypeScript property type does not prove the property
+    // remains readable at runtime after its paired getter is removed.
+    for getter in old.members.iter().filter(|member| {
+        matches!(member.kind, ClassMemberKind::Getter)
+            && !member.is_private
+            && member.visibility != Visibility::Private
+    }) {
+        let same_slot = |member: &&ClassMember| {
+            member.name == getter.name && member.is_static == getter.is_static
+        };
+        if new
+            .members
+            .iter()
+            .filter(same_slot)
+            .any(|member| matches!(member.kind, ClassMemberKind::Setter))
+            && !new.members.iter().filter(same_slot).any(|member| {
+                matches!(
+                    member.kind,
+                    ClassMemberKind::Getter | ClassMemberKind::Property
+                )
+            })
+        {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_CLASS_METHOD_REMOVED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!(
+                    "getter `{}` was removed from class `{symbol_name}` while its setter remains",
+                    getter.name
+                ),
+            });
+        }
+    }
+
     // CLS-05: Abstract method added (only meaningful on abstract classes)
     // Breaking: any concrete subclass that doesn't implement the new abstract
     // method becomes invalid.
-    for (name, new_member) in &new_members {
-        if new_member.is_abstract && !old_members.contains_key(name) {
+    for (key, new_member) in &new_members {
+        let name = key.0;
+        if new_member.is_abstract && !old_members.contains_key(key) {
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_CLASS_ABSTRACT_METHOD_ADDED,
@@ -470,8 +511,14 @@ pub fn compare_class_shapes(
     }
 
     // For members present in both old and new:
-    for (name, old_member) in &old_members {
-        if let Some(new_member) = new_members.get(name) {
+    for (key, old_member) in &old_members {
+        let name = key.0;
+        if let Some(new_member) = new_members.get(key) {
+            if old_member.visibility == Visibility::Private
+                && new_member.visibility == Visibility::Private
+            {
+                continue;
+            }
             // CLS-01: Constructor required parameter count increased
             // Breaking: existing call sites that don't pass the new param will fail.
             if matches!(old_member.kind, ClassMemberKind::Constructor)
@@ -661,17 +708,19 @@ pub fn compare_class_shapes(
     // members on BOTH sides — decorator churn on `@log #count` is not
     // consumer-observable and must not leak into public-surface findings.
     {
-        let old_by_name: std::collections::HashMap<&str, &ClassMember> = old
+        let old_by_name: std::collections::HashMap<(&str, bool), &ClassMember> = old
             .members
             .iter()
-            .filter(|m| !m.is_private)
-            .map(|m| (m.name.as_str(), m))
+            .filter(|m| !m.is_private && m.visibility != Visibility::Private)
+            .map(|m| ((m.name.as_str(), m.is_static), m))
             .collect();
         for new_member in &new.members {
-            if new_member.is_private {
+            if new_member.is_private || new_member.visibility == Visibility::Private {
                 continue;
             }
-            if let Some(old_member) = old_by_name.get(new_member.name.as_str()) {
+            if let Some(old_member) =
+                old_by_name.get(&(new_member.name.as_str(), new_member.is_static))
+            {
                 let owner = format!(
                     "{} `{}.{}`",
                     member_kind_label(&new_member.kind),

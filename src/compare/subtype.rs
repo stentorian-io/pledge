@@ -217,6 +217,16 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
                         if !is_subtype_of(&sub_field.shape, &sup_field.shape, depth + 1) {
                             return false;
                         }
+                        if !sup_field.readonly
+                            && (sub_field.write_type.is_some() || sup_field.write_type.is_some())
+                        {
+                            let accepts = sub_field.write_type.as_ref().unwrap_or(&sub_field.shape);
+                            let required =
+                                sup_field.write_type.as_ref().unwrap_or(&sup_field.shape);
+                            if sub_field.readonly || !is_subtype_of(required, accepts, depth + 1) {
+                                return false;
+                            }
+                        }
                     }
                 }
             }
@@ -768,6 +778,7 @@ mod tests {
         sup_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),
@@ -779,6 +790,7 @@ mod tests {
         sub_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),
@@ -787,6 +799,7 @@ mod tests {
         sub_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: string(),
@@ -811,6 +824,7 @@ mod tests {
         sup_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),
@@ -819,6 +833,7 @@ mod tests {
         sup_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: string(),
@@ -830,6 +845,7 @@ mod tests {
         sub_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),
@@ -854,6 +870,7 @@ mod tests {
         sup_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),
@@ -862,6 +879,7 @@ mod tests {
         sup_fields.insert(
             "y".to_string(),
             FieldShape {
+                write_type: None,
                 optional: true,
                 readonly: false,
                 shape: string(),
@@ -873,6 +891,7 @@ mod tests {
         sub_fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: number(),

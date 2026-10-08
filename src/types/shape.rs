@@ -47,6 +47,10 @@ pub struct FieldShape {
     pub optional: bool,
     pub readonly: bool, // IFT-02 — readonly modifier on type alias object field
     pub shape: TypeShape,
+    /// An accessor can accept a different type when written than when read.
+    /// Ordinary mutable properties use `shape` for both operations.
+    #[serde(default)]
+    pub write_type: Option<TypeShape>,
 }
 
 /// REF-10 (Phase 22): per-position metadata for labeled tuple elements.
@@ -199,6 +203,9 @@ impl TypeShape {
             Self::Object(fields) => {
                 for field in fields.values_mut() {
                     visit(&mut field.shape);
+                    if let Some(write_type) = &mut field.write_type {
+                        visit(write_type);
+                    }
                 }
             }
             Self::Union(members)
@@ -300,6 +307,7 @@ impl TypeShape {
                         (
                             k,
                             FieldShape {
+                                write_type: v.write_type.map(TypeShape::normalize),
                                 optional: v.optional,
                                 readonly: v.readonly,
                                 shape: v.shape.normalize(),
@@ -425,6 +433,7 @@ mod tests {
         fields.insert(
             "x".to_string(),
             FieldShape {
+                write_type: None,
                 optional: false,
                 readonly: false,
                 shape: TypeShape::Primitive(PrimitiveKind::Number),
@@ -550,6 +559,7 @@ mod tests {
     #[test]
     fn test_field_shape_optional() {
         let field = FieldShape {
+            write_type: None,
             optional: true,
             readonly: false,
             shape: TypeShape::Primitive(PrimitiveKind::Number),
