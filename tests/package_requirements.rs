@@ -21,6 +21,11 @@ fn version_requirements_compare_the_entire_accepted_set() {
         (">=18 <20", ">=18 <19 || >=19 <20", false),
         ("^18.0.0", "^18.1.0", true),
         ("*", "^18", true),
+        (">=1.0.0-beta <2", ">=0 <3", true),
+        (">=1 <2", ">=1 <2.0.0-0", false),
+        (">=1.0.0-beta <2", ">=1.0.0-alpha <3", false),
+        ("^1.0.0-beta", "^1.0.0-rc", true),
+        (">1.0.0-beta <1.0.0", ">=1.0.0-beta.0 <1.0.0", false),
     ] {
         for (field, name, rule) in [
             ("peerDependencies", "host", "peer-dep-version-bumped"),

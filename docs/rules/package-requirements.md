@@ -3,7 +3,8 @@
 `peer-dep-version-bumped` and `engine-version-bumped` are Major when a new npm
 range excludes any previously accepted versions. This includes raising the
 minimum, lowering the maximum, removing a union branch, and switching between
-disjoint ranges. Reordering branches and widening support are compatible.
+disjoint ranges. Prerelease versions are included only when the range explicitly
+admits that prerelease core; widening stable bounds can still drop prereleases. Reordering branches and widening support are compatible.
 The historical rule names remain stable. Unparseable changed ranges are
 compared conservatively.
 

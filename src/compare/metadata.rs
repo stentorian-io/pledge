@@ -194,22 +194,40 @@ fn compare_platform(
     compare_platform_field(old_pkg, new_pkg, "cpu", findings);
 }
 
-/// Whether any previously accepted version is excluded by the new range.
-/// Subtract each new disjunct separately: Range::difference on two unions
-/// subtracts pairs independently instead of subtracting the entire union.
+/// A range changes membership only at comparator boundaries or prerelease cores.
+/// Check each boundary and its immediate successors. Interval subtraction alone
+/// loses npm's requirement to explicitly admit prereleases of a particular core.
 pub(crate) fn range_narrowed(old_range: &str, new_range: &str) -> bool {
-    use node_semver::Range;
-    let Ok(old) = Range::parse(old_range) else {
+    use node_semver::{Identifier, Range, Version};
+    let (Ok(old), Ok(new)) = (Range::parse(old_range), Range::parse(new_range)) else {
         return old_range != new_range;
     };
-    let mut remaining = Some(old);
-    for branch in new_range.split("||") {
-        let Ok(new) = Range::parse(branch.trim()) else {
-            return old_range != new_range;
-        };
-        remaining = remaining.and_then(|range| range.difference(&new));
+    let mut witnesses = vec![Version::from((0, 0, 0))];
+    for normalized in [old.to_string(), new.to_string()] {
+        for comparator in normalized.split("||").flat_map(str::split_whitespace) {
+            let Ok(boundary) = Version::parse(comparator.trim_start_matches(['<', '>', '=']))
+            else {
+                continue;
+            };
+            witnesses.push(boundary.clone());
+            if boundary.is_prerelease() {
+                let mut successor = boundary.clone();
+                successor.pre_release.push(Identifier::Numeric(0));
+                witnesses.push(successor);
+            }
+            let stable = Version::from((boundary.major, boundary.minor, boundary.patch));
+            let mut first_prerelease = stable.clone();
+            first_prerelease.pre_release.push(Identifier::Numeric(0));
+            witnesses.push(first_prerelease);
+            witnesses.push(stable.clone());
+            if let Some(patch) = stable.patch.checked_add(1) {
+                witnesses.push(Version::from((stable.major, stable.minor, patch)));
+            }
+        }
     }
-    remaining.is_some()
+    witnesses
+        .iter()
+        .any(|version| old.satisfies(version) && !new.satisfies(version))
 }
 
 /// META-01, META-02, META-03: detect peer dependency changes.
