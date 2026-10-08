@@ -8,7 +8,7 @@ surface.
 
 Interlint extracts these assignments as synthesized static Property members
 and tracks them via the existing
-[class-member removal rule (CLS-03)](./class.md).
+[class-member removal implementation](../../src/compare/class_diff.rs).
 
 See the [TypeScript 4.4 release notes — Class Static
 Blocks](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-4.html)
@@ -53,9 +53,9 @@ walked — tree-sitter emits each as a separate `class_static_block` child.
 When a static block contains a subscript-expression LHS like
 `Foo[computed()] = x` or `Foo[Symbol.iterator] = x`, Interlint cannot
 statically determine the property name and does not extract the assignment.
-Instead, a single Minor finding is emitted with the message substring
-`(limitation: dynamic-static-member-key)` so consumers know Interlint
-declined to diff these members:
+Instead, a Minor `class-static-type-changed` finding is paired with an
+Info `limitation: dynamic-static-member-key` finding so consumers know
+Interlint declined to diff these members:
 
 ```typescript
 export class Registry {
@@ -68,9 +68,8 @@ export class Registry {
 }
 ```
 
-Well-known Symbol exports (e.g. `Symbol.iterator`, `Symbol.asyncIterator`)
-will become first-class in a future milestone — tracked as Phase 22 ECF-13.
-Generic computed keys remain under this limitation.
+Well-known Symbol exports have separate detection rules. Generic computed
+static-block keys remain under this limitation.
 
 ### Nested scope and depth-2 member chains
 
@@ -80,10 +79,10 @@ patterns are rare in practice; consumers relying on them should document
 public class surface in the standard class body rather than in static-block
 side-effects.
 
-## Why no new rule-ID?
+## Shared class-member rules
 
-Phase 21 reuses the existing class-member rules (`class-method-removed`,
-`class-static-type-changed`) because the class's public surface is the
+Static block comparisons reuse the existing `class-method-removed` and
+`class-static-type-changed` rules because the class's public surface is the
 same whether a static property was declared at the class-body level
 (`class Foo { static bar = 1 }`) or in a static-block side-effect
 (`class Foo { static { Foo.bar = 1 } }`). Consumers cannot tell the two

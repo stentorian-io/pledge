@@ -52,17 +52,16 @@ Fires Minor `class-field-made-public`.
 
 ## Matching heuristic
 
-Fields are paired by name-modulo-`#` (the `#` prefix is stripped for
-identity comparison). A rename within the private space (`#foo` →
-`#bar`) is deliberately silent — consumers cannot observe private
+Fields are paired by their name without the `#` prefix and by whether they
+are static. A static field is never paired with an instance field. A rename
+within the private space (`#foo` → `#bar`) is deliberately silent — consumers cannot observe private
 fields, so a private-space rename is not an API change.
 
 ## Limitations
 
-- An unrelated refactor that happens to drop `foo` AND add `#bar` in
-  the same commit will be misreported as `foo → #foo` followed by a
-  silent drop of `#bar`. This is a known heuristic limitation of
-  name-modulo-`#` matching.
+- A field that changes both its name and visibility (`foo` → `#bar`)
+  cannot be paired as a visibility transition. The matching rule requires
+  the same bare name.
 - A class that legally has BOTH `public foo` AND `private #foo`
   simultaneously (distinct runtime slots) does NOT fire a CLS-11
   finding — the collision guard detects that both bare names exist on
@@ -70,8 +69,9 @@ fields, so a private-space rename is not an API change.
 - Nominal-type brand removal (`#brand: unique symbol` used for
   structural compat nominal typing in libraries like RxJS / Effect) is
   NOT detected under CLS-11 — the rename stays within the private
-  space. This is tracked as a Phase 25 DOC-01 limitation
-  (`limitation: private-brand-access-not-checkable`).
+  space. Visibility transitions also emit an Info
+  `limitation: private-brand-access-not-checkable` finding because consumer
+  reliance on private-brand checks cannot be verified statically.
 
 ## Scope
 
@@ -86,19 +86,11 @@ fields, so a private-space rename is not an API change.
 
 ## Decorator interaction
 
-Decorator diffs (Phase 19 CLS-10) and visibility-transition diffs
-(Phase 21 CLS-11) treat **decorator changes** and **public↔private
-transitions** as **independent axes** on a class member. When a member
-changes on both axes between versions (e.g. `@a foo` becomes
-`@b #foo`), Interlint emits one finding per axis:
+Class-level decorators and decorators on surviving public members are compared
+separately from field visibility. Private-member decorators are excluded from
+public-surface comparisons.
 
-- One `class-field-made-private` (Major) from CLS-11 — the visibility
-  transition.
-- One `decorator-added` / `decorator-removed` / `decorator-arguments-changed`
-  (severity per CLS-10) from the Phase 19 decorator diff — the
-  decorator change.
-
-This co-fire is deliberate and accepted (per Phase 21 research, Risk 8
-resolution): the two findings describe genuinely distinct API changes
-that consumers must evaluate independently. Interlint does **not**
-suppress one in favor of the other.
+For `@a foo` → `@b #foo`, the public/private transition is reported along with
+the private-brand limitation. The private member does not produce a decorator
+change finding. Unrelated decorator changes on other public members can still
+produce their own findings.

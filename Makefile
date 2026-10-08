@@ -1,36 +1,27 @@
-.PHONY: setup reference-suite reference-suite-regen check
+.PHONY: setup check check-all check-lsp coverage test-tools reference-suite reference-suite-regen
 
 setup:
-	git config core.hooksPath scripts/git-hooks
-	@echo "Done. Git hooks activated."
+	bun scripts/hooks/install.ts
 
-# Run the v0.3 reference validation suite (plan 25-03 INT-01).
-# Forces release mode + LSP-degraded behaviour for CI parity.
-reference-suite:
-	cargo test --release --test reference_suite
-
-# Regenerate expected-findings.json baselines for one or all reference
-# packages. Pass PKG=<name> to target a single package, otherwise all
-# active packages are regenerated. NEVER run from CI — the regenerated
-# baselines must be reviewed against package release notes before commit
-# (see docs/REFERENCE_SUITE.md).
-reference-suite-regen:
-	@if [ -n "$(PKG)" ]; then \
-		./scripts/regen-reference-suite.sh $(PKG); \
-	else \
-		./scripts/regen-reference-suite.sh; \
-	fi
-
-# Pre-publish quality gate — Phase 26 INT-01 SC5 closure (local gating story).
-# Runs the four cargo commands in sequence: fmt-check, clippy with -D warnings
-# across all targets, the full release-mode test suite, and the reference-suite
-# integration test. Any non-zero exit halts the chain because make stops on the
-# first failing recipe line by default. This is the canonical pre-`cargo
-# publish` gate; CI is permanently out of scope for the v0.3 milestone (see
-# .planning/phases/25-reference-suite-documented-limitations/25-VERIFICATION.md
-# §Deviations §2 for the rationale).
+# The default test suite already includes the pinned reference packages.
 check:
-	cargo fmt --all -- --check
-	cargo clippy --all-targets -- -D warnings
-	cargo test --release
-	cargo test --release --test reference_suite
+	bun scripts/check.ts
+
+check-all:
+	bun scripts/check.ts all
+
+check-lsp:
+	bun scripts/check.ts lsp
+
+coverage:
+	bun scripts/check.ts coverage
+
+test-tools:
+	bun scripts/check.ts tools
+
+reference-suite:
+	cargo test --locked --release --test reference_suite
+
+# Regenerated findings need manual review; see docs/reference-suite.md.
+reference-suite-regen:
+	./scripts/regen-reference-suite.sh $(if $(PKG),"$(PKG)")

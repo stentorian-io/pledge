@@ -1,35 +1,42 @@
 #!/usr/bin/env bash
 # scripts/regen-reference-suite.sh
 #
-# Phase 25 INT-01 helper — regenerates tests/fixtures/reference-suite/<pkg>/expected-findings.json
-# for one or all 5 reference packages by running the actual harness pipeline
+# Regenerates tests/fixtures/reference-suite/<pkg>/expected-findings.json
+# for one or all active reference packages by running the harness pipeline
 # in dump-baseline mode and writing the (exit_code, sorted_unique_rule_ids) result.
 #
 # Usage:
-#   ./scripts/regen-reference-suite.sh           # regenerate ALL packages
+#   ./scripts/regen-reference-suite.sh           # regenerate active packages
 #   ./scripts/regen-reference-suite.sh react     # regenerate ONLY react
 #
 # After regeneration, MANUALLY review the diff vs the previous expected-findings.json
 # against the package's release notes / changelog. Commit only when the diff aligns
-# with intentional Interlint behavior changes (e.g., new rule-IDs from a phase landing).
+# with intentional changes to Interlint detection behavior.
 #
-# DO NOT auto-run from CI — this would defeat the regression-check purpose of the suite.
+# Keep regeneration manual; verification must compare the reviewed baseline.
 
 set -euo pipefail
 
-# Active packages — zod and prisma are deferred pending backlog 999.1
-# (parse_type_string OOM mitigation). Pass them explicitly as $1 if you
+# Active packages — zod and prisma are deferred until type parser allocation
+# is bounded. Pass them explicitly as $1 if you
 # want to regenerate them anyway (e.g., after the OOM fix lands).
 PKGS=("react" "tanstack-query" "trpc")
-if [[ $# -ge 1 ]]; then
-    PKGS=("$1")
+if [[ $# -gt 1 ]]; then
+    echo "Usage: $0 [react|tanstack-query|trpc|zod|prisma]" >&2
+    exit 1
+fi
+if [[ $# -eq 1 ]]; then
+    case "$1" in
+        react|tanstack-query|trpc|zod|prisma) PKGS=("$1") ;;
+        *) echo "Unknown reference package: $1" >&2; exit 1 ;;
+    esac
 fi
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 # Build the dump binary once (defined as a cargo example).
-cargo build --release --example reference_suite_dump
+cargo build --locked --release --example reference_suite_dump
 
 for PKG in "${PKGS[@]}"; do
     OUT="tests/fixtures/reference-suite/$PKG/expected-findings.json"

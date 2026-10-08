@@ -9,7 +9,7 @@ package's public interface in two senses:
 2. `/// <amd-module name="..." />` and `/// <amd-dependency path="..." />`
    define the module name and factory dependencies of AMD-bundled output.
 
-Interlint's Phase 19 `comment_scan` pass extracts directives from
+Interlint's `comment_scan` pass extracts directives from
 `.d.ts`/`.ts` files and diffs them between the old and new versions of the
 package.
 

@@ -8,10 +8,10 @@ fields, and parameters in ways consumers observe either:
 - **Source-identity**: a build-time diff of public API shape that
   includes which decorators are applied where.
 
-Interlint's Phase 19 `tree_query::extract_decorators` reads decorators
+Interlint's `tree_query::extract_decorators` reads decorators
 directly from the `decorator` AST node in both `tree-sitter-typescript`
 0.23.2 and `tree-sitter-javascript` 0.25.0 grammars. No comment-scan
-fallback is used for decorators in Phase 19.
+fallback is used for decorators.
 
 ## Decorator positions supported
 
@@ -65,8 +65,9 @@ This fires exactly one `decorator-arguments-changed` — not one
 
 ## Limitations
 
-The following cases are explicitly NOT covered by Phase 19. Each will be
-surfaced as a first-class `limitation:` rule-ID in Phase 25 (DOC-01):
+Decorator changes are paired with an informational
+`limitation: decorator-runtime-effect-opaque` finding. Other unsupported cases
+below are documentation-only limitations; they do not emit dedicated rule IDs:
 
 - **`limitation: decorator-runtime-effect-opaque`** — Interlint detects
   decorator presence and argument changes, but does NOT verify what the
@@ -74,14 +75,13 @@ surfaced as a first-class `limitation:` rule-ID in Phase 25 (DOC-01):
   constructor behavior between versions will not surface as a finding
   beyond the presence / argument delta. This is accepted: static analysis
   cannot reason about arbitrary decorator factory bodies.
-- **`limitation: jsdoc-decorator-annotations-not-scanned`** — Babel-compiled
+- **JSDoc decorator annotations** — Babel-compiled
   JavaScript sometimes emits decorators as JSDoc-style `@decorator`
-  annotations in comments adjacent to the compiled class. Phase 19 does NOT
+  annotations in comments adjacent to the compiled class. Interlint does not
   scan these. If you ship babel-compiled output with decorator comments,
-  Interlint will report no decorator findings against it. Use TypeScript
-  compiled output (which emits real decorator AST nodes) or ship
-  uncompiled TypeScript sources.
-- **`limitation: parameter-decorators-not-diffed`** — Parameter decorators
+  Interlint will report no decorator findings against it. Compare sources that
+  retain decorator AST nodes when these findings are needed.
+- **Method parameter decorators** — Parameter decorators
   on non-constructor method parameters (e.g., `foo(@Inject('svc') svc: Service)`)
   are recognized by the AST extractor at the parameter node but are NOT
   surfaced in the per-method decorator diff because `ClassMember` tracks
@@ -89,7 +89,6 @@ surfaced as a first-class `limitation:` rule-ID in Phase 25 (DOC-01):
   parameter-properties (parameters marked `public`/`private`/`protected`/`readonly`,
   which TypeScript synthesizes into class fields) ARE covered — their
   decorators appear on the synthesized `ClassMember` Property entry.
-  Full parameter-level decorator diffing is tracked for Phase 21+.
 
 These limitations are documented so users can see from the rule docs which
 cases Interlint deliberately does not cover, rather than discovering silent

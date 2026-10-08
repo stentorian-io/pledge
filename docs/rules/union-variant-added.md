@@ -26,7 +26,7 @@ function area(s: Shape): number {
 Adding a new variant — even though it *widens* the type (technically a
 compatible direction) — breaks the exhaustiveness check at the
 consumer's switch. This is the same shape of problem as
-[`enum-member-added`](./enum-member-added.md) (BEH-04), and both surface
+[`enum-member-added`](../../src/compare/enum_diff.rs) (BEH-04), and both surface
 at the same severity.
 
 ## Rule reference
@@ -92,9 +92,9 @@ new version will register under either picked discriminant.
   narrowing) for those shapes.
 - **Non-literal discriminants**: a union like
   `{ tag: typeof SymbolA } | { tag: typeof SymbolB }` uses symbol-typed
-  discriminants rather than literal-typed. The locked v0.3 heuristic
+  discriminants rather than literal-typed. The detection heuristic
   requires `TypeShape::Literal(...)`, so these unions are treated as
-  plain. Phase 22's ECF-13 work covers well-known symbols separately.
+  plain. Well-known Symbol exports have separate detection rules.
 - **Local-alias obfuscation**: if a consumer aliases the discriminant
   type (`type Kind = 'circle' | 'square'; type Shape = { kind: Kind; ... };`)
   the discriminant values are not visible as literals on the variant

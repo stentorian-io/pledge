@@ -95,75 +95,21 @@ Interlint detects what is statically detectable. For cases that fundamentally ca
 
 See `docs/rules/<name>.md` for individual rule documentation. Phase 25 elevates these from substring-in-message annotations (Phases 19-22) to first-class `Finding.rule` values backed by Severity::Info.
 
-## Development Setup
-
-### Prerequisites
-
-- Rust toolchain (rustc, cargo, rustfmt, clippy)
-- Node.js with `typescript-language-server` installed globally:
-  ```sh
-  npm install -g typescript-language-server
-  ```
-- Coverage tooling:
-  ```sh
-  rustup component add llvm-tools
-  cargo install cargo-llvm-cov
-  ```
-
-### Repository Setup
-
-After cloning, run:
+## Development
 
 ```sh
-make setup
+git clone https://github.com/stentorian-io/pledge.git
+cd pledge
+make setup            # activate local Git hooks (requires Bun)
+make check            # formatting, clippy, and default release tests
+make check-lsp        # real language server tests
+make check-all        # tooling, default tests, LSP tests, and coverage
 ```
 
-This activates the git hooks that enforce quality checks on every commit and push.
+The Cargo package and executable are still named `interlint`. Checks run
+locally; there are no hosted CI workflows or pipelines yet. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for prerequisites and conventions, and
+[tests/README.md](./tests/README.md) for focused test commands.
 
-### What the Hooks Check
-
-**Pre-commit** (~4s, runs on every commit):
-- `cargo fmt --check` -- formatting
-- `cargo clippy -- -D warnings` -- linting
-- `cargo test` -- unit tests
-
-**Pre-push** (~45s, runs on every push):
-- `cargo test --features lsp-tests` -- full integration suite including LSP tests
-- `cargo llvm-cov --fail-under-lines <baseline>` -- coverage must not drop below baseline
-
-### Updating Coverage Baseline
-
-When you intentionally improve test coverage and want to raise the threshold:
-
-```sh
-scripts/update-baseline.sh
-```
-
-This measures current coverage and updates `.coverage-baseline`. Commit the updated file.
-
-### Running Tests
-
-```sh
-# Fast unit tests
-cargo test
-
-# Full suite including LSP integration tests
-cargo test --features lsp-tests
-```
-
-### Pre-publish Gate
-
-Before running `cargo publish`, run the canonical pre-publish gate:
-
-```sh
-make check
-```
-
-This runs four checks in sequence and exits non-zero on the first failure:
-
-1. `cargo fmt --all -- --check` — formatting
-2. `cargo clippy --all-targets -- -D warnings` — linting (all targets: lib, tests, examples, benches)
-3. `cargo test --release` — full release-mode test suite
-4. `cargo test --release --test reference_suite` — milestone-close reference suite gate (3 of 5 published packages: react, @tanstack/query-core, @trpc/server)
-
-`make check` is the canonical gating command for this project. **There is no CI workflow** — automated remote gating is permanently out of scope for the v0.3 milestone (see `.planning/phases/25-reference-suite-documented-limitations/25-VERIFICATION.md` for the rationale). `make check` running clean on the developer's machine is the milestone-close contract.
+See [the documentation index](docs/README.md) for architecture, rule, and
+reference-suite guides.

@@ -5,3 +5,11 @@ tests/fixtures/**/node_modules/
 tests/fixtures/**/package-lock.json
 tests/fixtures/**/tsconfig.json
 .claude/worktrees/
+
+# Local development state and environment files
+/.tmp/
+/.planning/
+/.gsd/
+.env
+.env.*
+!.env.example
