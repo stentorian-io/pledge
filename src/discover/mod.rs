@@ -18,6 +18,8 @@ use crate::types::ExportMap;
 pub fn discover_exports(
     pkg_root: &Path,
 ) -> anyhow::Result<(ExportMap, Vec<resolver::ResolveWarning>)> {
+    let canonical_root = pkg_root.canonicalize()?;
+    let pkg_root = canonical_root.as_path();
     let (mut entry_points, entry_warnings) =
         entry_points::resolve_entry_points_with_warnings(pkg_root)?;
     let package: serde_json::Value =

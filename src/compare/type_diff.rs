@@ -2793,6 +2793,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         }
     }
 
@@ -2817,6 +2818,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         }
     }
 

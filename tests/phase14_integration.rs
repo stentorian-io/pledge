@@ -42,6 +42,7 @@ fn make_export_sym(
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     }
 }
 
@@ -69,6 +70,7 @@ fn make_default_export_sym(
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     }
 }
 
@@ -356,6 +358,7 @@ fn test_namespace_member_removed() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }
@@ -383,6 +386,7 @@ fn test_namespace_member_removed() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }
@@ -442,6 +446,7 @@ fn test_namespace_member_added() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }
@@ -469,6 +474,7 @@ fn test_namespace_member_added() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }

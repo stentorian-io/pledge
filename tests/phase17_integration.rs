@@ -663,6 +663,7 @@ fn sem_04_generator_removed_is_major_severity() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let new_sym = ExportSymbol {
         name: "gen".to_string(),
@@ -683,6 +684,7 @@ fn sem_04_generator_removed_is_major_severity() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let findings = compare_behavior(&old_sym, &new_sym, "gen", &file, 1, 0);
     assert!(
@@ -729,6 +731,7 @@ fn sem_05_ref_04_suppressed_when_ref_08_fires() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let new_sym = ExportSymbol {
         name: "default".to_string(),
@@ -749,6 +752,7 @@ fn sem_05_ref_04_suppressed_when_ref_08_fires() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let findings = compare_ref_changes(&old_sym, &new_sym, "default", &file, 1, 0, &[], &[]);
     // REF-04 should not appear when REF-08 fires
@@ -843,6 +847,7 @@ fn sem_07_unmatched_overload_fires_removed() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let new_sym = ExportSymbol {
         name: "myFn".to_string(),
@@ -863,6 +868,7 @@ fn sem_07_unmatched_overload_fires_removed() {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     };
     let findings = compare_ref_changes(&old_sym, &new_sym, "myFn", &file, 1, 0, &[], &[]);
     assert!(

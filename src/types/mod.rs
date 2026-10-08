@@ -116,6 +116,8 @@ pub struct ExportSymbol {
     /// The comparator uses this flag to emit a paired Severity::Info finding
     /// with rule `limitation: proxy-dispatched-exports`. Default `false`.
     pub is_proxy_dispatched: bool,
+    /// Original declaration name, independent of the public export alias.
+    pub local_name: Option<String>,
 }
 
 /// INF-04 (Phase 22): a single `typeof import('./x').Y` or `import('./x').Y`
@@ -680,6 +682,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
         assert!(sym.typeof_import_refs.is_empty());
     }
@@ -706,6 +709,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
         assert_eq!(sym.name, "foo");
     }
@@ -773,6 +777,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
         assert!(sym.is_async);
         assert!(sym.is_generator);
@@ -844,6 +849,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
         assert!(sym.is_type_only);
     }
@@ -965,6 +971,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
         assert_eq!(sym.decl_kinds.len(), 2);
         assert!(sym.decl_kinds.contains(&DeclarationKind::Class));
@@ -993,6 +1000,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         }
     }
 

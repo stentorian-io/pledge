@@ -57,6 +57,7 @@ fn make_sym(name: &str, decl_kind: Option<DeclarationKind>) -> ExportSymbol {
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     }
 }
 
@@ -80,6 +81,7 @@ fn make_fn_sym_with_overloads(name: &str, overloads: Vec<TypeShape>) -> ExportSy
         compound_members: Vec::new(),
         typeof_import_refs: Vec::new(),
         is_proxy_dispatched: false,
+        local_name: None,
     }
 }
 
@@ -150,6 +152,7 @@ fn test_export_alias_detected_correctly() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }
@@ -177,6 +180,7 @@ fn test_export_alias_detected_correctly() {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
     }

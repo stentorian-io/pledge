@@ -140,6 +140,10 @@ pub struct RawExport {
     /// `limitation: proxy-dispatched-exports` when transitioning to or from this
     /// shape. Default `false` for all non-proxy export forms.
     pub is_proxy_dispatched: bool,
+    /// Original declaration name, independent of the public export alias.
+    pub local_name: Option<String>,
+    /// Declaration coordinates; export-site coordinates remain available for metadata.
+    pub declaration_site: Option<(u32, u32)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -1184,6 +1188,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }
@@ -1220,6 +1226,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
                                 is_proxy_dispatched: false,
+                                local_name: None,
+                                declaration_site: None,
                             });
                         }
                     }
@@ -1254,6 +1262,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1323,6 +1333,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }
@@ -1370,6 +1382,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -1418,6 +1432,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -1479,6 +1495,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1527,6 +1545,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -1575,6 +1595,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -1631,6 +1653,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1667,6 +1691,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }
@@ -1705,6 +1731,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -1747,6 +1775,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1825,6 +1855,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -1899,6 +1931,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1937,6 +1971,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -1969,6 +2005,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -2043,6 +2081,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -2100,6 +2140,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -2156,6 +2198,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }
@@ -2208,6 +2252,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }
@@ -2238,6 +2284,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -2270,6 +2318,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -2315,6 +2365,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -2382,6 +2434,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
                                             is_proxy_dispatched: false,
+                                            local_name: None,
+                                            declaration_site: None,
                                         });
                                     }
                                 }
@@ -2436,6 +2490,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
                                         is_proxy_dispatched: false,
+                                        local_name: None,
+                                        declaration_site: None,
                                     });
                                 }
                             }
@@ -2481,6 +2537,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
                                         is_proxy_dispatched: false,
+                                        local_name: None,
+                                        declaration_site: None,
                                     });
                                 }
                             }
@@ -2525,6 +2583,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
                                         is_proxy_dispatched: false,
+                                        local_name: None,
+                                        declaration_site: None,
                                     });
                                 }
                             }
@@ -2570,6 +2630,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
                                 is_proxy_dispatched: false,
+                                local_name: None,
+                                declaration_site: None,
                             });
                         }
                     }
@@ -2611,6 +2673,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
                                 is_proxy_dispatched: false,
+                                local_name: None,
+                                declaration_site: None,
                             });
                         }
                     }
@@ -2664,6 +2728,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -2708,6 +2774,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -2781,6 +2849,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: true,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     } else {
                         // Existing default already captured by a sibling pattern (rare).
@@ -2852,6 +2922,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
                                                 is_proxy_dispatched: false,
+                                                local_name: None,
+                                                declaration_site: None,
                                             });
                                         }
                                     }
@@ -2877,6 +2949,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     satisfies_type: None,
                                                     typeof_import_refs: Vec::new(),
                                                     is_proxy_dispatched: false,
+                                                    local_name: None,
+                                                    declaration_site: None,
                                                 });
                                             }
                                         }
@@ -2943,6 +3017,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                     // META-03: emit synthetic keys for each top-level member in the body.
@@ -2998,6 +3074,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
                                             is_proxy_dispatched: false,
+                                            local_name: None,
+                                            declaration_site: None,
                                         });
                                     }
                                     // META-03: emit synthetic keys for top-level members.
@@ -3140,6 +3218,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
                                                 is_proxy_dispatched: false,
+                                                local_name: None,
+                                                declaration_site: None,
                                             });
                                         }
                                     }
@@ -3167,6 +3247,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
                                             is_proxy_dispatched: false,
+                                            local_name: None,
+                                            declaration_site: None,
                                         });
                                     }
                                 }
@@ -3234,6 +3316,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                 satisfies_type: None,
                                                 typeof_import_refs: Vec::new(),
                                                 is_proxy_dispatched: false,
+                                                local_name: None,
+                                                declaration_site: None,
                                             });
                                         }
                                     }
@@ -3294,6 +3378,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -3405,6 +3491,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -3486,6 +3574,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                             satisfies_type: None,
                                             typeof_import_refs: Vec::new(),
                                             is_proxy_dispatched: false,
+                                            local_name: None,
+                                            declaration_site: None,
                                         });
                                     }
                                 }
@@ -3533,6 +3623,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         satisfies_type: None,
                                                         typeof_import_refs: Vec::new(),
                                                         is_proxy_dispatched: false,
+                                                        local_name: None,
+                                                        declaration_site: None,
                                                     });
                                                 }
                                             }
@@ -3593,6 +3685,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                         satisfies_type: None,
                                                         typeof_import_refs: Vec::new(),
                                                         is_proxy_dispatched: false,
+                                                        local_name: None,
+                                                        declaration_site: None,
                                                     });
                                                 }
                                             }
@@ -3620,6 +3714,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                                     satisfies_type: None,
                                                     typeof_import_refs: Vec::new(),
                                                     is_proxy_dispatched: false,
+                                                    local_name: None,
+                                                    declaration_site: None,
                                                 });
                                             }
                                         }
@@ -3674,6 +3770,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                 satisfies_type: None,
                                 typeof_import_refs: Vec::new(),
                                 is_proxy_dispatched: false,
+                                local_name: None,
+                                declaration_site: None,
                             });
                         }
                     }
@@ -3749,6 +3847,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -3824,6 +3924,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                 }
             }
@@ -3912,6 +4014,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                         satisfies_type: None,
                                         typeof_import_refs: Vec::new(),
                                         is_proxy_dispatched: false,
+                                        local_name: None,
+                                        declaration_site: None,
                                     });
                                 }
                             }
@@ -3939,6 +4043,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                         }
@@ -4053,6 +4159,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
+                        local_name: None,
+                        declaration_site: None,
                     });
                     umd_default_bindings.push(binding.to_string());
                 }
@@ -4184,6 +4292,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             } else {
                 // Merge the gathered members into the existing default.
@@ -4243,7 +4353,109 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
+    link_export_declarations(root, source, &mut exports);
     Ok(exports)
+}
+
+/// Retain alias source names and point local exports at declarations, not trailers.
+fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mut [RawExport]) {
+    fn declaration<'a>(
+        node: tree_sitter::Node<'a>,
+        source: &[u8],
+        name: &str,
+    ) -> Option<tree_sitter::Node<'a>> {
+        if node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(source).ok())
+            == Some(name)
+            && matches!(
+                node.kind(),
+                "class_declaration"
+                    | "abstract_class_declaration"
+                    | "interface_declaration"
+                    | "type_alias_declaration"
+                    | "function_declaration"
+                    | "function_signature"
+                    | "enum_declaration"
+                    | "variable_declarator"
+            )
+        {
+            return Some(node);
+        }
+        if !matches!(
+            node.kind(),
+            "program"
+                | "export_statement"
+                | "ambient_declaration"
+                | "lexical_declaration"
+                | "variable_declaration"
+        ) {
+            return None;
+        }
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
+            if let Some(found) = declaration(child, source, name) {
+                return Some(found);
+            }
+        }
+        None
+    }
+    for export in exports {
+        let point = tree_sitter::Point::new(
+            export.line.saturating_sub(1) as usize,
+            export.col.saturating_sub(1) as usize,
+        );
+        let mut node = root.named_descendant_for_point_range(point, point);
+        while let Some(current) = node {
+            if current.kind() == "export_specifier" {
+                export.local_name = current
+                    .child_by_field_name("name")
+                    .and_then(|n| n.utf8_text(source).ok())
+                    .map(str::to_string);
+                export.is_type_only |= current
+                    .utf8_text(source)
+                    .is_ok_and(|text| text.trim_start().starts_with("type "));
+            }
+            if current.kind() == "export_statement" {
+                if export.local_name.is_some() {
+                    if let Some(specifier) = current
+                        .child_by_field_name("source")
+                        .and_then(|n| n.utf8_text(source).ok())
+                    {
+                        export.source = Some(strip_quotes(specifier).to_string());
+                        export.kind = RawExportKind::NamedReexport;
+                    }
+                }
+                export.is_type_only |= current
+                    .utf8_text(source)
+                    .is_ok_and(|text| text.trim_start().starts_with("export type "));
+                break;
+            }
+            node = current.parent();
+        }
+        if export.source.is_some() {
+            continue;
+        }
+        let name = export.local_name.as_deref().unwrap_or(&export.name);
+        let Some(decl) = declaration(root, source, name) else {
+            continue;
+        };
+        let Some(identifier) = decl.child_by_field_name("name") else {
+            continue;
+        };
+        export.declaration_site = Some((
+            identifier.start_position().row as u32 + 1,
+            identifier.start_position().column as u32 + 1,
+        ));
+        export.decl_kind = Some(match decl.kind() {
+            "class_declaration" | "abstract_class_declaration" => DeclarationKind::Class,
+            "interface_declaration" => DeclarationKind::Interface,
+            "type_alias_declaration" => DeclarationKind::TypeAlias,
+            "function_declaration" | "function_signature" => DeclarationKind::Function,
+            "enum_declaration" => DeclarationKind::Enum,
+            _ => DeclarationKind::Variable,
+        });
+    }
 }
 
 /// ARCH-02 (Phase 18): second-pass attachment of compound-component members.
@@ -4374,6 +4586,8 @@ fn expand_namespace_members(
                                     satisfies_type: None,
                                     typeof_import_refs: Vec::new(),
                                     is_proxy_dispatched: false,
+                                    local_name: None,
+                                    declaration_site: None,
                                 });
                             }
                             // Recurse into the nested namespace body
@@ -4443,6 +4657,8 @@ fn expand_namespace_members(
                             satisfies_type: None,
                             typeof_import_refs: Vec::new(),
                             is_proxy_dispatched: false,
+                            local_name: None,
+                            declaration_site: None,
                         });
                     }
                 }
@@ -4509,6 +4725,8 @@ fn emit_augmentation_members(
                     satisfies_type: None,
                     typeof_import_refs: Vec::new(),
                     is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
                 });
             }
         }

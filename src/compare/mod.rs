@@ -1206,14 +1206,20 @@ pub fn compare_structural_diff(
         };
 
         // Extract all shapes from both versions
-        let Some(old_decl) =
-            extract_declaration_from_tree(old_tree, old_source, name, old_sym.line)
-        else {
+        let Some(old_decl) = extract_declaration_from_tree(
+            old_tree,
+            old_source,
+            old_sym.local_name.as_deref().unwrap_or(name),
+            old_sym.line,
+        ) else {
             continue;
         };
-        let Some(new_decl) =
-            extract_declaration_from_tree(new_tree, new_source, name, new_sym.line)
-        else {
+        let Some(new_decl) = extract_declaration_from_tree(
+            new_tree,
+            new_source,
+            new_sym.local_name.as_deref().unwrap_or(name),
+            new_sym.line,
+        ) else {
             continue;
         };
 
@@ -1236,8 +1242,16 @@ pub fn compare_structural_diff(
         // REQ-14-05: Interface member structural diff (degraded mode)
         // REQ-14-04: Declaration merging — collect members from ALL interface declarations
         if old_decl.is_interface && new_decl.is_interface {
-            let old_members = collect_interface_members_from_tree(old_tree, old_source, name);
-            let new_members = collect_interface_members_from_tree(new_tree, new_source, name);
+            let old_members = collect_interface_members_from_tree(
+                old_tree,
+                old_source,
+                old_sym.local_name.as_deref().unwrap_or(name),
+            );
+            let new_members = collect_interface_members_from_tree(
+                new_tree,
+                new_source,
+                new_sym.local_name.as_deref().unwrap_or(name),
+            );
             if !old_members.is_empty() || !new_members.is_empty() {
                 findings.extend(interface_diff::compare_interface_members(
                     &old_members,
@@ -1875,6 +1889,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
 
         let mut old_exports: ExportMap = ExportMap::new();
@@ -1936,6 +1951,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         };
 
         let mut old_exports: ExportMap = ExportMap::new();
@@ -1981,6 +1997,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         }
     }
 

@@ -829,7 +829,128 @@ pub fn collect_exports(
     // file are unresolvable (at depth 0 only).
     let mut barrel_failures: HashMap<String, Vec<String>> = HashMap::new();
 
+    // Explicit exports take precedence regardless of their source order.
+    raw_exports.sort_by_key(|e| matches!(e.kind, RawExportKind::StarReexport));
+    let explicit: HashSet<String> = raw_exports
+        .iter()
+        .filter(|e| e.kind != RawExportKind::StarReexport)
+        .map(|e| {
+            if e.kind == RawExportKind::Default {
+                "default".to_string()
+            } else {
+                e.name.clone()
+            }
+        })
+        .collect();
+    let mut star_origins: HashMap<ExportKey, (PathBuf, u32, u32)> = HashMap::new();
+    let mut ambiguous = HashSet::new();
+    let mut reexport_cache = HashMap::new();
+
     for export in raw_exports {
+        if matches!(
+            export.kind,
+            RawExportKind::StarReexport | RawExportKind::NamedReexport
+        ) {
+            let target = export.source.as_deref().and_then(|specifier| {
+                if classify_specifier(specifier) == SpecifierKind::ImportsField {
+                    imports_map.and_then(|im| resolve_imports_subpath(im, specifier, pkg_root))
+                } else if matches!(
+                    classify_specifier(specifier),
+                    SpecifierKind::Relative | SpecifierKind::Bare
+                ) {
+                    let mut paths = resolve_module_path(&canonical, specifier);
+                    if let Some(tc) = tsconfig {
+                        paths.extend(resolve_tsconfig_alias(specifier, tc, pkg_root));
+                    }
+                    paths.into_iter().find(|p| p.is_file())
+                } else {
+                    None
+                }
+            });
+            if let Some(target) = target {
+                if !reexport_cache.contains_key(&target) {
+                    let mut resolved = ExportMap::new();
+                    collect_exports(
+                        &target,
+                        pkg_root,
+                        &mut resolved,
+                        visited,
+                        warnings,
+                        depth + 1,
+                        tsconfig,
+                        imports_map,
+                        subpath,
+                        condition,
+                    )?;
+                    reexport_cache.insert(target.clone(), resolved);
+                }
+                let resolved = &reexport_cache[&target];
+                map.directives.extend(resolved.directives.clone());
+                let imported_name = export.local_name.as_deref().unwrap_or(&export.name);
+                let mut found = false;
+                for (resolved_key, resolved_symbol) in resolved.iter() {
+                    if export.kind == RawExportKind::NamedReexport
+                        && resolved_key.name != imported_name
+                    {
+                        continue;
+                    }
+                    let mut key = resolved_key.clone();
+                    let mut symbol = resolved_symbol.clone();
+                    if export.kind == RawExportKind::NamedReexport {
+                        if key.name != imported_name {
+                            continue;
+                        }
+                        found = true;
+                        symbol.local_name = Some(symbol.local_name.unwrap_or(symbol.name));
+                        symbol.name = export.name.clone();
+                        symbol.kind = if export.name == "default" {
+                            ExportKind::Default
+                        } else {
+                            ExportKind::Named
+                        };
+                        key.name = export.name.clone();
+                    } else if export.name == "*" {
+                        if key.name == "default" || explicit.contains(&key.name) {
+                            continue;
+                        }
+                    } else {
+                        symbol.local_name = Some(symbol.local_name.unwrap_or(symbol.name.clone()));
+                        key.name = format!("{}.{}", export.name, key.name);
+                        symbol.name = key.name.clone();
+                    }
+                    symbol.is_reexport = true;
+                    if export.release_tag.is_some() {
+                        symbol.release_tag = export.release_tag.clone();
+                    }
+                    symbol.is_type_only |= export.is_type_only;
+                    if symbol.is_type_only {
+                        key.space = SymbolSpace::Type;
+                    }
+                    if export.kind == RawExportKind::StarReexport {
+                        let identity = (symbol.file.clone(), symbol.line, symbol.col);
+                        if let Some(previous) = star_origins.get(&key) {
+                            if previous != &identity {
+                                ambiguous.insert(key.clone());
+                                map.remove(&key);
+                            }
+                        } else {
+                            star_origins.insert(key.clone(), identity);
+                        }
+                        if ambiguous.contains(&key) {
+                            continue;
+                        }
+                    }
+                    map.entry(key).or_insert(symbol);
+                }
+                if export.kind == RawExportKind::NamedReexport && !found {
+                    barrel_failures
+                        .entry(export.source.clone().unwrap_or_default())
+                        .or_default()
+                        .push(export.name);
+                }
+                continue;
+            }
+        }
         match export.kind {
             RawExportKind::Named => {
                 // Phase 18 D-13: pre-merge at insertion. Construct ExportKey with
@@ -883,8 +1004,8 @@ pub fn collect_exports(
                             name: export.name,
                             kind: ExportKind::Named,
                             file: rel_path.clone(),
-                            line: export.line,
-                            col: export.col,
+                            line: export.declaration_site.map_or(export.line, |site| site.0),
+                            col: export.declaration_site.map_or(export.col, |site| site.1),
                             // INF-02 (Phase 18): carry the declare-site type
                             // signature linked during parse_exports' INF-02
                             // link-pass. None for source-form exports where
@@ -896,7 +1017,7 @@ pub fn collect_exports(
                             is_async: false,
                             is_generator: false,
                             is_reexport: false,
-                            is_type_only: false,
+                            is_type_only: export.is_type_only,
                             release_tag: export.release_tag, // META-04: propagate TSDoc release tag
                             // TYPE-01 (Phase 20): forward the populated
                             // satisfies_type onto the resolved ExportSymbol
@@ -914,6 +1035,7 @@ pub fn collect_exports(
                             typeof_import_refs: export.typeof_import_refs.clone(),
                             // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
                             is_proxy_dispatched: export.is_proxy_dispatched,
+                            local_name: export.local_name.clone(),
                         },
                     );
                 }
@@ -947,8 +1069,8 @@ pub fn collect_exports(
                             name: "default".to_string(),
                             kind: ExportKind::Default,
                             file: rel_path.clone(),
-                            line: export.line,
-                            col: export.col,
+                            line: export.declaration_site.map_or(export.line, |site| site.0),
+                            col: export.declaration_site.map_or(export.col, |site| site.1),
                             // INF-02 (Phase 18): default-export carries the
                             // declare-site type signature when the INF-03
                             // trailer (`export { foo as default }`) linked the
@@ -960,7 +1082,7 @@ pub fn collect_exports(
                             is_async: false,
                             is_generator: false,
                             is_reexport: false,
-                            is_type_only: false,
+                            is_type_only: export.is_type_only,
                             // META-06 (Phase 19): propagate the release_tag populated
                             // by the comment_scan pass on the current file's RawExport.
                             // Without this, `/** @deprecated */ export default foo`
@@ -977,6 +1099,7 @@ pub fn collect_exports(
                             typeof_import_refs: export.typeof_import_refs.clone(),
                             // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
                             is_proxy_dispatched: export.is_proxy_dispatched,
+                            local_name: export.local_name.clone(),
                         },
                     );
                 }
@@ -1087,6 +1210,7 @@ pub fn collect_exports(
                                                     // is correct.
                                                     typeof_import_refs: Vec::new(),
                                                     is_proxy_dispatched: false,
+                                                    local_name: None,
                                                 },
                                             );
                                         }
@@ -1159,6 +1283,7 @@ pub fn collect_exports(
                                                 compound_members: Vec::new(),
                                                 typeof_import_refs: Vec::new(),
                                                 is_proxy_dispatched: false,
+                                                local_name: None,
                                             },
                                         );
                                     }
@@ -1237,6 +1362,7 @@ pub fn collect_exports(
                                                 // live on the target's ExportSymbol. Empty Vec here.
                                                 typeof_import_refs: Vec::new(),
                                                 is_proxy_dispatched: false,
+                                                local_name: None,
                                             },
                                         );
                                     }
@@ -1280,6 +1406,7 @@ pub fn collect_exports(
                                                     // carry no source-site type position; empty Vec.
                                                     typeof_import_refs: Vec::new(),
                                                     is_proxy_dispatched: false,
+                                                    local_name: None,
                                                 },
                                             );
                                         }
@@ -1885,6 +2012,7 @@ mod tests {
                 compound_members: Vec::new(),
                 typeof_import_refs: Vec::new(),
                 is_proxy_dispatched: false,
+                local_name: None,
             },
         );
         let new_map = crate::types::ExportMap::new();
@@ -2371,6 +2499,7 @@ mod tests {
             compound_members: Vec::new(),
             typeof_import_refs: Vec::new(),
             is_proxy_dispatched: false,
+            local_name: None,
         }
     }
 
