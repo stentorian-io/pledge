@@ -94,10 +94,58 @@ function genericDeclaration(parameters, body, depth) {
       is_const: has(ts.SyntaxKind.ConstKeyword), variance: inward && outward ? 'InOut' : inward ? 'In' : outward ? 'Out' : null };
   }), body } };
 }
+function constantScalar(expression, depth = 0) {
+  if (!expression || depth > 32) return undefined;
+  const type = checker.getTypeAtLocation(expression);
+  if (type.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.NumberLiteral)) return type.value;
+  if (type.flags & ts.TypeFlags.BooleanLiteral) return type.intrinsicName === 'true';
+  if (type.flags & ts.TypeFlags.Null) return null;
+  if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression)) return constantScalar(expression.expression, depth + 1);
+  if (ts.isIdentifier(expression)) return constantScalar(constantInitializer(expression), depth + 1);
+  if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    const left = constantScalar(expression.left, depth + 1), right = constantScalar(expression.right, depth + 1);
+    if (left !== undefined && right !== undefined) return left + right;
+  }
+  if (ts.isTemplateExpression(expression)) {
+    let text = expression.head.text;
+    for (const span of expression.templateSpans) {
+      const part = constantScalar(span.expression, depth + 1);
+      if (part === undefined) return undefined;
+      text += String(part) + span.literal.text;
+    }
+    return text;
+  }
+  return undefined;
+}
+function constantInitializer(expression) {
+  const declaration = checker.getSymbolAtLocation(expression)?.valueDeclaration;
+  return declaration && ts.isVariableDeclaration(declaration) && (declaration.parent.flags & ts.NodeFlags.Const) ? declaration.initializer : undefined;
+}
+function symbolIdentity(expression, depth = 0) {
+  if (!expression || depth > 32) return undefined;
+  if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression)) return symbolIdentity(expression.expression, depth + 1);
+  if (ts.isIdentifier(expression)) return symbolIdentity(constantInitializer(expression), depth + 1);
+  const member = ts.isCallExpression(expression) ? expression.expression : expression;
+  if (!ts.isPropertyAccessExpression(member) || member.expression.getText() !== 'Symbol') return undefined;
+  const owner = checker.getSymbolAtLocation(member.expression);
+  if (!owner?.declarations?.every(declaration => declaration.getSourceFile().hasNoDefaultLib)) return undefined;
+  if (!ts.isCallExpression(expression)) return generic('Symbol', [{ Literal: { String: member.name.text } }]);
+  if (member.name.text !== 'for') return undefined;
+  const key = constantScalar(expression.arguments[0]);
+  if (key === undefined) {
+    currentIssues.add('unresolved Symbol.for registry key');
+    return undefined;
+  }
+  return generic('Symbol.for', [{ Literal: { String: String(key) } }]);
+}
 function propertyName(symbol) {
   const declaration = symbol.valueDeclaration || symbol.declarations?.[0];
-  return symbol.getName().startsWith('__@') && declaration?.name && ts.isComputedPropertyName(declaration.name)
-    ? declaration.name.getText() : symbol.getName();
+  if (!symbol.getName().startsWith('__@') || !declaration?.name || !ts.isComputedPropertyName(declaration.name)) return symbol.getName();
+  const identity = symbolIdentity(declaration.name.expression)?.Generic;
+  if (identity) return identity.name === 'Symbol.for'
+    ? `[Symbol.for(${JSON.stringify(identity.args[0].Literal.String)})]`
+    : `[Symbol.${identity.args[0].Literal.String}]`;
+  return declaration.name.getText();
 }
 function isPrivate(symbol) {
   return symbol.declarations?.some(declaration =>
@@ -179,7 +227,7 @@ function shape(type, depth = 0) {
     }
     if (flags & ts.TypeFlags.IndexedAccess) return { Indexed: { base: shape(type.objectType, depth + 1), index: shape(type.indexType, depth + 1) } };
     if (flags & ts.TypeFlags.Index) return generic('keyof', [shape(type.type, depth + 1)]);
-    if (flags & ts.TypeFlags.UniqueESSymbol) return { TypeParam: checker.typeToString(type) };
+    if (flags & ts.TypeFlags.UniqueESSymbol) return symbolIdentity(type.symbol?.valueDeclaration?.initializer) || { TypeParam: checker.typeToString(type) };
     if (!(flags & ts.TypeFlags.Object)) return incomplete('unevaluated compiler type', type);
 
     const node = checker.typeToTypeNode(type, undefined, formatFlags);
@@ -234,24 +282,31 @@ function sourcePosition(source, request) {
   return start + Buffer.from(source.text.slice(start, end)).subarray(0, Math.max(0, request.col - 1)).toString('utf8').length;
 }
 
-function commonjsType(request) {
+function commonjsValue(request) {
   const source = program.getSourceFile(request.file);
   if (!source) return undefined;
   const position = sourcePosition(source, request);
   let expression;
+  let initializer;
   const contains = node => node.getStart() <= position && position < node.getEnd();
   function visit(node) {
     if (!contains(node)) return;
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
       const target = node.left.getText().replace(/\s/g, '');
-      if ((target === 'module.exports' && request.name === 'default') ||
-          (/^(exports|module\.exports)[.[]/.test(target) && contains(node.left))) expression = node.right;
+      if (target === 'module.exports' && request.name === 'default') expression = node.right;
+      else if (/^(exports|module\.exports)[.[]/.test(target) && contains(node.left)) {
+        // A public property annotation can widen the fresh RHS literal. Keep
+        // the RHS only when the checker cannot resolve the key.
+        const type = checker.getTypeAtLocation(node.left);
+        expression = type.flags & ts.TypeFlags.Any ? node.right : node.left;
+      }
+      if (expression) initializer = node.right;
     }
     if (ts.isPropertyAssignment(node) && ts.isComputedPropertyName(node.name) && contains(node.name)) expression = node.initializer;
     ts.forEachChild(node, visit);
   }
   visit(source);
-  return expression && checker.getTypeAtLocation(expression);
+  return expression && { type: checker.getTypeAtLocation(expression), identity: symbolIdentity(initializer || expression) };
 }
 
 function declarationSymbol(request) {
@@ -304,17 +359,17 @@ for (const request of input.symbols) {
   const symbol = declarationSymbol(request);
   let overloads = [];
   let signature = null;
-  const expressionType = commonjsType(request);
-  if (symbol || expressionType) {
+  const expressionValue = commonjsValue(request);
+  if (symbol || expressionValue) {
     for (const declaration of symbol?.declarations || []) {
       bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
     }
-    const type = expressionType || (symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
+    const type = expressionValue?.type || (symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
       ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol));
     signature = checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
     if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
-    else overloads = [shape(type)];
+    else overloads = [expressionValue?.identity || symbolIdentity(symbol?.valueDeclaration?.initializer) || shape(type)];
     if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
       const declaration = symbol.declarations?.find(declaration => declaration.typeParameters?.length);
       const parameters = declaration?.typeParameters.map(parameter => checker.getTypeAtLocation(parameter));

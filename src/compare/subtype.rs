@@ -169,6 +169,9 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
 
     // Literal subtype of corresponding primitive
     match (sub, sup) {
+        (Generic { name, .. }, Primitive(Symbol)) if name == "Symbol.for" || name == "Symbol" => {
+            return true;
+        }
         (Literal(LiteralKind::String(_)), Primitive(String)) => return true,
         (Literal(LiteralKind::Number(number)), Primitive(Number)) if !number.ends_with('n') => {
             return true

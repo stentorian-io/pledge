@@ -15,6 +15,12 @@ The identity of a registered symbol follows the
 [ECMAScript Symbol.for algorithm](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.for).
 It is not a private identity with unspecified behavior.
 
+Compiler enrichment also retains registered and well-known symbol identities
+when the symbol itself is exported as a value. Changing that identity is a
+breaking value-type change. Object property keys use the resolved identity,
+so renaming a local constant holding the same symbol stays compatible. A
+registry key that cannot be resolved makes compiler enrichment incomplete.
+
 Unknown keys, mutable bindings, or shadowed built-ins are not guessed. An
 unresolved computed CommonJS key is an incomplete discovery warning; unresolved
 class keys produce `analysis-incomplete` and the contextual

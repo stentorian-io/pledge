@@ -401,5 +401,29 @@
     "extension": "ts",
     "breaking": true,
     "required_rule": "generic-inference-constraint-added"
+  },
+  {
+    "name": "CommonJS annotated strings retain their declared public type",
+    "extension": "cjs",
+    "old": "/** @type {string} */ exports.api='hello';",
+    "new": "/** @type {string} */ exports.api='goodbye';",
+    "consumer": "const value: string = api;",
+    "breaking": false
+  },
+  {
+    "name": "CommonJS public property type changes are incompatible",
+    "extension": "cjs",
+    "old": "exports.api='hello';",
+    "new": "exports.api=1;",
+    "consumer": "const value: string = api;",
+    "breaking": true
+  },
+  {
+    "name": "CommonJS inferred literal changes retain their narrower contract",
+    "extension": "cjs",
+    "old": "exports.api='hello';",
+    "new": "exports.api='goodbye';",
+    "consumer": "const value: 'hello' = api;",
+    "breaking": true
   }
 ]

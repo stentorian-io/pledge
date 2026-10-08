@@ -31,7 +31,8 @@ async fn evaluated_public_types_agree_with_strict_consumers() {
             std::fs::write(
                 root.join("consumer.ts"),
                 format!(
-                    "import {{api}} from './index.js';\n{}",
+                    "import {{api}} from './index.{}';\n{}",
+                    if extension == "cjs" { "cjs" } else { "js" },
                     case["consumer"].as_str().unwrap()
                 ),
             )
@@ -102,6 +103,7 @@ async fn unresolved_public_types_cannot_report_complete_analysis() {
     for source in [
         "export declare function api(): MissingType;",
         "export type Open<T> = { [K in keyof T]: MissingType };",
+        "export const api = { value: missing } satisfies { value: unknown };",
     ] {
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -118,6 +120,12 @@ async fn unresolved_public_types_cannot_report_complete_analysis() {
             matches!(result, lsp::EnrichResult::Degraded(_)),
             "{source}: {result:?}"
         );
+        if source.contains("satisfies") {
+            assert!(exports.values().any(|symbol| matches!(
+                symbol.satisfies_type,
+                Some(interlint::types::shape::TypeShape::Satisfies { narrowed: None, .. })
+            )));
+        }
     }
 }
 

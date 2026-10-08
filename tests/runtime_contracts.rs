@@ -126,3 +126,90 @@ async fn transparent_wrappers_retain_their_node_observable_contracts() {
         );
     }
 }
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn registered_symbol_identity_agrees_with_node_consumers() {
+    let cases = [
+        (
+            "js",
+            "export const api=Symbol.for('public');",
+            "export const api=Symbol.for('private');",
+            "if(api !== Symbol.for('public')) throw Error('identity');",
+            true,
+        ),
+        (
+            "cjs",
+            "exports.api=Symbol.for('public');",
+            "exports.api=Symbol.for('private');",
+            "if(api !== Symbol.for('public')) throw Error('identity');",
+            true,
+        ),
+        (
+            "js",
+            "export const api=Symbol.iterator;",
+            "export const api=Symbol.asyncIterator;",
+            "if(api !== Symbol.iterator) throw Error('identity');",
+            true,
+        ),
+        (
+            "js",
+            "const key=Symbol.for('public'); export const api={[key]:'hello'};",
+            "const renamed=Symbol.for('public'); export const api={[renamed]:'hello'};",
+            "api[Symbol.for('public')].toUpperCase();",
+            false,
+        ),
+        (
+            "js",
+            "const key=Symbol.for('public'); export const api={[key]:'hello'};",
+            "const key=Symbol.for('private'); export const api={[key]:'hello'};",
+            "api[Symbol.for('public')].toUpperCase();",
+            true,
+        ),
+        (
+            "js",
+            "export const api=Symbol.for('public');",
+            "const prefix='pub'; export const api=Symbol.for(`${prefix}lic`);",
+            "if(api !== Symbol.for('public')) throw Error('identity');",
+            false,
+        ),
+    ];
+    for (extension, before, after, consumer, breaking) in cases {
+        let old = package(before, extension);
+        let new = package(after, extension);
+        let mut maps = Vec::new();
+        for (root, succeeds) in [(&old, true), (&new, !breaking)] {
+            let output = std::process::Command::new("node")
+                .current_dir(root.path())
+                .args([
+                    "--input-type=module",
+                    "--eval",
+                    &format!("const {{api}}=await import('./index.{extension}'); {consumer}"),
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                succeeds,
+                "{before}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let (mut exports, warnings) = discover_exports(root.path()).unwrap();
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let result = interlint::lsp::enrich_exports(&mut exports, root.path())
+                .await
+                .unwrap();
+            assert!(
+                matches!(result, interlint::lsp::EnrichResult::Enriched),
+                "{result:?}"
+            );
+            maps.push(exports);
+        }
+        let findings = compare::compare_exports(&maps[0], &maps[1], new.path(), false);
+        assert_eq!(
+            compare::has_breaking_changes(&findings),
+            breaking,
+            "{before}: {findings:?}"
+        );
+    }
+}

@@ -114,6 +114,7 @@ pub(super) async fn evaluate_public_types(
         Ok(Err(issue)) => return vec![issue],
         Err(_) => return vec!["compiler public type evaluation timed out".into()],
     };
+    let compiler_complete = response.issues.is_empty();
     let mut issues = response.issues;
     if response.results.len() != keys.len() {
         issues.push("compiler did not resolve every public declaration".into());
@@ -123,6 +124,7 @@ pub(super) async fn evaluate_public_types(
             issues.push("compiler returned an unknown public declaration".into());
             continue;
         };
+        let symbol_complete = compiler_complete && result.issues.is_empty();
         issues.extend(
             result
                 .issues
@@ -139,7 +141,11 @@ pub(super) async fn evaluate_public_types(
                 symbol.type_signature = result.signature;
                 if let Some(TypeShape::Satisfies { narrowed, .. }) = symbol.satisfies_type.as_mut()
                 {
-                    *narrowed = symbol.overloads.first().cloned().map(Box::new);
+                    *narrowed = if symbol_complete {
+                        symbol.overloads.first().cloned().map(Box::new)
+                    } else {
+                        None
+                    };
                 }
             }
         }
