@@ -4955,6 +4955,24 @@ pub fn parse_class_members(
         }
     };
 
+    let declared_static_members: std::collections::HashSet<String> = class_body
+        .named_children(&mut class_body.walk())
+        .filter(|member| {
+            member
+                .children(&mut member.walk())
+                .any(|child| child.kind() == "static")
+        })
+        .filter_map(|member| member.child_by_field_name("name"))
+        .map(|name| {
+            if name.kind() == "computed_property_name" {
+                if let Some(key) = super::property_key::resolve(name, source) {
+                    return key.member_name();
+                }
+            }
+            name.utf8_text(source).unwrap_or("").to_string()
+        })
+        .collect();
+
     let mut cursor = class_body.walk();
     for child in class_body.children(&mut cursor) {
         match child.kind() {
@@ -5313,27 +5331,12 @@ pub fn parse_class_members(
                 });
             }
             "class_static_block" => {
-                // CLS-12 (Phase 21): extract top-level `Foo.bar = expr` and
-                // `this.bar = expr` assignments from static initialization
-                // blocks as synthesized static Property members. Subscript
-                // expressions (`Foo[x] = ...`) set has_dynamic_static_key;
-                // non-assignment statements are ignored per locked decision.
                 let Some(sb_body) = child.child_by_field_name("body") else {
                     continue;
                 };
-                let mut sb_cursor = sb_body.walk();
-                for stmt in sb_body.children(&mut sb_cursor) {
-                    if stmt.kind() != "expression_statement" {
-                        continue;
-                    }
-                    // Find the assignment_expression child of the expression_statement.
-                    let mut s_cursor = stmt.walk();
-                    let Some(assign) = stmt
-                        .children(&mut s_cursor)
-                        .find(|n| n.kind() == "assignment_expression")
-                    else {
-                        continue;
-                    };
+                for (assign, conditional) in
+                    super::static_initialization::assignments(sb_body, source)
+                {
                     let Some(lhs) = assign.child_by_field_name("left") else {
                         continue;
                     };
@@ -5361,9 +5364,22 @@ pub fn parse_class_members(
                             // `this` (handles anonymous default-exported
                             // classes). If class_name is empty (anonymous),
                             // only `this` matches.
-                            let is_class_ref = (!class_name.is_empty() && obj_text == class_name)
+                            let is_class_ref = (!class_name.is_empty()
+                                && obj_text == class_name
+                                && obj.is_some_and(|node| {
+                                    !super::property_key::is_shadowed_within(
+                                        node,
+                                        &class_name,
+                                        class_node,
+                                        source,
+                                    )
+                                }))
                                 || obj.is_some_and(|n| n.kind() == "this");
                             if !is_class_ref {
+                                continue;
+                            }
+                            if conditional {
+                                has_dynamic_static_key = true;
                                 continue;
                             }
                             let prop_name = if lhs.kind() == "subscript_expression" {
@@ -5382,37 +5398,17 @@ pub fn parse_class_members(
                             if prop_name.is_empty() {
                                 continue;
                             }
-                            // Last-write-wins among STATIC-BLOCK synthesized
-                            // members, but preserve class-body declarations
-                            // (which carry LSP-enriched `type_signature` and
-                            // may carry `decorators` / `is_readonly`). If a
-                            // class-body `static bar: string = "x"` exists,
-                            // the static-block `Foo.bar = "y"` assignment is
-                            // a runtime write to that same slot — the typed
-                            // declaration wins so CLS-07 static-type-change
-                            // can fire on a genuine `string → number`
-                            // regression. Heuristic: class-body members carry
-                            // either a type_signature or decorators;
-                            // synthesized ones carry neither.
-                            let class_body_wins = members.iter().any(|m| {
-                                m.name == prop_name
-                                    && m.is_static
-                                    && matches!(m.kind, ClassMemberKind::Property)
-                                    && (m.type_signature.is_some() || !m.decorators.is_empty())
-                            });
-                            if class_body_wins {
-                                // Skip synthesizing — class-body entry stays.
+                            // Preserve declared visibility, decorators, and modifiers.
+                            // Compiler enrichment separately tracks initialization types.
+                            if prop_name.starts_with('#')
+                                || declared_static_members.contains(&prop_name)
+                            {
                                 continue;
                             }
-                            // Drop prior synthesized entries (no type_signature
-                            // AND no decorators) for the same static-property
-                            // slot; the new assignment supersedes them.
-                            members.retain(|m| {
-                                !(m.name == prop_name
-                                    && m.is_static
-                                    && matches!(m.kind, ClassMemberKind::Property)
-                                    && m.type_signature.is_none()
-                                    && m.decorators.is_empty())
+                            members.retain(|member| {
+                                !(member.name == prop_name
+                                    && member.is_static
+                                    && matches!(member.kind, ClassMemberKind::Property))
                             });
                             members.push(ClassMember {
                                 name: prop_name,

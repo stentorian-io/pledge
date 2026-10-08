@@ -157,8 +157,29 @@ fn evaluate(node: Node<'_>, source: &[u8], depth: usize) -> Option<PropertyKey> 
 
 /// None means unbound; Some(None) means bound but not a usable constant.
 fn binding<'tree>(at: Node<'tree>, name: &str, source: &[u8]) -> Option<Option<Node<'tree>>> {
+    binding_until(at, name, source, None)
+}
+
+pub(super) fn is_shadowed_within(
+    at: Node<'_>,
+    name: &str,
+    boundary: Node<'_>,
+    source: &[u8],
+) -> bool {
+    binding_until(at, name, source, Some(boundary.id())).is_some()
+}
+
+fn binding_until<'tree>(
+    at: Node<'tree>,
+    name: &str,
+    source: &[u8],
+    boundary: Option<usize>,
+) -> Option<Option<Node<'tree>>> {
     let mut scope = at.parent();
     while let Some(parent) = scope {
+        if boundary == Some(parent.id()) {
+            break;
+        }
         for child in parent.named_children(&mut parent.walk()) {
             if child.kind() == "import_statement" && imports_name(child, name, source) {
                 return Some(None);

@@ -707,7 +707,7 @@ pub fn compare_class_shapes(
             line,
             col,
             message: format!(
-                "computed member keys on class `{symbol_name}` require runtime information"
+                "computed member keys or conditional static assignments on class `{symbol_name}` require runtime information"
             ),
         });
         findings.push(Finding {
@@ -717,7 +717,7 @@ pub fn compare_class_shapes(
             line,
             col,
             message: format!(
-                "class `{}` contains unresolved computed keys \u{2014} members behind these keys are not diffed (limitation: dynamic-static-member-key)",
+                "class `{}` contains unresolved computed keys or conditional static assignments \u{2014} the affected surface is not fully diffed (limitation: dynamic-static-member-key)",
                 symbol_name,
             ),
         });
@@ -729,7 +729,7 @@ pub fn compare_class_shapes(
             line,
             col,
             message: format!(
-                "dynamic-key static-block assignments on class `{}` are not enumerated",
+                "unresolved keys or conditional static-block assignments on class `{}` are not fully enumerated",
                 symbol_name
             ),
         });

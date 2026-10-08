@@ -213,3 +213,138 @@ async fn registered_symbol_identity_agrees_with_node_consumers() {
         );
     }
 }
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn class_static_initialization_agrees_with_node_consumers() {
+    let cases = [
+        (
+            "static { { this.value='x'; } }",
+            "",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static { this.value='x'; }",
+            "static { this.value=1; }",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static { const text='x'; this.value=text; }",
+            "static { const text=1; this.value=text; }",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static { this.value=1; { this.value='x'; } }",
+            "static { this.value='x'; { this.value=1; } }",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static { if (true) { this.value='x'; } }",
+            "static { if (false) { this.value='x'; } }",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static value='x'; static { this.value='y'; }",
+            "static value='x'; static { this.value=1; }",
+            "api.value.toUpperCase();",
+            true,
+        ),
+        (
+            "static value={key:'x'}; static { this.value.key='y'; }",
+            "static value={key:'x'}; static { this.value.key=1; }",
+            "api.value.key.toUpperCase();",
+            true,
+        ),
+        (
+            "static { this.value='x'; }",
+            "static { { this.value='y'; } }",
+            "api.value.toUpperCase();",
+            false,
+        ),
+        (
+            "static { this.value=1; } static value='x';",
+            "static { this.value=false; } static value='y';",
+            "api.value.toUpperCase();",
+            false,
+        ),
+        (
+            "static { const api={}; api.value='x'; }",
+            "",
+            "if ('value' in api) throw Error('local leaked');",
+            false,
+        ),
+        (
+            "static { function later() { api.value='x'; } }",
+            "",
+            "if ('value' in api) throw Error('deferred leaked');",
+            false,
+        ),
+    ];
+    for (before, after, consumer, breaking) in cases {
+        let old = package(&format!("export class api {{ {before} }}"), "js");
+        let new = package(&format!("export class api {{ {after} }}"), "js");
+        let mut maps = Vec::new();
+        for (root, succeeds) in [(&old, true), (&new, !breaking)] {
+            let output = std::process::Command::new("node")
+                .current_dir(root.path())
+                .args([
+                    "--input-type=module",
+                    "--eval",
+                    &format!("const {{api}}=await import('./index.js'); {consumer}"),
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                succeeds,
+                "{before}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let (mut exports, warnings) = discover_exports(root.path()).unwrap();
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let result = interlint::lsp::enrich_exports(&mut exports, root.path())
+                .await
+                .unwrap();
+            assert!(
+                matches!(result, interlint::lsp::EnrichResult::Enriched),
+                "{before}: {result:?}"
+            );
+            maps.push(exports);
+        }
+        let mut findings = compare::compare_exports(&maps[0], &maps[1], new.path(), false);
+        findings.extend(compare::compare_structural_diff(
+            old.path(),
+            new.path(),
+            &maps[0],
+            &maps[1],
+        ));
+        assert_eq!(
+            compare::has_breaking_changes(&findings),
+            breaking,
+            "{before}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn conditional_static_members_are_explicit_without_compiler_evidence() {
+    let old = package(
+        "export class api { static { if (globalThis.enabled) { this.value='x'; } } }",
+        "js",
+    );
+    let new = package("export class api {}", "js");
+    let (before, _) = discover_exports(old.path()).unwrap();
+    let (after, _) = discover_exports(new.path()).unwrap();
+    let findings = compare::compare_structural_diff(old.path(), new.path(), &before, &after);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "analysis-incomplete"),
+        "{findings:?}"
+    );
+}

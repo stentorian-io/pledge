@@ -94,7 +94,7 @@ to implement.
 | --- | --- |
 | `limitation: lsp-required` | Type resolution was unavailable for a `typeof import` reference. |
 | `limitation: satisfies-narrowed-type-not-verified` | A `satisfies` removal was detected without resolved narrowed-type evidence. |
-| `limitation: dynamic-static-member-key` | A computed class key depends on an unresolved expression; paired with `analysis-incomplete`. |
+| `limitation: dynamic-static-member-key` | A computed class key or static assignment depends on unresolved runtime evidence; paired with `analysis-incomplete`. |
 | `limitation: proxy-dispatched-exports` | An exported proxy or reflective construction has unresolved dispatch; paired with `analysis-incomplete` on either side of the comparison. |
 | `limitation: decorator-runtime-effect-opaque` | A decorator change was detected; its arbitrary runtime effects are not proven. |
 | `limitation: private-brand-access-not-checkable` | A public/private field transition was detected; actual consumer reliance is unknown. |

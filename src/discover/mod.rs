@@ -5,6 +5,7 @@ pub mod entry_points;
 mod property_key;
 pub mod resolver;
 mod runtime_surface;
+mod static_initialization;
 pub mod tree_query;
 pub(crate) mod type_graph;
 

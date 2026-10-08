@@ -1,81 +1,46 @@
-# Class static initialization block member extraction (CLS-12)
+# Class static initialization
 
-ES2022 introduced class static initialization blocks —
-`class Foo { static { ... } }` — which run at class-definition time and can
-assign properties on the class itself. Side-effect assignments to `Foo.bar`
-or `this.bar` inside a static block contribute to the class's public runtime
-surface.
+Class static blocks execute when the class is defined. Assignments to the class
+name or `this` contribute to its public static surface, including assignments
+inside nested unconditional blocks. Constant conditions select their executed
+branch. Deferred function bodies and shadowed local class names are excluded.
 
-Interlint extracts these assignments as synthesized static Property members
-and tracks them via the existing
-[class-member removal implementation](../../src/compare/class_diff.rs).
+See the [TypeScript class static block documentation](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-4.html#static-blocks-in-classes).
 
-See the [TypeScript 4.4 release notes — Class Static
-Blocks](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-4-4.html)
-for the language feature.
+## Surface and type comparisons
 
-## Supported assignment shapes
+Discovery synthesizes static properties from direct class assignments. Removing
+one produces Major `class-method-removed`, using the `static property` noun.
+Literal, constant, template, well-known symbol, and registered symbol keys are
+resolved as described in [computed properties](computed-properties.md).
 
-| Shape | Extracted | Notes |
-| --- | --- | --- |
-| `Foo.bar = expr` | Yes | Object must textually match the enclosing class name |
-| `this.bar = expr` | Yes | Supports anonymous `export default class` |
-| `Foo.Bar.baz = expr` | No | Depth-2+ member chains out of scope (depth-1 only) |
-| `Foo["name"]`, `this[KEY]`, `Foo[Symbol.iterator]`, `Foo[Symbol.for("key")]` | Yes | Constant keys are resolved, including local immutable aliases and template strings |
-| `Foo[computed()] = expr` | No | Unresolved expressions produce incomplete analysis (see below) |
-| Non-assignment statements | No | Side-effects without a member assignment are ignored |
-| Nested block scope | No | `static { { Foo.x = 1 } }` — only direct children of `static { }` are walked |
+Compiler enrichment additionally resolves the assigned value types and nested
+property paths, such as `this.options.mode = value`. It follows initialization
+order across blocks and field initializers: later writes replace earlier writes,
+and a later field initializer replaces an earlier block assignment. Class-body
+annotations remain the declared TypeScript contract.
 
-## Rule reuse
+The class's resolved contract includes its instance members, static members,
+and constructor signatures. Changes to static property types, static method
+parameters, inherited static members, and constructor parameter types are
+compared structurally. Adding a static property or optional constructor parameter,
+or widening a static method's accepted input, stays compatible.
 
-CLS-12 does **not** introduce a new rule-ID. Synthesized static-block
-members flow through the existing class-member diff:
+## Incomplete initialization evidence
 
-- **Removal** of a previously-assigned member fires Major
-  `class-method-removed` with the finding message noun `static property`.
-  Consumers referring to `Registry.defaults` will break when that
-  assignment disappears from the static block.
-- **Addition** fires no finding, matching existing CLS-* semantics (added
-  class surface is not a breaking change).
-- **Type change** would fire Major `class-static-type-changed` — but
-  synthesized static-block members never carry a `type_signature` (no LSP
-  round-trip on these), so this rule does not fire on them in practice.
+An unresolved computed key or runtime condition controlling a static assignment
+cannot be treated as an absent property. Source comparisons produce
+`analysis-incomplete`, Minor `class-static-type-changed`, and Info
+`limitation: dynamic-static-member-key` for that unresolved surface. The legacy
+limitation ID covers both the name and presence of such members.
 
-Last-write-wins deduplication is applied within a single class: if a static
-block contains `Foo.x = 1; Foo.x = 2;`, exactly one synthesized member for
-`x` remains (matching runtime semantics — the final assignment is what
-consumers observe). Multiple `static { ... }` blocks in one class are all
-walked — tree-sitter emits each as a separate `class_static_block` child.
+Compiler enrichment also reports incomplete evidence for unresolved property
+paths, runtime-controlled assignments, and calls that can change the class
+object during initialization. These are explicit bounds of the current
+initialization analysis, not claims that every such expression is impossible to
+analyze. Arbitrary calls can depend on runtime inputs and side effects that the
+package's declarations do not specify.
 
-## Limitations
-
-### `limitation: dynamic-static-member-key`
-
-Computed keys are folded when their value follows from a literal, immutable
-local binding, template string, or standard symbol expression. TypeScript
-parentheses and `as` casts around the class reference do not hide assignments.
-Changing a constant key removes the old public member. Equivalent key aliases
-and escaped spellings do not produce a false break.
-
-Unresolved keys produce an `analysis-incomplete` warning as well as the existing
-Minor `class-static-type-changed` and Info
-`limitation: dynamic-static-member-key` findings. A runtime environment key or
-unknown function result requires additional evidence; an unrelated object's
-computed assignment does not affect the class surface.
-
-### Nested scope and depth-2 member chains
-
-Any assignment inside a nested block scope (`static { { Foo.x = 1 } }`)
-or with a depth-2+ LHS (`Foo.Bar.baz = expr`) is silently skipped. These
-patterns are rare in practice; consumers relying on them should document
-public class surface in the standard class body rather than in static-block
-side-effects.
-
-## Shared class-member rules
-
-Static block comparisons reuse the existing `class-method-removed` and
-`class-static-type-changed` rules because the class's public surface is the
-same whether a static property was declared at the class-body level
-(`class Foo { static bar = 1 }`) or in a static-block side-effect
-(`class Foo { static { Foo.bar = 1 } }`). Consumers cannot tell the two
-apart at runtime, so Interlint should not split the diff semantics.
+Source-only comparisons detect member presence and modifiers. Assigned value
+and constructor types require compiler evidence; a clean source-only comparison
+does not establish type compatibility.

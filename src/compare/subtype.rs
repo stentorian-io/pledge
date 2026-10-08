@@ -232,12 +232,12 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         // e.g. string <: (string | number) iff string <: string OR string <: number
         (_, Union(members)) => members.iter().any(|m| is_subtype_of(sub, m, depth + 1)),
 
-        // Intersection sub: sub is a subtype of sup if any member of sub is a subtype of sup
-        // (Intersection is narrower than any of its members, so it subtypes if any does)
-        (Intersection(members), _) => members.iter().any(|m| is_subtype_of(m, sup, depth + 1)),
-
         // Intersection sup: sub must satisfy ALL members of the intersection
+        // Check this first so separate offered members can satisfy each requirement.
         (_, Intersection(members)) => members.iter().all(|m| is_subtype_of(sub, m, depth + 1)),
+
+        // An intersection is narrower than each of its individual members.
+        (Intersection(members), _) => members.iter().any(|m| is_subtype_of(m, sup, depth + 1)),
 
         // Array: covariant in element type
         (Array(sub_inner), Array(sup_inner)) => is_subtype_of(sub_inner, sup_inner, depth + 1),
@@ -272,18 +272,32 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         ) => {
             // sub may have fewer params than sup (TS callback pattern)
             // sub may NOT have more required params than sup has total
-            let sub_required = sub_params.iter().filter(|p| !p.optional).count();
-            if sub_required > sup_params.len() {
+            let sub_required = sub_params.iter().filter(|p| !p.optional && !p.rest).count();
+            let sup_required = sup_params.iter().filter(|p| !p.optional && !p.rest).count();
+            if sub_required > sup_required {
                 return false;
             }
 
             // For each position that both share, params are CONTRAVARIANT:
             // sup's param type must be a subtype of sub's param type
             // (the caller passes sup's type; sub must accept anything sup accepts)
-            let shared = sub_params.len().min(sup_params.len());
-            for i in 0..shared {
+            fn at(params: &[ParamShape], index: usize) -> Option<&TypeShape> {
+                let parameter = params
+                    .get(index)
+                    .or_else(|| params.last().filter(|parameter| parameter.rest))?;
+                if parameter.rest {
+                    if let Array(element) = &parameter.shape {
+                        return Some(element);
+                    }
+                }
+                Some(&parameter.shape)
+            }
+            for i in 0..sub_params.len().max(sup_params.len()) {
+                let (Some(offered), Some(required)) = (at(sub_params, i), at(sup_params, i)) else {
+                    continue;
+                };
                 // contravariant: sup param must accept what sub param accepts
-                if !is_subtype_of(&sup_params[i].shape, &sub_params[i].shape, depth + 1) {
+                if !is_subtype_of(required, offered, depth + 1) {
                     return false;
                 }
             }

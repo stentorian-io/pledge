@@ -61,7 +61,7 @@ function incomplete(message, type) {
   currentIssues.add(message);
   return { Opaque: type ? checker.typeToString(type) : '<unresolved>' };
 }
-function signatureShape(signature, depth) {
+function signatureShape(signature, depth, classConstructor = false) {
   return withParameters(signature.typeParameters, () => {
   const body = { Function: {
     params: signature.getParameters().map(parameter => {
@@ -71,7 +71,7 @@ function signatureShape(signature, depth) {
         rest: !!declaration?.dotDotDotToken,
         shape: shape(checker.getTypeOfSymbol(parameter), depth + 1) };
     }),
-    return_type: shape(checker.getReturnTypeOfSignature(signature), depth + 1),
+    return_type: classConstructor ? primitive('Void') : shape(checker.getReturnTypeOfSignature(signature), depth + 1),
   } };
   return genericDeclaration(signature.typeParameters, body, depth);
   });
@@ -148,11 +148,11 @@ function propertyName(symbol) {
   return declaration.name.getText();
 }
 function isPrivate(symbol) {
-  return symbol.declarations?.some(declaration =>
+  return symbol?.declarations?.some(declaration =>
     declaration.name && ts.isPrivateIdentifier(declaration.name) ||
     declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword || modifier.kind === ts.SyntaxKind.ProtectedKeyword));
 }
-function shape(type, depth = 0) {
+function shape(type, depth = 0, staticClass = null) {
   if (--symbolWork < 0 || --packageWork < 0 || depth > 32) return incomplete('compiler public type expansion limit reached', type);
   const flags = type.flags;
   for (const [flag, name] of [[ts.TypeFlags.Any, 'Any'], [ts.TypeFlags.Unknown, 'Unknown'],
@@ -253,7 +253,7 @@ function shape(type, depth = 0) {
     }
     const fields = Object.create(null);
     for (const property of checker.getPropertiesOfType(type).sort((a, b) => propertyName(a).localeCompare(propertyName(b)))) {
-      if (isPrivate(property)) continue;
+      if (isPrivate(property) || staticClass && property.getName() === 'prototype') continue;
       const declarations = property.declarations || [];
       const readonly = readonlyProperties.get(propertyName(property)) ?? (
         declarations.some(declaration => declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) ||
@@ -261,6 +261,9 @@ function shape(type, depth = 0) {
       fields[propertyName(property)] = { optional: !!(property.flags & ts.SymbolFlags.Optional), readonly,
         shape: shape(checker.getTypeOfSymbol(property), depth + 1) };
     }
+    const classDeclaration = staticClass || (type.objectFlags & ts.ObjectFlags.Anonymous && type.symbol?.flags & ts.SymbolFlags.Class
+      ? type.symbol.declarations?.find(ts.isClassLike) : null);
+    if (classDeclaration) applyStaticInitialization(classDeclaration, fields, depth);
     const members = [];
     if (Object.keys(fields).length) members.push({ Object: fields });
     for (const index of checker.getIndexInfosOfType(type)) {
@@ -268,10 +271,78 @@ function shape(type, depth = 0) {
       members.push(index.isReadonly ? generic('Readonly', [indexShape]) : indexShape);
     }
     for (const signature of checker.getSignaturesOfType(type, ts.SignatureKind.Call)) members.push(signatureShape(signature, depth));
-    for (const signature of checker.getSignaturesOfType(type, ts.SignatureKind.Construct)) members.push(generic('<constructor>', [signatureShape(signature, depth)]));
+    for (const signature of checker.getSignaturesOfType(type, ts.SignatureKind.Construct)) members.push(generic('<constructor>', [signatureShape(signature, depth, !!staticClass)]));
     return members.length > 1 ? { Intersection: members } : members[0] || { Object: {} };
   } finally {
     active.delete(type);
+  }
+}
+function applyStaticInitialization(declaration, fields, depth) {
+  function keyOf(expression) {
+    const identity = symbolIdentity(expression)?.Generic;
+    if (identity) return identity.name === 'Symbol.for' ? `[Symbol.for(${JSON.stringify(identity.args[0].Literal.String)})]` : `[Symbol.${identity.args[0].Literal.String}]`;
+    const key = constantScalar(expression);
+    return key === undefined ? undefined : String(key);
+  }
+  const declaredKeys = new Set();
+  for (const member of declaration.members) {
+    if (!member.name || !member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword)) continue;
+    if (isPrivate(member.symbol) || ts.isPropertyDeclaration(member) &&
+        (ts.getEffectiveTypeAnnotationNode(member) || member.modifiers.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword))) {
+      declaredKeys.add(ts.isComputedPropertyName(member.name) ? keyOf(member.name.expression) : member.name.text);
+    }
+  }
+  function memberPath(expression) {
+    if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression)) return memberPath(expression.expression);
+    if (expression.kind === ts.SyntaxKind.ThisKeyword) return [];
+    if (ts.isIdentifier(expression) && checker.getSymbolAtLocation(expression) === declaration.symbol) return [];
+    if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+      const parent = memberPath(expression.expression);
+      if (!parent) return undefined;
+      const key = ts.isPropertyAccessExpression(expression) ? expression.name.text : keyOf(expression.argumentExpression);
+      return [...parent, key];
+    }
+    return undefined;
+  }
+  function assign(path, expression) {
+    if (!path?.length) return;
+    if (declaredKeys.has(path[0])) return;
+    if (path.some(key => key === undefined)) { currentIssues.add('unresolved class static property key'); return; }
+    let target = fields;
+    for (const key of path.slice(0, -1)) {
+      const nested = target[key]?.shape.Object;
+      if (!nested) { currentIssues.add('unresolved class static property path'); return; }
+      target = nested;
+    }
+    target[path.at(-1)] = { optional: false, readonly: false,
+      shape: expression ? shape(checker.getBaseTypeOfLiteralType(checker.getTypeAtLocation(expression)), depth + 1) : primitive('Undefined') };
+  }
+  function visit(statement, conditional = false) {
+    if (ts.isFunctionLike(statement) || ts.isClassLike(statement)) return;
+    if (ts.isIfStatement(statement)) {
+      const condition = constantScalar(statement.expression);
+      if (condition !== undefined) visit(condition ? statement.thenStatement : statement.elseStatement || ts.factory.createEmptyStatement(), conditional);
+      else { visit(statement.thenStatement, true); if (statement.elseStatement) visit(statement.elseStatement, true); }
+      return;
+    }
+    if (ts.isBinaryExpression(statement) && statement.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+      const path = memberPath(statement.left);
+      if (path?.length) {
+        if (conditional) currentIssues.add('conditional class static assignment requires runtime evidence');
+        else assign(path, statement.right);
+        return;
+      }
+    }
+    if (ts.isCallExpression(statement) && (memberPath(statement.expression)?.length || statement.arguments.some(argument => memberPath(argument)?.length === 0))) currentIssues.add('class static initialization calls require runtime evidence');
+    const uncertain = conditional || !(ts.isBlock(statement) || ts.isExpressionStatement(statement));
+    ts.forEachChild(statement, child => visit(child, uncertain));
+  }
+  for (const member of declaration.members) {
+    if (ts.isClassStaticBlockDeclaration(member)) visit(member.body);
+    else if (ts.isPropertyDeclaration(member) && member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword) && !isPrivate(member.symbol) && !member.type && !member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
+      const key = ts.isComputedPropertyName(member.name) ? keyOf(member.name.expression) : member.name.text;
+      assign([key], member.initializer);
+    }
   }
 }
 const fileIndexes = new Map();
@@ -370,6 +441,11 @@ for (const request of input.symbols) {
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
     if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
     else overloads = [expressionValue?.identity || symbolIdentity(symbol?.valueDeclaration?.initializer) || shape(type)];
+    if (symbol?.flags & ts.SymbolFlags.Class) {
+      const declaration = symbol.declarations?.find(ts.isClassLike);
+      if (declaration) overloads = overloads.map(instance => ({ Intersection: [instance,
+        generic('<class-static>', [shape(checker.getTypeOfSymbol(symbol), 0, declaration)])] }));
+    }
     if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
       const declaration = symbol.declarations?.find(declaration => declaration.typeParameters?.length);
       const parameters = declaration?.typeParameters.map(parameter => checker.getTypeAtLocation(parameter));

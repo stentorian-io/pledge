@@ -425,5 +425,125 @@
     "new": "exports.api='goodbye';",
     "consumer": "const value: 'hello' = api;",
     "breaking": true
+  },
+  {
+    "name": "class static property type",
+    "extension": "ts",
+    "old": "export class api { static value: string = \"x\"; }",
+    "new": "export class api { static value: number = 1; }",
+    "consumer": "api.value.toUpperCase();",
+    "breaking": true
+  },
+  {
+    "name": "class constructor parameter type",
+    "extension": "ts",
+    "old": "export class api { constructor(value: string) {} }",
+    "new": "export class api { constructor(value: number) {} }",
+    "consumer": "new api(\"x\");",
+    "breaking": true
+  },
+  {
+    "name": "class static method parameter type",
+    "extension": "ts",
+    "old": "export class api { static use(value: string): void {} }",
+    "new": "export class api { static use(value: number): void {} }",
+    "consumer": "api.use(\"x\");",
+    "breaking": true
+  },
+  {
+    "name": "class inherited static method type",
+    "extension": "ts",
+    "old": "class Base { static use(value: string): void {} } export class api extends Base {}",
+    "new": "class Base { static use(value: number): void {} } export class api extends Base {}",
+    "consumer": "api.use(\"x\");",
+    "breaking": true
+  },
+  {
+    "name": "class optional constructor parameter addition",
+    "extension": "ts",
+    "old": "export class api { constructor(value: string) {} }",
+    "new": "export class api { constructor(value: string, extra?: number) {} }",
+    "consumer": "new api(\"x\");",
+    "breaking": false
+  },
+  {
+    "name": "class static property addition",
+    "extension": "ts",
+    "old": "export class api { static value: string = \"x\"; }",
+    "new": "export class api { static value: string = \"x\"; static extra: number = 1; }",
+    "consumer": "api.value.toUpperCase();",
+    "breaking": false
+  },
+  {
+    "name": "class static method accepts wider input",
+    "extension": "ts",
+    "old": "export class api { static use(value: string): void {} }",
+    "new": "export class api { static use(value: string | number): void {} }",
+    "consumer": "api.use(\"x\");",
+    "breaking": false
+  },
+  {
+    "name": "class generic constructor preserves private constraint",
+    "extension": "ts",
+    "old": "type Limit={x:string}; export class api<T extends Limit> { constructor(value:T) {} }",
+    "new": "type Limit={x:string;y:number}; export class api<T extends Limit> { constructor(value:T) {} }",
+    "consumer": "new api({x:\"yes\"});",
+    "breaking": true
+  },
+  {
+    "name": "class optional unknown constructor parameter becomes required",
+    "extension": "ts",
+    "old": "export class api { constructor(value?: unknown) {} }",
+    "new": "export class api { constructor(value: unknown) {} }",
+    "consumer": "new api();",
+    "breaking": true
+  },
+  {
+    "name": "class constructor widens to rest parameters",
+    "extension": "ts",
+    "old": "export class api { constructor(value: string) {} }",
+    "new": "export class api { constructor(...values: string[]) {} }",
+    "consumer": "new api(\"x\");",
+    "breaking": false
+  },
+  {
+    "name": "class rest constructor becomes required",
+    "extension": "ts",
+    "old": "export class api { constructor(...values: string[]) {} }",
+    "new": "export class api { constructor(value: string) {} }",
+    "consumer": "new api();",
+    "breaking": true
+  },
+  {
+    "name": "class readonly static literal preserves its type",
+    "extension": "ts",
+    "old": "export class api { static readonly value=\"x\"; }",
+    "new": "export class api { static readonly value=\"y\"; }",
+    "consumer": "const text: \"x\" = api.value;",
+    "breaking": true
+  },
+  {
+    "name": "class private static initializer does not leak",
+    "extension": "ts",
+    "old": "export class api { private static value=\"x\"; static { this.value=\"y\"; } }",
+    "new": "export class api { private static value=1; static { this.value=2; } }",
+    "consumer": "new api();",
+    "breaking": false
+  },
+  {
+    "name": "class hash private static initializer does not leak",
+    "extension": "ts",
+    "old": "export class api { static #value=\"x\"; static { this.#value=\"y\"; } }",
+    "new": "export class api { static #value=1; static { this.#value=2; } }",
+    "consumer": "new api();",
+    "breaking": false
+  },
+  {
+    "name": "class private static assignment preserves visibility",
+    "extension": "ts",
+    "old": "export class api { private static value=\"x\"; static { this.value=\"y\"; } }",
+    "new": "export class api {}",
+    "consumer": "new api();",
+    "breaking": false
   }
 ]

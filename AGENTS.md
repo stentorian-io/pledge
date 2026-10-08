@@ -8,15 +8,15 @@ repository. Share the relevant boundaries with any subagents when delegating.
 Pledge is a Rust 2021 CLI that detects breaking changes in public JavaScript and
 TypeScript package interfaces. The Cargo package and executable are currently
 named `interlint`. Compare packed local packages with their published npm
-versions, discover exports with tree-sitter, enrich types through the language
-server, and report findings by semver impact.
+versions, discover exports with tree-sitter, enrich types through the TypeScript
+compiler API, and report findings by semver impact.
 
 Primary files and boundaries:
 
 - `src/main.rs` and `src/cli.rs`: command arguments and pipeline orchestration.
 - `src/acquire/`: npm packing, registry downloads, and tarball extraction.
 - `src/discover/`: entry point resolution, export discovery, and comment scans.
-- `src/lsp/`: language server management, requests, and type enrichment.
+- `src/lsp/`: compiler enrichment, toolchain management, and language-server protocol support.
 - `src/types/`: shared domain types and TypeScript type parsing.
 - `src/compare/`: compatibility rules, pairing, and finding consolidation.
 - `src/report/`: terminal output and summaries.
