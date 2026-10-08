@@ -9,12 +9,11 @@ use crate::types::shape::{
 };
 use std::collections::BTreeMap;
 
-/// ROB-05: Maximum recursion depth for the type parser.
-///
-/// Matches the constant in `compare/subtype.rs` (MAX_DEPTH = 20) for consistency
-/// across the type system. Adversarial or pathologically complex type strings that
-/// exceed this depth produce `TypeShape::Opaque(raw_input)` rather than a stack overflow.
-const MAX_DEPTH: usize = 20;
+// Bound both recursive syntax and repeated/backtracking work. Grammar layers
+// consume depth too, so the limit permits ordinary nested declarations.
+const MAX_DEPTH: usize = 128;
+const MAX_STEPS: usize = 8192;
+const MAX_INPUT_BYTES: usize = 256 * 1024;
 
 // WR-05 (Phase 17 review): byte-count constants for keywords the parser advances
 // past. All matched keywords are pure ASCII, so byte length and char length agree.
@@ -30,23 +29,11 @@ const KW_REST_DOTS_LEN: usize = "...".len();
 /// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per D-13).
 /// Applies normalization (sorting of union/intersection members) after parsing (D-11).
 ///
-/// **OOM tech debt — see backlog 999.1.** This function allocates pathologically
-/// on real-world packages with many medium-complex generated type aliases
-/// (`@prisma/client`, `zod`). On `@prisma/client` 7.7.0 → 7.8.0, calling
-/// parse_type_string across the 120+ aliases in `client.d.ts` cumulatively
-/// allocates 7-8 GB resident before the OS kills the process. Bisected:
-/// skipping this function alone drops the prisma reference-suite run from
-/// 8 GB OOM to 78 MB / 4 s.
-///
-/// Likely fix paths (refine in 999.1 spec phase): node-count budget inside
-/// `TypeParser`, flamegraph profile to find the actual hot allocator, or
-/// skip this function entirely in degraded (`lsp_was_available=false`) mode
-/// since the LSP path is the intended TypeShape source. Profiling/benchmark
-/// infra to measure any fix is captured separately in backlog 999.2 — that
-/// phase should likely land first so a fix here can be quantified rather
-/// than guessed at.
 pub fn parse_type_string(input: &str) -> TypeShape {
     let input = input.trim();
+    if input.len() > MAX_INPUT_BYTES {
+        return TypeShape::Opaque(input.to_owned());
+    }
 
     // Strip hover prefix forms:
     // 1. `type Foo = <type>` — LSP hover for type aliases
@@ -109,10 +96,8 @@ fn strip_variable_prefix(input: &str) -> Option<&str> {
         r
     } else if let Some(r) = input.strip_prefix("let ") {
         r
-    } else if let Some(r) = input.strip_prefix("var ") {
-        r
     } else {
-        return None;
+        input.strip_prefix("var ")?
     };
     // Skip the identifier
     let colon_pos = rest.find(':')?;
@@ -126,11 +111,16 @@ fn strip_variable_prefix(input: &str) -> Option<&str> {
 struct TypeParser<'a> {
     input: &'a str,
     pos: usize,
+    remaining_steps: usize,
 }
 
 impl<'a> TypeParser<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input, pos: 0 }
+        Self {
+            input,
+            pos: 0,
+            remaining_steps: MAX_STEPS,
+        }
     }
 
     /// Attempt to parse the entire input as a type, returning None on failure.
@@ -149,9 +139,9 @@ impl<'a> TypeParser<'a> {
     // -----------------------------------------------------------------------
 
     fn parse_type(&mut self, depth: usize) -> Option<TypeShape> {
-        // ROB-05: depth guard — return Opaque on overflow to prevent stack overflow.
+        // Abort the entire parse: a successful result must always consume input.
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         let base = self.parse_union(depth + 1)?;
         self.skip_whitespace();
@@ -166,7 +156,7 @@ impl<'a> TypeParser<'a> {
     /// `check` is the type already parsed before the `extends` keyword.
     fn parse_conditional(&mut self, check: TypeShape, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         // consume "extends"
         self.pos += KW_EXTENDS_LEN;
@@ -191,7 +181,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_union(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         // BEH-06 (Phase 20): accept an optional leading `|` so the
         // idiomatic multi-line discriminated-union form
@@ -220,7 +210,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_intersection(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         let first = self.parse_primary(depth + 1)?;
         self.skip_whitespace();
@@ -240,9 +230,10 @@ impl<'a> TypeParser<'a> {
     }
 
     fn parse_primary(&mut self, depth: usize) -> Option<TypeShape> {
+        self.remaining_steps = self.remaining_steps.checked_sub(1)?;
         // ROB-05: depth guard at every entry point.
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         self.skip_whitespace();
         let ch = self.peek_char()?;
@@ -335,7 +326,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_object(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         self.expect_char('{')?;
         self.skip_whitespace();
@@ -487,7 +478,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_tuple(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         self.expect_char('[')?;
         self.skip_whitespace();
@@ -559,7 +550,20 @@ impl<'a> TypeParser<'a> {
             }
 
             self.skip_whitespace();
+            if self.peek_str("...") {
+                self.pos += KW_REST_DOTS_LEN;
+                rest = true;
+            }
+            let start = self.pos;
             let shape = self.parse_type(depth + 1)?;
+            if self.pos == start {
+                return None;
+            }
+            self.skip_whitespace();
+            if self.peek_char() == Some('?') {
+                self.advance();
+                optional = true;
+            }
             elements.push(TupleElement {
                 label,
                 optional,
@@ -584,7 +588,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_function_or_paren(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         // Save position so we can backtrack
         let saved_pos = self.pos;
@@ -636,7 +640,7 @@ impl<'a> TypeParser<'a> {
     /// Parse `(T)` — a type wrapped in parens for grouping.
     fn parse_parenthesized(&mut self, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            return Some(TypeShape::Opaque(self.input[self.pos..].to_string()));
+            return None;
         }
         self.expect_char('(')?;
         self.skip_whitespace();
@@ -699,10 +703,7 @@ impl<'a> TypeParser<'a> {
 
     fn parse_generic(&mut self, name: String, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
-            // Skip past the `<...>` block to avoid leaving the parser stuck,
-            // then return Opaque for the generic construct.
-            self.skip_balanced_angles();
-            return Some(TypeShape::Opaque(format!("{}<...>", name)));
+            return None;
         }
         let args = self.parse_generic_args(depth + 1)?;
         if name == "Array" && args.len() == 1 {
@@ -721,67 +722,17 @@ impl<'a> TypeParser<'a> {
         Some(TypeShape::Generic { name, args })
     }
 
-    /// Skip a balanced `<...>` block, handling nesting. Used by depth-cap fallback.
-    fn skip_balanced_angles(&mut self) {
-        if self.peek_char() != Some('<') {
-            return;
-        }
-        let mut nesting = 0usize;
-        while let Some(c) = self.peek_char() {
-            match c {
-                '<' => {
-                    nesting += 1;
-                    self.advance();
-                }
-                '>' => {
-                    self.advance();
-                    nesting -= 1;
-                    if nesting == 0 {
-                        break;
-                    }
-                }
-                _ => {
-                    self.advance();
-                }
-            }
-        }
-    }
-
     fn parse_generic_args(&mut self, depth: usize) -> Option<Vec<TypeShape>> {
         self.expect_char('<')?;
         self.skip_whitespace();
         let mut args = Vec::new();
         while self.peek_char() != Some('>') {
-            // ROB-05: if parse_type returns Opaque due to depth exhaustion, the
-            // remaining input still contains the nested `<...>` body plus closing `>`.
-            // We need to consume everything up to the matching `>` before breaking.
-            let arg = self.parse_type(depth + 1)?;
-            let is_opaque = matches!(arg, TypeShape::Opaque(_));
-            args.push(arg);
-            self.skip_whitespace();
-            if is_opaque {
-                // Depth was exhausted — skip any remaining content up to the
-                // matching `>` (which may be many levels deep) to avoid infinite loop.
-                let mut nesting = 0usize;
-                loop {
-                    match self.peek_char() {
-                        None => break,
-                        Some('<') => {
-                            nesting += 1;
-                            self.advance();
-                        }
-                        Some('>') if nesting > 0 => {
-                            nesting -= 1;
-                            self.advance();
-                        }
-                        Some('>') => break, // outer `>` — let expect_char consume it
-                        _ => {
-                            self.advance();
-                        }
-                    }
-                }
-                break;
+            let start = self.pos;
+            args.push(self.parse_type(depth + 1)?);
+            if self.pos == start {
+                return None;
             }
+            self.skip_whitespace();
             if self.peek_char() == Some(',') {
                 self.advance();
                 self.skip_whitespace();
@@ -795,10 +746,11 @@ impl<'a> TypeParser<'a> {
     // Array suffix: `T[]` -> Array(T), stacked: `T[][]` -> Array(Array(T))
     // -----------------------------------------------------------------------
 
-    fn parse_array_suffix(&mut self, base: TypeShape, depth: usize) -> TypeShape {
+    fn parse_array_suffix(&mut self, base: TypeShape, mut depth: usize) -> TypeShape {
         let mut current = base;
         loop {
-            // ROB-05: stop accumulating array wrappers at depth cap.
+            depth += 1;
+            // Unconsumed suffixes make the enclosing parse fall back to Opaque.
             if depth >= MAX_DEPTH {
                 break;
             }

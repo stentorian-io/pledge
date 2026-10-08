@@ -5662,10 +5662,8 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
                             let t = err_child.utf8_text(source).unwrap_or("");
                             match t {
                                 "out" => saw_out = true,
-                                s if !s.is_empty() && s != "in" => {
-                                    if real_name.is_empty() {
-                                        real_name = s.to_string();
-                                    }
+                                s if !s.is_empty() && s != "in" && real_name.is_empty() => {
+                                    real_name = s.to_string();
                                 }
                                 _ => {}
                             }
@@ -6014,12 +6012,14 @@ pub fn extract_index_signatures(
                             }
                         }
                     }
-                    _ if in_brackets && c.is_named() && c.kind() != "identifier" => {
+                    _ if in_brackets
+                        && c.is_named()
+                        && c.kind() != "identifier"
+                        && key_type.is_none() =>
+                    {
                         // Key type is the named non-identifier child inside brackets
                         // (predefined_type like "string" or "number")
-                        if key_type.is_none() {
-                            key_type = c.utf8_text(source).ok().map(|s| s.to_string());
-                        }
+                        key_type = c.utf8_text(source).ok().map(|s| s.to_string());
                     }
                     _ => {}
                 }

@@ -438,19 +438,18 @@ fn check_rest_param_narrowed(
                 message: format!("rest parameter was removed from `{}`", name),
             });
         }
-        (Some(old_shape), Some(new_shape)) => {
-            // Widening rest param type is safe (e.g., string[] -> any[]).
-            // Only flag when new type is not a supertype of old type (i.e., it narrowed).
-            if old_shape != new_shape && !is_subtype_of(old_shape, new_shape, 0) {
-                findings.push(Finding {
-                    severity: Severity::Major,
-                    rule: RULE_REST_PARAM_NARROWED,
-                    file: file.to_path_buf(),
-                    line,
-                    col,
-                    message: format!("rest parameter type was narrowed in `{}`", name),
-                });
-            }
+        // A widened rest parameter accepts every previously valid argument.
+        (Some(old_shape), Some(new_shape))
+            if old_shape != new_shape && !is_subtype_of(old_shape, new_shape, 0) =>
+        {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: RULE_REST_PARAM_NARROWED,
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: format!("rest parameter type was narrowed in `{}`", name),
+            });
         }
         _ => {} // no rest in old, or same type — not breaking
     }
