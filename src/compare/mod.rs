@@ -13,6 +13,7 @@ pub mod imports_diff;
 pub mod interface_diff;
 pub mod json_diff;
 pub mod metadata;
+mod module_loading;
 pub mod ns_move_cascade;
 pub mod ref_diff;
 pub mod rename_coalesce;
@@ -464,6 +465,7 @@ pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding
 
     let mut findings = exports_diff::compare_exports_diff(&old_pkg, &new_pkg, old_root, new_root);
     findings.extend(imports_diff::compare_imports_diff(&old_pkg, &new_pkg));
+    findings.extend(module_loading::compare_module_loading(old_root, new_root));
     findings
 }
 
