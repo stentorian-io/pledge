@@ -12,6 +12,11 @@ are ambiguous and do not create a public named export. Namespace re-exports
 retain their namespace prefix, including its `default` member.
 
 Conditional objects retain JSON order. A `default` branch hides later siblings.
+`condition-priority-changed` is Major when reordered conditions select an
+incompatible API, and Minor when the selected API remains compatible.
+Reordering mutually exclusive `import` and `require` branches is compatible.
+The priority pass is bounded; exceeding its branch limit emits
+`analysis-incomplete` and the CLI exits 3.
 Wildcard targets include nested paths, and more specific mappings or `null`
 exclusions override broader patterns. Export arrays select the first valid
 target; a missing target file does not activate a later array element.
@@ -21,6 +26,12 @@ files using extension substitution, including `.d.mts` and `.d.cts`. Packages
 without an `exports` field expose source files through legacy deep imports.
 Hashed chunk names remain physical paths for reading and type requests;
 normalization is restricted to directive comparison identity.
+
+Changing a non-null target path emits Minor `condition-target-changed`; the
+resolved public API determines whether that move is breaking. Removing a target
+still emits Major. Raw private `imports` removals, reroutes, pattern changes,
+and condition changes are Info findings. Their effects on public re-exports
+are compared separately. An unused private map entry is not a public contract.
 
 Unresolvable entry points and source processing limits produce incomplete
 analysis warnings. See [Node package resolution](https://nodejs.org/api/packages.html)

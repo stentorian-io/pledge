@@ -829,6 +829,7 @@ dependencies = [
  "dirs",
  "flate2",
  "futures-util",
+ "indexmap",
  "indicatif",
  "node-semver",
  "owo-colors",

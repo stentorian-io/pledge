@@ -300,20 +300,19 @@ pub(crate) fn resolve_imports_subpath(
     imports_map: &ImportsMap,
     specifier: &str,
     pkg_root: &Path,
+    condition: Option<&str>,
 ) -> Option<PathBuf> {
-    use crate::compare::exports_diff::{ConditionNode, SubpathEntry};
-
-    /// Walk a ConditionNode to the leaf list, skipping null and non-resolvable targets.
-    fn collect_leaf_targets(node: &ConditionNode, out: &mut Vec<String>) {
-        match node {
-            ConditionNode::Leaf(Some(s)) => out.push(s.clone()),
-            ConditionNode::Leaf(None) => {} // null block-list — terminal, no target
-            ConditionNode::Branch(map) => {
-                for child in map.values() {
-                    collect_leaf_targets(child, out);
-                }
-            }
-        }
+    use crate::compare::exports_diff::{select_condition, SubpathEntry};
+    let mut active: std::collections::BTreeSet<String> = condition
+        .into_iter()
+        .flat_map(|s| s.split('/'))
+        .map(str::to_string)
+        .collect();
+    if !active.contains("browser") {
+        active.insert("node".into());
+    }
+    if !active.contains("require") {
+        active.insert("import".into());
     }
 
     /// Try a target path string under pkg_root, probing common extensions if
@@ -359,50 +358,25 @@ pub(crate) fn resolve_imports_subpath(
         }
     }
 
-    // --- 1. Direct exact-key match.
     if let Some(SubpathEntry { node }) = imports_map.get(specifier) {
-        let mut targets = Vec::new();
-        collect_leaf_targets(node, &mut targets);
-        for t in &targets {
-            if let Some(path) = try_target(t, pkg_root) {
-                return Some(path);
-            }
-        }
-        return None;
+        return select_condition(node, &active)
+            .flatten()
+            .and_then(|t| try_target(t, pkg_root));
     }
 
-    // --- 2. Wildcard fallback.
-    for (key, SubpathEntry { node }) in imports_map.iter() {
-        if !key.contains('*') {
-            continue;
-        }
-        // Same wildcard semantics as resolve_tsconfig_alias: split key at '*',
-        // require specifier to start with the prefix-before-* and end with the
-        // suffix-after-*; remainder is the captured text.
-        let star_pos = match key.find('*') {
-            Some(p) => p,
-            None => continue,
-        };
-        let key_prefix = &key[..star_pos];
-        let key_suffix = &key[star_pos + 1..];
-        if !specifier.starts_with(key_prefix) || !specifier.ends_with(key_suffix) {
-            continue;
-        }
-        let remainder = &specifier[key_prefix.len()..specifier.len() - key_suffix.len()];
-
-        let mut targets = Vec::new();
-        collect_leaf_targets(node, &mut targets);
-        for t in &targets {
-            // Substitute remainder for the value's `*`, if any.
-            let substituted = if t.contains('*') {
-                t.replacen('*', remainder, 1)
-            } else {
-                t.clone()
-            };
-            if let Some(path) = try_target(&substituted, pkg_root) {
-                return Some(path);
-            }
-        }
+    let mut patterns: Vec<_> = imports_map
+        .iter()
+        .filter_map(|(key, entry)| {
+            let (prefix, suffix) = key.split_once('*')?;
+            let slot = specifier.strip_prefix(prefix)?.strip_suffix(suffix)?;
+            Some((prefix.len(), key.len(), slot, entry))
+        })
+        .collect();
+    patterns.sort_by_key(|(prefix, len, _, _)| std::cmp::Reverse((*prefix, *len)));
+    if let Some((_, _, slot, entry)) = patterns.first() {
+        return select_condition(&entry.node, &active)
+            .flatten()
+            .and_then(|target| try_target(&target.replace('*', slot), pkg_root));
     }
 
     None
@@ -853,7 +827,8 @@ pub fn collect_exports(
         ) {
             let target = export.source.as_deref().and_then(|specifier| {
                 if classify_specifier(specifier) == SpecifierKind::ImportsField {
-                    imports_map.and_then(|im| resolve_imports_subpath(im, specifier, pkg_root))
+                    imports_map
+                        .and_then(|im| resolve_imports_subpath(im, specifier, pkg_root, condition))
                 } else if matches!(
                     classify_specifier(specifier),
                     SpecifierKind::Relative | SpecifierKind::Bare
@@ -1117,7 +1092,7 @@ pub fn collect_exports(
                             // EXP-14: route #subpath through package.json imports map.
                             if let Some(im) = imports_map {
                                 if let Some(target) =
-                                    resolve_imports_subpath(im, specifier, pkg_root)
+                                    resolve_imports_subpath(im, specifier, pkg_root, condition)
                                 {
                                     collect_exports(
                                         &target,
@@ -1240,7 +1215,7 @@ pub fn collect_exports(
                             // EXP-14: route #subpath through package.json imports map.
                             if let Some(im) = imports_map {
                                 if let Some(target) =
-                                    resolve_imports_subpath(im, specifier, pkg_root)
+                                    resolve_imports_subpath(im, specifier, pkg_root, condition)
                                 {
                                     // Insert a named re-export pointing at the resolved target file —
                                     // mirrors the existing `Some(target)` insertion at the (now

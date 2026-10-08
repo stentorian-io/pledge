@@ -76,7 +76,21 @@ pub(crate) fn types_format_from_extension(path: &str) -> Option<ModuleFormat> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConditionNode {
     Leaf(Option<String>),
-    Branch(BTreeMap<String, ConditionNode>),
+    Branch(indexmap::IndexMap<String, ConditionNode>),
+}
+
+// None means no matching branch; Some(None) is an explicit null blocker.
+pub(crate) fn select_condition<'a>(
+    node: &'a ConditionNode,
+    active: &BTreeSet<String>,
+) -> Option<Option<&'a str>> {
+    match node {
+        ConditionNode::Leaf(target) => Some(target.as_deref()),
+        ConditionNode::Branch(branches) => branches
+            .iter()
+            .filter(|(key, _)| key.as_str() == "default" || active.contains(*key))
+            .find_map(|(_, child)| select_condition(child, active)),
+    }
 }
 
 /// A single subpath entry in the exports map.
@@ -147,7 +161,7 @@ fn parse_exports_object(obj: &serde_json::Map<String, serde_json::Value>) -> Exp
             .collect()
     } else {
         // Conditions-only object: wrap under implicit "." subpath
-        let conditions: BTreeMap<String, ConditionNode> = obj
+        let conditions: indexmap::IndexMap<String, ConditionNode> = obj
             .iter()
             .map(|(k, v)| (k.clone(), parse_condition_node(v)))
             .collect();
@@ -267,7 +281,7 @@ fn diff_condition_nodes(
                     }
                     _ => {
                         findings.push(pkg_json_finding(
-                            Severity::Major,
+                            Severity::Minor,
                             RULE_CONDITION_TARGET_CHANGED,
                             format!(
                                 "condition target changed in subpath `{subpath}` from `{old_str}` to `{new_str}`"
@@ -312,7 +326,7 @@ fn diff_condition_nodes(
         // Mismatched variant: structural change → EXP-04
         _ => {
             findings.push(pkg_json_finding(
-                Severity::Major,
+                Severity::Minor,
                 RULE_CONDITION_TARGET_CHANGED,
                 format!("condition structure changed in subpath `{subpath}`"),
             ));
@@ -714,7 +728,11 @@ pub fn compare_exports_diff(
         (Some(old_val), Some(new_val)) => {
             let old_map = parse_exports_map(old_val);
             let new_map = parse_exports_map(new_val);
-            compare_exports_maps(&old_map, &new_map)
+            let mut findings = compare_exports_maps(&old_map, &new_map);
+            findings.extend(super::condition_priority::compare_priority(
+                &old_map, &new_map, old_root, new_root,
+            ));
+            findings
         }
     }
 }
@@ -1040,7 +1058,7 @@ mod tests {
         let findings = diff_with_empty_dirs(&old, &new);
         assert_eq!(findings.len(), 1, "expected 1 finding, got: {:?}", findings);
         assert_eq!(findings[0].rule, RULE_CONDITION_TARGET_CHANGED);
-        assert_eq!(findings[0].severity, Severity::Major);
+        assert_eq!(findings[0].severity, Severity::Minor);
     }
 
     #[test]

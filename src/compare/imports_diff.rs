@@ -3,11 +3,11 @@
 //
 // Rule family (mirroring exports_diff.rs subpath-* rules):
 //   import-added            (Minor) — new #subpath / null → target
-//   import-removed          (Major) — #subpath disappeared
-//   import-condition-changed (Major) — condition removed; Branch↔Leaf flip;
+//   import-removed          (Info) — #subpath disappeared
+//   import-condition-changed (Info) — condition removed; Branch↔Leaf flip;
 //                                       target → null
-//   import-pattern-refined  (Major) — wildcard refinement (#i/* → #i/*.js)
-//   import-reroute          (Major) — Leaf→Leaf target change, both non-null
+//   import-pattern-refined  (Info) — wildcard refinement (#i/* → #i/*.js)
+//   import-reroute          (Info) — Leaf→Leaf target change, both non-null
 //
 // Data model: ImportsMap = BTreeMap<String, SubpathEntry> reusing the
 // ConditionNode + SubpathEntry types from exports_diff.rs. The `imports`
@@ -117,9 +117,9 @@ fn diff_import_condition_nodes(
                         ));
                     }
                     (false, true) => {
-                        // target → null is breaking (Major)
+                        // target → null is breaking (Info)
                         findings.push(pkg_json_finding(
-                            Severity::Major,
+                            Severity::Info,
                             RULE_IMPORT_CONDITION_CHANGED,
                             format!(
                                 "import target in `{import_key}` became null (was `{old_str}`)"
@@ -129,7 +129,7 @@ fn diff_import_condition_nodes(
                     _ => {
                         // Leaf → Leaf, both non-null = re-route
                         findings.push(pkg_json_finding(
-                            Severity::Major,
+                            Severity::Info,
                             RULE_IMPORT_REROUTE,
                             format!(
                                 "import `{import_key}` re-routed from `{old_str}` to `{new_str}`"
@@ -146,7 +146,7 @@ fn diff_import_condition_nodes(
                 } else {
                     let was_target = format_condition_target(old_child);
                     findings.push(pkg_json_finding(
-                        Severity::Major,
+                        Severity::Info,
                         RULE_IMPORT_CONDITION_CHANGED,
                         format!(
                             "condition `{cond_key}` removed from import `{import_key}` (was `{was_target}`)"
@@ -159,7 +159,7 @@ fn diff_import_condition_nodes(
         // Branch ↔ Leaf shape flip: classified as condition-changed
         _ => {
             findings.push(pkg_json_finding(
-                Severity::Major,
+                Severity::Info,
                 RULE_IMPORT_CONDITION_CHANGED,
                 format!("import `{import_key}` condition structure changed"),
             ));
@@ -195,7 +195,7 @@ fn compare_imports_maps(old_map: &ImportsMap, new_map: &ImportsMap) -> Vec<Findi
                 matched_old.insert(old_wc.as_str());
                 matched_new.insert(new_wc.as_str());
                 findings.push(pkg_json_finding(
-                    Severity::Major,
+                    Severity::Info,
                     RULE_IMPORT_PATTERN_REFINED,
                     format!(
                         "import pattern `{}` refined to `{}` — consumers using the old pattern may break",
@@ -216,7 +216,7 @@ fn compare_imports_maps(old_map: &ImportsMap, new_map: &ImportsMap) -> Vec<Findi
             continue;
         }
         findings.push(pkg_json_finding(
-            Severity::Major,
+            Severity::Info,
             RULE_IMPORT_REMOVED,
             format!("import `{key}` removed from package.json `imports`"),
         ));
@@ -284,7 +284,7 @@ pub fn compare_imports_diff(
                 .keys()
                 .map(|key| {
                     pkg_json_finding(
-                        Severity::Major,
+                        Severity::Info,
                         RULE_IMPORT_REMOVED,
                         format!("import `{key}` removed from package.json `imports`"),
                     )
@@ -353,43 +353,43 @@ mod tests {
     }
 
     #[test]
-    fn compare_imports_diff_removed_fires_major() {
+    fn compare_imports_diff_removed_is_informational() {
         let old = json!({ "imports": { "#a": "./a.js" } });
         let new = json!({});
         let findings = compare_imports_diff(&old, &new);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule, RULE_IMPORT_REMOVED);
-        assert_eq!(findings[0].severity, Severity::Major);
+        assert_eq!(findings[0].severity, Severity::Info);
     }
 
     #[test]
-    fn compare_imports_diff_reroute_fires_major() {
+    fn compare_imports_diff_reroute_is_informational() {
         let old = json!({ "imports": { "#a": "./a.js" } });
         let new = json!({ "imports": { "#a": "./b.js" } });
         let findings = compare_imports_diff(&old, &new);
         assert!(findings
             .iter()
-            .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Major));
+            .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Info));
     }
 
     #[test]
-    fn compare_imports_diff_condition_removed_fires_major() {
+    fn compare_imports_diff_condition_removed_is_informational() {
         let old = json!({ "imports": { "#a": { "node": "./n.js", "default": "./d.js" } } });
         let new = json!({ "imports": { "#a": { "default": "./d.js" } } });
         let findings = compare_imports_diff(&old, &new);
         assert!(findings
             .iter()
-            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
+            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Info));
     }
 
     #[test]
-    fn compare_imports_diff_pattern_refined_fires_major() {
+    fn compare_imports_diff_pattern_refined_is_informational() {
         let old = json!({ "imports": { "#i/*": "./src/*.js" } });
         let new = json!({ "imports": { "#i/*.js": "./src/*.js" } });
         let findings = compare_imports_diff(&old, &new);
         assert!(findings
             .iter()
-            .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Major));
+            .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Info));
     }
 
     #[test]
@@ -409,6 +409,6 @@ mod tests {
         let findings = compare_imports_diff(&old, &new);
         assert!(findings
             .iter()
-            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
+            .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Info));
     }
 }

@@ -185,6 +185,9 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // that the sort may have brought into adjacency.
             dedup_findings(&mut findings);
 
+            // Comparison passes can also exhaust a bounded analysis budget.
+            let degraded = degraded || findings.iter().any(|f| f.rule == "analysis-incomplete");
+
             // Step 4: Report
             report::print_report(&findings, &all_warnings, degraded);
 

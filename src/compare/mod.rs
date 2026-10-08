@@ -3,6 +3,7 @@
 pub mod asset_diff;
 pub mod behavior_diff;
 pub mod class_diff;
+mod condition_priority;
 pub mod css_diff;
 pub mod directive_diff;
 pub mod enum_diff;

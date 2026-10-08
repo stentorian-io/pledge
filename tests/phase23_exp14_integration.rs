@@ -47,43 +47,43 @@ fn exp_14_imports_field_added_fires_minor() {
 }
 
 #[test]
-fn exp_14_imports_field_removed_fires_major() {
+fn exp_14_imports_field_removed_is_informational() {
     let old = read_pkg(&fixture_dir("exp-14-removed", "old"));
     let new = read_pkg(&fixture_dir("exp-14-removed", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
     assert!(findings
         .iter()
-        .any(|f| f.rule == RULE_IMPORT_REMOVED && f.severity == Severity::Major));
+        .any(|f| f.rule == RULE_IMPORT_REMOVED && f.severity == Severity::Info));
 }
 
 #[test]
-fn exp_14_import_rerouted_fires_major() {
+fn exp_14_import_rerouted_is_informational() {
     let old = read_pkg(&fixture_dir("exp-14-rerouted", "old"));
     let new = read_pkg(&fixture_dir("exp-14-rerouted", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
     assert!(findings
         .iter()
-        .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Major));
+        .any(|f| f.rule == RULE_IMPORT_REROUTE && f.severity == Severity::Info));
 }
 
 #[test]
-fn exp_14_import_condition_removed_fires_major() {
+fn exp_14_import_condition_removed_is_informational() {
     let old = read_pkg(&fixture_dir("exp-14-condition-changed", "old"));
     let new = read_pkg(&fixture_dir("exp-14-condition-changed", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
     assert!(findings
         .iter()
-        .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Major));
+        .any(|f| f.rule == RULE_IMPORT_CONDITION_CHANGED && f.severity == Severity::Info));
 }
 
 #[test]
-fn exp_14_import_pattern_refined_fires_major() {
+fn exp_14_import_pattern_refined_is_informational() {
     let old = read_pkg(&fixture_dir("exp-14-pattern-refined", "old"));
     let new = read_pkg(&fixture_dir("exp-14-pattern-refined", "new"));
     let findings = imports_diff::compare_imports_diff(&old, &new);
     assert!(findings
         .iter()
-        .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Major));
+        .any(|f| f.rule == RULE_IMPORT_PATTERN_REFINED && f.severity == Severity::Info));
 }
 
 #[test]
