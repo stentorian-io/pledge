@@ -1,0 +1,28 @@
+[
+  {
+    "name": "noinfer-local-alias-removal",
+    "old": "type Hold<T>=NoInfer<T>; export declare function api<T>(value:T,fallback:Hold<T>):T;",
+    "new": "export declare function api<T>(value:T,fallback:T):T;",
+    "consumer": "const value:string=api(\"x\",\"x\");",
+    "breaking": false,
+    "extension": "ts",
+    "required_rule": "generic-inference-constraint-removed"
+  },
+  {
+    "name": "noinfer-addition",
+    "old": "export declare function api<T extends string>(value:T,fallback:T):T;",
+    "new": "export declare function api<T extends string>(value:T,fallback:NoInfer<T>):T;",
+    "consumer": "api(\"x\",\"y\");",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "returned-callable-noinfer-addition",
+    "old": "export declare function api():<T extends string>(value:T,fallback:T)=>T;",
+    "new": "export declare function api():<T extends string>(value:T,fallback:NoInfer<T>)=>T;",
+    "consumer": "api()(\"x\",\"y\");",
+    "extension": "ts",
+    "breaking": true,
+    "required_rule": "generic-inference-constraint-added"
+  }
+]

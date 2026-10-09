@@ -36,8 +36,7 @@ use subtype::{RULE_AUGMENT_GLOBAL_CHANGED, RULE_AUGMENT_MODULE_CHANGED, RULE_EXP
 ///
 /// If `T$1` is mentioned in a type signature but the base `T` is not exported,
 /// leave it as-is because it represents a genuinely distinct internal type
-/// (Pitfall 10 in Phase 17 research — prevent false normalization of unrelated
-/// internal identifiers that happen to use `$` convention).
+/// even when its name uses the same `$` convention.
 ///
 /// Fast path: if the input contains no `$` character, returns a clone immediately.
 fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> String {
@@ -69,7 +68,7 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
                     i += 1;
                 }
                 if i > digits_start {
-                    // WR-01 (Phase 17 review): after `$<digits>`, check for an identifier-
+                    //: after `$<digits>`, check for an identifier-
                     // continuation char. If present, the `$N` sits MID-identifier
                     // (e.g., `price$1plus2`) and must NOT be split — we'd otherwise
                     // concatenate two parse tokens (`price` + `plus2` -> `priceplus2`)
@@ -121,7 +120,7 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
 /// - Exports present in `old` but absent in `new` → `export-removed` (Major)
 /// - Exports present in `new` but absent in `old` → `export-added` (Minor)
 ///
-/// D-04 big-bang (Phase 18): unified signature always takes `pkg_root`. IDN-01
+/// big-bang: unified signature always takes `pkg_root`. IDN-01
 /// rename detection scans new-side source files for alias trailers; IDN-02
 /// namespace-move consolidation doesn't read files but accepts `pkg_root`
 /// uniformly for symmetry. All callers pass the package root they're comparing
@@ -129,11 +128,11 @@ fn normalize_rollup_suffix(input: &str, exported_names: &HashSet<String>) -> Str
 ///
 /// The public `compare_exports` wraps `compare_exports_core` (base diff without
 /// sort/post-pass) with the IDN-01 + IDN-02 post-passes and a single
-/// total-order sort at the tail (Warning 10: no double-sort).
+/// total-order sort at the tail (no double-sort).
 ///
 /// Findings are sorted by (severity, file, line, col, rule) at the tail.
 ///
-/// `lsp_was_available` (INF-04, Phase 22): when `true`, the diff pipeline
+/// `lsp_was_available` (INF-04, ): when `true`, the diff pipeline
 /// reads `ExportMap.typeof_targets` and emits Major
 /// `type-reference-removed` findings for verified target removals. When
 /// `false` (degraded mode), the same code path emits a Minor finding with
@@ -148,11 +147,11 @@ pub fn compare_exports(
 ) -> Vec<Finding> {
     // Base diff: ExportKey iteration, augment routing, type-aware compare.
     let mut findings = compare_exports_core(old, new, lsp_was_available);
-    // IDN-01: transparent rename coalescing (alias-trailer-only, D-05).
+    // IDN-01: transparent rename coalescing (alias-trailer-only, ).
     findings = rename_coalesce::coalesce_renames(old, new, findings, pkg_root);
     // IDN-02: namespace-move cascade consolidation (exact-subtree, depth 1).
     findings = ns_move_cascade::consolidate_namespace_moves(old, new, findings);
-    // Warning 10 (resolved by Blocker 1 option a): single total-order sort at
+    // Apply a single total-order sort at
     // the tail. Post-passes see unsorted findings; this is the only sort call.
     findings.sort_by(|a, b| {
         a.severity
@@ -169,17 +168,17 @@ pub fn compare_exports(
 /// comparison. No sort, no post-passes. Called by `compare_exports` which
 /// wraps this with IDN-01 + IDN-02 post-passes and a single total-order sort.
 ///
-/// `lsp_was_available` (INF-04, Phase 22): threaded to
+/// `lsp_was_available` (INF-04, ): threaded to
 /// `diff_typeof_import_refs` to choose between Major-verified and
 /// Minor-limitation-annotated emission.
 fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: bool) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
-    // META-04 / META-06 (Phase 19): Filter non-public release tags before comparison.
-    // Symbols tagged @internal, @alpha, or @beta are considered non-public per the
-    // locked v0.3 Phase 19 decision (D-01); only @public and no-tag remain comparable.
+    // META-04 / META-06: Filter non-public release tags before comparison.
+    // Symbols tagged @internal, @alpha, or @beta are non-public.
+    // Only @public and untagged symbols remain comparable.
     //
-    // WR-03 (Phase 19 review, closed Phase 27): no clones — see is_public predicate
+    //: no clones — see is_public predicate
     // below. Previous implementation cloned both ExportMaps and cleared the directive
     // sidecars on the copies; current code borrows directly.
     let is_public = |sym: &ExportSymbol| {
@@ -219,7 +218,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 });
                 continue;
             }
-            // Phase 18: qualify message with subpath/condition when non-canonical
+            // qualify message with subpath/condition when non-canonical
             // to disambiguate multi-subpath / multi-condition exports.
             let is_root_no_cond = key.subpath == "." && key.condition.is_none();
             let qualifier = if is_root_no_cond {
@@ -242,11 +241,9 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 }
             } else if key.space == crate::types::SymbolSpace::Symbol && name.starts_with("@@") {
                 let symbol_part = &name[2..];
-                // ECF-13 (Phase 22): well-known-Symbol removal branch. Present
+                // ECF-13: well-known-Symbol removal branch. Present
                 // the synthetic `@@<name>` internal key as the human-readable
-                // `[Symbol.<name>]` form in the CLI message. Same
-                // `export-removed` rule-ID — CONTEXT.md D-07 locks reuse over a
-                // new rule-ID.
+                // `[Symbol.<name>]` form in the `export-removed` message.
                 format!(
                     "symbol export `[Symbol.{}]` was removed{} - consumers relying on this key will break",
                     symbol_part, qualifier
@@ -295,7 +292,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 });
                 continue;
             }
-            // Phase 18: qualify message with subpath/condition when non-canonical
+            // qualify message with subpath/condition when non-canonical
             let is_root_no_cond = key.subpath == "." && key.condition.is_none();
             let qualifier = if is_root_no_cond {
                 String::new()
@@ -340,7 +337,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
     }
 
-    // Type-aware comparison (D-08, D-09): only when both symbols have TypeShape
+    // Type-aware comparison: only when both symbols have TypeShape
     // Use first overload (primary signature) for type diff
     for (key, old_sym) in old {
         if !is_public(old_sym) {
@@ -385,7 +382,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                     new_sym.col,
                 ));
             }
-            // TYPE-01 (Phase 20): `satisfies T` removal emits Minor
+            // TYPE-01: `satisfies T` removal emits Minor
             // `type-narrowing-widened`. Fires regardless of TypeShape overload
             // presence — the satisfies_type field is the direct source of truth.
             findings.extend(type_diff::diff_satisfies_types(
@@ -395,7 +392,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 new_sym.line,
                 new_sym.col,
             ));
-            // INF-04 (Phase 22): `typeof import('./y').Z` cross-file type
+            // INF-04: `typeof import('./y').Z` cross-file type
             // reference removal. Reads the typeof_targets sidecar; the diff
             // function returns nothing when old_sym has no typeof refs.
             // The unfiltered `old`/`new` maps carry the directives + typeof_targets
@@ -414,7 +411,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
     }
 
-    // INF-05 (Phase 19): triple-slash directive diffs per source file.
+    // INF-05: triple-slash directive diffs per source file.
     // Iterate the union of keys from old.directives and new.directives and
     // feed each per-file directive list pair through compare_directives.
     // Directives are a file-level concept, not per-symbol, so we read from
@@ -433,7 +430,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
     }
 
-    // DOC-01 (Phase 25): paired Info for Proxy/Reflect-dispatched defaults.
+    // DOC-01: paired Info for Proxy/Reflect-dispatched defaults.
     // The Major export-removed findings (above) already report the typed
     // surface that disappeared; this paired Info documents WHY (the new
     // surface is dynamically dispatched and not enumerable statically).
@@ -468,7 +465,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
     }
 
-    // Warning 10 (Blocker 1 fix, Phase 18): NO sort here — the public
+    // NO sort here — the public
     // `compare_exports` wrapper performs the single total-order sort after
     // IDN-01 + IDN-02 post-passes. Sorting here would mean double-sort.
     findings
@@ -477,7 +474,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
 /// Orchestrates exports + imports map diffing (EXP-01..14).
 /// Reads package.json from both roots and delegates to exports_diff::compare_exports_diff
 /// and imports_diff::compare_imports_diff.
-/// Per D-03: findings merge in compare/mod.rs, not in main.rs.
+/// findings merge in compare/mod.rs, not in main.rs.
 pub fn compare_exports_map_diff(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let old_pkg_path = old_root.join("package.json");
     let new_pkg_path = new_root.join("package.json");
@@ -540,7 +537,7 @@ struct ExtractedDecl {
     is_enum: bool,
     is_function: bool,
     is_interface: bool,
-    /// TYPE-02 (Phase 20): true iff the declaration is a `type X = <type>`
+    /// TYPE-02: true iff the declaration is a `type X = <type>`
     /// alias. Used by `compare_structural_diff` to route type-alias RHS
     /// pairs through `diff_types` (the base `compare_exports_core` path
     /// only fires for functions because resolver-side `overloads` is
@@ -549,14 +546,14 @@ struct ExtractedDecl {
     class_shape: Option<ClassShape>,
     enum_shape: Option<EnumShape>,
     type_params: Vec<TypeParam>,
-    // NEW for Phase 8 REF rules:
+    // REF rules:
     index_signatures: Vec<tree_query::IndexSignature>,
     type_guard_type: Option<String>,
     overloads: Vec<crate::types::shape::TypeShape>,
-    // NEW for Phase 9 BEH-01/BEH-02:
+    // BEH-01/BEH-02:
     is_async: bool,
     is_generator: bool,
-    // NEW for Phase 17 TLF rules:
+    // TLF rules:
     construct_signatures: Vec<ConstructSignature>,
     this_param_type: Option<String>,
     assertion_target: Option<String>,
@@ -565,7 +562,7 @@ struct ExtractedDecl {
 /// Check if an arrow_function node has the `async` keyword.
 ///
 /// Arrow functions have no `"function"` keyword — instead, `"async"` appears
-/// before the `"parameters"` or `"identifier"` children. Per Phase 14 Research Pitfall 7.
+/// before the `"parameters"` or `"identifier"` children.
 fn is_async_arrow(arrow_node: tree_sitter::Node, source: &[u8]) -> bool {
     let mut cursor = arrow_node.walk();
     for child in arrow_node.children(&mut cursor) {
@@ -588,13 +585,13 @@ fn is_async_arrow(arrow_node: tree_sitter::Node, source: &[u8]) -> bool {
 /// language, parse failure, name not found in tree).
 /// Parse `source` once with the language-specific tree-sitter grammar.
 /// Hot-path parses can be cached by the caller and passed to
-/// `extract_declaration_from_tree` to avoid re-parsing the same .d.ts file
+/// `extract_declaration_from_tree` to avoid re-parsing the same.d.ts file
 /// for every exported symbol it declares (#OOM-prisma).
 fn parse_source_for_extract(
     source: &[u8],
     lang: &tree_query::SourceLanguage,
 ) -> Option<tree_sitter::Tree> {
-    // INF-01 (Phase 18): TypeScriptTsx routes to LANGUAGE_TSX — strict superset
+    // INF-01: TypeScriptTsx routes to LANGUAGE_TSX — strict superset
     // of LANGUAGE_TYPESCRIPT so every TS query still parses identically.
     let ts_lang: tree_sitter::Language = match lang {
         tree_query::SourceLanguage::TypeScript => {
@@ -613,10 +610,10 @@ fn parse_source_for_extract(
 ///
 /// The cache stores `Option<(Vec<u8>, Tree)>` so that "unparseable" outcomes
 /// (read failure, oversized, minified, grammar load failure) are also memoised
-/// — every subsequent symbol referencing the same file returns immediately
+/// every subsequent symbol referencing the same file returns immediately
 /// instead of re-stating the same fs read or re-attempting the same parse.
 ///
-/// This is the hot-path mitigation for #OOM-prisma where a 100 KB+ .d.ts can
+/// This is the hot-path mitigation for #OOM-prisma where a 100 KB+.d.ts can
 /// be home to 50+ exported symbols and re-parsing per symbol blows resident
 /// memory past 8 GB.
 fn get_or_parse<'a>(
@@ -655,7 +652,7 @@ fn extract_declaration(
 /// Extract a declaration from a pre-parsed tree.
 ///
 /// Caller-owned tree avoids re-parsing the same source bytes once per
-/// exported symbol when many symbols share a single .d.ts file (the
+/// exported symbol when many symbols share a single.d.ts file (the
 /// `compare_structural_diff` hot path on packages like `@prisma/client`).
 fn extract_declaration_from_tree(
     tree: &tree_sitter::Tree,
@@ -669,17 +666,17 @@ fn extract_declaration_from_tree(
     // whose name field matches `name` and whose start line is within ±3 of hint_line.
     //
     // Supported kinds:
-    //   class_declaration, abstract_class_declaration,
-    //   enum_declaration,
-    //   function_declaration, interface_declaration, type_alias_declaration,
-    //   lexical_declaration (export const/let — the variable_declarator carries the name)
+    // class_declaration, abstract_class_declaration,
+    // enum_declaration,
+    // function_declaration, interface_declaration, type_alias_declaration,
+    // lexical_declaration (export const/let — the variable_declarator carries the name)
     let hint = hint_line.saturating_sub(1) as usize; // 0-indexed
 
     let decl_node = find_decl_in_node(root, source, name, hint)?;
     let kind = decl_node.kind();
 
-    // REQ-14-01: arrow_function and function_expression in variables
-    // REQ-14-02: function_expression and generator_function_expression as anonymous defaults
+    // arrow_function and function_expression in variables
+    // function_expression and generator_function_expression as anonymous defaults
     // Note: tree-sitter uses "function_expression" for `function() {}` values (not "function").
     let is_arrow_function = kind == "arrow_function";
     let is_anonymous_function = matches!(
@@ -695,12 +692,12 @@ fn extract_declaration_from_tree(
     ) || is_arrow_function
         || is_anonymous_function;
 
-    // REQ-14-02: anonymous class nodes (export default class {}) treated as classes
+    // anonymous class nodes (export default class {}) treated as classes
     let is_class =
         matches!(kind, "class_declaration" | "abstract_class_declaration") || is_anonymous_class;
     let is_enum = kind == "enum_declaration";
     let is_interface = kind == "interface_declaration";
-    // TYPE-02 (Phase 20): recognize type aliases so compare_structural_diff
+    // TYPE-02: recognize type aliases so compare_structural_diff
     // can route RHS pairs through diff_types.
     let is_type_alias = kind == "type_alias_declaration";
 
@@ -718,7 +715,7 @@ fn extract_declaration_from_tree(
         None
     };
 
-    // Per D-06: extract type params from ALL declaration types.
+    // extract type params from ALL declaration types.
     let type_params = tree_query::parse_type_params(source, decl_node);
 
     // Extract index signatures for interfaces (REF-07)
@@ -746,7 +743,7 @@ fn extract_declaration_from_tree(
             .into_iter()
             .collect()
     } else if kind == "type_alias_declaration" {
-        // TYPE-02 (Phase 20): route the RHS of `type X = <type>` through
+        // TYPE-02: route the RHS of `type X = <type>` through
         // `parse_type_string` into `overloads[0]` so the existing
         // `diff_types` pipeline can compare the shape. Without this,
         // non-LSP runs (where `type_signature` stays None) have no path
@@ -835,15 +832,15 @@ fn extract_declaration_from_tree(
 ///
 /// Uses a closest-match strategy: collects all candidates matching by name,
 /// then returns the one nearest to `hint_row`. This handles file moves
-/// between versions (GAP-13-05) and ambient declarations in .d.ts files
-/// (BUG-13-01).
+/// between versions and ambient declarations in.d.ts files
+///.
 fn find_decl_in_node<'a>(
     node: tree_sitter::Node<'a>,
     source: &[u8],
     name: &str,
     hint_row: usize,
 ) -> Option<tree_sitter::Node<'a>> {
-    // REQ-14-03: Handle dotted names (namespace members) by finding the namespace
+    // Handle dotted names (namespace members) by finding the namespace
     // first, then searching inside its body for the member.
     if name.contains('.') {
         let parts: Vec<&str> = name.splitn(2, '.').collect();
@@ -920,7 +917,7 @@ fn find_decl_in_node<'a>(
                 .filter(|n| *n == name)
                 .map(|_| child),
             "lexical_declaration" | "variable_declaration" => {
-                // REQ-14-01: Look for variable_declarator whose name matches,
+                // Look for variable_declarator whose name matches,
                 // then return the value node (arrow_function, function_expression, etc.)
                 // Note: tree-sitter uses "function_expression" for `function(){}` values,
                 // and "arrow_function" for `() => {}` values.
@@ -960,7 +957,7 @@ fn find_decl_in_node<'a>(
                 None
             }
             "function_expression" | "generator_function_expression" => {
-                // REQ-14-02: Anonymous function expression — only matches when name == "default"
+                // Anonymous function expression — only matches when name == "default"
                 // (export default function() {})
                 // Note: tree-sitter uses "function_expression" (not "function") for anonymous functions.
                 if name == "default" {
@@ -971,7 +968,7 @@ fn find_decl_in_node<'a>(
                 None
             }
             "class" => {
-                // REQ-14-02: Anonymous class — only matches when name == "default"
+                // Anonymous class — only matches when name == "default"
                 // (export default class {})
                 if name == "default" {
                     let found_row = child.start_position().row;
@@ -985,7 +982,7 @@ fn find_decl_in_node<'a>(
                 find_decl_in_node(child, source, name, hint_row)
             }
             "expression_statement" => {
-                // REQ-15-01: CJS assignment patterns — module.exports = class/fn or exports.NAME = fn
+                // CJS assignment patterns — module.exports = class/fn or exports.NAME = fn
                 let mut es_cursor = child.walk();
                 for es_child in child.children(&mut es_cursor) {
                     if es_child.kind() == "assignment_expression" {
@@ -1105,7 +1102,7 @@ fn collect_overload_shapes_from_tree(
 
 /// Collect members from ALL interface_declaration nodes with matching name.
 ///
-/// Handles declaration merging (REQ-14-04): when two `interface Foo` declarations
+/// Handles declaration merging: when two `interface Foo` declarations
 /// exist in the same file, their members are unioned. This matches TypeScript
 /// compiler behavior for merged interfaces.
 #[cfg(test)]
@@ -1181,7 +1178,7 @@ fn collect_interface_members_from_tree(
 /// - Extracts ClassShape / EnumShape / TypeParams depending on declaration type
 /// - Runs the appropriate diff function
 ///
-/// Per D-06: generic params are extracted from ALL declaration types
+/// generic params are extracted from ALL declaration types
 /// (class, function, interface, type alias), not just classes.
 pub fn compare_structural_diff(
     old_root: &Path,
@@ -1196,7 +1193,7 @@ pub fn compare_structural_diff(
     // can be used as a normalization anchor. This set is passed to normalize_rollup_suffix
     // to gate $N stripping on names that are actually exported (Pitfall 10).
     //
-    // Phase 18: keys are ExportKey composites; we project to `name` for the
+    // keys are ExportKey composites; we project to `name` for the
     // rollup-suffix matching code which operates on bare identifier strings.
     let exported_names: HashSet<String> = old_exports
         .keys()
@@ -1205,7 +1202,7 @@ pub fn compare_structural_diff(
         .collect();
 
     // Cached parses (#OOM-prisma): on real-world packages like @prisma/client,
-    // a single 100 KB+ .d.ts is the home of 50+ exported symbols. The previous
+    // a single 100 KB+.d.ts is the home of 50+ exported symbols. The previous
     // implementation re-read and re-parsed the same file once per symbol,
     // accumulating ~80 MB of transient parse-tree allocations per call and
     // pushing resident memory past 8 GB before the OS killed the process.
@@ -1279,8 +1276,8 @@ pub fn compare_structural_diff(
             }
         }
 
-        // REQ-14-05: Interface member structural diff (degraded mode)
-        // REQ-14-04: Declaration merging — collect members from ALL interface declarations
+        // Interface member structural diff (degraded mode)
+        // Declaration merging — collect members from ALL interface declarations
         if old_decl.is_interface && new_decl.is_interface {
             let old_members = collect_interface_members_from_tree(
                 old_tree,
@@ -1303,7 +1300,7 @@ pub fn compare_structural_diff(
                 ));
             }
 
-            // GAP-16-04: Interface index signature diff (interface-level)
+            // Interface index signature diff (interface-level)
             findings.extend(interface_diff::compare_interface_index_signatures(
                 &old_decl.index_signatures,
                 &new_decl.index_signatures,
@@ -1329,7 +1326,7 @@ pub fn compare_structural_diff(
             }
         }
 
-        // GEN-01..06: generic type param diff — applies to ALL constructs per D-06
+        // GEN-01..06: generic type parameter comparison applies to all constructs.
         let has_resolved_parameters = [old_sym, new_sym].iter().any(|symbol| {
             symbol.overloads.iter().any(|shape| {
                 matches!(
@@ -1413,13 +1410,13 @@ pub fn compare_structural_diff(
             &new_decl.index_signatures,
         ));
 
-        // GEN-07 (Phase 20): NoInfer<T> wrapper removed from a function-
+        // GEN-07: NoInfer<T> wrapper removed from a function-
         // parameter position. Walks paired Function overloads from the
         // augmented symbols (which carry the tree-sitter-extracted shapes
         // even in non-LSP runs). Falls through Opaque param-text via
         // parse_type_string so the GEN-07 wrapper canonicalization (in
         // parse_generic) surfaces here as TypeShape::NoInferWrap. Out of
-        // scope: return-type position (RESEARCH §GEN-07 Open Question 3).
+        // scope: return-type position.
         if old_decl.is_function && new_decl.is_function {
             findings.extend(type_diff::diff_function_param_noinfer_removed(
                 &old_sym_augmented.overloads,
@@ -1546,7 +1543,7 @@ pub fn first_publish_findings(exports: &ExportMap) -> Vec<Finding> {
     let mut findings: Vec<Finding> = exports
         .iter()
         .map(|(key, sym)| {
-            // Phase 18: qualify with subpath/condition when non-canonical
+            // qualify with subpath/condition when non-canonical
             let is_root_no_cond = key.subpath == "." && key.condition.is_none();
             let qualifier = if is_root_no_cond {
                 String::new()
@@ -1571,7 +1568,7 @@ pub fn first_publish_findings(exports: &ExportMap) -> Vec<Finding> {
         })
         .collect();
 
-    // Phase 18 Warning 8: total-order sort on (severity, file, line, col, rule).
+    // total-order sort on (severity, file, line, col, rule).
     findings.sort_by(|a, b| {
         a.severity
             .cmp(&b.severity)
@@ -1591,7 +1588,7 @@ mod tests {
 
     #[test]
     fn test_ambient_class_declaration_found() {
-        // BUG-13-01: export declare class Foo should be found by extract_declaration
+        // export declare class Foo should be found by extract_declaration
         let source = b"export declare class Foo { bar(): void; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
         assert!(
@@ -1608,7 +1605,7 @@ mod tests {
 
     #[test]
     fn test_ambient_function_declaration_found() {
-        // BUG-13-01: export declare function foo should be found
+        // export declare function foo should be found
         let source = b"export declare function foo(x: number): string;";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 1);
         assert!(
@@ -1624,7 +1621,7 @@ mod tests {
 
     #[test]
     fn test_ambient_enum_declaration_found() {
-        // BUG-13-01: export declare enum Status should be found
+        // export declare enum Status should be found
         let source = b"export declare enum Status { Active, Inactive }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Status", 1);
         assert!(
@@ -1638,7 +1635,7 @@ mod tests {
 
     #[test]
     fn test_ambient_interface_declaration_found() {
-        // BUG-13-01: export declare interface Opts should be found
+        // export declare interface Opts should be found
         let source = b"export declare interface Opts { debug: boolean; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Opts", 1);
         assert!(
@@ -1654,7 +1651,7 @@ mod tests {
 
     #[test]
     fn test_find_decl_tolerates_line_distance() {
-        // GAP-13-05: declaration far from hint_line should still be found
+        // declaration far from hint_line should still be found
         // Simulates a file move where line numbers shift dramatically
         let source = b"\n\n\n\n\n\n\n\n\n\nclass Foo { bar() {} }"; // Foo at line 11
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
@@ -1666,7 +1663,7 @@ mod tests {
 
     #[test]
     fn test_find_decl_closest_match_with_multiple_same_name() {
-        // GAP-13-05: when multiple declarations have the same name (overloads),
+        // when multiple declarations have the same name (overloads),
         // the closest to hint_row should be picked
         let source = b"function foo(x: string): void;\nfunction foo(x: number): void;\nfunction foo(x: any): void {}";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "foo", 2);
@@ -1676,7 +1673,7 @@ mod tests {
 
     #[test]
     fn test_arrow_function_extract() {
-        // REQ-14-01: arrow function exports should be found by extract_declaration
+        // arrow function exports should be found by extract_declaration
         let source = b"export const add = (x: number, y: number): number => x + y;";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "add", 1);
         assert!(
@@ -1693,7 +1690,7 @@ mod tests {
 
     #[test]
     fn test_async_arrow_function_extract() {
-        // REQ-14-01: async arrow function export
+        // async arrow function export
         let source =
             b"export const fetchData = async (url: string): Promise<string> => { return ''; };";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "fetchData", 1);
@@ -1705,7 +1702,7 @@ mod tests {
 
     #[test]
     fn test_anonymous_default_function_extract() {
-        // REQ-14-02: anonymous default function should be found
+        // anonymous default function should be found
         let source = b"export default function(x: number): string { return ''; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
         assert!(result.is_some(), "should find anonymous default function");
@@ -1718,7 +1715,7 @@ mod tests {
 
     #[test]
     fn test_anonymous_default_class_extract() {
-        // REQ-14-02: anonymous default class should be found
+        // anonymous default class should be found
         let source = b"export default class { foo(): void {} }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "default", 1);
         assert!(result.is_some(), "should find anonymous default class");
@@ -1735,7 +1732,7 @@ mod tests {
 
     #[test]
     fn test_function_expression_extract() {
-        // REQ-14-01: function expression in variable should be found
+        // function expression in variable should be found
         let source =
             b"export const handler = function(req: Request): Response { return new Response(); };";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "handler", 1);
@@ -1752,7 +1749,7 @@ mod tests {
 
     #[test]
     fn test_arrow_function_overloads_extracted() {
-        // REQ-14-01: Arrow functions should have overloads extracted via build_function_shape_from_node
+        // Arrow functions should have overloads extracted via build_function_shape_from_node
         let source = b"export const greet = (name: string): string => `Hello ${name}`;";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "greet", 1);
         assert!(result.is_some());
@@ -1765,7 +1762,7 @@ mod tests {
 
     #[test]
     fn test_interface_extract_found() {
-        // REQ-14-05: interface should be found and classified
+        // interface should be found and classified
         let source = b"export interface Foo { bar(): void; baz: string; }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo", 1);
         assert!(result.is_some());
@@ -1775,7 +1772,7 @@ mod tests {
 
     #[test]
     fn test_collect_interface_members_merged() {
-        // REQ-14-04: two interface declarations with same name should union members
+        // two interface declarations with same name should union members
         let source = b"export interface Foo { a(): void; }\nexport interface Foo { b(): void; }";
         let members = collect_interface_members(source, &SourceLanguage::TypeScript, "Foo");
         let names: Vec<&str> = members.iter().map(|m| m.name.as_str()).collect();
@@ -1804,11 +1801,11 @@ mod tests {
         assert_eq!(x_count, 1, "duplicate member 'x' should appear only once");
     }
 
-    // ─── REQ-14-03: find_decl_in_node dotted name (namespace member) ─────────
+    // ─── find_decl_in_node dotted name (namespace member) ─────────
 
     #[test]
     fn test_find_decl_dotted_name_in_namespace() {
-        // REQ-14-03: find_decl_in_node should find member inside namespace body
+        // find_decl_in_node should find member inside namespace body
         let source = b"export namespace Foo { export function bar(x: number): void {} }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "Foo.bar", 1);
         assert!(
@@ -1824,7 +1821,7 @@ mod tests {
 
     #[test]
     fn test_find_decl_dotted_name_class_in_namespace() {
-        // REQ-14-03: class member inside namespace
+        // class member inside namespace
         let source = b"export namespace NS { export class MyClass { foo(): void {} } }";
         let result = extract_declaration(source, &SourceLanguage::TypeScript, "NS.MyClass", 1);
         assert!(
@@ -1835,11 +1832,11 @@ mod tests {
         assert!(decl.is_class, "NS.MyClass should be identified as a class");
     }
 
-    // ─── REQ-15-01: CJS inline structural diff ──────────────────────────────
+    // ─── CJS inline structural diff ──────────────────────────────
 
     #[test]
     fn test_cjs_module_exports_class_extract() {
-        // REQ-15-01: module.exports = class Foo { method() {} } should be found as class
+        // module.exports = class Foo { method {} } should be found as class
         let source = b"module.exports = class Foo { method() {} }";
         let result = extract_declaration(source, &SourceLanguage::JavaScript, "default", 1);
         assert!(
@@ -1864,7 +1861,7 @@ mod tests {
 
     #[test]
     fn test_cjs_module_exports_function_extract() {
-        // REQ-15-01: module.exports = function(a, b) {} should be found as function
+        // module.exports = function(a, b) {} should be found as function
         let source = b"module.exports = function(a, b) { return a + b; }";
         let result = extract_declaration(source, &SourceLanguage::JavaScript, "default", 1);
         assert!(
@@ -1880,7 +1877,7 @@ mod tests {
 
     #[test]
     fn test_cjs_exports_property_function_extract() {
-        // REQ-15-01: exports.handler = async (req, res) => {} should be found
+        // exports.handler = async (req, res) => {} should be found
         let source = b"exports.handler = async (req, res) => { return 'ok'; }";
         let result = extract_declaration(source, &SourceLanguage::JavaScript, "handler", 1);
         assert!(
@@ -1897,7 +1894,7 @@ mod tests {
 
     #[test]
     fn test_cjs_inline_class_structural_diff() {
-        // REQ-15-01: module.exports = class { method() {} } with method removed
+        // module.exports = class { method {} } with method removed
         // should produce class-method-removed finding via compare_structural_diff
         use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
 
@@ -1955,7 +1952,7 @@ mod tests {
 
     #[test]
     fn test_cjs_inline_function_async_diff() {
-        // REQ-15-01: module.exports = function(a, b) {} changing to async function
+        // module.exports = function(a, b) {} changing to async function
         // should produce async-to-sync / sync-to-async finding
         use crate::types::{DeclarationKind, ExportKind, ExportSymbol};
 
@@ -2015,7 +2012,7 @@ mod tests {
         );
     }
 
-    // ─── Phase 18 compare_exports ExportKey-iteration tests ─────────────────
+    // ─── compare_exports ExportKey-iteration tests ─────────────────
 
     fn make_basic_sym(
         name: &str,
@@ -2048,7 +2045,7 @@ mod tests {
 
     #[test]
     fn test_arch01_different_subpaths_produce_separate_findings() {
-        // Phase 18 ARCH-01: same name at different subpaths must fan out to
+        // ARCH-01: same name at different subpaths must fan out to
         // separate export-removed + export-added findings (no silent match).
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
         use std::path::PathBuf;
@@ -2089,7 +2086,7 @@ mod tests {
             "ARCH-01: removed message for root subpath should not qualify; got: `{}`",
             removed.message
         );
-        // Added must reference ./sub in the qualifier
+        // Added must reference./sub in the qualifier
         let added = findings.iter().find(|f| f.rule == "export-added").unwrap();
         assert!(
             added.message.contains("./sub"),
@@ -2100,7 +2097,7 @@ mod tests {
 
     #[test]
     fn test_arch03_type_and_value_space_diff_independently() {
-        // Phase 18 ARCH-03: `export type Foo` and `export const Foo` coexist in
+        // ARCH-03: `export type Foo` and `export const Foo` coexist in
         // different SymbolSpace buckets and diff independently.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
         use std::path::PathBuf;
@@ -2140,7 +2137,7 @@ mod tests {
 
     #[test]
     fn test_arch04_multi_file_same_name_diffed_independently() {
-        // Phase 18 ARCH-04: `User` from `./a.ts` at subpath `.` and `User` from
+        // ARCH-04: `User` from `./a.ts` at subpath `.` and `User` from
         // `./b.ts` at subpath `./admin` are distinct keys; removing one does not
         // collapse onto the other.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
@@ -2187,7 +2184,7 @@ mod tests {
 
     #[test]
     fn test_warning8_compare_exports_deterministic_total_order() {
-        // Phase 18 Warning 8: final sort must be total-order on
+        // final sort must be total-order on
         // (severity, file, line, col, rule) so HashMap iteration non-determinism
         // never surfaces as Finding reorder.
         use crate::types::{ExportKey, ExportMap, SymbolSpace};
@@ -2259,13 +2256,13 @@ mod sem_08_tests {
     }
 
     #[test]
-    fn sem_08_base_exported_suffix_normalized() {
+    fn base_exported_suffix_normalized() {
         let exp = set(&["Foo"]);
         assert_eq!(normalize_rollup_suffix("Foo$1 | null", &exp), "Foo | null");
     }
 
     #[test]
-    fn sem_08_base_not_exported_suffix_preserved() {
+    fn base_not_exported_suffix_preserved() {
         let exp = set(&["Baz"]);
         assert_eq!(
             normalize_rollup_suffix("Bar$1 | null", &exp),
@@ -2274,13 +2271,13 @@ mod sem_08_tests {
     }
 
     #[test]
-    fn sem_08_multi_digit_suffix() {
+    fn multi_digit_suffix() {
         let exp = set(&["Foo"]);
         assert_eq!(normalize_rollup_suffix("Foo$10", &exp), "Foo");
     }
 
     #[test]
-    fn sem_08_mixed_names() {
+    fn mixed_names() {
         let exp = set(&["Foo"]); // Foo exported, Bar not
         assert_eq!(
             normalize_rollup_suffix("Array<Foo$1> | Record<string, Bar$2>", &exp),
@@ -2289,13 +2286,13 @@ mod sem_08_tests {
     }
 
     #[test]
-    fn sem_08_no_suffix_passthrough() {
+    fn no_suffix_passthrough() {
         let exp = set(&["Foo"]);
         assert_eq!(normalize_rollup_suffix("Foo | Bar", &exp), "Foo | Bar");
     }
 
     #[test]
-    fn sem_08_no_dollar_fast_path() {
+    fn no_dollar_fast_path() {
         let exp = set(&["Foo"]);
         assert_eq!(
             normalize_rollup_suffix("string | number", &exp),
@@ -2304,16 +2301,16 @@ mod sem_08_tests {
     }
 
     #[test]
-    fn sem_08_dollar_without_digits_passthrough() {
+    fn dollar_without_digits_passthrough() {
         let exp = set(&["Foo"]);
         assert_eq!(normalize_rollup_suffix("Foo$ | Bar", &exp), "Foo$ | Bar");
     }
 
-    // WR-01 (Phase 17 review): `$N` mid-identifier must NOT split the token.
+    //: `$N` mid-identifier must NOT split the token.
     // The stripper previously treated `Foo$1Bar` as `Foo` + consumed `$1` +
     // new identifier `Bar`, concatenating two parse tokens into `FooBar`.
     #[test]
-    fn sem_08_wr_01_dollar_n_mid_identifier_preserved() {
+    fn wr_01_dollar_n_mid_identifier_preserved() {
         let exp = set(&["Foo"]); // Foo is exported
                                  // `Foo$1Bar` is a single JS-valid identifier — must NOT become `FooBar`.
         assert_eq!(
@@ -2323,13 +2320,13 @@ mod sem_08_tests {
     }
 
     #[test]
-    fn sem_08_wr_01_dollar_n_mid_identifier_preserved_unexported_base() {
+    fn wr_01_dollar_n_mid_identifier_preserved_unexported_base() {
         let exp = set(&["Qux"]); // `price` not exported
         assert_eq!(normalize_rollup_suffix("price$2plus", &exp), "price$2plus");
     }
 
     #[test]
-    fn sem_08_wr_01_dollar_n_mid_identifier_underscore_continuation() {
+    fn wr_01_dollar_n_mid_identifier_underscore_continuation() {
         let exp = set(&["Foo"]); // exported base
                                  // Underscore as continuation char after `$N` — also mid-identifier, do not split.
         assert_eq!(normalize_rollup_suffix("Foo$1_tail", &exp), "Foo$1_tail");

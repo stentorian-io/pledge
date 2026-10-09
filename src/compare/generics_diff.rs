@@ -1,10 +1,10 @@
 // Generic type parameter diff engine.
 //
 // Implements GEN-01 through GEN-06: detects all 6 generic-related breaking changes.
-// Applies to ALL exported constructs per D-06: functions, interfaces, type aliases, classes.
+// Applies to ALL exported constructs functions, interfaces, type aliases, classes.
 //
 // Design decisions:
-// - D-10: text-fallback constraint comparison is conservative (assume breaking if texts differ)
+// -: text-fallback constraint comparison is conservative (assume breaking if texts differ)
 // - GEN-04: uses is_subtype_of() for shape-based constraint tightening analysis
 // - GEN-03: only compares relative order of common params (ignores added/removed)
 
@@ -202,7 +202,7 @@ pub fn compare_type_params(
             &mut findings,
         );
 
-        // GEN-07 (Phase 20): NoInfer<T> wrapper removed from this constraint.
+        // GEN-07: NoInfer<T> wrapper removed from this constraint.
         // Runs AFTER check_constraint_tightened so the GEN-04 finding (if
         // any) for the same param is visible — when GEN-07 fires, we
         // suppress that GEN-04 finding because the wrapper-removal is a
@@ -230,7 +230,7 @@ pub fn compare_type_params(
             });
         }
 
-        // GAP-15-07: const type parameter modifier changed
+        // const type parameter modifier changed
         if old_param.is_const != new_param.is_const {
             let action = if old_param.is_const {
                 "removed from"
@@ -282,7 +282,7 @@ pub fn compare_type_params(
 /// GEN-04: Check if a generic constraint was tightened.
 ///
 /// Uses is_subtype_of() for shape-based analysis when available.
-/// Falls back to text comparison per D-10 (assume breaking if texts differ).
+/// Falls back to text comparison (assume breaking if texts differ).
 fn check_constraint_tightened(
     old_param: &TypeParam,
     new_param: &TypeParam,
@@ -297,9 +297,9 @@ fn check_constraint_tightened(
             // Shape-based analysis: determine if the constraint was tightened.
             //
             // A constraint is tightened if:
-            //   - old allowed more types than new (new is more restrictive)
-            //   - i.e. old_shape is NOT a subtype of new_shape,
-            //     meaning old accepted types that new doesn't
+            //  - old allowed more types than new (new is more restrictive)
+            //  - i.e. old_shape is NOT a subtype of new_shape,
+            // meaning old accepted types that new doesn't
             //
             // NOTE: TypeScript's `any` is both top and bottom type in the subtype checker,
             // so is_subtype_of(any, string) = true AND is_subtype_of(string, any) = true.
@@ -377,7 +377,7 @@ fn check_constraint_tightened(
             match (&old_param.constraint_text, &new_param.constraint_text) {
                 (Some(old_text), Some(new_text)) => {
                     if old_text != new_text {
-                        // D-10: conservative — texts differ, assume breaking
+                        // conservative — texts differ, assume breaking
                         findings.push(Finding {
                             severity: Severity::Major,
                             rule: RULE_GENERIC_CONSTRAINT_TIGHTENED,
@@ -467,7 +467,7 @@ fn check_default_changed(
     }
 }
 
-/// GEN-07 (Phase 20): Detect `NoInfer<T>` wrapper removal on a
+/// GEN-07: Detect `NoInfer<T>` wrapper removal on a
 /// type-parameter constraint between old and new.
 ///
 /// Two detection paths handle LSP-enriched and degraded modes:
@@ -503,7 +503,7 @@ fn check_noinfer_wrapper_removed(
     use crate::types::shape::TypeShape;
 
     // 1. Shape path — preferred, fires when LSP enrichment filled the
-    //    parsed constraint shape on both sides.
+    // parsed constraint shape on both sides.
     if let (Some(TypeShape::NoInferWrap(old_inner)), Some(new_shape)) = (
         old_param.constraint_shape.as_ref(),
         new_param.constraint_shape.as_ref(),
@@ -525,10 +525,10 @@ fn check_noinfer_wrapper_removed(
     }
 
     // 2. Text fallback — degraded mode (no LSP). Parse both texts through
-    //    `parse_type_string` and apply the same shape-level pattern. The
-    //    parser's GEN-07 special-case (parse_generic) produces
-    //    `TypeShape::NoInferWrap` for `NoInfer<T>` literally, so the same
-    //    matching logic works on the parsed result.
+    //  `parse_type_string` and apply the same shape-level pattern. The
+    // parser's GEN-07 special-case (parse_generic) produces
+    //  `TypeShape::NoInferWrap` for `NoInfer<T>` literally, so the same
+    // matching logic works on the parsed result.
     if let (Some(old_text), Some(new_text)) = (
         old_param.constraint_text.as_deref(),
         new_param.constraint_text.as_deref(),
@@ -817,7 +817,7 @@ mod tests {
         assert!(added_with_default[0].message.contains("MyFn"));
     }
 
-    // ── GAP-15-07: const type parameter modifier ──────────────────────────────
+    // ── const type parameter modifier ──────────────────────────────
 
     #[test]
     fn test_const_type_param_removed() {
@@ -906,7 +906,7 @@ mod tests {
     // ── TLF-05: generic variance changed ─────────────────────────────────────
 
     #[test]
-    fn tlf_05_variance_changed_fires_major() {
+    fn variance_changed_fires_major() {
         use crate::types::Variance;
         let mut old_p = param("T");
         old_p.variance = Some(Variance::In);
@@ -932,7 +932,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_05_variance_unchanged_no_finding() {
+    fn variance_unchanged_no_finding() {
         use crate::types::Variance;
         let mut old_p = param("T");
         old_p.variance = Some(Variance::In);

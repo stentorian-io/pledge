@@ -141,7 +141,7 @@ async fn enrich_with_binary(
         Err(e) => return Ok(EnrichResult::Degraded(e.to_string())),
     };
 
-    // Step 3: group exports by file path (collect full ExportKeys per file — Phase 18 D-01).
+    // Step 3: group full ExportKeys by file path.
     // The ExportKey is retained through hover dispatch so the write-back can target
     // the correct (subpath, condition, space, name) bucket rather than only by name.
     let mut file_groups: HashMap<PathBuf, Vec<crate::types::ExportKey>> = HashMap::new();
@@ -152,7 +152,7 @@ async fn enrich_with_binary(
             .push(key.clone());
     }
 
-    // Step 4: iterate files, send hover requests; respect total budget (60s per D-06)
+    // Step 4: send hover requests within the 60-second total budget.
     let budget_start = Instant::now();
     let mut incomplete = Vec::new();
     incomplete.extend(
@@ -195,7 +195,7 @@ async fn enrich_with_binary(
         };
 
         // Build hover-info list: (name, line, col) for each symbol in this file.
-        // Phase 18: the LSP is positional (file + line + col), so we pass the
+        // the LSP is positional (file + line + col), so we pass the
         // ExportKey's name field across the boundary and match names back on the
         // write-back side. See the results loop below for the name->all-keys
         // multi-update semantics that preserve first-write-wins on type_signature.
@@ -239,7 +239,7 @@ async fn enrich_with_binary(
                         "LSP session failed: {} \u{2014} falling back to structural-only diff",
                         e
                     );
-                    // WR-04 (Phase 17 review): attempt a graceful shutdown handshake
+                    //: attempt a graceful shutdown handshake
                     // before drop. kill_on_drop remains the safety net — shutdown
                     // errors are intentionally ignored because the session is already
                     // failing, but the handshake lets tsserver flush buffers / temp
@@ -252,11 +252,11 @@ async fn enrich_with_binary(
         };
 
         // Apply results back to exports.
-        // Phase 18: the hover result is keyed only by name (LSP protocol boundary),
+        // the hover result is keyed only by name (LSP protocol boundary),
         // so we re-key through the file's ExportKeys. A single hover response
         // legitimately applies to every ExportKey at that (file, line, col)
         // position; matching by name covers the common case. Guarding on
-        // `is_none()` / `is_empty()` preserves the pre-Phase-18 first-write-wins
+        // `is_none` / `is_empty` preserves the first-write-wins
         // semantic for type_signature on the same key.
         for (name, type_signature, overloads) in results {
             if type_signature.is_none() {
@@ -274,8 +274,8 @@ async fn enrich_with_binary(
                         if !overloads.is_empty() {
                             symbol.overloads = overloads.clone();
                         }
-                        // TYPE-01 (Phase 20): if this symbol has an unfilled
-                        // `TypeShape::Satisfies { narrowed: None, .. }` slot,
+                        // TYPE-01: if this symbol has an unfilled
+                        // `TypeShape::Satisfies { narrowed: None,.. }` slot,
                         // fill it from the LSP hover result. Hover on a
                         // `const foo = {...} satisfies T` returns the narrowed
                         // literal type (not `T`); parse it through
@@ -305,7 +305,7 @@ async fn enrich_with_binary(
         }
     }
 
-    // INF-04 (Phase 22): second LSP pass — resolve typeof_import_refs via
+    // INF-04: second LSP pass — resolve typeof_import_refs via
     // textDocument/definition. Runs AFTER all hovers (Pitfall 6 — no
     // interleaving; keeps hover-completion timing predictable).
     //
@@ -313,7 +313,7 @@ async fn enrich_with_binary(
     // hover pass.
     //
     // Resolved locations are stored on the ExportMap via the `typeof_targets`
-    // sidecar (parallel to the Phase 19 `directives` sidecar). The diff
+    // sidecar (parallel to the `directives` sidecar). The diff
     // pipeline reads this sidecar in `type_diff.rs::diff_typeof_import_refs`.
     {
         use async_lsp::lsp_types::Url;
@@ -387,7 +387,7 @@ async fn enrich_with_binary(
                             let _ = session.shutdown().await;
                             return Ok(EnrichResult::Degraded(msg));
                         }
-                        // WR-03 (Phase 22 review): a single sub-threshold error
+                        //: a single sub-threshold error
                         // should not abort all remaining symbols. Continue to
                         // the next ref — matches the hover pass pattern at
                         // line 143. CRASH_THRESHOLD branch above already
@@ -432,9 +432,9 @@ mod tests {
     /// ROB-02: Structural test — verify that EnrichResult::Degraded carries the crash message
     /// and that the pattern-match branches are correct. The full crash path (CRASH_THRESHOLD
     /// consecutive failures from a real subprocess) is exercised by integration tests in
-    /// tests/phase17_integration.rs; this unit test validates the type and message structure.
+    /// tests/README.md; this unit test validates the type and message structure.
     #[test]
-    fn rob_02_degraded_carries_failure_message() {
+    fn degraded_carries_failure_message() {
         let err = anyhow::anyhow!("simulated tsserver crash");
         let result = EnrichResult::Degraded(format!(
             "LSP session failed: {} \u{2014} falling back to structural-only diff",

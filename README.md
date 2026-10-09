@@ -27,7 +27,7 @@ Interlint emits findings tagged with stable rule-IDs. Severity maps to CLI exit 
 | Degraded | 3 | Analysis could not complete cleanly (compiler unavailable, unresolved types, parse failure) |
 | Minor | 0 | Non-breaking change worth noting |
 | Patch | 0 | Cosmetic / non-observable change |
-| Info | 0 | Documented limitation — analysis acknowledged but couldn't verify (Phase 25) |
+| Info | 0 | Documented limitation — analysis acknowledged but couldn't verify |
 
 Exit code 2 is reserved for tool-internal errors (e.g., I/O failure, registry unavailable). It is NOT used for any finding severity.
 
@@ -37,7 +37,7 @@ public sources, and files skipped by source processing limits. Findings from
 completed analysis are still reported; an incomplete result does not establish
 compatibility.
 
-### Phase 19 rule-IDs (comment-scan pass)
+### Directives and decorators
 
 | Rule ID | Severity | Trigger |
 |---------|----------|---------|
@@ -49,11 +49,11 @@ compatibility.
 | `decorator-removed` | Major | A stage-3 decorator is removed from an exported target |
 | `decorator-arguments-changed` | Major | A decorator factory's call arguments change (e.g., `@Route('/users')` → `@Route('/people')`) |
 
-Phase 19 also extends the existing `export-deprecated` (Warning) rule: `@deprecated`, `@internal`, `@alpha`, `@beta`, and `@public` TSDoc tags are now detected uniformly across every `RawExport` construction site (default exports, named re-exports, destructured pairs, compound-assignment member exports, star re-exports, and all bundler-CJS variants).
+TSDoc tags (`@deprecated`, `@internal`, `@alpha`, `@beta`, and `@public`) are detected across default exports, named and star re-exports, destructured pairs, compound-assignment members, and bundler CommonJS output. Deprecation produces an `export-deprecated` warning; internal, alpha, and beta exports are excluded from public API comparison.
 
 See `docs/rules/directive.md` for INF-05 (triple-slash directives) details and the TypeScript compiler position rule.
 
-### Phase 20 rule-IDs (TS type-system features)
+### TypeScript type contracts
 
 | Rule ID | Severity | Trigger |
 |---------|----------|---------|
@@ -70,7 +70,7 @@ When type enrichment is unavailable, findings identify missing evidence:
 
 See `docs/rules/type-narrowing.md`, `docs/rules/infer-extends.md`, `docs/rules/noinfer-wrapper.md`, `docs/rules/union-variant-added.md`, and `docs/rules/template-index-signature.md` for per-rule detail.
 
-### Phase 21 rule-IDs (class-surface completion)
+### Class members
 
 | Rule ID | Severity | Trigger |
 |---------|----------|---------|

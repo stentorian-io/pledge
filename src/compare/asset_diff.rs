@@ -2,20 +2,20 @@
 //
 // AST-05: asset-file-removed (asset present in old but not new — Major)
 //
-// Per D-07: Distinct from Phase 6's importable-file-removed. Asset removal
+// Distinct from importable-file-removed. Asset removal
 // and code removal are different consumer concerns.
-// Per D-08: Asset extensions cover files consumers actually import/reference.
+// Asset extensions cover files consumers actually import/reference.
 //
-// Note: .json and .css files appear in both ASSET_EXTENSIONS and
+// Note:.json and.css files appear in both ASSET_EXTENSIONS and
 // IMPORTABLE_EXTENSIONS. Duplication across rules is acceptable by design
-// (D-07) — consumers can suppress one rule without affecting the other.
+//  — consumers can suppress one rule without affecting the other.
 
 use super::subtype::RULE_ASSET_FILE_REMOVED;
 use crate::types::{Finding, Severity};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-/// Asset file extensions tracked for removal detection (D-08).
+/// Asset file extensions tracked for removal detection.
 const ASSET_EXTENSIONS: &[&str] = &[
     ".json", ".css", ".wasm", ".png", ".jpg", ".svg", ".gif", ".ico", ".woff", ".woff2", ".ttf",
     ".eot",

@@ -1,15 +1,15 @@
 // Exports map diff: detect breaking changes in package.json `exports` field.
 //
-// Covers EXP-01..07 (this plan) and EXP-08..13 (Plan 02):
-//   EXP-01: subpath removed (subpath-removed)
-//   EXP-02: exports field added, encapsulating deep imports (exports-field-added)
-//   EXP-03: condition removed from subpath (condition-removed)
-//   EXP-04: condition target file changed (condition-target-changed)
-//   EXP-05: types condition removed (types-condition-removed)
-//   EXP-06: wildcard subpath pattern changed (subpath-pattern-changed)
-//   EXP-07: new subpath added (subpath-added)
+// Export-map rules include:
+// EXP-01: subpath removed (subpath-removed)
+// EXP-02: exports field added, encapsulating deep imports (exports-field-added)
+// EXP-03: condition removed from subpath (condition-removed)
+// EXP-04: condition target file changed (condition-target-changed)
+// EXP-05: types condition removed (types-condition-removed)
+// EXP-06: wildcard subpath pattern changed (subpath-pattern-changed)
+// EXP-07: new subpath added (subpath-added)
 //
-// Data model per D-01: ExportsMap preserves exact JSON shape for precise diffing.
+// Data model ExportsMap preserves exact JSON shape for precise diffing.
 // Parser normalizes all 7 valid exports field shapes to ExportsMap.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,7 +34,7 @@ pub(crate) enum ModuleFormat {
 }
 
 /// Detect module format from a condition key.
-/// Priority: condition key (D-10, signal 1).
+/// Priority: condition key (signal 1).
 pub(crate) fn format_from_condition_key(key: &str) -> Option<ModuleFormat> {
     match key {
         "require" => Some(ModuleFormat::Cjs),
@@ -44,7 +44,7 @@ pub(crate) fn format_from_condition_key(key: &str) -> Option<ModuleFormat> {
 }
 
 /// Detect module format from a file path extension.
-/// Priority: file extension (D-10, signal 2).
+/// Priority: file extension (signal 2).
 pub(crate) fn format_from_extension(path: &str) -> Option<ModuleFormat> {
     if path.ends_with(".cjs") {
         return Some(ModuleFormat::Cjs);
@@ -56,7 +56,7 @@ pub(crate) fn format_from_extension(path: &str) -> Option<ModuleFormat> {
 }
 
 /// Detect module format from a types declaration file extension.
-/// `.d.cts` = CJS, `.d.mts` = ESM, `.d.ts` = format-neutral (per D-12).
+/// `.d.cts` = CJS, `.d.mts` = ESM, `.d.ts` = format-neutral (per ).
 pub(crate) fn types_format_from_extension(path: &str) -> Option<ModuleFormat> {
     if path.ends_with(".d.cts") {
         return Some(ModuleFormat::Cjs);
@@ -64,7 +64,7 @@ pub(crate) fn types_format_from_extension(path: &str) -> Option<ModuleFormat> {
     if path.ends_with(".d.mts") {
         return Some(ModuleFormat::Esm);
     }
-    None // .d.ts is format-neutral per D-12
+    None // .d.ts is format-neutral.
 }
 
 // ─── Data model ───────────────────────────────────────────────────────────────
@@ -210,7 +210,7 @@ pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
 
 // ─── Finding factory ──────────────────────────────────────────────────────────
 
-/// Create a Finding anchored to package.json line 1, col 1 (same pattern as metadata.rs D-08).
+/// Create a Finding anchored to package.json line 1, col 1 (same pattern as metadata.rs ).
 pub(crate) fn pkg_json_finding(severity: Severity, rule: &'static str, message: String) -> Finding {
     Finding {
         severity,
@@ -224,7 +224,7 @@ pub(crate) fn pkg_json_finding(severity: Severity, rule: &'static str, message: 
 
 // ─── Diff helpers ─────────────────────────────────────────────────────────────
 
-/// Format a condition node target for use in finding messages (per D-06).
+/// Format a condition node target for use in finding messages (per ).
 ///
 /// Returns the leaf path string, or `"[conditions object]"` for branches.
 fn format_condition_target(node: &ConditionNode) -> String {
@@ -257,9 +257,9 @@ fn diff_condition_nodes(
 
                 // SEM-02: Direction-aware null handling.
                 // - null → "./file.js": additive (condition target was absent, now present)
-                //   → Minor, use RULE_SUBPATH_ADDED (not breaking for consumers)
+                //  → Minor, use RULE_SUBPATH_ADDED (not breaking for consumers)
                 // - "./file.js" → null: breaking (condition target removed)
-                //   → Major, RULE_CONDITION_TARGET_CHANGED (keeps existing behavior)
+                //  → Major, RULE_CONDITION_TARGET_CHANGED (keeps existing behavior)
                 match (old_is_null, new_is_null) {
                     (true, false) => {
                         findings.push(pkg_json_finding(
@@ -336,7 +336,7 @@ fn diff_condition_nodes(
 
 /// Detect CJS-to-ESM and ESM-to-CJS migrations for a shared subpath (EXP-08, EXP-09).
 ///
-/// Per D-11:
+///
 /// - EXP-08 `cjs-to-esm`: old Branch has "require" key AND new Branch does NOT have "require"
 /// - EXP-09 `esm-to-cjs`: old Branch has "import" key AND new Branch does NOT have "import"
 ///
@@ -375,7 +375,7 @@ fn check_format_migration(
 
 /// Detect types/runtime module format mismatch in a subpath entry (EXP-10).
 ///
-/// Per D-12: fires when types condition uses an explicit format-specific extension
+/// fires when types condition uses an explicit format-specific extension
 /// (`.d.cts` for CJS, `.d.mts` for ESM) that conflicts with the runtime condition format.
 /// `.d.ts` is format-neutral and never triggers this rule.
 fn check_types_runtime_mismatch(subpath: &str, entry: &SubpathEntry, findings: &mut Vec<Finding>) {
@@ -397,7 +397,7 @@ fn check_types_runtime_mismatch(subpath: &str, entry: &SubpathEntry, findings: &
     };
 
     // Find runtime conditions and check for mismatch.
-    // Use condition key as primary signal (D-10, signal 1); file extension as secondary (signal 2).
+    // Use condition key as primary signal (signal 1); file extension as secondary (signal 2).
     for cond_key in conds.keys() {
         // Determine runtime format: first try condition key, then extension of its target file
         let runtime_format =
@@ -431,12 +431,12 @@ fn check_types_runtime_mismatch(subpath: &str, entry: &SubpathEntry, findings: &
 
 // ─── Packed output fallback scanner ──────────────────────────────────────────
 
-/// Importable file extensions for packed output fallback scanning (D-13).
+/// Importable file extensions for packed output fallback scanning.
 const IMPORTABLE_EXTENSIONS: &[&str] = &[
     ".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".d.ts", ".jsx", ".tsx", ".json",
 ];
 
-/// Returns true if the given path has an importable extension (per D-13).
+/// Returns true if the given path has an importable extension (per ).
 ///
 /// Checks `.d.ts` before `.ts` to avoid false positives from the shorter suffix match.
 fn is_importable(path: &Path) -> bool {
@@ -444,7 +444,7 @@ fn is_importable(path: &Path) -> bool {
         Some(s) => s,
         None => return false,
     };
-    // Check compound .d.ts extension first before iterating single-extension entries
+    // Check compound.d.ts extension first before iterating single-extension entries
     if name.ends_with(".d.ts") {
         return true;
     }
@@ -503,7 +503,7 @@ pub(crate) fn scan_importable_files(pkg_root: &Path) -> BTreeSet<String> {
 /// Compare importable files between old and new package roots (EXP-13).
 ///
 /// Used when neither old nor new package has an `exports` field.
-/// Per D-14:
+///
 /// - Removed files → `importable-file-removed` (Major)
 /// - Added files → `subpath-added` (Minor)
 fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Finding> {
@@ -544,7 +544,7 @@ fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Findi
 /// - "./utils/*" -> "./utils/"
 /// - "./utils/*.js" -> "./utils/"
 ///
-/// Used for GAP-15-08 semantic matching of wildcard pattern refinements.
+/// Used for semantic matching of wildcard pattern refinements.
 pub(crate) fn strip_wildcard_to_base(pattern: &str) -> &str {
     // Find the position of '*' and return everything before it
     match pattern.find('*') {
@@ -568,7 +568,7 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
     let mut matched_new_wildcards: std::collections::HashSet<&str> =
         std::collections::HashSet::new();
 
-    // GAP-15-08: Check for wildcard pattern refinements
+    // Check for wildcard pattern refinements
     // e.g., "./*" removed and "./*.js" added = pattern-changed, not removed+added
     for old_wc in &old_wildcards {
         if new_map.contains_key(old_wc.as_str()) {
@@ -685,7 +685,7 @@ pub fn compare_exports_diff(
 
         (None, Some(_new_val)) => {
             // EXP-02: exports field added — previously importable paths are now encapsulated
-            // Per D-15: enumerate old_root importable files for the message, cap at 10
+            // enumerate old_root importable files for the message, cap at 10
             let old_files = scan_importable_files(old_root);
             let message = if old_files.is_empty() {
                 "package.json `exports` field added, encapsulating deep imports".to_string()
@@ -751,7 +751,7 @@ pub fn compare_exports_diff(
 mod tests {
     use super::*;
 
-    // ─── Task 1 TDD: CJS/ESM migration and types/runtime mismatch tests ───────
+    // ─── TDD: CJS/ESM migration and types/runtime mismatch tests ───────
 
     #[test]
     fn test_exp08_cjs_to_esm_require_removed() {
@@ -811,7 +811,7 @@ mod tests {
 
     #[test]
     fn test_exp10_types_runtime_mismatch_dcts_with_import() {
-        // EXP-10: types -> .d.cts (CJS types) but only import condition (ESM) -> mismatch
+        // EXP-10: types ->.d.cts (CJS types) but only import condition (ESM) -> mismatch
         let new =
             make_pkg(r#"{"exports": {".": {"types": "./index.d.cts", "import": "./index.mjs"}}}"#);
         let old =
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn test_exp10_no_mismatch_for_format_neutral_dts() {
-        // EXP-10 negative: types -> .d.ts (format-neutral) with import -> NO mismatch
+        // EXP-10 negative: types ->.d.ts (format-neutral) with import -> NO mismatch
         let old =
             make_pkg(r#"{"exports": {".": {"types": "./index.d.ts", "import": "./index.mjs"}}}"#);
         let new =
@@ -1135,10 +1135,10 @@ mod tests {
         );
     }
 
-    // ─── GAP-15-08: Wildcard pattern semantic matching ────────────────────────
+    // ─── Wildcard pattern semantic matching ────────────────────────
 
     #[test]
-    fn test_gap15_08_wildcard_refinement() {
+    fn wildcard_refinement() {
         // Old has "./*", new has "./*.js" — pattern refinement, single finding
         let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {"./*.js": "./features/*.js", ".": "./index.js"}}"#);
@@ -1183,7 +1183,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gap15_08_wildcard_unrelated() {
+    fn wildcard_unrelated() {
         // Old has "./*", new has "./utils/*.js" — different base paths, separate removed+added
         let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {"./utils/*.js": "./utils/*.js", ".": "./index.js"}}"#);
@@ -1218,7 +1218,7 @@ mod tests {
     }
 
     #[test]
-    fn test_gap15_08_wildcard_both_present() {
+    fn wildcard_both_present() {
         // Old and new both have "./*" — no pattern-changed finding (just normal condition diffing)
         let old = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
         let new = make_pkg(r#"{"exports": {"./*": "./features/*.js", ".": "./index.js"}}"#);
@@ -1237,7 +1237,7 @@ mod tests {
         );
     }
 
-    // ─── Task 2 TDD: Packed output fallback scanner tests ─────────────────────
+    // ─── TDD: Packed output fallback scanner tests ─────────────────────
 
     #[test]
     fn test_exp13_importable_file_removed() {
@@ -1331,7 +1331,7 @@ mod tests {
         let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
-        // No findings because .hidden is skipped
+        // No findings because.hidden is skipped
         assert!(
             findings.is_empty(),
             "expected no findings (dotfiles skipped), got: {:?}",
@@ -1357,7 +1357,7 @@ mod tests {
         let new_pkg = make_pkg(r#"{"name": "my-pkg"}"#);
         let findings = compare_exports_diff(&old_pkg, &new_pkg, old_dir.path(), new_dir.path());
 
-        // No findings because .md and .txt are not importable
+        // No findings because.md and.txt are not importable
         assert!(
             findings.is_empty(),
             "expected no findings (.md/.txt not importable), got: {:?}",
@@ -1424,7 +1424,7 @@ mod tests {
     // ── SEM-02: Direction-aware null handling in condition targets ────────────
 
     #[test]
-    fn sem_02_null_to_string_fires_minor_addition() {
+    fn null_to_string_fires_minor_addition() {
         // "types": null → "types": "./real.d.ts" is additive — Minor (subpath-added)
         let old = make_pkg(r#"{"exports": {".": {"types": null, "default": "./index.js"}}}"#);
         let new =
@@ -1446,7 +1446,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_02_string_to_null_fires_major() {
+    fn string_to_null_fires_major() {
         // "types": "./real.d.ts" → "types": null is breaking — Major (condition-target-changed)
         let old =
             make_pkg(r#"{"exports": {".": {"types": "./real.d.ts", "default": "./index.js"}}}"#);

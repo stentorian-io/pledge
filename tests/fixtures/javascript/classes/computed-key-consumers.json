@@ -1,0 +1,132 @@
+[
+  {
+    "name": "static-literal-key-removal",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"x\"]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api {}"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": true
+  },
+  {
+    "name": "static-constant-key-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { static { this[KEY]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"y\"; export class api { static { this[KEY]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": true
+  },
+  {
+    "name": "static-template-key-change",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { static { this[`get${KEY}`]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"y\"; export class api { static { this[`get${KEY}`]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.getx!==1) throw Error(\"missing key\");",
+    "breaking": true
+  },
+  {
+    "name": "computed-method-key-alias-rename",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const KEY=\"x\"; export class api { [KEY]() {return 1} }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "const ALIAS=\"x\"; export class api { [ALIAS]() {return 1} }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; new api().x();",
+    "breaking": false
+  },
+  {
+    "name": "static-escaped-key-refactor",
+    "runtime": "node",
+    "old": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"\\u0078\"]=1; } }"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "computed-consumer",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export class api { static { this[\"x\"]=1; } }"
+      }
+    },
+    "consumer": "import {api} from \"./index.js\"; if (api.x!==1) throw Error(\"missing x\");",
+    "breaking": false
+  }
+]

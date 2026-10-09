@@ -1,7 +1,7 @@
 //! Recursive descent parser for TypeScript type notation strings.
 //!
 //! Converts raw type strings (from LSP hover responses) into `TypeShape` trees.
-//! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (D-13).
+//! Falls back to `TypeShape::Opaque(raw_string)` on any parse failure.
 
 use crate::types::shape::{
     FieldShape, LiteralKind, ParamShape, PrimitiveKind, TemplatePart, TupleElement, TypeShape,
@@ -14,7 +14,7 @@ const MAX_DEPTH: usize = 128;
 const MAX_STEPS: usize = 8192;
 const MAX_INPUT_BYTES: usize = 256 * 1024;
 
-// WR-05 (Phase 17 review): byte-count constants for keywords the parser advances
+//: byte-count constants for keywords the parser advances
 // past. All matched keywords are pure ASCII, so byte length and char length agree.
 // Using named constants rather than magic literals documents the invariant and
 // makes the intent refactor-safe if someone extends the keyword set later.
@@ -25,8 +25,8 @@ const KW_REST_DOTS_LEN: usize = "...".len();
 
 /// Parse a TypeScript type string (from LSP hover output) into a `TypeShape`.
 ///
-/// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per D-13).
-/// Applies normalization (sorting of union/intersection members) after parsing (D-11).
+/// Falls back to `TypeShape::Opaque(raw_string)` on any parse failure (per ).
+/// Applies normalization (sorting of union/intersection members) after parsing.
 ///
 pub fn parse_type_string(input: &str) -> TypeShape {
     let input = input.trim();
@@ -144,14 +144,14 @@ impl<'a> TypeParser<'a> {
         }
         let base = self.parse_union(depth + 1)?;
         self.skip_whitespace();
-        // Check for conditional type: `T extends U ? Then : Else`
+        // Check for conditional type: `T extends U ? Then: Else`
         if self.peek_str("extends ") || self.peek_str("extends\t") {
             return self.parse_conditional(base, depth + 1);
         }
         Some(base)
     }
 
-    /// Parse the `extends <U> ? <Then> : <Else>` tail of a conditional type.
+    /// Parse the `extends <U> ? <Then>: <Else>` tail of a conditional type.
     /// `check` is the type already parsed before the `extends` keyword.
     fn parse_conditional(&mut self, check: TypeShape, depth: usize) -> Option<TypeShape> {
         if depth >= MAX_DEPTH {
@@ -182,7 +182,7 @@ impl<'a> TypeParser<'a> {
         if depth >= MAX_DEPTH {
             return None;
         }
-        // BEH-06 (Phase 20): accept an optional leading `|` so the
+        // BEH-06: accept an optional leading `|` so the
         // idiomatic multi-line discriminated-union form
         // `type Shape = | { kind: 'a' } | { kind: 'b' };` parses to a
         // `TypeShape::Union`. Without this, the RHS returns None and
@@ -283,7 +283,7 @@ impl<'a> TypeParser<'a> {
                         self.skip_whitespace();
                         let name = self.read_identifier()?;
                         self.skip_whitespace();
-                        // TYPE-02 (Phase 20): optional `extends <type>` constraint.
+                        // TYPE-02: optional `extends <type>` constraint.
                         // The outer `parse_conditional` already consumed its own top-level
                         // `extends` before recursing into parse_primary, so any `extends`
                         // we see here must be the inner infer-scoped constraint.
@@ -337,7 +337,7 @@ impl<'a> TypeParser<'a> {
         self.expect_char('{')?;
         self.skip_whitespace();
 
-        // Check for mapped type: `{ [K in ...]: V }` or `{ readonly [K in ...]: V }`
+        // Check for mapped type: `{ [K in...]: V }` or `{ readonly [K in...]: V }`
         let saved = self.pos;
         let polarity = if matches!(self.peek_char(), Some('-' | '+')) {
             let adds_modifier = self.peek_char() != Some('-');
@@ -499,7 +499,7 @@ impl<'a> TypeParser<'a> {
     }
 
     // -----------------------------------------------------------------------
-    // Tuple type: `[T, U, ...]`
+    // Tuple type: `[T, U,...]`
     // -----------------------------------------------------------------------
 
     fn parse_tuple(&mut self, depth: usize) -> Option<TypeShape> {
@@ -510,10 +510,10 @@ impl<'a> TypeParser<'a> {
         self.skip_whitespace();
         let mut elements: Vec<TupleElement> = Vec::new();
         while self.peek_char() != Some(']') {
-            // REF-10 (Phase 22): recognize per-position label prefix
-            //   `name:`  → labeled element
-            //   `name?:` → labeled optional element
-            //   `...name:` → labeled rest element
+            // REF-10: recognize per-position label prefix
+            //  `name:` → labeled element
+            //  `name?:` → labeled optional element
+            //  `...name:` → labeled rest element
             // Backtrack if the identifier is not followed by `:` (e.g.
             // `Map<string, number>` — `Map` is a type name, not a label).
             let outer_save = self.pos;
@@ -724,7 +724,7 @@ impl<'a> TypeParser<'a> {
     }
 
     // -----------------------------------------------------------------------
-    // Generic type: `Name<T, U>`  (special: Array<T> -> TypeShape::Array)
+    // Generic type: `Name<T, U>` (special: Array<T> -> TypeShape::Array)
     // -----------------------------------------------------------------------
 
     fn parse_generic(&mut self, name: String, depth: usize) -> Option<TypeShape> {
@@ -735,7 +735,7 @@ impl<'a> TypeParser<'a> {
         if name == "Array" && args.len() == 1 {
             return Some(TypeShape::Array(Box::new(args.into_iter().next().unwrap())));
         }
-        // GEN-07 (Phase 20): canonicalize `NoInfer<T>` into a dedicated
+        // GEN-07: canonicalize `NoInfer<T>` into a dedicated
         // wrapper variant so diff engines observe wrapper-vs-unwrapped
         // transitions without string parsing. `NoInfer<T>` is a TS 5.4+
         // utility type; arity > 1 falls through to the generic catch-all
@@ -972,7 +972,7 @@ impl<'a> TypeParser<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// REF-09 (Phase 20): template-literal index-signature helpers
+// REF-09: template-literal index-signature helpers
 // ---------------------------------------------------------------------------
 //
 // These helpers are intentionally NOT wired into `parse_type_string` — they
@@ -981,7 +981,7 @@ impl<'a> TypeParser<'a> {
 // parser path preserves existing LSP hover round-trip behavior and leaves
 // `TypeShape::Template` unproduced from the normal parse flow.
 
-/// REF-09 (Phase 20): parse an index-signature `key_type_text` if it is a
+/// REF-09: parse an index-signature `key_type_text` if it is a
 /// template-literal type like `` `on${string}` ``. Returns `None` for
 /// non-template inputs; caller falls back to the REF-07 string-equality
 /// path. Intentionally NOT wired into `parse_type_string` — existing LSP
@@ -1018,7 +1018,7 @@ pub fn parse_template_literal_type(input: &str) -> Option<Vec<TemplatePart>> {
     Some(parts)
 }
 
-/// REF-09 (Phase 20): pattern-subset direction between two template-literal
+/// REF-09: pattern-subset direction between two template-literal
 /// patterns. Conservative prefix-extension algorithm — any ambiguous case
 /// returns `Unrelated` so the caller can emit a conservative Major finding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1033,7 +1033,7 @@ pub enum PatternDirection {
     Unrelated,
 }
 
-/// REF-09 (Phase 20): compute the pattern-subset relation between two
+/// REF-09: compute the pattern-subset relation between two
 /// template-literal patterns. Concatenates the literal segments of each
 /// side and compares for prefix-extension; placeholder types must agree
 /// structurally (any mismatch -> `Unrelated`).
@@ -1264,7 +1264,7 @@ mod tests {
         );
     }
 
-    // ── REF-10 (Phase 22): labeled-tuple parsing ────────────────────────────
+    // ── REF-10: labeled-tuple parsing ────────────────────────────
 
     #[test]
     fn test_tuple_labeled_basic() {
@@ -1327,7 +1327,7 @@ mod tests {
         }
     }
 
-    /// Pitfall 3 (22-RESEARCH.md): `[Map<string, number>]` must NOT treat
+    /// `[Map<string, number>]` must NOT treat
     /// `Map` as a label. When the parser peeks past `Map` and sees `<` (not
     /// `:`), it must rewind and let the generic machinery consume `Map<...>`.
     #[test]
@@ -1512,13 +1512,13 @@ mod tests {
         }
     }
 
-    /// BEH-06 (Phase 20): `parse_union` must accept an optional leading
+    /// BEH-06: `parse_union` must accept an optional leading
     /// `|` so the idiomatic multi-line discriminated-union form parses
     /// into a `TypeShape::Union` (not `TypeShape::Opaque`). Without this,
     /// BEH-06's discriminated-union detector never sees the Union
     /// because the RHS falls to Opaque.
     #[test]
-    fn beh_06_leading_pipe_multiline_union_parses() {
+    fn leading_pipe_multiline_union_parses() {
         let source = "| { kind: 'circle'; radius: number }\n  | { kind: 'square'; side: number }";
         let result = parse_type_string(source);
         assert!(
@@ -1556,7 +1556,7 @@ mod tests {
     // ─── ROB-05: MAX_DEPTH guard — no stack overflow on adversarial input ───────
 
     #[test]
-    fn rob_05_simple_type_parses_ok() {
+    fn simple_type_parses_ok() {
         let shape = parse_type_string("string");
         assert!(
             matches!(shape, TypeShape::Primitive(_)),
@@ -1566,7 +1566,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_05_deeply_nested_array_returns_opaque_not_stack_overflow() {
+    fn deeply_nested_array_returns_opaque_not_stack_overflow() {
         // 100 levels of Array<Array<...>> should cap to Opaque at MAX_DEPTH=20
         let mut input = String::from("string");
         for _ in 0..100 {
@@ -1578,13 +1578,13 @@ mod tests {
     }
 
     #[test]
-    fn rob_05_parens_depth_exhaustion_no_panic() {
+    fn parens_depth_exhaustion_no_panic() {
         let input = "(".repeat(100) + "string" + &")".repeat(100);
         let shape = parse_type_string(&input);
         let _ = shape; // no panic
     }
 
-    // ─── GAP-16-02: Conditional, mapped, indexed type parsing ─────────────────
+    // ─── Conditional, mapped, indexed type parsing ─────────────────
 
     // Test: basic conditional type
     #[test]
@@ -1628,7 +1628,7 @@ mod tests {
         }
     }
 
-    // Test: nested conditional T extends A ? B extends C ? D : E : F
+    // Test: nested conditional T extends A ? B extends C ? D: E: F
     #[test]
     fn test_conditional_nested() {
         let result = parse_type_string("T extends A ? B extends C ? D : E : F");
@@ -1815,22 +1815,22 @@ mod tests {
         );
     }
 
-    // ─── Phase 20 TYPE-02: `infer U extends C` constraint on inferred type ───
+    // ─── TYPE-02: `infer U extends C` constraint on inferred type ───
 
     // Backward compatibility: `infer U` with no trailing extends still
     // produces the legacy TypeShape::TypeParam("infer U") form so existing
     // consumers/diff engines don't regress.
     #[test]
-    fn type_02_infer_without_extends_backward_compat() {
+    fn infer_without_extends_backward_compat() {
         let shape = parse_type_string("infer U");
         assert_eq!(shape, TypeShape::TypeParam("infer U".to_string()));
     }
 
     // `infer U extends string` should now parse into the dedicated
-    // TypeShape::InferExtends variant (landed by Plan 20-01) whose
+    // TypeShape::InferExtends variant whose
     // constraint is Primitive(String).
     #[test]
-    fn type_02_infer_extends_string_produces_infer_extends_variant() {
+    fn infer_extends_string_produces_infer_extends_variant() {
         let shape = parse_type_string("infer U extends string");
         match shape {
             TypeShape::InferExtends { name, constraint } => {
@@ -1845,7 +1845,7 @@ mod tests {
     // constraint — confirms the parser captures the constraint faithfully
     // rather than hardcoding a specific type.
     #[test]
-    fn type_02_infer_extends_number_produces_infer_extends_variant() {
+    fn infer_extends_number_produces_infer_extends_variant() {
         let shape = parse_type_string("infer U extends number");
         match shape {
             TypeShape::InferExtends { name, constraint } => {
@@ -1856,7 +1856,7 @@ mod tests {
         }
     }
 
-    // ─── GEN-07 (Phase 20): NoInfer<T> wrapper canonicalization ───────────
+    // ─── GEN-07: NoInfer<T> wrapper canonicalization ───────────
     //
     // The parser must recognize `NoInfer<T>` as a dedicated wrapper variant
     // (`TypeShape::NoInferWrap`) rather than the generic catch-all
@@ -1866,7 +1866,7 @@ mod tests {
     // unwrapped transitions without resorting to string comparison.
 
     #[test]
-    fn gen_07_noinfer_of_primitive_produces_noinfer_wrap() {
+    fn noinfer_of_primitive_produces_noinfer_wrap() {
         let shape = parse_type_string("NoInfer<string>");
         match shape {
             TypeShape::NoInferWrap(inner) => {
@@ -1877,7 +1877,7 @@ mod tests {
     }
 
     #[test]
-    fn gen_07_noinfer_of_typeparam_produces_noinfer_wrap() {
+    fn noinfer_of_typeparam_produces_noinfer_wrap() {
         let shape = parse_type_string("NoInfer<T>");
         match shape {
             TypeShape::NoInferWrap(inner) => {
@@ -1888,7 +1888,7 @@ mod tests {
     }
 
     #[test]
-    fn gen_07_noinfer_of_generic_produces_noinfer_wrap_with_generic_inner() {
+    fn noinfer_of_generic_produces_noinfer_wrap_with_generic_inner() {
         let shape = parse_type_string("NoInfer<Foo<string>>");
         match shape {
             TypeShape::NoInferWrap(inner) => match *inner {
@@ -1907,7 +1907,7 @@ mod tests {
     // hands us `NoInfer<X, Y>`, fall through to the generic catch-all
     // rather than panic or canonicalize incorrectly.
     #[test]
-    fn gen_07_noinfer_arity_mismatch_falls_through_to_generic() {
+    fn noinfer_arity_mismatch_falls_through_to_generic() {
         let shape = parse_type_string("NoInfer<string, number>");
         match shape {
             TypeShape::Generic { name, args } => {
@@ -1922,7 +1922,7 @@ mod tests {
     // must remain a `TypeShape::Generic`. The new branch is name-keyed
     // and must not affect surrounding generics.
     #[test]
-    fn gen_07_non_noinfer_generic_unchanged() {
+    fn non_noinfer_generic_unchanged() {
         let shape = parse_type_string("SomethingElse<string>");
         match shape {
             TypeShape::Generic { name, args } => {
@@ -1934,11 +1934,11 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
-    // REF-09 (Phase 20): parse_template_literal_type + compare_template_literal_patterns
+    // REF-09: parse_template_literal_type + compare_template_literal_patterns
     // ---------------------------------------------------------------------
 
     #[test]
-    fn ref_09_parse_template_literal_type_simple() {
+    fn parse_template_literal_type_simple() {
         use super::parse_template_literal_type;
         use crate::types::shape::TemplatePart;
         let parsed = parse_template_literal_type("`on${string}`").expect("should parse");
@@ -1955,7 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_parse_template_literal_type_multi_literal() {
+    fn parse_template_literal_type_multi_literal() {
         use super::parse_template_literal_type;
         use crate::types::shape::TemplatePart;
         let parsed = parse_template_literal_type("`on_${string}_off`").expect("should parse");
@@ -1974,14 +1974,14 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_parse_template_literal_type_non_template_returns_none() {
+    fn parse_template_literal_type_non_template_returns_none() {
         use super::parse_template_literal_type;
         assert!(parse_template_literal_type("string").is_none());
         assert!(parse_template_literal_type("Record<string, number>").is_none());
     }
 
     #[test]
-    fn ref_09_parse_template_literal_type_pure_literal() {
+    fn parse_template_literal_type_pure_literal() {
         use super::parse_template_literal_type;
         use crate::types::shape::TemplatePart;
         let parsed = parse_template_literal_type("`no-placeholder`").expect("should parse");
@@ -1993,7 +1993,7 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_compare_template_literal_patterns_equal() {
+    fn compare_template_literal_patterns_equal() {
         use super::{
             compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
         };
@@ -2006,7 +2006,7 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_compare_template_literal_patterns_narrowing() {
+    fn compare_template_literal_patterns_narrowing() {
         use super::{
             compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
         };
@@ -2020,7 +2020,7 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_compare_template_literal_patterns_widening() {
+    fn compare_template_literal_patterns_widening() {
         use super::{
             compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
         };
@@ -2033,7 +2033,7 @@ mod tests {
     }
 
     #[test]
-    fn ref_09_compare_template_literal_patterns_unrelated() {
+    fn compare_template_literal_patterns_unrelated() {
         use super::{
             compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
         };

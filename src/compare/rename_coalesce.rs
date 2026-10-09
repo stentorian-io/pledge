@@ -1,21 +1,21 @@
-//! IDN-01 (Phase 18): Rename detection via alias-trailer-only signal.
+//! IDN-01: Rename detection via alias-trailer-only signal.
 //!
-//! Per D-05 (strict alias-only): fires ONLY when the new-side source contains
+//! Per (strict alias-only): fires ONLY when the new-side source contains
 //! the transparent-rename pattern `export { NewName as OldName, NewName };`
 //! (alias trailer with back-compat alias AND the plain new-name specifier).
 //! This yields zero false positives by construction.
 //!
-//! Per D-07: detected renames are Minor severity — the back-compat alias
+//! detected renames are Minor severity — the back-compat alias
 //! preserves consumer imports at the old name, so no break occurs.
 //!
-//! Per D-08: coalescing happens WITHIN a single (subpath, condition, space)
+//! coalescing happens WITHIN a single (subpath, condition, space)
 //! bucket. Named exports only — defaults and re-exports stay on the regular
 //! add/remove path.
 //!
-//! Warning 9: suppression of the base `export-removed` / `export-added`
+//! suppression of the base `export-removed` / `export-added`
 //! findings is guarded by explicit rule identity AND structural
 //! (file, line, col) position match against the symbols participating in a
-//! coalesced pair (see WR-01 fix). Future rules with similar message shapes
+//! coalesced pair (see fix). Future rules with similar message shapes
 //! cannot be accidentally swallowed by the filter.
 
 use std::collections::HashSet;
@@ -58,7 +58,7 @@ pub fn coalesce_renames(
     let mut used_new: std::collections::HashSet<ExportKey> = std::collections::HashSet::new();
 
     for old_key in &old_only {
-        // D-08: named exports only. Default exports are positional, not nominal.
+        // named exports only. Default exports are positional, not nominal.
         if old_key.name == "default" {
             continue;
         }
@@ -70,7 +70,7 @@ pub fn coalesce_renames(
             if used_new.contains(*new_key) {
                 continue;
             }
-            // D-08: coalesce only within the same (subpath, condition, space) bucket.
+            // coalesce only within the same (subpath, condition, space) bucket.
             if (old_key.subpath != new_key.subpath)
                 || (old_key.condition != new_key.condition)
                 || (old_key.space != new_key.space)
@@ -107,12 +107,12 @@ pub fn coalesce_renames(
         }
     }
 
-    // WR-01 fix: Structural (file, line, col) HashSet for suppression. Eliminates
+    // fix: Structural (file, line, col) HashSet for suppression. Eliminates
     // the fragile message-substring dependency — a Finding is suppressed iff its
     // exact source position matches that of an `old_sym` (for removals) or an
     // `new_sym` (for additions) participating in a coalesced pair.
     //
-    // Warning 9: still rule-type-guarded. Only `export-removed` and
+    // still rule-type-guarded. Only `export-removed` and
     // `export-added` findings are eligible for suppression by this post-pass.
     let suppress_removed_positions: HashSet<(PathBuf, u32, u32)> = coalesced
         .iter()
@@ -155,11 +155,11 @@ pub fn coalesce_renames(
 }
 
 /// Parse `file` and return true iff it contains BOTH:
-///   1. An aliased specifier `NewName as OldName` (local=new_name, alias=old_name), AND
-///   2. A plain (non-aliased) specifier naming `NewName` in an `export { ... }` clause.
+///  1. An aliased specifier `NewName as OldName` (local=new_name, alias=old_name), AND
+///  2. A plain (non-aliased) specifier naming `NewName` in an `export {... }` clause.
 ///
 /// Returns false on any parse failure, invalid UTF-8, unknown extension, or
-/// missing file — gracefully degrading per Phase 17 key decision.
+/// missing file — gracefully degrading.
 fn source_has_alias_trailer(file: &Path, new_name: &str, old_name: &str) -> bool {
     let Some(lang) = language_for_file(file) else {
         return false;
@@ -408,7 +408,7 @@ export { NewName as OldName, NewName };
     }
 
     // Test 3: alias without back-compat plain specifier → zero coalesce.
-    // D-05 strict requires BOTH `NewName as OldName` AND plain `NewName`.
+    // strict requires BOTH `NewName as OldName` AND plain `NewName`.
     #[test]
     fn test_idn01_alias_without_plain_name_no_coalesce() {
         let dir = TempDir::new().unwrap();
@@ -470,7 +470,7 @@ export { NewName as OldName, NewName };
         );
     }
 
-    // Test 5: default exports are excluded from rename coalescing (D-08).
+    // Test 5: default exports are excluded from rename coalescing.
     #[test]
     fn test_idn01_default_exports_not_coalesced() {
         let dir = TempDir::new().unwrap();
@@ -493,7 +493,7 @@ export { NewName as OldName, NewName };
         );
     }
 
-    // Test 6 (Warning 9): a Finding with a different rule whose message happens
+    // Test 6: a Finding with a different rule whose message happens
     // to mention `OldName` must NOT be suppressed — the rule-type guard
     // `f.rule == "export-removed"` prevents cross-contamination.
     #[test]

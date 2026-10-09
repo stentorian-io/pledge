@@ -58,6 +58,6 @@ directory configuration.
 ## Adding or refreshing a package
 
 Choose a small version change whose compatibility impact can be reviewed. Store
-published tarballs under `tests/fixtures/reference-suite/<key>/{from,to}.tgz`,
+published tarballs under `tests/fixtures/node/reference/<key>/{from,to}.tgz`,
 add the key to the regeneration script and reference harness, then review its
 snapshot and update the table above.

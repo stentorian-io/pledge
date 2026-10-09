@@ -1,9 +1,9 @@
 // Interface member structural diff engine.
 //
-// Implements interface-specific breaking change rules (REQ-14-05):
-//   interface-member-removed: method/property removed from interface (Major)
-//   interface-member-added: required property/method added to interface (Major for implementors)
-//   interface-param-count-changed: method required param count changed (Major)
+// Implements interface-specific breaking change rules:
+// interface-member-removed: method/property removed from interface (Major)
+// interface-member-added: required property/method added to interface (Major for implementors)
+// interface-param-count-changed: method required param count changed (Major)
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -61,7 +61,7 @@ pub fn compare_interface_members(
     // Optional members are Minor (implementors unaffected)
     for (name, new_member) in &new_map {
         if !old_map.contains_key(name) {
-            // Phase 17: use proper is_optional field (replaces type_signature=="optional" stopgap)
+            // use proper is_optional field (replaces type_signature=="optional" stopgap)
             let is_optional = new_member.is_optional;
             findings.push(Finding {
                 severity: if is_optional {
@@ -84,8 +84,8 @@ pub fn compare_interface_members(
     }
 
     // interface-param-count-changed: method param count changed
-    // GAP-16-03: interface-readonly-changed
-    // GAP-16-10: interface-generic-constraint-tightened
+    // interface-readonly-changed
+    // interface-generic-constraint-tightened
     for (name, old_member) in &old_map {
         if let Some(new_member) = new_map.get(name) {
             if matches!(old_member.kind, ClassMemberKind::Method)
@@ -105,7 +105,7 @@ pub fn compare_interface_members(
                 });
             }
 
-            // GAP-16-03: interface property readonly changed
+            // interface property readonly changed
             if matches!(old_member.kind, ClassMemberKind::Property)
                 && old_member.is_readonly != new_member.is_readonly
             {
@@ -127,7 +127,7 @@ pub fn compare_interface_members(
                 });
             }
 
-            // GAP-16-10: interface method generic constraint tightening
+            // interface method generic constraint tightening
             // Heuristic: if method type signatures both exist and differ, and the new
             // signature has a tighter `extends` bound, flag it.
             if matches!(old_member.kind, ClassMemberKind::Method)
@@ -152,7 +152,7 @@ pub fn compare_interface_members(
                 }
             }
 
-            // IFT-01: Interface property optional→required (parity with GAP-16-01 on function params)
+            // IFT-01: Interface property optional→required (parity with on function params)
             // Only applies to Property-Property pairs; Methods/Getters/Setters are not affected.
             if matches!(old_member.kind, ClassMemberKind::Property)
                 && matches!(new_member.kind, ClassMemberKind::Property)
@@ -183,12 +183,12 @@ pub fn compare_interface_members(
 /// Returns false when the constraint is loosened or unchanged (no finding).
 ///
 /// Rules:
-///   - no constraint → constraint added: tightening (true)
-///   - constraint → no constraint: loosening (false)
-///   - identical constraints: no change (false)
-///   - old <: new (old is subtype of new): loosening, new accepts more (false)
-///   - new <: old (new is subtype of old): tightening, new accepts less (true)
-///   - both Opaque or incomparable: conservative — assume tightening (true)
+///  - no constraint → constraint added: tightening (true)
+///  - constraint → no constraint: loosening (false)
+///  - identical constraints: no change (false)
+///  - old <: new (old is subtype of new): loosening, new accepts more (false)
+///  - new <: old (new is subtype of old): tightening, new accepts less (true)
+///  - both Opaque or incomparable: conservative — assume tightening (true)
 fn has_tighter_generic_constraint(old_sig: &str, new_sig: &str) -> bool {
     let (old_c, new_c) = match (
         extract_extends_constraint(old_sig),
@@ -233,7 +233,7 @@ fn extract_extends_constraint(sig: &str) -> Option<String> {
 
 /// Compare index signatures on an interface between old and new versions.
 ///
-/// GAP-16-04: Detects removal of index signatures and value type changes.
+/// Detects removal of index signatures and value type changes.
 /// This is the interface-level equivalent of REF-07 (which handles symbol-level).
 pub fn compare_interface_index_signatures(
     old_sigs: &[IndexSignature],
@@ -245,7 +245,7 @@ pub fn compare_interface_index_signatures(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
 
-    // REF-09 (Phase 20): template-literal index-signature key pattern diff.
+    // REF-09: template-literal index-signature key pattern diff.
     // Runs BEFORE the REF-07-twin string-equality path so its matched-key
     // sets can suppress the "removed" + "added" pair that would otherwise
     // fire for the same pattern transition.
@@ -717,7 +717,7 @@ mod tests {
 
     // ── TLF-01: construct signature removed ──────────────────────────────────
     #[test]
-    fn tlf_01_construct_signature_removed_is_major() {
+    fn construct_signature_removed_is_major() {
         use crate::types::ConstructSignature;
         let old_sigs = vec![ConstructSignature {
             param_count: 1,
@@ -761,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_01_optional_to_required_fires_major() {
+    fn optional_to_required_fires_major() {
         let old = vec![make_interface_property("x", true)];
         let new = vec![make_interface_property("x", false)];
         let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
@@ -790,7 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_01_required_to_optional_no_finding() {
+    fn required_to_optional_no_finding() {
         let old = vec![make_interface_property("x", false)];
         let new = vec![make_interface_property("x", true)];
         let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
@@ -805,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_01_same_optionality_no_finding() {
+    fn same_optionality_no_finding() {
         let old = vec![make_interface_property("x", true)];
         let new = vec![make_interface_property("x", true)];
         let findings = compare_interface_members(&old, &new, "Iface", &file(), 1, 1);
@@ -820,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_01_construct_signature_unchanged_no_finding() {
+    fn construct_signature_unchanged_no_finding() {
         use crate::types::ConstructSignature;
         let sig = ConstructSignature {
             param_count: 1,
@@ -845,7 +845,7 @@ mod tests {
     // ── SEM-01: has_tighter_generic_constraint rewrite ───────────────────────
 
     #[test]
-    fn sem_01_loosening_string_to_string_or_number_no_tightening() {
+    fn loosening_string_to_string_or_number_no_tightening() {
         assert!(
             !has_tighter_generic_constraint("<T extends string>", "<T extends string | number>"),
             "string → string|number is LOOSENING — must return false"
@@ -853,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_01_tightening_string_or_number_to_string() {
+    fn tightening_string_or_number_to_string() {
         assert!(
             has_tighter_generic_constraint("<T extends string | number>", "<T extends string>"),
             "string|number → string is TIGHTENING — must return true"
@@ -861,7 +861,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_01_no_constraint_to_constraint_is_tightening() {
+    fn no_constraint_to_constraint_is_tightening() {
         assert!(
             has_tighter_generic_constraint("<T>", "<T extends string>"),
             "constraint added where none existed — must return true"
@@ -869,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_01_constraint_to_no_constraint_is_loosening() {
+    fn constraint_to_no_constraint_is_loosening() {
         assert!(
             !has_tighter_generic_constraint("<T extends string>", "<T>"),
             "constraint removed — loosening, must return false"
@@ -877,7 +877,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_01_identical_no_finding() {
+    fn identical_no_finding() {
         assert!(
             !has_tighter_generic_constraint("<T extends string>", "<T extends string>"),
             "identical constraints — must return false"

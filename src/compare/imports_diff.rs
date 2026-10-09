@@ -1,13 +1,13 @@
 // Imports map diff: detect breaking changes in package.json `imports` field
-// (EXP-14, Phase 23).
+// (EXP-14, ).
 //
 // Rule family (mirroring exports_diff.rs subpath-* rules):
-//   import-added            (Minor) — new #subpath / null → target
-//   import-removed          (Info) — #subpath disappeared
-//   import-condition-changed (Info) — condition removed; Branch↔Leaf flip;
-//                                       target → null
-//   import-pattern-refined  (Info) — wildcard refinement (#i/* → #i/*.js)
-//   import-reroute          (Info) — Leaf→Leaf target change, both non-null
+// import-added (Minor) — new #subpath / null → target
+// import-removed (Info) — #subpath disappeared
+// import-condition-changed (Info) — condition removed; Branch↔Leaf flip;
+// target → null
+// import-pattern-refined (Info) — wildcard refinement (#i/* → #i/*.js)
+// import-reroute (Info) — Leaf→Leaf target change, both non-null
 //
 // Data model: ImportsMap = BTreeMap<String, SubpathEntry> reusing the
 // ConditionNode + SubpathEntry types from exports_diff.rs. The `imports`
@@ -180,7 +180,7 @@ fn compare_imports_maps(old_map: &ImportsMap, new_map: &ImportsMap) -> Vec<Findi
     let mut matched_old: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let mut matched_new: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-    // Wildcard refinement detection (mirror of GAP-15-08 in exports_diff)
+    // Wildcard refinement detection (mirror of in exports_diff)
     for old_wc in &old_wildcards {
         if new_map.contains_key(old_wc.as_str()) {
             continue;

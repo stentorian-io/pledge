@@ -9,22 +9,22 @@ use supports_color::Stream;
 use crate::discover::resolver::ResolveWarning;
 use crate::types::{Finding, Severity};
 
-/// Returns true if stdout supports ANSI color output (per D-03).
+/// Returns true if stdout supports ANSI color output (per ).
 fn should_use_color() -> bool {
     supports_color::on_cached(Stream::Stdout).is_some()
 }
 
-/// Print all findings in ESLint-style format with a summary line (per OUT-01, D-04).
+/// Print all findings in ESLint-style format with a summary line (per OUT-01, ).
 ///
 /// Warnings are printed to stderr first. If findings is empty, a success
-/// message is printed (per D-02). Otherwise each finding is printed as:
+/// message is printed (per ). Otherwise each finding is printed as:
 ///
-///   file:line:col  severity  message  rule-id
+/// file:line:col severity message rule-id
 ///
 /// followed by a blank line and a summary count line.
 ///
 /// When `degraded` is true, a note is appended to the summary line indicating
-/// that type analysis was unavailable (D-18).
+/// that type analysis was unavailable.
 pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded: bool) {
     let color = should_use_color();
 
@@ -79,7 +79,7 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
 
     println!();
 
-    // Summary line (D-04, OUT-06)
+    // Summary line (OUT-06)
     let major_count = findings
         .iter()
         .filter(|f| f.severity == Severity::Major)
@@ -158,9 +158,9 @@ pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded:
     }
 }
 
-/// Create a progress spinner for slow operations (D-05).
+/// Create a progress spinner for slow operations.
 ///
-/// indicatif automatically suppresses the spinner in non-TTY environments (D-06),
+/// indicatif automatically suppresses the spinner in non-TTY environments,
 /// so no manual TTY check is needed here.
 pub fn create_spinner(msg: &str) -> ProgressBar {
     let spinner = ProgressBar::new_spinner();

@@ -58,19 +58,19 @@ async fn main() {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
-    // Handle --clear-cache before any pipeline work (D-21)
+    // Handle --clear-cache before any pipeline work
     if cli.clear_cache {
         lsp::managed::clear_cache()?;
         println!("Cache cleared.");
         return Ok(RunOutcome::Clean);
     }
 
-    // Validate package directory (D-08)
+    // Validate package directory
     if !cli.path.join("package.json").exists() {
         anyhow::bail!("No package.json found. Run interlint from your package root directory.");
     }
 
-    // Acquire packages with spinner (D-05)
+    // Acquire packages with spinner
     let spinner = report::create_spinner("Acquiring packages...");
     let acquire_result = acquire::acquire_packages(&cli.path).await?;
     spinner.finish_and_clear();
@@ -127,7 +127,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             let (mut old_exports, mut old_warnings) = discover::discover_exports(&previous_root)?;
             spinner.finish_and_clear();
 
-            // Step 2: LSP enrichment (D-07: two servers in parallel)
+            // Step 2: LSP enrichment (two servers in parallel)
             let spinner = report::create_spinner("Resolving types...");
             let enrich_result = tokio::try_join!(
                 enrich_after_preparation(&mut old_exports, &previous_root, old_preparation),
@@ -159,7 +159,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                     .any(|warning| warning.incomplete);
 
             if degraded {
-                // Print prescriptive warning (D-16)
+                // Print prescriptive warning
                 if let lsp::EnrichResult::Degraded(msg) = &old_enrich {
                     eprintln!("warning: {msg}");
                 } else if let lsp::EnrichResult::Degraded(msg) = &new_enrich {
@@ -172,7 +172,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
 
             // Step 3: Compare (type-aware when shapes available, fallback to presence-only)
             //
-            // INF-04 (Phase 22): pass `lsp_was_available = !degraded` so the
+            // INF-04: pass `lsp_was_available = !degraded` so the
             // diff pipeline can choose between Major-verified and
             // Minor-limitation-annotated emission for typeof-import refs.
             let all_warnings: Vec<_> = old_warnings.into_iter().chain(new_warnings).collect();
@@ -184,7 +184,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
                 compare::metadata::compare_metadata(&previous_root, &current_root);
             findings.extend(metadata_findings);
 
-            // Step 3c: Exports map diff comparison (EXP-01..13) — per D-03, orchestrated via compare/mod.rs
+            // Step 3c: Exports map diff comparison (EXP-01..13) — per, orchestrated via compare/mod.rs
             let exports_map_findings =
                 compare::compare_exports_map_diff(&previous_root, &current_root);
             findings.extend(exports_map_findings);
@@ -205,7 +205,7 @@ async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             // Deduplicate findings from multiple analysis passes (BUG 7)
             dedup_findings(&mut findings);
 
-            // Re-sort after merging and dedup (Major first, then Minor, then Patch — D-01)
+            // Re-sort after merging and dedup (Major first, then Minor, then Patch — )
             findings.sort_by(|a, b| a.severity.cmp(&b.severity));
             // ROB-07: Second dedup pass after sort — collapses cross-pass duplicates
             // that the sort may have brought into adjacency.
@@ -245,7 +245,7 @@ mod rob_07_tests {
     }
 
     #[test]
-    fn rob_07_different_message_same_line_preserved() {
+    fn different_message_same_line_preserved() {
         let mut findings = vec![
             make_finding("r", 1, 1, "first"),
             make_finding("r", 1, 1, "second"),
@@ -259,7 +259,7 @@ mod rob_07_tests {
     }
 
     #[test]
-    fn rob_07_identical_fields_deduped() {
+    fn identical_fields_deduped() {
         let mut findings = vec![
             make_finding("r", 1, 1, "same"),
             make_finding("r", 1, 1, "same"),
@@ -273,7 +273,7 @@ mod rob_07_tests {
     }
 
     #[test]
-    fn rob_07_different_col_preserved() {
+    fn different_col_preserved() {
         let mut findings = vec![make_finding("r", 1, 1, "m"), make_finding("r", 1, 5, "m")];
         super::dedup_findings(&mut findings);
         assert_eq!(

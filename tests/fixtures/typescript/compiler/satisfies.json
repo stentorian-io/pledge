@@ -1,0 +1,19 @@
+[
+  {
+    "name": "satisfies-removal-widens-inferred-value",
+    "old": "export const api={value:true} satisfies {value:boolean};",
+    "new": "export const api={value:true};",
+    "consumer": "const value:true=api.value;",
+    "extension": "ts",
+    "breaking": true
+  },
+  {
+    "name": "satisfies-removal-with-identical-type",
+    "old": "export const api={value:1} satisfies {value:number};",
+    "new": "export const api={value:1};",
+    "consumer": "const value:number=api.value;",
+    "extension": "ts",
+    "breaking": false,
+    "forbidden_rule": "type-narrowing-widened"
+  }
+]

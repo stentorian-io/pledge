@@ -3,10 +3,10 @@
 // AST-03: css-custom-property-removed (--var removed — Major)
 // AST-04: css-class-removed (.classname removed — Major)
 //
-// Per D-04: Uses tree-sitter-css grammar for structural parsing.
-// Per D-05: CSS file scope respects package.json style/css field,
-//           falls back to all .css files in packed output.
-// Per D-06: Separate rules for custom properties vs class names.
+// Uses tree-sitter-css grammar for structural parsing.
+// CSS file scope respects package.json style/css field,
+// falls back to all.css files in packed output.
+// Separate rules for custom properties vs class names.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -102,7 +102,7 @@ fn walk_css_node(
 
 /// Discover CSS entry points for a package root.
 ///
-/// Per D-05: Checks `package.json` `"style"` field first, then `"css"` field.
+/// Checks `package.json` `"style"` field first, then `"css"` field.
 /// Falls back to scanning all `.css` files recursively if neither field exists.
 ///
 /// Returns relative paths (relative to `pkg_root`).
@@ -132,7 +132,7 @@ fn discover_css_files(pkg_root: &Path) -> Vec<String> {
         }
     }
 
-    // Fallback: scan all .css files recursively
+    // Fallback: scan all.css files recursively
     let mut files = BTreeSet::new();
     collect_css_files(pkg_root, pkg_root, &mut files);
     files.into_iter().collect()
@@ -382,7 +382,7 @@ mod tests {
         fs::write(old_dir.path().join("a.css"), ".foo { }").unwrap();
         fs::write(old_dir.path().join("b.css"), ".bar { }").unwrap();
 
-        // New: b.css has .bar removed
+        // New: b.css has.bar removed
         fs::write(new_dir.path().join("package.json"), pkg_json).unwrap();
         fs::write(new_dir.path().join("a.css"), ".foo { }").unwrap();
         fs::write(new_dir.path().join("b.css"), "/* empty */").unwrap();

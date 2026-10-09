@@ -1,0 +1,170 @@
+[
+  {
+    "name": "generic-conditional-hidden-branch",
+    "old": "type Result={value:string}; export type api<T> = T extends string ? Result : {other:T};",
+    "new": "type Result={value:number}; export type api<T> = T extends string ? Result : {other:T};",
+    "consumer": "const result: api<string>={value:\"x\"};",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-conditional-parameter-rename",
+    "old": "export type api<T> = T extends string ? {value:T} : never;",
+    "new": "export type api<U> = U extends string ? {value:U} : never;",
+    "consumer": "const result: api<string>={value:\"x\"};",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-mapped-hidden-value",
+    "old": "type Value=string; export type api<T> = {[K in keyof T]: Value};",
+    "new": "type Value=number; export type api<T> = {[K in keyof T]: Value};",
+    "consumer": "const result: api<{a:boolean}>={a:\"x\"};",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-mapped-parameter-rename",
+    "old": "export type api<T> = {[K in keyof T]: T[K]};",
+    "new": "export type api<Model> = {[Key in keyof Model]: Model[Key]};",
+    "consumer": "const result: api<{a:string}>={a:\"x\"};",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-mapped-key-remapping",
+    "old": "export type api<T> = {[K in keyof T as `get${Capitalize<K & string>}`]: T[K]};",
+    "new": "export type api<T> = {[K in keyof T as `read${Capitalize<K & string>}`]: T[K]};",
+    "consumer": "const result: api<{a:string}>={getA:\"x\"};",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-mapped-optional-removal",
+    "old": "export type api<T> = {[K in keyof T]?: T[K]};",
+    "new": "export type api<T> = {[K in keyof T]-?: T[K]};",
+    "consumer": "const result: api<{a?:string}>={};",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-mapped-readonly-addition",
+    "old": "export type api<T> = {-readonly [K in keyof T]: T[K]};",
+    "new": "export type api<T> = {readonly [K in keyof T]: T[K]};",
+    "consumer": "declare const result:api<{readonly a:string}>; result.a=\"x\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-intrinsic-string-change",
+    "old": "export type api<T extends string> = Uppercase<T>;",
+    "new": "export type api<T extends string> = Lowercase<T>;",
+    "consumer": "const result: api<\"name\">=\"NAME\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-intrinsic-parameter-rename",
+    "old": "export type api<T extends string> = Capitalize<T>;",
+    "new": "export type api<Text extends string> = Capitalize<Text>;",
+    "consumer": "const result: api<\"name\">=\"Name\";",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-function-conditional-result",
+    "old": "type Result<T> = T extends string ? {value:string} : {value:number}; export declare function api<T>(input:T): Result<T>;",
+    "new": "type Result<T> = T extends string ? {value:number} : {value:number}; export declare function api<T>(input:T): Result<T>;",
+    "consumer": "const text: string = api(\"x\").value;",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-function-parameter-rename",
+    "old": "export declare function api<T>(value:T):T;",
+    "new": "export declare function api<U>(value:U):U;",
+    "consumer": "const text: string=api(\"x\");",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-conditional-infer-rename",
+    "old": "export type api<T> = T extends (infer U)[] ? U : never;",
+    "new": "export type api<Item> = Item extends (infer Element)[] ? Element : never;",
+    "consumer": "const result: api<string[]>=\"x\";",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-private-constraint",
+    "old": "type Limit={value:string}; export declare function api<T extends Limit>(input:T):T;",
+    "new": "type Limit={value:string;required:number}; export declare function api<T extends Limit>(input:T):T;",
+    "consumer": "api({value:\"x\"});",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-private-default",
+    "old": "type Default=string; export type api<T=Default>=T;",
+    "new": "type Default=number; export type api<T=Default>=T;",
+    "consumer": "const value:api=\"x\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-private-default-object",
+    "old": "type Default={a:string}; export type api<T=Default>=T;",
+    "new": "type Default={a:number}; export type api<T=Default>=T;",
+    "consumer": "const value:api={a:\"x\"};",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "nested-generic-constraint",
+    "old": "type Limit={value:string}; export declare function api(): <T extends Limit>(value:T)=>T;",
+    "new": "type Limit={value:string;required:number}; export declare function api(): <T extends Limit>(value:T)=>T;",
+    "consumer": "api()({value:\"x\"});",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-constraint-alias-refactor",
+    "old": "type Limit={value:string}; export declare function api<T extends Limit>(input:T):T;",
+    "new": "type Options={value:string}; export declare function api<U extends Options>(input:U):U;",
+    "consumer": "api({value:\"x\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-dependent-constraint",
+    "old": "export type api<T extends string,U extends string>=[T,U];",
+    "new": "export type api<T extends string,U extends T>=[T,U];",
+    "consumer": "const value:api<\"x\",\"y\">=[\"x\",\"y\"];",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-swapped-binder-names",
+    "old": "export type api<T,U>=[T,U];",
+    "new": "export type api<U,T>=[U,T];",
+    "consumer": "const value:api<string,number>=[\"x\",1];",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "independent-generic-member-addition",
+    "old": "export declare function api():{z:<T>(value:T)=>T};",
+    "new": "export declare function api():{a:<T>(value:T)=>T;z:<T>(value:T)=>T};",
+    "consumer": "const value:string=api().z(\"x\");",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "generic-default-alias-refactor",
+    "old": "type Default={value:string}; export type api<T=Default>=T;",
+    "new": "type Options={value:string}; export type api<U=Options>=U;",
+    "consumer": "const value:api={value:\"x\"};",
+    "breaking": false,
+    "extension": "ts"
+  }
+]

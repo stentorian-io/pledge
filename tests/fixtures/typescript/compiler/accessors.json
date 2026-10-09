@@ -1,0 +1,82 @@
+[
+  {
+    "name": "instance accessor write type narrows",
+    "extension": "ts",
+    "old": "export class api { get value():number {return 1} set value(input:string|number) {} }",
+    "new": "export class api { get value():number {return 1} set value(input:number) {} }",
+    "consumer": "new api().value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "static accessor write type narrows",
+    "extension": "ts",
+    "old": "export class api { static get value():number {return 1} static set value(input:string|number) {} }",
+    "new": "export class api { static get value():number {return 1} static set value(input:number) {} }",
+    "consumer": "api.value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "returned accessor write type narrows",
+    "extension": "ts",
+    "old": "class Box { get value():number {return 1} set value(input:string|number) {} } export function api(){return new Box()}",
+    "new": "class Box { get value():number {return 1} set value(input:number) {} } export function api(){return new Box()}",
+    "consumer": "api().value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "object accessor write type narrows",
+    "extension": "ts",
+    "old": "export const api = { get value():number {return 1}, set value(input:string|number) {} };",
+    "new": "export const api = { get value():number {return 1}, set value(input:number) {} };",
+    "consumer": "api.value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "interface accessor write type narrows",
+    "extension": "ts",
+    "old": "export interface api { get value():number; set value(input:string|number); }",
+    "new": "export interface api { get value():number; set value(input:number); }",
+    "consumer": "declare const box: api; box.value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "unrelated accessor write type changes",
+    "extension": "ts",
+    "old": "export class api { get value():number {return 1} set value(input:string) {} }",
+    "new": "export class api { get value():number {return 1} set value(input:boolean) {} }",
+    "consumer": "new api().value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "accessor write type widens",
+    "extension": "ts",
+    "old": "export class api { get value():number {return 1} set value(input:number) {} }",
+    "new": "export class api { get value():number {return 1} set value(input:number|string) {} }",
+    "consumer": "new api().value=1;",
+    "breaking": false
+  },
+  {
+    "name": "accessor changes to compatible ordinary property",
+    "extension": "ts",
+    "old": "export const api = { get value():number {return 1}, set value(input:number) {} };",
+    "new": "export const api = { value: 1 };",
+    "consumer": "api.value=1;",
+    "breaking": false
+  },
+  {
+    "name": "instantiated accessor write type narrows",
+    "extension": "ts",
+    "old": "class Box<T> { get value():number {return 1} set value(input:T) {} } export const api = new Box<string|number>();",
+    "new": "class Box<T> { get value():number {return 1} set value(input:T) {} } export const api = new Box<number>();",
+    "consumer": "api.value=\"x\";",
+    "breaking": true
+  },
+  {
+    "name": "nested instantiated accessor write type narrows",
+    "extension": "ts",
+    "old": "class Box<T> { get value():number {return 1} set value(input:{nested:T}) {} } export const api = new Box<string|number>();",
+    "new": "class Box<T> { get value():number {return 1} set value(input:{nested:T}) {} } export const api = new Box<number>();",
+    "consumer": "api.value={nested:\"x\"};",
+    "breaking": true
+  }
+]

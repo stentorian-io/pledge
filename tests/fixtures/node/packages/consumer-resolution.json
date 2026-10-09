@@ -1,0 +1,228 @@
+[
+  {
+    "name": "shared-barrels",
+    "runtime": "node",
+    "consumer": "import {api} from \"review-fixture/b\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "./a": "./a.js",
+          "./b": "./b.js"
+        }
+      },
+      "files": {
+        "a.js": "export * from \"./shared.js\";",
+        "shared.js": "export const api = 1;",
+        "b.js": "export * from \"./shared.js\";"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "./a": "./a.js",
+          "./b": "./b.js"
+        }
+      },
+      "files": {
+        "a.js": "export * from \"./shared.js\";",
+        "shared.js": "export const api = 1;",
+        "b.js": "export {};"
+      }
+    }
+  },
+  {
+    "name": "condition-order",
+    "runtime": "node",
+    "consumer": "import {api} from \"review-fixture\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "node": "./node.js",
+          "default": "./fallback.js"
+        }
+      },
+      "files": {
+        "node.js": "export const api = 1;",
+        "fallback.js": "export {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "default": "./fallback.js",
+          "node": "./node.js"
+        }
+      },
+      "files": {
+        "node.js": "export const api = 1;",
+        "fallback.js": "export {};"
+      }
+    }
+  },
+  {
+    "name": "nested-condition-collision",
+    "runtime": "node",
+    "consumer": "import {api} from \"review-fixture\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "browser": {
+            "import": "./browser.js"
+          },
+          "node": {
+            "import": "./node.js"
+          }
+        }
+      },
+      "files": {
+        "node.js": "export const api = 1;",
+        "browser.js": "export const api = 1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "browser": {
+            "import": "./browser.js"
+          },
+          "node": {
+            "import": "./node.js"
+          }
+        }
+      },
+      "files": {
+        "node.js": "export {};",
+        "browser.js": "export const api = 1;"
+      }
+    }
+  },
+  {
+    "name": "wildcard-nested-path",
+    "runtime": "node",
+    "consumer": "import {api} from \"review-fixture/nested/tool\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "./*": "./dist/*.js"
+        }
+      },
+      "files": {
+        "dist/nested/tool.js": "export const api = 1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": {
+          "./*": "./dist/*.js"
+        }
+      },
+      "files": {
+        "dist/nested/tool.js": "export {};"
+      }
+    }
+  },
+  {
+    "name": "exports-array-shadowing",
+    "runtime": "node",
+    "consumer": "import {api} from \"review-fixture\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": [
+          "./a.js",
+          "./b.js"
+        ]
+      },
+      "files": {
+        "a.js": "export const api = 1;",
+        "b.js": "export {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.ts",
+        "exports": [
+          "./a.js",
+          "./b.js"
+        ]
+      },
+      "files": {
+        "a.js": "export {};",
+        "b.js": "export const api = 1;"
+      }
+    }
+  },
+  {
+    "name": "legacy-deep-import",
+    "runtime": "node",
+    "consumer": "import {api} from \"./lib/extra.js\"; console.log(api);",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.js"
+      },
+      "files": {
+        "index.js": "export const stable = 1;",
+        "lib/extra.js": "export const api = 1;"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "index.js"
+      },
+      "files": {
+        "index.js": "export const stable = 1;",
+        "lib/extra.js": "export {};"
+      }
+    }
+  }
+]

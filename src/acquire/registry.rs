@@ -53,7 +53,7 @@ impl NpmClient {
     ///
     /// Returns `Ok(None)` when the package has never been published (HTTP 404),
     /// which is the first-publish case (PKG-03). All other non-success responses
-    /// are treated as errors with a prescriptive network error message per D-09.
+    /// are treated as errors with a prescriptive network error message.
     pub async fn fetch_package_metadata(
         &self,
         name: &str,
@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_06_under_cap_accumulates() {
+    fn under_cap_accumulates() {
         let chunks = vec![vec![0u8; 100], vec![1u8; 200]];
         let result = accumulate_with_cap(chunks, 1000).unwrap();
         assert_eq!(
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_06_over_cap_bails() {
+    fn over_cap_bails() {
         let chunks = vec![vec![0u8; 600]];
         let result = accumulate_with_cap(chunks, 500);
         assert!(result.is_err(), "ROB-06: over-cap should return Err");

@@ -20,7 +20,7 @@ use crate::types::parser::{
 };
 use std::collections::HashSet;
 
-/// Compare two ExportSymbols for Phase 8 REF rules.
+/// Compare two ExportSymbols for REF rules.
 ///
 /// Checks: overload removal (REF-01), rest param narrowing (REF-02),
 /// type guard widening (REF-03), declaration kind change (REF-04),
@@ -106,7 +106,7 @@ pub fn compare_ref_changes(
     );
 
     // REF-03: type-guard-widened
-    // Per CONTEXT: old had type guard, new does not -> emit type-guard-widened
+    // old had type guard, new does not -> emit type-guard-widened
     if old_sym.type_guard_type.is_some() && new_sym.type_guard_type.is_none() {
         let guard_type = old_sym.type_guard_type.as_deref().unwrap_or("unknown");
         findings.push(Finding {
@@ -131,7 +131,7 @@ pub fn compare_ref_changes(
     // - function -> variable: breaks call signatures if shape differs
     // REF-05 (namespace-to-other) is handled separately below.
     //
-    // Phase 18 D-14: decl_kinds is now Vec<_>. We compare the "primary" kind
+    //: decl_kinds is now Vec<_>. We compare the "primary" kind
     // (first element) for REF-04. The ref-05 check below uses set-membership
     // semantics so hybrids like [Class, Namespace] don't spuriously fire.
     if let (Some(old_kind), Some(new_kind)) =
@@ -164,7 +164,7 @@ pub fn compare_ref_changes(
     }
 
     // REF-05: namespace-to-other
-    // Phase 18 D-14 / D-16: fire when old carries Namespace in decl_kinds AND new
+    //  /: fire when old carries Namespace in decl_kinds AND new
     // carries at least one decl_kind AND none of new's decl_kinds is Namespace.
     // This preserves REF-05 for pure namespace -> other transitions while
     // allowing hybrid class+namespace / function+namespace to suppress REF-05
@@ -189,7 +189,7 @@ pub fn compare_ref_changes(
         }
     }
 
-    // REF-09 (Phase 20): template-literal index-signature key pattern diff.
+    // REF-09: template-literal index-signature key pattern diff.
     // Runs BEFORE the REF-07 string-equality path so its matched-key sets
     // can suppress the REF-07 "removed + added" pair that would otherwise
     // fire for the same pattern transition.
@@ -263,10 +263,10 @@ pub fn compare_ref_changes(
     let _ = &ref09_matched_new;
 
     // REF-08: default-export-changed (kind change only)
-    // Per D-09/D-10: two-tier analysis. Tier 1: kind changed -> always major.
+    // Per /: two-tier analysis. Tier 1: kind changed -> always major.
     // Tier 2: same kind -> delegate to existing diff_types() (handled in compare_exports).
     //
-    // Phase 18 D-14: use primary (first) decl_kind from the Vec.
+    //: use primary (first) decl_kind from the Vec.
     if old_sym.kind == ExportKind::Default {
         if let (Some(old_kind), Some(new_kind)) =
             (old_sym.decl_kinds.first(), new_sym.decl_kinds.first())
@@ -297,20 +297,20 @@ pub fn compare_ref_changes(
     findings
 }
 
-/// REF-09 (Phase 20): detect narrowing/widening transitions between two
+/// REF-09: detect narrowing/widening transitions between two
 /// template-literal index signatures. Called from both `compare_ref_changes`
 /// (type-alias level) and `compare_interface_index_signatures` (interface
 /// level). Returns the set of old/new key-type texts that were matched
 /// (so callers can suppress REF-07 for them) and the findings emitted.
 ///
 /// Algorithm per key_type_text that starts with a backtick:
-///   1. Find the best matching new sig whose key_type_text also starts with
-///      a backtick (bijective pairing by first-come-first-served).
-///   2. Parse both via `parse_template_literal_type`.
-///   3. Compare via `compare_template_literal_patterns`.
-///   4. Emit `index-signature-key-pattern-changed` — Major for Narrowing,
-///      Minor for Widening, conservative Major for Unrelated, none for
-///      Equal.
+///  1. Find the best matching new sig whose key_type_text also starts with
+///     a backtick (bijective pairing by first-come-first-served).
+///  2. Parse both via `parse_template_literal_type`.
+///  3. Compare via `compare_template_literal_patterns`.
+///  4. Emit `index-signature-key-pattern-changed` — Major for Narrowing,
+///     Minor for Widening, conservative Major for Unrelated, none for
+///     Equal.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn diff_template_literal_key_pairs<'a>(
     old_sigs: &'a [IndexSignature],
@@ -380,7 +380,7 @@ pub(crate) fn diff_template_literal_key_pairs<'a>(
                 });
             }
             PatternDirection::Unrelated => {
-                // Conservative Major fallback per RESEARCH §REF-09 Open Question 3.
+                // Conservative Major fallback.
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
@@ -627,7 +627,7 @@ mod tests {
         }
     }
 
-    /// Phase 18: helper for constructing symbols with multi-kind decl_kinds
+    /// helper for constructing symbols with multi-kind decl_kinds
     /// (declaration-merging hybrids like [Class, Namespace]).
     fn make_sym_multi(
         name: &str,
@@ -701,11 +701,11 @@ mod tests {
         assert!(findings.iter().any(|f| f.rule == RULE_NAMESPACE_TO_OTHER));
     }
 
-    // ── Phase 18 Warning 4: REF-05 hybrid + empty-decl_kinds guard ──────────
+    // ── REF-05 hybrid + empty-decl_kinds guard ──────────
 
     #[test]
     fn test_ref05_hybrid_class_namespace_does_not_fire() {
-        // Phase 18 D-14/D-16: class+namespace hybrid in new must NOT fire
+        //  /: class+namespace hybrid in new must NOT fire
         // RULE_NAMESPACE_TO_OTHER — the namespace facet is preserved.
         let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
         let new = make_sym_multi(
@@ -736,8 +736,8 @@ mod tests {
 
     #[test]
     fn test_ref05_empty_new_decl_kinds_does_not_fire() {
-        // Warning 4: empty new.decl_kinds (e.g., re-export with unknown kind) is
-        // the pre-classification gap — pre-Phase-18 this was decl_kind: None and
+        // empty new.decl_kinds (e.g., re-export with unknown kind) is
+        // the pre-classification gap — this was decl_kind: None and
         // REF-05 did NOT fire. Must preserve that semantics.
         let old = make_sym_multi("X", ExportKind::Named, vec![DeclarationKind::Namespace]);
         let new = make_sym_multi("X", ExportKind::Named, Vec::new());
@@ -1025,7 +1025,7 @@ mod tests {
     // ── TLF-03: this-param type changed ──────────────────────────────────────
 
     #[test]
-    fn tlf_03_this_param_changed_fires_major() {
+    fn this_param_changed_fires_major() {
         let findings = compare_this_param(
             Some("HTMLElement"),
             Some("Element"),
@@ -1048,7 +1048,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_03_this_param_removed_fires_major() {
+    fn this_param_removed_fires_major() {
         let findings = compare_this_param(
             Some("HTMLElement"),
             None,
@@ -1070,7 +1070,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_03_this_param_unchanged_no_finding() {
+    fn this_param_unchanged_no_finding() {
         let findings = compare_this_param(
             Some("HTMLElement"),
             Some("HTMLElement"),
@@ -1088,7 +1088,7 @@ mod tests {
     // ── TLF-04: assertion target widened ─────────────────────────────────────
 
     #[test]
-    fn tlf_04_assertion_removed_fires_major() {
+    fn assertion_removed_fires_major() {
         let findings = compare_assertion(
             Some("string"),
             None,
@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_04_assertion_unchanged_no_finding() {
+    fn assertion_unchanged_no_finding() {
         let findings = compare_assertion(
             Some("string"),
             Some("string"),
@@ -1127,7 +1127,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_04_no_assertion_no_finding() {
+    fn no_assertion_no_finding() {
         let findings = compare_assertion(None, None, "fn", &PathBuf::from("test.ts"), 1, 1);
         assert!(
             findings.is_empty(),
@@ -1171,7 +1171,7 @@ mod tests {
     // ── SEM-05: REF-04/REF-08 dedup ──────────────────────────────────────────
 
     #[test]
-    fn sem_05_ref_04_suppressed_when_ref_08_fires() {
+    fn ref_04_suppressed_when_ref_08_fires() {
         // Both REF-04 (decl kind flips) AND REF-08 (default export kind change) would fire.
         // SEM-05: only REF-08 should be emitted for the same symbol.
         let mut old = make_sym("default", ExportKind::Default, Some(DeclarationKind::Class));
@@ -1207,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_05_ref_04_fires_alone_when_ref_08_does_not() {
+    fn ref_04_fires_alone_when_ref_08_does_not() {
         // Only decl kind flip, NOT a default export — REF-04 alone fires normally.
         let old = make_sym(
             "Config",
@@ -1241,7 +1241,7 @@ mod tests {
     // ── SEM-07: Shape-aware overload matching with consumed tracking ──────────
 
     #[test]
-    fn sem_07_unmatched_overload_fires_removed() {
+    fn unmatched_overload_fires_removed() {
         // Old: [fn(string), fn(number)]; New: [fn(string)]
         // fn(number) overload has no match in new → overload-removed
         let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
@@ -1295,7 +1295,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_07_matched_shapes_no_removal() {
+    fn matched_shapes_no_removal() {
         // Both sides: [fn(string)] — same shape, no removal
         let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
         old.overloads = vec![

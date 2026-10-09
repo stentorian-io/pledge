@@ -1,4 +1,4 @@
-//! INF-05 (Phase 19): triple-slash directive diff emission.
+//! INF-05: triple-slash directive diff emission.
 //!
 //! Consumed by `compare_exports_core` in `src/compare/mod.rs`, which
 //! iterates the union of files in `old.directives` and `new.directives`
@@ -15,7 +15,7 @@ use crate::types::{Finding, Severity};
 
 /// Compare two ordered directive lists from the same file pair.
 ///
-/// Diff algorithm (post-research decision D-04, Minor on reorder):
+/// Diff algorithm:
 ///
 /// 0. Fast-path: if `old` and `new` have the same multiset of (name, attrs)
 ///    tuples but a different document order, emit exactly one Minor

@@ -62,7 +62,8 @@ Code should communicate its purpose through names, structure, and flow.
 - Start visibility private; use `pub(crate)` for internal cross-module access.
   Keep `pub` for the library surface needed by callers and integration tests.
 - Name new tests and fixtures by the behavior they exercise, without phase,
-  plan, or task numbers. Existing numbered suites are mapped in `tests/README.md`.
+  plan, or task numbers. Follow the language and behavior boundaries in
+  `tests/README.md`.
 
 ### Comments And Shape
 

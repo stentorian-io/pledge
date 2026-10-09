@@ -1,17 +1,7 @@
-//! Phase 19: Supplementary comment-scan sidecar.
+//! Index comments by source position for release tags and triple-slash directives.
 //!
-//! Tree-sitter cannot see comments as AST nodes in the way consumers need.
-//! This module builds a `CommentIndex` sidecar once per file parse, keyed
-//! by byte offset. Three consumers subscribe to it:
-//!
-//!  1. META-06 release-tag post-process populate at resolver insertion
-//!     (`release_tag_for_export_at`, used by `collect_exports`).
-//!  2. INF-05 triple-slash directive extraction (`extract_directives`,
-//!     body filled by Plan 02).
-//!  3. CLS-10 decorator comment-fallback — NOT IN PHASE 19 SCOPE.
-//!     Decorators are AST nodes in both grammars per RESEARCH §5 and
-//!     CONTEXT.md post-research decisions. Plan 03 reads them via AST
-//!     directly without consulting CommentIndex.
+//! The index is built once per parsed file. Decorators are read directly from
+//! AST nodes and do not use this index.
 
 #![allow(dead_code)]
 
@@ -33,12 +23,9 @@ struct CommentMetadata {
     start_col: u32, // 1-indexed
 }
 
-/// INF-05 record (type shipped in Plan 01; body populated by Plan 02).
-///
 /// Represents a single triple-slash directive (e.g.,
 /// `/// <reference path="./x.ts" />`). The attribute map is a BTreeMap so
-/// attribute ordering is not significant for equality (per post-research
-/// decision D-05).
+/// attribute ordering is not significant for equality.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectiveRecord {
     /// e.g., "reference", "amd-module", "amd-dependency"
@@ -46,11 +33,11 @@ pub struct DirectiveRecord {
     /// Ordered attribute map. BTreeMap for order-independent equality.
     pub attrs: BTreeMap<String, String>,
     /// Byte offset in source — used for ordering directives within a file
-    /// (per post-research decision D-04: directive-reordered at Minor).
+    /// so directive reordering can be reported independently of attribute order.
     pub start_byte: usize,
 }
 
-/// Phase 19 sidecar: enumerates every `(comment)` AST node in the parsed
+/// sidecar: enumerates every `(comment)` AST node in the parsed
 /// tree and indexes them for location-based lookup. Built once per file.
 pub struct CommentIndex<'a> {
     /// Borrowed reference to the tree so we can walk ancestors at lookup time.
@@ -62,8 +49,7 @@ pub struct CommentIndex<'a> {
 
 impl<'a> CommentIndex<'a> {
     /// Build by running `(comment) @c` over an already-parsed tree.
-    /// Returns an empty index if the query fails to compile (should not
-    /// happen with canonical grammars; see RESEARCH §3 verification).
+    /// Returns an empty index if the grammar cannot compile the comment query.
     pub fn build(tree: &'a Tree, source: &'a [u8], lang: SourceLanguage) -> Self {
         let language = get_language(&lang);
         let query = match Query::new(&language, COMMENT_QUERY) {
@@ -98,7 +84,7 @@ impl<'a> CommentIndex<'a> {
         }
     }
 
-    /// Read-only access to the list of collected comments (for Plan 02).
+    /// Read-only access to the list of collected comments (for ).
     pub(crate) fn comments_len(&self) -> usize {
         self.comments.len()
     }
@@ -148,11 +134,11 @@ impl<'a> CommentIndex<'a> {
         None
     }
 
-    /// INF-05 (Plan 02): return ordered directive records for triple-slash
+    /// INF-05: return ordered directive records for triple-slash
     /// comments at the top of the file.
     ///
     /// "Top of file" honors the TypeScript compiler position rule: a
-    /// `/// <X ... />` comment is a directive ONLY if all preceding
+    /// `/// <X... />` comment is a directive ONLY if all preceding
     /// top-level children of the `program` node are comments. The moment a
     /// non-comment statement appears at program level, ALL subsequent
     /// `///` comments are treated as plain comments and produce no
@@ -169,7 +155,7 @@ impl<'a> CommentIndex<'a> {
                 };
                 let trimmed = text.trim_start();
                 if !trimmed.starts_with("///") {
-                    // Plain comment (`// ...` or `/* ... */`) — does not break
+                    // Plain comment (`//...` or `/*... */`) — does not break
                     // the directive window, just skip.
                     continue;
                 }
@@ -198,7 +184,7 @@ impl<'a> CommentIndex<'a> {
 ///
 /// Example body: `<reference path="./x.ts" preserve="true" />`
 ///
-/// Returns `None` if the body does not look like `<name attr="v" .../>`.
+/// Returns `None` if the body does not look like `<name attr="v".../>`.
 /// Malformed attributes (e.g., unterminated quote) cause the directive to
 /// be silently skipped — this matches the TypeScript compiler's permissive
 /// handling and prevents a single malformed comment from producing a
@@ -209,7 +195,7 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
         return None;
     }
     let inner = body.strip_prefix('<')?;
-    // IN-03 (Phase 19 re-review): we terminate on the first `>` in the body,
+    //: we terminate on the first `>` in the body,
     // INCLUDING one that appears inside a quoted attribute value. This
     // matches the TypeScript compiler's tsserver directive parser, which
     // does not treat `>` as special inside quoted regions either. A
@@ -229,7 +215,7 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
     };
     // Validate the name looks like a directive (letters/digits/hyphen).
     //
-    // IN-04 (Phase 19 re-review): we deliberately allow digit-leading and
+    //: we deliberately allow digit-leading and
     // all-hyphen names here (e.g. `1foo`, `---`). Strict XML would require
     // `[A-Za-z_]` as the first char, but tsserver's directive parser is
     // similarly permissive and no real-world triple-slash directive uses
@@ -251,7 +237,7 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
         }
         // Read key: letters/digits/hyphen until '=' or whitespace.
         //
-        // IN-04 (Phase 19 re-review): same permissive-parse rationale as
+        //: same permissive-parse rationale as
         // the name check above — digit-leading and all-hyphen keys are
         // accepted. This is theoretically looser than strict XML attribute
         // syntax, but mirrors tsserver and never fires in practice.
@@ -321,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_06_beta_tag_looked_up_by_location() {
+    fn beta_tag_looked_up_by_location() {
         let source = b"/** @beta */\nexport function previewFoo() {}\n";
         let tree = parse_ts(source);
         let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
@@ -334,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_06_internal_tag_looked_up_by_location() {
+    fn internal_tag_looked_up_by_location() {
         let source = b"/** @internal */\nexport function priv() {}\n";
         let tree = parse_ts(source);
         let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
@@ -345,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_06_deprecated_tag_looked_up_by_location() {
+    fn deprecated_tag_looked_up_by_location() {
         let source = b"/** @deprecated use newFoo */\nexport function oldFoo() {}\n";
         let tree = parse_ts(source);
         let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
@@ -356,7 +342,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_06_no_preceding_comment_returns_none() {
+    fn no_preceding_comment_returns_none() {
         let source = b"export function plain() {}\n";
         let tree = parse_ts(source);
         let idx = CommentIndex::build(&tree, source, SourceLanguage::TypeScript);
@@ -364,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_06_line_comment_form_ignored() {
+    fn line_comment_form_ignored() {
         // TSDoc requires /** — // @deprecated is explicitly NOT a TSDoc tag.
         let source = b"// @deprecated\nexport function foo() {}\n";
         let tree = parse_ts(source);
@@ -373,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_extract_directives_returns_directive_for_top_of_file_form() {
+    fn extract_directives_returns_directive_for_top_of_file_form() {
         let source = b"/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);
         let idx = make_index(source, &tree);
@@ -387,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_directive_after_statement_is_ignored() {
+    fn directive_after_statement_is_ignored() {
         let source = b"export const x = 1;\n/// <reference path=\"./x.ts\" />\n";
         let tree = parse_ts(source);
         let idx = make_index(source, &tree);
@@ -395,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_multiple_top_of_file_directives_ordered_by_byte() {
+    fn multiple_top_of_file_directives_ordered_by_byte() {
         let source = b"/// <reference types=\"node\" />\n/// <reference lib=\"es2017\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);
         let idx = make_index(source, &tree);
@@ -405,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_preserve_attribute_captured() {
+    fn preserve_attribute_captured() {
         let source = b"/// <reference path=\"./x.ts\" preserve=\"true\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);
         let idx = make_index(source, &tree);
@@ -422,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_attribute_order_independent_equality() {
+    fn attribute_order_independent_equality() {
         let src_a = b"/// <amd-dependency path=\"a\" name=\"b\" />\n";
         let src_b = b"/// <amd-dependency name=\"b\" path=\"a\" />\n";
         let tree_a = parse_ts(src_a);
@@ -437,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_leading_plain_comments_do_not_block_directives() {
+    fn leading_plain_comments_do_not_block_directives() {
         // Plain comments before directives are OK. Only non-comment statements block.
         let source =
             b"// preamble\n/* block */\n/// <reference path=\"./x.ts\" />\nexport const x = 1;\n";
@@ -455,15 +441,15 @@ mod tests {
         assert_eq!(idx.comments_len(), 2);
     }
 
-    // IN-02 (Phase 19 re-review): lock in the "silently drop malformed
+    //: lock in the "silently drop malformed
     // directive" contract. `parse_directive_body` is deliberately permissive
-    // — it mirrors the TypeScript compiler's behavior of dropping any
+    // it mirrors the TypeScript compiler's behavior of dropping any
     // directive whose body fails to parse cleanly, rather than emitting a
     // partial record or a noisy warning. These tests fail-fast if a future
     // refactor flips the contract to panic, warn, or produce a partial parse.
 
     #[test]
-    fn inf_05_malformed_directive_unterminated_quote_silently_skipped() {
+    fn malformed_directive_unterminated_quote_silently_skipped() {
         // Opening quote on `path=` is never closed, so the body is malformed.
         // Expected: zero directives extracted, no panic.
         let source = b"/// <reference path=\"unterminated />\nexport const x = 1;\n";
@@ -477,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_malformed_directive_missing_gt_silently_skipped() {
+    fn malformed_directive_missing_gt_silently_skipped() {
         // No closing `>` on the directive body — entire directive is dropped.
         let source = b"/// <reference path=\"./x.ts\" /\nexport const x = 1;\n";
         let tree = parse_ts(source);
@@ -490,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_partial_parse_drops_whole_directive() {
+    fn partial_parse_drops_whole_directive() {
         // `types="node"` parses fine, but the next attribute has no closing
         // quote. Current contract: the entire directive returns None; no
         // partial record with only the first attribute is emitted.
@@ -505,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn inf_05_non_identifier_name_silently_skipped() {
+    fn non_identifier_name_silently_skipped() {
         // Directive name contains a character outside [A-Za-z0-9-]: rejected.
         let source = b"/// <ref.bad path=\"./x.ts\" />\nexport const x = 1;\n";
         let tree = parse_ts(source);

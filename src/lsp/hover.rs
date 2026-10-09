@@ -1,6 +1,5 @@
 //! Hover request batching and type string extraction from LSP hover responses.
 //!
-//! Per decisions D-05, D-06, D-23.
 
 use std::path::Path;
 use std::time::Duration;
@@ -18,7 +17,7 @@ use crate::types::shape::TypeShape;
 use super::client::LspSession;
 use super::LspError;
 
-/// Per-request hover timeout (D-06).
+/// Per-request hover timeout.
 const HOVER_TIMEOUT_SECS: u64 = 5;
 
 /// Input for a hover request for a single symbol.
@@ -93,7 +92,7 @@ fn extract_from_markdown(value: &str) -> Option<String> {
 /// Send a hover request for a single export symbol.
 ///
 /// Returns the raw type string if resolved, None for no hover, or a request error.
-/// Implements per-request timeout of 5 seconds (D-06).
+/// Implements per-request timeout of 5 seconds.
 ///
 /// Source positions are one-based UTF-8 byte offsets, as stored in ExportSymbol.
 /// Requests use zero-based UTF-16 positions, including after non-ASCII text.
@@ -125,7 +124,7 @@ pub async fn hover_symbol(
 
 /// Open a file and send hover requests for all its symbols.
 ///
-/// Per D-23: sends `textDocument/didOpen` first, then hover requests sequentially.
+/// sends `textDocument/didOpen` first, then hover requests sequentially.
 /// Implements retry logic for the first hover (Pitfall 6: tsserver indexing delay).
 ///
 /// Returns a list of (symbol_name, type_signature, overloads) for all resolved symbols.

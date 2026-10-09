@@ -1,0 +1,90 @@
+[
+  {
+    "name": "readonly-mapped-result",
+    "old": "interface Model { value:string } export declare function api():Model;",
+    "new": "interface Model { value:string } export declare function api():Readonly<Model>;",
+    "consumer": "api().value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-parameter-is-compatible",
+    "old": "export declare function api(input: {value:string}): void;",
+    "new": "export declare function api(input: {readonly value:string}): void;",
+    "consumer": "api({value:\"x\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "mutable-result-is-compatible",
+    "old": "export declare function api(): {readonly value:string};",
+    "new": "export declare function api(): {value:string};",
+    "consumer": "const text: string = api().value;",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "nested-readonly-result",
+    "old": "export declare function api(): {nested: {value:string}};",
+    "new": "export declare function api(): {nested: {readonly value:string}};",
+    "consumer": "api().nested.value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "mapped-readonly-removal-is-resolved",
+    "old": "interface Model { readonly value:string } type Mutable<T> = {-readonly [K in keyof T]: T[K]}; export declare function api(): Mutable<Model>;",
+    "new": "interface Model { readonly value:string } export declare function api(): Model;",
+    "consumer": "api().value=\"changed\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-tuple-result",
+    "old": "export declare function api():[string];",
+    "new": "export declare function api():readonly[string];",
+    "consumer": "api()[0]=\"x\";",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-tuple-removal",
+    "old": "export declare function api():readonly[string];",
+    "new": "export declare function api():[string];",
+    "consumer": "const value:string=api()[0];",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-array-input-widening",
+    "old": "export declare function api(value:string[]):void;",
+    "new": "export declare function api(value:readonly string[]):void;",
+    "consumer": "api([\"x\"]);",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-tuple-to-array",
+    "old": "export declare function api(value:readonly[string]):void;",
+    "new": "export declare function api(value:readonly string[]):void;",
+    "consumer": "api([\"x\"]);",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-array-input-narrowing",
+    "old": "export declare function api(value:readonly string[]):void;",
+    "new": "export declare function api(value:string[]):void;",
+    "consumer": "const values:readonly string[]=[\"x\"]; api(values);",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly-array-output",
+    "old": "export declare function api():string[];",
+    "new": "export declare function api():readonly string[];",
+    "consumer": "api().push(\"x\");",
+    "breaking": true,
+    "extension": "ts"
+  }
+]

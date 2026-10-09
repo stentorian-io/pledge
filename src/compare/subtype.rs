@@ -6,9 +6,9 @@
 // - Invariant positions: generic type arguments (conservative for safety)
 //
 // Design decisions:
-// - D-09: full structural subtype checking replacing equality-based comparison
-// - D-10: Opaque/Conditional/Mapped/Indexed/Template are incomparable — return false
-// - D-04: format_type produces human-readable strings for finding messages
+// -: full structural subtype checking replacing equality-based comparison
+// -: Opaque/Conditional/Mapped/Indexed/Template are incomparable — return false
+// -: format_type produces human-readable strings for finding messages
 // - MAX_DEPTH = 20 consistent with type_diff.rs
 
 use crate::types::shape::{LiteralKind, ParamShape, PrimitiveKind, TypeShape};
@@ -33,7 +33,7 @@ pub const RULE_FIELD_TYPE_CHANGED: &str = "field-type-changed";
 // Catch-all for truly incomparable type changes
 pub const RULE_TYPE_INCOMPATIBLE: &str = "type-incompatible";
 
-// Metadata rules (used by metadata.rs in Plan 03)
+// Metadata rules (used by metadata.rs)
 pub const RULE_PEER_DEP_BUMPED: &str = "peer-dep-version-bumped";
 pub const RULE_PEER_DEP_ADDED: &str = "peer-dep-added";
 pub const RULE_PEER_DEP_REMOVED: &str = "peer-dep-removed";
@@ -42,7 +42,7 @@ pub const RULE_ENGINE_ADDED: &str = "engine-added";
 pub const RULE_ENTRY_POINT_CHANGED: &str = "entry-point-changed";
 pub const RULE_MODULE_TYPE_CHANGED: &str = "module-type-changed";
 
-// Identity heuristics rules (IDN-*) — Phase 18
+// Identity heuristics rules (IDN-*) —
 pub const RULE_EXPORT_RENAMED: &str = "export-renamed"; // IDN-01
 pub const RULE_NAMESPACE_MEMBER_MOVED: &str = "namespace-member-moved"; // IDN-02
 
@@ -62,7 +62,7 @@ pub const RULE_PLATFORM_NARROWED: &str = "platform-narrowed";
 pub const RULE_IMPORTABLE_FILE_REMOVED: &str = "importable-file-removed";
 pub const RULE_TYPES_VERSIONS_CHANGED: &str = "types-versions-changed";
 
-// ─── Phase 23: imports-field diff rules (EXP-14) ────────────────────────────
+// ───: imports-field diff rules (EXP-14) ────────────────────────────
 pub const RULE_IMPORT_ADDED: &str = "import-added";
 pub const RULE_IMPORT_REMOVED: &str = "import-removed";
 pub const RULE_IMPORT_CONDITION_CHANGED: &str = "import-condition-changed";
@@ -75,14 +75,14 @@ pub const RULE_IMPORT_REROUTE: &str = "import-reroute";
 /// variance semantics.
 ///
 /// Returns `false` for incomparable types (Opaque, Conditional, Mapped,
-/// Indexed, Template) per D-10 (assume-breaking conservatism).
+/// Indexed, Template) (assume-breaking conservatism).
 ///
 /// Recursion is capped at `MAX_DEPTH = 20` to match type_diff.rs.
 pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
     use PrimitiveKind::*;
     use TypeShape::*;
 
-    // Depth cap: assume not a subtype (D-10: conservative)
+    // Depth cap: assume not a subtype (conservative)
     if depth >= MAX_DEPTH {
         return false;
     }
@@ -184,7 +184,7 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         _ => {}
     }
 
-    // D-10: incomparable types — conservatively assume not a subtype
+    // incomparable types — conservatively assume not a subtype
     match (sub, sup) {
         (Opaque(_), _) | (_, Opaque(_)) => return false,
         (Conditional { .. }, _) | (_, Conditional { .. }) => return false,
@@ -235,7 +235,7 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
 
         // Union sub: every member of sub must be a subtype of sup
         // e.g. (string | number) <: (string | number | boolean) iff
-        //   string <: (string | number | boolean) AND number <: (string | number | boolean)
+        // string <: (string | number | boolean) AND number <: (string | number | boolean)
         (Union(members), _) => members.iter().all(|m| is_subtype_of(m, sup, depth + 1)),
 
         // Union sup: sub must be a subtype of at least one member
@@ -338,7 +338,7 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         // TypeParam: name equality only (no constraint information available)
         (TypeParam(sub_name), TypeParam(sup_name)) => sub_name == sup_name,
 
-        // Catch-all: different variants not handled above — assume not a subtype (D-10)
+        // Catch-all: different variants not handled above — assume not a subtype
         _ => false,
     }
 }
@@ -347,7 +347,7 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
 
 /// Produce a human-readable string representation of a TypeShape.
 ///
-/// Used by D-04: finding messages include old/new type values.
+/// Used by: finding messages include old/new type values.
 fn tuple_is_subtype(
     sub: &[crate::types::shape::TupleElement],
     sup: &[crate::types::shape::TupleElement],
@@ -533,7 +533,7 @@ pub const RULE_GENERIC_CONSTRAINT_TIGHTENED: &str = "generic-constraint-tightene
 pub const RULE_GENERIC_DEFAULT_CHANGED: &str = "generic-default-changed";
 pub const RULE_GENERIC_PARAM_ADDED_WITH_DEFAULT: &str = "generic-param-added-with-default";
 
-// ─── Phase 8: Signature & Type Refinement rules ────────────────────────────
+// ───: Signature & Type Refinement rules ────────────────────────────
 pub const RULE_OVERLOAD_REMOVED: &str = "overload-removed";
 pub const RULE_REST_PARAM_NARROWED: &str = "rest-param-narrowed";
 pub const RULE_TYPE_GUARD_WIDENED: &str = "type-guard-widened";
@@ -561,25 +561,25 @@ pub const RULE_JSON_FIELD_ADDED: &str = "json-field-added";
 /// further nested differences are not reported — mirrors `type-comparison-truncated`.
 pub const RULE_JSON_COMPARISON_TRUNCATED: &str = "json-comparison-truncated";
 
-// Interface structural diff rules (Phase 14 — REQ-14-05)
+// Interface structural diff rules ( — )
 pub const RULE_INTERFACE_MEMBER_REMOVED: &str = "interface-member-removed";
 pub const RULE_INTERFACE_MEMBER_ADDED: &str = "interface-member-added";
 pub const RULE_INTERFACE_PARAM_COUNT_CHANGED: &str = "interface-param-count-changed";
 
-// Generic modifier rules (GAP-15-07)
+// Generic modifier rules
 pub const RULE_CONST_TYPE_PARAM_CHANGED: &str = "const-type-param-changed";
 
-// Interface hardening rules (GAP-16-03, GAP-16-04, GAP-16-10)
+// Interface hardening rules
 pub const RULE_INTERFACE_READONLY_CHANGED: &str = "interface-readonly-changed";
 pub const RULE_INTERFACE_INDEX_SIGNATURE_CHANGED: &str = "interface-index-signature-changed";
 pub const RULE_INTERFACE_GENERIC_CONSTRAINT_TIGHTENED: &str =
     "interface-generic-constraint-tightened";
 
-// ─── Phase 17: Bundler CJS coverage + chunk path normalization ─────────────
+// ───: Bundler CJS coverage + chunk path normalization ─────────────
 pub const RULE_CJS_BUNDLER_EXPORT_DETECTED: &str = "cjs-bundler-export-detected";
 pub const RULE_CHUNK_PATH_NORMALIZED: &str = "chunk-path-normalized";
 
-// ─── Phase 17: TLF — TypeScript language feature rules ──────────────────────
+// ───: TLF — TypeScript language feature rules ──────────────────────
 pub const RULE_CONSTRUCT_SIGNATURE_REMOVED: &str = "construct-signature-removed"; // TLF-01
 pub const RULE_THIS_PARAM_CHANGED: &str = "this-param-changed"; // TLF-03
 pub const RULE_ASSERTION_WIDENED: &str = "assertion-widened"; // TLF-04
@@ -587,12 +587,12 @@ pub const RULE_GENERIC_VARIANCE_CHANGED: &str = "generic-variance-changed"; // T
 pub const RULE_CLASS_ACCESSOR_CHANGED: &str = "class-accessor-changed"; // TLF-06
 pub const RULE_TYPE_ONLY_REEXPORT_CHANGED: &str = "type-only-reexport-changed"; // TLF-07
 
-// ─── Phase 17: IFT — Interface/type diff symmetry ────────────────────────────
+// ───: IFT — Interface/type diff symmetry ────────────────────────────
 pub const RULE_INTERFACE_PROPERTY_MADE_REQUIRED: &str = "interface-property-made-required"; // IFT-01
 pub const RULE_TYPE_ALIAS_READONLY_CHANGED: &str = "type-alias-readonly-changed"; // IFT-02
 pub const RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED: &str = "constructor-param-made-required"; // IFT-03
 
-// ─── Phase 17: META — Metadata polish ──────────────────────────────────────
+// ───: META — Metadata polish ──────────────────────────────────────
 pub const RULE_SIDE_EFFECTS_WIDENED: &str = "side-effects-widened"; // META-01
 pub const RULE_PEER_DEP_OPTIONAL_REMOVED: &str = "peer-dep-optional-removed"; // META-02
 pub const RULE_EXPORT_DEPRECATED: &str = "export-deprecated"; // META-04
@@ -600,18 +600,18 @@ pub const RULE_BARREL_UNRESOLVABLE: &str = "barrel-unresolvable"; // META-05
 pub const RULE_AUGMENT_GLOBAL_CHANGED: &str = "augment-global-changed"; // META-03 (global)
 pub const RULE_AUGMENT_MODULE_CHANGED: &str = "augment-module-changed"; // META-03 (module)
 
-// ─── Phase 19 INF-05: triple-slash directive diff rules ───────────────────
+// ─── INF-05: triple-slash directive diff rules ───────────────────
 pub const RULE_DIRECTIVE_ADDED: &str = "directive-added"; // INF-05 Major
 pub const RULE_DIRECTIVE_REMOVED: &str = "directive-removed"; // INF-05 Major
 pub const RULE_DIRECTIVE_CHANGED: &str = "directive-changed"; // INF-05 Major
-pub const RULE_DIRECTIVE_REORDERED: &str = "directive-reordered"; // INF-05 Minor (post-research decision D-04)
+pub const RULE_DIRECTIVE_REORDERED: &str = "directive-reordered"; // INF-05 Minor
 
-// ─── Phase 19 CLS-10: stage-3 decorator diff rules ────────────────────────
+// ─── CLS-10: stage-3 decorator diff rules ────────────────────────
 pub const RULE_DECORATOR_ADDED: &str = "decorator-added"; // CLS-10 Major
 pub const RULE_DECORATOR_REMOVED: &str = "decorator-removed"; // CLS-10 Major
 pub const RULE_DECORATOR_ARGUMENTS_CHANGED: &str = "decorator-arguments-changed"; // CLS-10 Major
 
-// ─── Phase 20: TS type-system features ──────────────────────────────────────
+// ───: TS type-system features ──────────────────────────────────────
 pub const RULE_TYPE_NARROWING_WIDENED: &str = "type-narrowing-widened"; // TYPE-01 Minor
 pub const RULE_INFER_EXTENDS_CONSTRAINT_CHANGED: &str = "infer-extends-constraint-changed"; // TYPE-02 Major
 pub const RULE_GENERIC_INFERENCE_CONSTRAINT_ADDED: &str = "generic-inference-constraint-added";
@@ -619,31 +619,31 @@ pub const RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED: &str = "generic-inference-c
 pub const RULE_UNION_VARIANT_ADDED: &str = "union-variant-added"; // BEH-06 Warning
 pub const RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED: &str = "index-signature-key-pattern-changed"; // REF-09 Major (narrowing) / Minor (widening)
 
-// ─── Phase 21: class-surface completion ─────────────────────────────────────
+// ───: class-surface completion ─────────────────────────────────────
 pub const RULE_CLASS_FIELD_MADE_PRIVATE: &str = "class-field-made-private"; // CLS-11 Major
 pub const RULE_CLASS_FIELD_MADE_PUBLIC: &str = "class-field-made-public"; // CLS-11 Minor
 
-// ─── Phase 22: LSP-gated structural identity ───────────────────────────────
+// ───: LSP-gated structural identity ───────────────────────────────
 pub const RULE_TUPLE_LABEL_RENAMED: &str = "tuple-label-renamed"; // REF-10 Minor
 pub const RULE_TUPLE_LABEL_REORDERED: &str = "tuple-label-reordered"; // REF-10 Major
 pub const RULE_TUPLE_LABEL_DROPPED: &str = "tuple-label-dropped"; // REF-10 Major
-pub const RULE_TUPLE_LABEL_ADDED: &str = "tuple-label-added"; // REF-10 Minor (CONTEXT D-08: locked Minor for v0.3)
-pub const RULE_TYPE_REFERENCE_REMOVED: &str = "type-reference-removed"; // INF-04 Major (used by Plan 22-04)
+pub const RULE_TUPLE_LABEL_ADDED: &str = "tuple-label-added"; // REF-10 Minor
+pub const RULE_TYPE_REFERENCE_REMOVED: &str = "type-reference-removed"; // INF-04 Major
 
-// ─── Phase 25 DOC-01: limitation rule-IDs (Severity::Info) ───────────────────
-pub const RULE_LIMITATION_LSP_REQUIRED: &str = "limitation: lsp-required"; // INF-04 Phase 22 (existing substring)
-pub const RULE_LIMITATION_EXTERNAL_TYPE_REFERENCE: &str = "limitation: external-type-reference"; // INF-04 Phase 22 (pre-approved, not yet emitted)
-pub const RULE_LIMITATION_NOINFER_VIA_LOCAL_ALIAS: &str = "limitation: noinfer-via-local-alias"; // GEN-07 Phase 20 (doc-only)
+// ─── DOC-01: limitation rule-IDs (Severity::Info) ───────────────────
+pub const RULE_LIMITATION_LSP_REQUIRED: &str = "limitation: lsp-required"; // INF-04  (existing substring)
+pub const RULE_LIMITATION_EXTERNAL_TYPE_REFERENCE: &str = "limitation: external-type-reference"; // INF-04  (pre-approved, not yet emitted)
+pub const RULE_LIMITATION_NOINFER_VIA_LOCAL_ALIAS: &str = "limitation: noinfer-via-local-alias"; // GEN-07  (doc-only)
 pub const RULE_LIMITATION_SATISFIES_NARROWED: &str =
-    "limitation: satisfies-narrowed-type-not-verified"; // TYPE-01 Phase 20 (existing substring)
+    "limitation: satisfies-narrowed-type-not-verified"; // TYPE-01  (existing substring)
 pub const RULE_LIMITATION_SYMBOL_FOR_REGISTRY: &str =
-    "limitation: symbol-for-registry-key-not-tracked"; // ECF-13 Phase 22 (pre-approved, not yet emitted)
-pub const RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY: &str = "limitation: dynamic-static-member-key"; // CLS-12 Phase 21 (existing substring)
-pub const RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS: &str = "limitation: proxy-dispatched-exports"; // DOC-01 Phase 25 (new)
+    "limitation: symbol-for-registry-key-not-tracked"; // ECF-13  (pre-approved, not yet emitted)
+pub const RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY: &str = "limitation: dynamic-static-member-key"; // CLS-12  (existing substring)
+pub const RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS: &str = "limitation: proxy-dispatched-exports"; // DOC-01  (new)
 pub const RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT: &str =
-    "limitation: decorator-runtime-effect-opaque"; // DOC-01 Phase 25 (new)
+    "limitation: decorator-runtime-effect-opaque"; // DOC-01  (new)
 pub const RULE_LIMITATION_PRIVATE_BRAND_ACCESS: &str =
-    "limitation: private-brand-access-not-checkable"; // DOC-01 Phase 25 (new)
+    "limitation: private-brand-access-not-checkable"; // DOC-01  (new)
 
 // ─── Unit tests ───────────────────────────────────────────────────────────────
 
@@ -753,7 +753,7 @@ mod tests {
         assert!(!sub(&string(), &never), "string is NOT <: never");
     }
 
-    // ── 7. Opaque assume-breaking (D-10) ──────────────────────────────────────
+    // ── 7. Opaque assume-breaking ──────────────────────────────────────
 
     #[test]
     fn test_opaque_assume_breaking() {
@@ -1102,7 +1102,7 @@ mod tests {
         );
     }
 
-    /// REF-10 (Phase 22): labels are nominal metadata. Structural subtype
+    /// REF-10: labels are nominal metadata. Structural subtype
     /// must ignore them — `[a: number]` is both ways a subtype of `[number]`.
     #[test]
     fn test_tuple_subtype_label_blind() {
@@ -1129,7 +1129,7 @@ mod tests {
         );
     }
 
-    // ── 20. Conditional/Mapped/Indexed/Template return false (D-10) ───────────
+    // ── 20. Conditional/Mapped/Indexed/Template return false ───────────
 
     #[test]
     fn test_incomparable_types_return_false() {
@@ -1230,7 +1230,7 @@ mod tests {
         assert_eq!(format_type(&tuple), "[string, number]");
     }
 
-    /// REF-10 (Phase 22): `format_type` must render labeled tuple elements
+    /// REF-10: `format_type` must render labeled tuple elements
     /// with the label prefix and the optional/rest markers.
     #[test]
     fn test_format_type_tuple_labeled() {
@@ -1286,9 +1286,9 @@ mod tests {
         assert_eq!(format_type(&gen), "Promise<string>");
     }
 
-    // ── Phase 17: TLF rule constant values ───────────────────────────────────
+    // ──: TLF rule constant values ───────────────────────────────────
     #[test]
-    fn phase17_tlf_rule_constant_values() {
+    fn language_feature_rule_identifiers() {
         assert_eq!(
             RULE_CONSTRUCT_SIGNATURE_REMOVED,
             "construct-signature-removed"
@@ -1303,9 +1303,9 @@ mod tests {
         );
     }
 
-    // ── Phase 17: BUN/CHUNK rule constant values ─────────────────────────────
+    // ──: BUN/CHUNK rule constant values ─────────────────────────────
     #[test]
-    fn phase17_bun_rule_constant_values() {
+    fn bundler_rule_identifiers() {
         assert_eq!(
             RULE_CJS_BUNDLER_EXPORT_DETECTED,
             "cjs-bundler-export-detected"
@@ -1313,9 +1313,9 @@ mod tests {
         assert_eq!(RULE_CHUNK_PATH_NORMALIZED, "chunk-path-normalized");
     }
 
-    // ── Phase 17: IFT rule constant values ───────────────────────────────────
+    // ──: IFT rule constant values ───────────────────────────────────
     #[test]
-    fn phase17_ift_rule_constant_values() {
+    fn interface_rule_identifiers() {
         assert_eq!(
             RULE_INTERFACE_PROPERTY_MADE_REQUIRED,
             "interface-property-made-required"
@@ -1330,9 +1330,9 @@ mod tests {
         );
     }
 
-    // ── Phase 17: META rule constant values ──────────────────────────────────
+    // ──: META rule constant values ──────────────────────────────────
     #[test]
-    fn phase17_meta_rule_constant_values() {
+    fn metadata_rule_identifiers() {
         assert_eq!(RULE_SIDE_EFFECTS_WIDENED, "side-effects-widened");
         assert_eq!(RULE_PEER_DEP_OPTIONAL_REMOVED, "peer-dep-optional-removed");
         assert_eq!(RULE_EXPORT_DEPRECATED, "export-deprecated");
@@ -1341,9 +1341,9 @@ mod tests {
         assert_eq!(RULE_AUGMENT_MODULE_CHANGED, "augment-module-changed");
     }
 
-    // ── Phase 20: TS type-system features rule constant values ───────────────
+    // ──: TS type-system features rule constant values ───────────────
     #[test]
-    fn phase20_type_system_rule_constant_values() {
+    fn type_system_rule_identifiers() {
         assert_eq!(RULE_TYPE_NARROWING_WIDENED, "type-narrowing-widened");
         assert_eq!(
             RULE_INFER_EXTENDS_CONSTRAINT_CHANGED,
@@ -1360,16 +1360,16 @@ mod tests {
         );
     }
 
-    // ── Phase 21: class-surface completion rule constant values ──────────────
+    // ──: class-surface completion rule constant values ──────────────
     #[test]
-    fn phase21_class_surface_rule_constant_values() {
+    fn class_surface_rule_identifiers() {
         assert_eq!(RULE_CLASS_FIELD_MADE_PRIVATE, "class-field-made-private");
         assert_eq!(RULE_CLASS_FIELD_MADE_PUBLIC, "class-field-made-public");
     }
 
-    // ── Phase 23: imports-field diff rule constant values ────────────────────
+    // ──: imports-field diff rule constant values ────────────────────
     #[test]
-    fn phase23_import_rule_constant_values() {
+    fn package_import_rule_identifiers() {
         assert_eq!(RULE_IMPORT_ADDED, "import-added");
         assert_eq!(RULE_IMPORT_REMOVED, "import-removed");
         assert_eq!(RULE_IMPORT_CONDITION_CHANGED, "import-condition-changed");

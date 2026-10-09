@@ -4,9 +4,9 @@
 // AST-02: json-required-field-added (added key in JSON Schema `required` array — Major)
 // AST-06: json-field-added (added key, not in `required` — Minor)
 //
-// Per D-01: All shipped .json files are diffed except package.json.
-// Per D-02: Recursive key-by-key diff using serde_json::Value.
-// Per D-03: JSON Schema `required` array detection for AST-02.
+// All shipped.json files are diffed except package.json.
+// Recursive key-by-key diff using serde_json::Value.
+// JSON Schema `required` array detection for AST-02.
 
 use super::subtype::{
     RULE_JSON_COMPARISON_TRUNCATED, RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED,
@@ -21,7 +21,7 @@ const MAX_DEPTH: usize = 20;
 
 /// Compare JSON files between old and new package roots (AST-01, AST-02, AST-06).
 ///
-/// Scans both roots for .json files, excludes package.json, and diffs files
+/// Scans both roots for.json files, excludes package.json, and diffs files
 /// present in both versions key-by-key.
 pub fn compare_json_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let mut old_files = BTreeSet::new();
@@ -34,7 +34,7 @@ pub fn compare_json_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     // Only diff files present in both versions.
     // Files in old but not new are handled by asset_diff.rs (no duplicate findings).
     for rel_path in old_files.intersection(&new_files) {
-        // Skip package.json — already handled by metadata.rs (D-01)
+        // Skip package.json — already handled by metadata.rs
         if rel_path == "package.json" {
             continue;
         }
@@ -66,7 +66,7 @@ pub fn compare_json_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     findings
 }
 
-/// Recursively scan a directory for .json files, collecting relative paths.
+/// Recursively scan a directory for.json files, collecting relative paths.
 ///
 /// Skips dotfiles, node_modules/, and non-.json files.
 fn collect_json_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
@@ -117,7 +117,7 @@ fn diff_json_values(
     depth: usize,
 ) {
     if depth >= MAX_DEPTH {
-        // WR-02 (Phase 17 review): mirror type_diff.rs and emit a Patch-severity
+        //: mirror type_diff.rs and emit a Patch-severity
         // finding so consumers see a clear signal that analysis was incomplete at
         // MAX_DEPTH rather than a silent return.
         findings.push(json_finding(
@@ -131,7 +131,7 @@ fn diff_json_values(
 
     match (old, new) {
         (Value::Object(old_map), Value::Object(new_map)) => {
-            // Collect required keys from the new schema's `required` array (D-03)
+            // Collect required keys from the new schema's `required` array
             let required = extract_required_array(new_map);
 
             // Keys removed: old has, new doesn't
@@ -185,7 +185,7 @@ fn diff_json_values(
             }
         }
 
-        // Type change: discriminant differs — treat as removal (D-02)
+        // Type change: discriminant differs — treat as removal
         (old_val, new_val)
             if std::mem::discriminant(old_val) != std::mem::discriminant(new_val) =>
         {
@@ -380,7 +380,7 @@ mod tests {
         let mut findings = Vec::new();
         // This should complete without stack overflow
         diff_json_values(&old, &old, "", "deep.json", &mut findings, 0);
-        // Per WR-02, a truncation finding is expected when recursion crosses MAX_DEPTH.
+        // Per, a truncation finding is expected when recursion crosses MAX_DEPTH.
         // Identical subtrees still trigger it because the cap fires before per-key
         // comparison decides whether there are real differences.
         assert!(
@@ -392,8 +392,8 @@ mod tests {
     }
 
     #[test]
-    fn wr_02_truncation_finding_emitted_for_deep_tree() {
-        // WR-02 (Phase 17 review): pathologically deep JSON schemas must produce
+    fn truncation_finding_emitted_for_deep_tree() {
+        //: pathologically deep JSON schemas must produce
         // a Patch-severity truncation finding, matching type_diff.rs. Silent depth
         // capping meant users never saw that analysis was incomplete.
         let mut old = serde_json::json!({"leaf": "old"});

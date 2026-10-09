@@ -34,7 +34,7 @@ pub enum ExportKind {
 
 /// Syntactic form of a declaration — what it IS, not how it's exported.
 /// Orthogonal to ExportKind (Named|Default) which tracks the export mechanism.
-/// Per D-03/D-04.
+/// Per /.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DeclarationKind {
@@ -72,16 +72,15 @@ pub struct ExportSymbol {
     pub line: u32,
     pub col: u32,
     pub type_signature: Option<String>,
-    pub overloads: Vec<shape::TypeShape>, // replaces type_shape per D-06
-    pub decl_kinds: Vec<DeclarationKind>, // D-14 (Phase 18): Vec preserves declaration-merging hybrids like [Class, Namespace]
+    pub overloads: Vec<shape::TypeShape>, // All callable overloads.
+    pub decl_kinds: Vec<DeclarationKind>, // Preserves declaration-merging hybrids like [Class, Namespace].
     pub type_guard_type: Option<String>,  // for REF-03 — guarded type name
     pub is_async: bool,                   // for BEH-01/BEH-02 — async detection
     pub is_generator: bool,               // for BEH-03 — generator detection
-    pub is_reexport: bool,                // for GAP-15-05 — tracks external re-export entries
-    // Phase 17 fields:
-    pub is_type_only: bool,              // TLF-07 — export type * vs export *
-    pub release_tag: Option<ReleaseTag>, // META-04 — TSDoc release tag (populated in Plan 17-05)
-    /// TYPE-01 (Phase 20): captured `satisfies T` form of the exported value.
+    pub is_reexport: bool,                // for tracks external re-export entries
+    pub is_type_only: bool,               // TLF-07 — export type * vs export *
+    pub release_tag: Option<ReleaseTag>,  // META-04 — TSDoc release tag.
+    /// TYPE-01: captured `satisfies T` form of the exported value.
     /// Populated during the resolver post-parse populate pass from
     /// `extract_satisfies_types`; LSP hover enrichment fills the optional
     /// `narrowed` slot inside. `None` when the export has no `satisfies`
@@ -89,28 +88,27 @@ pub struct ExportSymbol {
     /// `type_diff.rs::diff_satisfies_types`; transition from Some→None
     /// fires Minor `type-narrowing-widened`.
     pub satisfies_type: Option<shape::TypeShape>,
-    /// ARCH-02 (Phase 18): compound-component members attached via
+    /// ARCH-02: compound-component members attached via
     /// `Target.Member = X` or `Object.assign(Target, { Member: X })` patterns.
     /// Populated during the compound-assignment second pass in `parse_exports`
-    /// (D-16 conservative: only when the target identifier is itself an exported
+    /// (conservative: only when the target identifier is itself an exported
     /// symbol in the same file).
     pub compound_members: Vec<String>,
-    /// INF-04 (Phase 22): `typeof import('./y').Z` references discovered in this
+    /// INF-04: `typeof import('./y').Z` references discovered in this
     /// symbol's type position. Populated by `extract_typeof_import_refs` in the
     /// resolver's post-parse populate phase (mirrors META-06 release-tag populate
-    /// at resolver.rs:423-448 and Phase 20's satisfies_type sidecar at line 90).
+    /// at resolver.rs:423-448 and satisfies_type sidecar at line 90).
     ///
     /// Consumed by the diff pipeline in type_diff.rs::diff_typeof_import_refs:
-    ///   - LSP-available path: each ref resolved via textDocument/definition
-    ///     (see CONTEXT.md D-05 kickoff spike for method choice); if the
-    ///     resolved symbol is absent from the new-version ExportMap, fires
-    ///     Major `type-reference-removed`.
-    ///   - Degraded path: finding message embeds `(limitation: lsp-required)`.
+    ///  - LSP-available path: each ref is resolved via textDocument/definition.
+    ///    If the resolved symbol is absent from the new-version ExportMap, fires
+    ///    Major `type-reference-removed`.
+    ///  - Degraded path: finding message embeds `(limitation: lsp-required)`.
     ///
     /// Empty `Vec` is the default — populated only when the type RHS contains
     /// `typeof import(...)` or `import(...)` member-access forms.
     pub typeof_import_refs: Vec<TypeofImportRef>,
-    /// DOC-01 (Phase 25): true when this ExportSymbol was synthesized from a
+    /// DOC-01: true when this ExportSymbol was synthesized from a
     /// `module.exports = new Proxy(...)` or `module.exports = Reflect.construct(...)`
     /// RHS. Forwarded from RawExport.is_proxy_dispatched by the resolver.
     /// The comparator uses this flag to emit a paired Severity::Info finding
@@ -120,7 +118,7 @@ pub struct ExportSymbol {
     pub local_name: Option<String>,
 }
 
-/// INF-04 (Phase 22): a single `typeof import('./x').Y` or `import('./x').Y`
+/// INF-04: a single `typeof import('./x').Y` or `import('./x').Y`
 /// type reference captured during parse. Positions are 1-indexed per the
 /// project's ExportSymbol convention; the LSP call site adjusts to 0-indexed.
 #[allow(dead_code)]
@@ -136,11 +134,11 @@ pub struct TypeofImportRef {
     pub property_col: u32,
 }
 
-/// D-03 (Phase 18): SymbolSpace is a first-class key dimension — `export type Foo` and
+///: SymbolSpace is a first-class key dimension — `export type Foo` and
 /// `export const Foo` get distinct map entries and diff independently against
 /// their own space.
 ///
-/// Primary-assignment convention (per Phase 18 Research Open Q2):
+/// Primary-assignment convention:
 /// - `interface` / `type alias` / `export type { X }` -> `SymbolSpace::Type`
 /// - `const` / `let` / `var` / `function` / `default export` / `class` / `enum` -> `SymbolSpace::Value`
 /// - `namespace` -> `SymbolSpace::Namespace`
@@ -158,15 +156,15 @@ pub enum SymbolSpace {
     Namespace,
 }
 
-/// D-01 (Phase 18): Composite key for ExportMap, preserving multi-subpath/condition/space identity.
+///: Composite key for ExportMap, preserving multi-subpath/condition/space identity.
 ///
 /// Derived Hash/Eq means field-wise hashing of the composite — no manual impl needed.
-/// - `subpath`: canonical `"."` for root (D-02). Fallback entry points (main/module/
+/// - `subpath`: canonical `"."` for root. Fallback entry points (main/module/
 ///   types/typings/browser) all map to `"."`.
 /// - `condition`: `None` for fallback entry points; `Some("import"/"require"/"types"/...)`
 ///   for conditional-export keys.
-/// - `space`: see SymbolSpace (D-03).
-/// - `name`: the exported symbol name, unchanged from the pre-Phase-18 flat key.
+/// - `space`: see SymbolSpace.
+/// - `name`: the exported symbol name, unchanged from the flat key.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ExportKey {
@@ -178,7 +176,7 @@ pub struct ExportKey {
 
 impl ExportKey {
     /// Root-subpath + no-condition + Value-space constructor — the common case
-    /// for tests and for fallback entry-point insertions. Per D-02 + D-03.
+    /// for tests and for fallback entry-point insertions. Per +.
     #[allow(dead_code)]
     pub fn new_root_value(name: &str) -> Self {
         ExportKey {
@@ -202,10 +200,10 @@ impl ExportKey {
     }
 }
 
-/// INF-05 (Phase 19): primary export symbol map plus a per-source-file
+/// INF-05: primary export symbol map plus a per-source-file
 /// triple-slash directive sidecar.
 ///
-/// Internally a `HashMap<ExportKey, ExportSymbol>` (preserved from pre-Phase-19
+/// Internally a `HashMap<ExportKey, ExportSymbol>` (preserved from
 /// behavior) with a parallel `BTreeMap<PathBuf, Vec<DirectiveRecord>>` for
 /// directives. `Deref`/`DerefMut` to the inner HashMap keep every existing
 /// call site (`.get`, `.insert`, `.keys`, `.iter`, `.retain`, `.contains_key`,
@@ -213,7 +211,7 @@ impl ExportKey {
 ///
 /// Files with no directives are absent from the map.
 ///
-/// # Invariants (WR-01, Phase 19 review)
+/// # Invariants
 ///
 /// - `inner` maps by `ExportKey` (subpath/condition/space/name) — per-symbol.
 /// - `directives` maps by source-file `PathBuf` — per-file.
@@ -242,7 +240,7 @@ impl ExportKey {
 #[derive(Debug, Clone, Default)]
 pub struct ExportMap {
     inner: HashMap<ExportKey, ExportSymbol>,
-    /// INF-05 (Phase 19): per-source-file triple-slash directive records.
+    /// INF-05: per-source-file triple-slash directive records.
     ///
     /// Key: relative path to the source file (same as `ExportSymbol.file`).
     /// Value: ordered directive records in document order.
@@ -255,7 +253,7 @@ pub struct ExportMap {
         std::path::PathBuf,
         Vec<crate::discover::comment_scan::DirectiveRecord>,
     >,
-    /// INF-04 (Phase 22): resolved LSP `textDocument/definition` Locations
+    /// INF-04: resolved LSP `textDocument/definition` Locations
     /// for each ExportSymbol's `typeof_import_refs` entries.
     ///
     /// Outer key: ExportKey of the symbol whose `typeof_import_refs` is
@@ -280,7 +278,7 @@ impl ExportMap {
         Self::default()
     }
 
-    /// WR-01 (Phase 19 review): runtime guard for the documented invariants.
+    ///: runtime guard for the documented invariants.
     /// Cheap enough for debug builds — O(typeof_targets keys). Production
     /// builds compile this out via `debug_assert!`.
     ///
@@ -301,7 +299,7 @@ impl ExportMap {
         );
     }
 
-    /// INF-04 (Phase 22): record the resolved Location for a given
+    /// INF-04: record the resolved Location for a given
     /// ExportSymbol's `typeof_import_refs` entry at the given ref index.
     /// Called by the second-pass LSP dispatch in `enrich_exports`.
     #[allow(dead_code)]
@@ -318,10 +316,10 @@ impl ExportMap {
         self.debug_assert_invariants();
     }
 
-    /// INF-04 (Phase 22): look up a recorded target. Returns:
+    /// INF-04: look up a recorded target. Returns:
     /// - `Some(&Some(loc))` — LSP resolved to `loc`
-    /// - `Some(&None)`      — LSP ran but returned no result
-    /// - `None`             — LSP was never run (degraded path)
+    /// - `Some(&None)` — LSP ran but returned no result
+    /// - `None` — LSP was never run (degraded path)
     #[allow(dead_code)]
     pub fn typeof_target(
         &self,
@@ -359,7 +357,7 @@ impl From<HashMap<ExportKey, ExportSymbol>> for ExportMap {
     }
 }
 
-/// Enable `for (k, v) in &export_map { ... }`. `Deref` on its own does NOT
+/// Enable `for (k, v) in &export_map {... }`. `Deref` on its own does NOT
 /// make the struct iterable because `IntoIterator` is only attempted on the
 /// concrete type in `for` loops.
 impl<'a> IntoIterator for &'a ExportMap {
@@ -370,7 +368,7 @@ impl<'a> IntoIterator for &'a ExportMap {
     }
 }
 
-/// Enable `for (k, v) in &mut export_map { ... }`.
+/// Enable `for (k, v) in &mut export_map {... }`.
 impl<'a> IntoIterator for &'a mut ExportMap {
     type Item = (&'a ExportKey, &'a mut ExportSymbol);
     type IntoIter = std::collections::hash_map::IterMut<'a, ExportKey, ExportSymbol>;
@@ -410,13 +408,12 @@ pub struct ClassMember {
     pub is_readonly: bool,
     pub param_count: usize,
     pub type_signature: Option<String>,
-    // Phase 17 TLF fields:
+    // TLF fields:
     pub is_optional: bool, // TLF-02/IFT-01 — replaces type_signature=="optional" stopgap
     pub is_accessor: bool, // TLF-06 — TS 4.9 accessor modifier
     pub this_param_type: Option<String>, // TLF-03 — this parameter type annotation
-    // Phase 19 CLS-10 foundation (Plan 01):
-    pub decorators: Vec<DecoratorSpec>, // CLS-10 — populated by extract_decorators in Plan 03
-    // Phase 21 CLS-11:
+    pub decorators: Vec<DecoratorSpec>, // CLS-10 — member decorators from the AST.
+    // CLS-11:
     pub is_private: bool, // CLS-11 — `#`-prefixed ES2022 private field or method (distinct from TS `private` keyword)
 }
 
@@ -429,10 +426,9 @@ pub struct ClassShape {
     pub implements_list: Vec<String>,
     pub type_params: Vec<TypeParam>,
     pub constructor_param_optionality: Vec<bool>, // IFT-03 — per-position optional flag for constructor params
-    // Phase 19 CLS-10 foundation (Plan 01):
-    pub decorators: Vec<DecoratorSpec>, // CLS-10 — class-level decorators; populated by Plan 03
-    // Phase 21 CLS-12:
-    pub has_dynamic_static_key: bool, // CLS-12 — true if any `static { Foo[x] = ... }` subscript assignment was seen; consumed by Plan 21-02
+    pub decorators: Vec<DecoratorSpec>,           // CLS-10 — class-level decorators.
+    // CLS-12:
+    pub has_dynamic_static_key: bool, // CLS-12 — static assignment with an unresolved key.
 }
 
 // ─── Enum shape model ───────────────────────────────────────────────────────
@@ -472,7 +468,7 @@ pub enum Variance {
     InOut,
 }
 
-/// META-04 / META-06 (Phase 19): TSDoc release tag extracted from `@internal`,
+/// META-04 / META-06: TSDoc release tag extracted from `@internal`,
 /// `@alpha`, `@beta`, `@public`, `@deprecated` tags in block comments adjacent
 /// to exported symbols. Populated by the comment_scan post-process pass at
 /// resolver insertion (src/discover/resolver.rs:~420).
@@ -486,11 +482,11 @@ pub enum ReleaseTag {
     Deprecated,
 }
 
-/// CLS-10 (Phase 19): a single decorator on a class, method, field, or parameter.
+/// CLS-10: a single decorator on a class, method, field, or parameter.
 /// `name` is the decorator's primary identifier (for `@ns.foo` takes the last
 /// member). `args` is the source-text bytes of the `arguments` field of the
 /// decorator's call_expression child, or None for bare decorators like `@Component`.
-/// Populated by `src/discover/tree_query.rs::extract_decorators` in Plan 03.
+/// Populated by `src/discover/tree_query.rs::extract_decorators` in.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecoratorSpec {
@@ -514,7 +510,7 @@ pub struct TypeParam {
     pub constraint_text: Option<String>,
     pub default_text: Option<String>,
     pub constraint_shape: Option<shape::TypeShape>,
-    pub is_const: bool, // GAP-15-07 — const type parameter modifier (TS 4.9+)
+    pub is_const: bool,             // const type parameter modifier (TS 4.9+)
     pub variance: Option<Variance>, // TLF-05
 }
 
@@ -646,8 +642,8 @@ mod tests {
     }
 
     #[test]
-    fn inf_04_typeof_import_ref_constructs_cleanly() {
-        // INF-04 (Phase 22): TypeofImportRef sidecar struct construction +
+    fn typeof_import_ref_constructs_cleanly() {
+        // INF-04: TypeofImportRef sidecar struct construction +
         // default `typeof_import_refs == Vec::new()` on ExportSymbol.
         let r = TypeofImportRef {
             specifier: "./y".into(),
@@ -662,8 +658,8 @@ mod tests {
     }
 
     #[test]
-    fn inf_04_export_symbol_default_typeof_refs_empty() {
-        // INF-04 (Phase 22): a freshly-constructed ExportSymbol has an empty
+    fn export_symbol_default_typeof_refs_empty() {
+        // INF-04: a freshly-constructed ExportSymbol has an empty
         // typeof_import_refs Vec by default.
         let sym = ExportSymbol {
             name: "foo".to_string(),
@@ -786,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_05_variance_variants_exist() {
+    fn variance_variants_exist() {
         let _in_var = Variance::In;
         let _out_var = Variance::Out;
         let _inout_var = Variance::InOut;
@@ -797,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_06_class_member_is_accessor_defaults_false() {
+    fn class_member_is_accessor_defaults_false() {
         let m = ClassMember {
             name: "foo".into(),
             kind: ClassMemberKind::Property,
@@ -819,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_01_construct_signature_struct_shape() {
+    fn construct_signature_struct_shape() {
         let cs = ConstructSignature {
             param_count: 2,
             return_text: Some("Foo".into()),
@@ -831,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_07_export_symbol_is_type_only_field_exists() {
+    fn export_symbol_is_type_only_field_exists() {
         let sym = ExportSymbol {
             name: "mod".to_string(),
             kind: ExportKind::Named,
@@ -881,7 +877,7 @@ mod tests {
     }
 
     #[test]
-    fn cls_10_decorator_spec_construction() {
+    fn decorator_spec_construction() {
         let d = DecoratorSpec {
             name: "Component".to_string(),
             args: None,
@@ -895,7 +891,7 @@ mod tests {
         assert_eq!(d2.args.as_deref(), Some("('/users')"));
     }
 
-    // ─── Phase 18: ExportKey, SymbolSpace, decl_kinds ───────────────────────
+    // ───: ExportKey, SymbolSpace, decl_kinds ───────────────────────
 
     #[test]
     fn test_export_key_new_root_value_canonical_shape() {
@@ -953,7 +949,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_decl_kinds_carries_multiple() {
-        // D-14: Vec<DeclarationKind> preserves hybrid identity (class+namespace).
+        // Vec<DeclarationKind> preserves hybrid identity (class+namespace).
         let sym = ExportSymbol {
             name: "User".to_string(),
             kind: ExportKind::Named,
@@ -980,7 +976,7 @@ mod tests {
         assert!(sym.decl_kinds.contains(&DeclarationKind::Namespace));
     }
 
-    // ─── WR-01 (Phase 19 review): ExportMap structural guard tests ──────────
+    // ───: ExportMap structural guard tests ──────────
 
     fn make_sym(file: &str) -> ExportSymbol {
         ExportSymbol {
@@ -1006,10 +1002,10 @@ mod tests {
         }
     }
 
-    /// WR-01: A directives entry whose key matches no ExportSymbol.file is
+    /// A directives entry whose key matches no ExportSymbol.file is
     /// legal (pure-directive rollup chunk). Must NOT panic.
     #[test]
-    fn wr_01_directive_only_file_is_legal() {
+    fn directive_only_file_is_legal() {
         let mut map = ExportMap::new();
         // Insert a symbol for "src/x.ts"
         let key = ExportKey::new_root_value("x");
@@ -1022,10 +1018,10 @@ mod tests {
         map.debug_assert_invariants();
     }
 
-    /// WR-01: Overwriting the same (ExportKey, ExportSymbol) via inner.insert
+    /// Overwriting the same (ExportKey, ExportSymbol) via inner.insert
     /// (HashMap semantics: overwrite, not desync) must NOT panic.
     #[test]
-    fn wr_01_overwrite_inner_is_safe() {
+    fn overwrite_inner_is_safe() {
         let mut map = ExportMap::new();
         let key = ExportKey::new_root_value("y");
         map.inner.insert(key.clone(), make_sym("src/y.ts"));
@@ -1034,10 +1030,10 @@ mod tests {
         map.debug_assert_invariants();
     }
 
-    /// WR-01: record_typeof_target called with a key that IS present in inner
+    /// record_typeof_target called with a key that IS present in inner
     /// must NOT panic.
     #[test]
-    fn wr_01_record_typeof_target_with_inner_present_ok() {
+    fn record_typeof_target_with_inner_present_ok() {
         let mut map = ExportMap::new();
         let key = ExportKey::new_root_value("z");
         map.inner.insert(key.clone(), make_sym("src/z.ts"));
@@ -1046,12 +1042,12 @@ mod tests {
         // reaching here means it did not panic.
     }
 
-    /// WR-01: typeof_targets referencing a key NOT in inner is a desync;
+    /// typeof_targets referencing a key NOT in inner is a desync;
     /// debug_assert_invariants MUST panic in debug builds.
     #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "WR-01 invariant violated")]
-    fn wr_01_orphan_typeof_target_panics() {
+    fn orphan_typeof_target_panics() {
         let mut map = ExportMap::new();
         let key = ExportKey::new_root_value("orphan");
         // Inject directly into typeof_targets WITHOUT adding to inner

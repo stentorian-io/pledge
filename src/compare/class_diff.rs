@@ -1,15 +1,15 @@
 // Class diff comparison engine.
 //
 // Implements all 9 class-related breaking change rules (CLS-01..09):
-//   CLS-01: Added required constructor parameter (class-constructor-param-added)
-//   CLS-02: Method visibility narrowed (class-method-visibility-changed)
-//   CLS-03: Method removed from class (class-method-removed)
-//   CLS-04: Concrete class made abstract (class-made-abstract)
-//   CLS-05: Abstract method added to abstract class (class-abstract-method-added)
-//   CLS-06: Inheritance (extends) changed (class-inheritance-changed)
-//   CLS-07: Static member type changed (class-static-type-changed)
-//   CLS-08: Readonly modifier added or removed (class-readonly-changed)
-//   CLS-09: Interface removed from implements list (class-implements-removed)
+// CLS-01: Added required constructor parameter (class-constructor-param-added)
+// CLS-02: Method visibility narrowed (class-method-visibility-changed)
+// CLS-03: Method removed from class (class-method-removed)
+// CLS-04: Concrete class made abstract (class-made-abstract)
+// CLS-05: Abstract method added to abstract class (class-abstract-method-added)
+// CLS-06: Inheritance (extends) changed (class-inheritance-changed)
+// CLS-07: Static member type changed (class-static-type-changed)
+// CLS-08: Readonly modifier added or removed (class-readonly-changed)
+// CLS-09: Interface removed from implements list (class-implements-removed)
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -18,7 +18,7 @@ use super::subtype::{
     RULE_CLASS_ABSTRACT_METHOD_ADDED,
     RULE_CLASS_ACCESSOR_CHANGED,
     RULE_CLASS_CONSTRUCTOR_PARAM_ADDED,
-    // CLS-11 (Phase 21) — public↔private visibility transition:
+    // CLS-11 — public↔private visibility transition:
     RULE_CLASS_FIELD_MADE_PRIVATE,
     RULE_CLASS_FIELD_MADE_PUBLIC,
     RULE_CLASS_IMPLEMENTS_REMOVED,
@@ -30,7 +30,7 @@ use super::subtype::{
     RULE_CLASS_READONLY_CHANGED,
     RULE_CLASS_STATIC_TYPE_CHANGED,
     RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
-    // CLS-10 (Phase 19) — stage-3 decorator diff rule-IDs:
+    // CLS-10 — stage-3 decorator diff rule-IDs:
     RULE_DECORATOR_ADDED,
     RULE_DECORATOR_ARGUMENTS_CHANGED,
     RULE_DECORATOR_REMOVED,
@@ -52,7 +52,7 @@ fn is_visibility_narrowed(old: &Visibility, new: &Visibility) -> bool {
     )
 }
 
-/// CLS-10 (Phase 19): Human-readable label for a member kind used in
+/// CLS-10: Human-readable label for a member kind used in
 /// decorator-diff messages (e.g., "method `Foo.bar`").
 fn member_kind_label(kind: &ClassMemberKind) -> &'static str {
     match kind {
@@ -64,7 +64,7 @@ fn member_kind_label(kind: &ClassMemberKind) -> &'static str {
     }
 }
 
-/// CLS-10 (Phase 19): Diff two decorator lists between old and new.
+/// CLS-10: Diff two decorator lists between old and new.
 ///
 /// Algorithm:
 /// - Step 1: pair exactly matching (name + args) decorators — those are unchanged.
@@ -122,7 +122,7 @@ fn diff_decorators(
                         o.name, owner_description, old_args, new_args
                     ),
                 });
-                // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+                // DOC-01: paired Info — decorator runtime effect is opaque.
                 findings.push(Finding {
                     severity: Severity::Info,
                     rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
@@ -150,7 +150,7 @@ fn diff_decorators(
                 col,
                 message: format!("decorator `@{}` removed from {}", o.name, owner_description),
             });
-            // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+            // DOC-01: paired Info — decorator runtime effect is opaque.
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
@@ -176,7 +176,7 @@ fn diff_decorators(
                 col,
                 message: format!("decorator `@{}` added to {}", n.name, owner_description),
             });
-            // DOC-01 (Phase 25): paired Info — decorator runtime effect is opaque.
+            // DOC-01: paired Info — decorator runtime effect is opaque.
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: crate::compare::subtype::RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT,
@@ -265,11 +265,11 @@ pub fn compare_class_shapes(
     }
 
     // ── Member-level comparisons ─────────────────────────────────────────────
-    // CLS-11 (Phase 21): filter out `#`-prefixed private members from the
+    // CLS-11: filter out `#`-prefixed private members from the
     // public-surface comparison maps. Private members are diffed in the
     // dedicated public↔private transition pass below; including them here
     // would let a rename-in-private-space (`#foo` → `#bar`) leak as a
-    // spurious CLS-03 `class-method-removed`. Approach A per 21-PATTERNS.md.
+    // spurious CLS-03 `class-method-removed`.
     let old_members: HashMap<(&str, bool), &ClassMember> = old
         .members
         .iter()
@@ -283,7 +283,7 @@ pub fn compare_class_shapes(
         .map(|m| ((m.name.as_str(), m.is_static), m))
         .collect();
 
-    // ── CLS-11 (Phase 21): public↔private visibility transition ──────────────
+    // ── CLS-11: public↔private visibility transition ──────────────
     // Pair old public members with new private members (and vice versa) by
     // name-modulo-`#`. Fires Major `class-field-made-private` on public-to-
     // private transitions (consumers referring to `repo.cache` now break) and
@@ -346,7 +346,7 @@ pub fn compare_class_shapes(
                     k.0, symbol_name, k.0,
                 ),
             });
-            // DOC-01 (Phase 25): paired Info — private-brand access is opaque.
+            // DOC-01: paired Info — private-brand access is opaque.
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: crate::compare::subtype::RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
@@ -383,7 +383,7 @@ pub fn compare_class_shapes(
                     k.0, symbol_name, k.0,
                 ),
             });
-            // DOC-01 (Phase 25): paired Info — private-brand access is opaque.
+            // DOC-01: paired Info — private-brand access is opaque.
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: crate::compare::subtype::RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
@@ -406,7 +406,7 @@ pub fn compare_class_shapes(
         if old_member.visibility == Visibility::Private {
             continue;
         }
-        // CLS-11 (Phase 21) suppression: if this (bare_name, is_static) slot
+        // CLS-11 suppression: if this (bare_name, is_static) slot
         // transitioned public↔private, the CLS-11 block above already emitted
         // the canonical finding. Skip CLS-03 to avoid double-reporting the
         // same conceptual change at two rule-IDs. Mirrors the REF-09 → REF-07
@@ -420,7 +420,7 @@ pub fn compare_class_shapes(
             continue;
         }
         // CLS-03: Method/Constructor/Getter/Setter removal.
-        // CLS-12 (Phase 21): additionally fires for static Property removal —
+        // CLS-12: additionally fires for static Property removal —
         // synthesized static-block members (ClassMemberKind::Property with
         // is_static = true) and top-level `static bar = 1;` declarations
         // surface here. Non-static property removal remains silent, matching
@@ -685,7 +685,7 @@ pub fn compare_class_shapes(
         }
     }
 
-    // ── CLS-10 (Phase 19): class-level decorator diff ───────────────────────
+    // ── CLS-10: class-level decorator diff ───────────────────────
     {
         let class_desc = format!("class `{}`", symbol_name);
         findings.extend(diff_decorators(
@@ -698,13 +698,13 @@ pub fn compare_class_shapes(
         ));
     }
 
-    // ── CLS-10 (Phase 19): per-member decorator diff ────────────────────────
+    // ── CLS-10: per-member decorator diff ────────────────────────
     // Pair members by name (same key used elsewhere in this function). Only
     // diff decorators for members present on both sides — decorator-only
     // findings on a removed/added member would duplicate class-method-removed
     // (CLS-03) / class-method-added noise.
     //
-    // Approach A private filter (CLS-11 / Phase 21): skip `#`-prefixed private
+    // Approach A private filter (CLS-11 / ): skip `#`-prefixed private
     // members on BOTH sides — decorator churn on `@log #count` is not
     // consumer-observable and must not leak into public-surface findings.
     {
@@ -739,15 +739,12 @@ pub fn compare_class_shapes(
         }
     }
 
-    // ── CLS-12 (Phase 21): class static initialization block limitation ─────
-    // When either old or new had a computed-key assignment (`Foo[x] = ...`)
-    // in a `static { ... }` block, surface a `limitation:` annotation so
+    // ── CLS-12: class static initialization block limitation ─────
+    // When either old or new had a computed-key assignment (`Foo[x] =...`)
+    // in a `static {... }` block, surface a `limitation:` annotation so
     // consumers know dynamic-key members are not diffed. No new rule-ID —
     // host as Severity::Minor under RULE_CLASS_STATIC_TYPE_CHANGED with the
-    // limitation-id embedded in the message. TYPE-01
-    // `limitation: satisfies-narrowed-type-not-verified` precedent. Phase 25
-    // DOC-01 will elevate `limitation:` messages to Severity::Info
-    // project-wide.
+    // limitation ID embedded in the message and a paired informational finding.
     if old.has_dynamic_static_key || new.has_dynamic_static_key {
         findings.push(Finding {
             severity: Severity::Warning,
@@ -770,7 +767,7 @@ pub fn compare_class_shapes(
                 symbol_name,
             ),
         });
-        // DOC-01 (Phase 25): paired Info — dynamic-key limitation promoted to first-class.
+        // DOC-01: paired Info — dynamic-key limitation promoted to first-class.
         findings.push(Finding {
             severity: Severity::Info,
             rule: crate::compare::subtype::RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY,
@@ -1214,7 +1211,7 @@ mod tests {
     // ── TLF-06: accessor keyword changed ─────────────────────────────────────
 
     #[test]
-    fn tlf_06_accessor_flipped_fires_warning() {
+    fn accessor_flipped_fires_warning() {
         let old_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
         let mut new_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
         new_m.is_accessor = true;
@@ -1238,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn tlf_06_accessor_unchanged_no_finding() {
+    fn accessor_unchanged_no_finding() {
         let mut old_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
         old_m.is_accessor = true;
         let mut new_m = make_member("data", ClassMemberKind::Property, Visibility::Public);
@@ -1325,7 +1322,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_03_constructor_param_optional_to_required_fires_major() {
+    fn constructor_param_optional_to_required_fires_major() {
         // Old: [required, optional] → New: [required, required] — position 1 flipped
         let old = make_class_with_ctor_optionality(vec![false, true]);
         let new = make_class_with_ctor_optionality(vec![false, false]);
@@ -1354,7 +1351,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_03_no_change_no_finding() {
+    fn no_change_no_finding() {
         // Both have same optionality — no IFT-03 finding
         let old = make_class_with_ctor_optionality(vec![false, true]);
         let new = make_class_with_ctor_optionality(vec![false, true]);
@@ -1370,7 +1367,7 @@ mod tests {
         );
     }
 
-    // ── Phase 25 DOC-01: paired Severity::Info tests ───────────────────────────
+    // ── DOC-01: paired Severity::Info tests ───────────────────────────
 
     fn make_decorated_class(decorator_name: &str, decorator_args: Option<&str>) -> ClassShape {
         let mut cls = make_class(vec![]);

@@ -1,0 +1,89 @@
+//! TYPE-02 integration tests: `infer U extends C` constraint diff.
+//!
+//! Two fixture forms exercise the full pipeline (source -> tree-sitter
+//! extraction -> LSP hover / type-string parse -> TypeShape::InferExtends ->
+//! compare_exports -> diff_recursive (InferExtends, InferExtends) arm ->
+//! Finding):
+//!
+//! 1. `constraint-changed` — Major `infer-extends-constraint-changed` when
+//!    the `extends` constraint of an `infer U extends C` clause changes
+//!    (e.g. `string` -> `number`).
+//! 2. `constraint-unchanged` — zero `infer-extends-constraint-changed`
+//!    findings when the constraint is the same across versions, even if
+//!    an unrelated symbol was added nearby.
+
+use interlint::compare::subtype::RULE_INFER_EXTENDS_CONSTRAINT_CHANGED;
+use interlint::compare::{compare_exports, compare_structural_diff};
+use interlint::discover::discover_exports;
+use interlint::types::Severity;
+use std::path::{Path, PathBuf};
+
+const FIXTURE_ROOT: &str = "tests/fixtures/typescript/generics/constrained-inference";
+
+fn fixture_dir(form: &str, side: &str) -> PathBuf {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    Path::new(manifest).join(FIXTURE_ROOT).join(form).join(side)
+}
+
+fn run(form: &str) -> Vec<interlint::types::Finding> {
+    let old_dir = fixture_dir(form, "old");
+    let new_dir = fixture_dir(form, "new");
+    let (old_exports, _) = discover_exports(&old_dir).unwrap();
+    let (new_exports, _) = discover_exports(&new_dir).unwrap();
+    // TYPE-02 findings originate in `compare_structural_diff`
+    // (which re-parses each file and routes the type-alias RHS pair
+    // through `diff_types`). `compare_exports` alone runs only the base
+    // ExportKey-iteration diff which skips type-alias bodies when LSP
+    // hover did not populate `overloads`. Both must run to exercise the
+    // full pipeline — mirror how the CLI composes them (see
+    // `src/main.rs` and the CLS-10 integration test).
+    let mut findings = compare_exports(&old_exports, &new_exports, &new_dir, true);
+    findings.extend(compare_structural_diff(
+        &old_dir,
+        &new_dir,
+        &old_exports,
+        &new_exports,
+    ));
+    findings
+}
+
+#[test]
+fn infer_extends_constraint_changed() {
+    let findings = run("constraint-changed");
+    let hits: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_INFER_EXTENDS_CONSTRAINT_CHANGED)
+        .collect();
+    assert_eq!(
+        hits.len(),
+        1,
+        "expected exactly 1 infer-extends-constraint-changed; findings: {:?}",
+        findings
+            .iter()
+            .map(|f| (f.rule, &f.message))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(hits[0].severity, Severity::Major);
+    assert!(
+        hits[0].message.contains("FirstIfString"),
+        "message should name the symbol; got: {}",
+        hits[0].message
+    );
+}
+
+#[test]
+fn infer_extends_constraint_unchanged() {
+    let findings = run("constraint-unchanged");
+    let hits: Vec<_> = findings
+        .iter()
+        .filter(|f| f.rule == RULE_INFER_EXTENDS_CONSTRAINT_CHANGED)
+        .collect();
+    assert!(
+        hits.is_empty(),
+        "expected 0 infer-extends-constraint-changed on unchanged constraint; findings: {:?}",
+        findings
+            .iter()
+            .map(|f| (f.rule, &f.message))
+            .collect::<Vec<_>>()
+    );
+}

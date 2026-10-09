@@ -1,0 +1,27 @@
+//! Assertions compatibility checks.
+
+use interlint::compare::ref_diff::compare_assertion;
+use std::path::PathBuf;
+
+fn test_file() -> PathBuf {
+    PathBuf::from("src/index.ts")
+}
+
+#[test]
+fn assertion_dropped_fires_major() {
+    let findings = compare_assertion(Some("Foo"), None, "isFoo", &test_file(), 1, 1);
+    assert!(
+        findings.iter().any(|f| f.rule == "assertion-widened"),
+        "TLF-04: expected assertion-widened. Got: {:?}",
+        findings
+    );
+    let f = findings
+        .iter()
+        .find(|f| f.rule == "assertion-widened")
+        .unwrap();
+    assert_eq!(
+        f.severity,
+        interlint::types::Severity::Major,
+        "TLF-04: assertion-widened should be Major"
+    );
+}

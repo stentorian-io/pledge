@@ -9,10 +9,10 @@ use crate::compare::imports_diff::ImportsMap;
 use crate::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace};
 
 // ---------------------------------------------------------------------------
-// Phase 18: key-construction helpers (D-13 pre-merge, D-14 decl_kinds union)
+// key-construction helpers ( pre-merge, decl_kinds union)
 // ---------------------------------------------------------------------------
 
-/// Per Phase 18 Open Q2 convention (documented on SymbolSpace in types/mod.rs):
+/// Per Open Q2 convention (documented on SymbolSpace in types/mod.rs):
 /// - interface/type alias -> Type
 /// - namespace -> Namespace
 /// - class/enum/function/variable/default/unknown -> Value
@@ -25,11 +25,11 @@ fn space_for(kind: Option<&DeclarationKind>) -> SymbolSpace {
     }
 }
 
-/// D-13 + D-14: merge an incoming raw export into an existing symbol at the
+///  +: merge an incoming raw export into an existing symbol at the
 /// same ExportKey. Used by every insertion call site to handle declaration-
 /// merging hybrids (class+namespace, function+namespace, interface+namespace)
 /// at discovery time, eliminating the REF-05 or_insert race by construction
-/// (D-16).
+///.
 ///
 /// Rules:
 /// - Union decl_kinds (dedup — if kind already present, skip).
@@ -60,7 +60,7 @@ fn merge_hybrid(
 }
 
 // ---------------------------------------------------------------------------
-// Tsconfig path alias resolution (GAP-15-04)
+// Tsconfig path alias resolution
 // ---------------------------------------------------------------------------
 
 /// Parsed tsconfig.json path aliases.
@@ -113,7 +113,7 @@ fn strip_jsonc(input: &str) -> String {
             continue;
         }
 
-        // Line comment: // ...
+        // Line comment: //...
         if c == '/' && matches!(chars.peek(), Some((_, '/'))) {
             chars.next(); // consume second '/'
             while let Some(&(_, nc)) = chars.peek() {
@@ -125,7 +125,7 @@ fn strip_jsonc(input: &str) -> String {
             continue;
         }
 
-        // Block comment: /* ... */
+        // Block comment: /*... */
         if c == '/' && matches!(chars.peek(), Some((_, '*'))) {
             chars.next(); // consume '*'
             while let Some((_, nc)) = chars.next() {
@@ -283,7 +283,7 @@ pub fn resolve_tsconfig_alias(
 
 /// Resolve a `#`-prefixed specifier through the parsed imports map.
 ///
-/// EXP-14 (Phase 23). Returns the on-disk path of the first condition leaf
+/// EXP-14. Returns the on-disk path of the first condition leaf
 /// that classifies as Relative or Bare (with extension probing) — skipping
 /// leaves whose target classifies as NodeBuiltin / UrlScheme / another
 /// ImportsField (per Pitfall §1: imports values may legally name `node:` /
@@ -382,7 +382,7 @@ pub(crate) fn resolve_imports_subpath(
     None
 }
 
-/// Maximum number of re-export hops before aborting a resolution chain (D-12).
+/// Maximum number of re-export hops before aborting a resolution chain.
 #[allow(dead_code)]
 const MAX_RESOLVE_DEPTH: usize = 20;
 
@@ -391,9 +391,9 @@ const MAX_RESOLVE_DEPTH: usize = 20;
 ///
 /// Applies only when the path contains a `/chunks/` directory segment AND the
 /// basename matches `chunk-[A-Z0-9]{8,}.<ext>`. Example:
-///   `dist/chunks/chunk-A1B2C3D4.js` → `dist/chunks/chunk-*.js`
+///  `dist/chunks/chunk-A1B2C3D4.js` → `dist/chunks/chunk-*.js`
 fn normalize_chunk_path(path: &Path) -> PathBuf {
-    // WR-02 (Phase 19 review, Phase 27 regression): normalize separators
+    //: normalize separators
     // BEFORE every probe so a Windows-style `dist\chunks\chunk-HASH.js`
     // path produces the same normalized result as the forward-slash
     // form. Without this the `/chunks/` substring probe would miss
@@ -401,7 +401,7 @@ fn normalize_chunk_path(path: &Path) -> PathBuf {
     // `parent.join(normalized_name)` step at the bottom would still
     // splice the original separator back in, breaking the round-trip
     // path-equality invariant exercised by
-    // `wr_02_chunk_directives_keyed_by_normalized_path`.
+    // `chunk_directives_keyed_by_normalized_path`.
     let path_str_lossy = path.to_string_lossy();
     let canonical = path_str_lossy.replace('\\', "/");
     let in_chunks_dir = canonical.contains("/chunks/");
@@ -460,23 +460,23 @@ impl ResolveWarning {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 23 (RES-01 + RES-02): specifier classification
+//  (RES-01 + RES-02): specifier classification
 // ---------------------------------------------------------------------------
 
 /// Classification of a re-export specifier — drives whether the resolver
 /// attempts filesystem resolution, routes through the package.json `imports`
-/// map (Plan 23-02), or silently skips.
+/// map, or silently skips.
 ///
 /// RES-01: `node:`-prefixed builtins are not paths and must not be
-///   probed against the filesystem nor inserted as synthetic external entries.
+/// probed against the filesystem nor inserted as synthetic external entries.
 /// RES-02: URL-scheme specifiers (`data:`, `https:`, `http:`, `file:`) are
-///   not paths under our static-analysis model and are filtered identically.
-/// EXP-14 (consumed in Plan 23-02): `#`-prefixed specifiers route through
-///   the package's own `imports` field rather than the filesystem.
+/// not paths under our static-analysis model and are filtered identically.
+/// EXP-14: `#`-prefixed specifiers route through
+/// the package's own `imports` field rather than the filesystem.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SpecifierKind {
-    /// `node:fs`, `node:path`, `node:test`, ...
+    /// `node:fs`, `node:path`, `node:test`,...
     NodeBuiltin,
     /// `data:`, `https:`, `http:`, `file:` — URL-scheme imports.
     UrlScheme,
@@ -484,7 +484,7 @@ pub(crate) enum SpecifierKind {
     ImportsField,
     /// `./`, `../`, `/` — filesystem-relative or absolute path.
     Relative,
-    /// External package: `react`, `@scope/pkg`, ... — anything not above.
+    /// External package: `react`, `@scope/pkg`,... — anything not above.
     Bare,
 }
 
@@ -515,7 +515,7 @@ pub(crate) fn classify_specifier(spec: &str) -> SpecifierKind {
 }
 
 #[cfg(test)]
-mod phase23_classifier_tests {
+mod specifier_classifier_tests {
     use super::{classify_specifier, SpecifierKind};
 
     #[test]
@@ -587,9 +587,9 @@ mod phase23_classifier_tests {
 /// - `pkg_root` — absolute path to the package root; used to compute relative
 ///   paths stored in `ExportSymbol.file`.
 /// - `visited` — set of canonicalized absolute paths already processed; used
-///   for cycle detection (D-12).
+///   for cycle detection.
 /// - `warnings` — non-fatal issues encountered during resolution.
-/// - `depth` — current recursion depth; aborted at `MAX_RESOLVE_DEPTH` (D-12).
+/// - `depth` — current recursion depth; aborted at `MAX_RESOLVE_DEPTH`.
 #[allow(dead_code, clippy::too_many_arguments)]
 pub fn collect_exports(
     file: &Path,
@@ -758,7 +758,7 @@ fn collect_exports_uncached(
 
         // ROB-01: Read the file bytes, then validate UTF-8 before passing to the parser.
         // tree-sitter accepts raw bytes but subsequent processing expects valid UTF-8.
-        // Invalid UTF-8 (e.g., from binary blobs accidentally named .ts) is treated as
+        // Invalid UTF-8 (e.g., from binary blobs accidentally named.ts) is treated as
         // a per-file warning rather than aborting analysis on remaining files.
         let source = match std::fs::read(&canonical) {
             Ok(bytes) => bytes,
@@ -806,7 +806,7 @@ fn collect_exports_uncached(
             }
         };
 
-        // META-06 (Phase 19): backfill release_tag on every RawExport uniformly.
+        // META-06: backfill release_tag on every RawExport uniformly.
         // Single populate pass using the CommentIndex sidecar — avoids editing
         // all 48 RawExport construction sites in tree_query.rs. Idempotent:
         // existing populated tags from DECL_EXPORT_QUERY (tree_query.rs:1505)
@@ -815,8 +815,8 @@ fn collect_exports_uncached(
         //
         // The comment_scan pass re-parses the source to own a Tree; tree-sitter
         // parsing is iterative and fast so the duplicate parse is acceptable
-        // for Phase 19 (future optimization: thread the Tree from parse_exports).
-        // INF-05 (Phase 19): collect directive records from the SAME CommentIndex
+        // for (future optimization: thread the Tree from parse_exports).
+        // INF-05: collect directive records from the SAME CommentIndex
         // we use for META-06. Captured here as a local Vec so we can insert into
         // the ExportMap.directives sidecar once `rel_path` is computed below.
         let mut forwards = Vec::new();
@@ -849,9 +849,9 @@ fn collect_exports_uncached(
                     // file, before any non-comment statement, are recognized).
                     file_directives = comment_index.extract_directives();
 
-                    // TYPE-01 (Phase 20): backfill satisfies_type on eligible
+                    // TYPE-01: backfill satisfies_type on eligible
                     // RawExports. Mirrors the META-06 populate pass directly above
-                    // — same tree/source pair, single post-parse scan, no need to
+                    // same tree/source pair, single post-parse scan, no need to
                     // edit individual RawExport construction sites.
                     //
                     // Grammar gate: `satisfies_expression` is a TypeScript AST node
@@ -876,7 +876,7 @@ fn collect_exports_uncached(
                         }
                     }
 
-                    // INF-04 (Phase 22): walk the tree once for `typeof import('./x').Y`
+                    // INF-04: walk the tree once for `typeof import('./x').Y`
                     // / `import('./x').Y` member-expression shapes. Bucket each ref to
                     // its owning RawExport by the greatest export line <= ref line.
                     // Both single-line `export type X = typeof import('./y').Z;` and
@@ -925,7 +925,7 @@ fn collect_exports_uncached(
         .unwrap_or(&canonical)
         .to_path_buf();
 
-    // INF-05 (Phase 19): flow extracted directives into the ExportMap sidecar.
+    // INF-05: flow extracted directives into the ExportMap sidecar.
     // Key by the rel_path so compare_directives can pair old/new directive
     // lists per-file. Files with no directives are absent from the map.
     if !file_directives.is_empty() {
@@ -1122,7 +1122,7 @@ fn collect_exports_uncached(
         }
         match export.kind {
             RawExportKind::Named | RawExportKind::Symbol => {
-                // Phase 18 D-13: pre-merge at insertion. Construct ExportKey with
+                //: pre-merge at insertion. Construct ExportKey with
                 // current subpath/condition context, then branch on get_mut to
                 // union decl_kinds for declaration-merging hybrids.
                 let space = if export.kind == RawExportKind::Symbol {
@@ -1140,7 +1140,7 @@ fn collect_exports_uncached(
                     merge_hybrid(
                         existing,
                         export.decl_kind.clone(),
-                        // INF-02 (Phase 18): forward declare-site type signature
+                        // INF-02: forward declare-site type signature
                         // through the merge path as well — if the first-seen
                         // symbol was typeless and a later declaration-merge
                         // partner carries the declare type, the merged symbol
@@ -1148,14 +1148,14 @@ fn collect_exports_uncached(
                         export.type_signature.clone(),
                         export.release_tag.clone(),
                     );
-                    // ARCH-02 (Phase 18): merge compound_members into existing symbol
+                    // ARCH-02: merge compound_members into existing symbol
                     // (dedup to avoid duplicates from multiple discovery passes).
                     for m in &export.compound_members {
                         if !existing.compound_members.iter().any(|em| em == m) {
                             existing.compound_members.push(m.clone());
                         }
                     }
-                    // WR-02 (Phase 22 review): also merge typeof_import_refs to
+                    //: also merge typeof_import_refs to
                     // mirror the compound_members handling above. Without this,
                     // a later declaration-merge partner carrying typeof refs
                     // would silently lose them. Idempotent dedup on the four
@@ -1179,34 +1179,34 @@ fn collect_exports_uncached(
                             file: rel_path.clone(),
                             line: export.declaration_site.map_or(export.line, |site| site.0),
                             col: export.declaration_site.map_or(export.col, |site| site.1),
-                            // INF-02 (Phase 18): carry the declare-site type
+                            // INF-02: carry the declare-site type
                             // signature linked during parse_exports' INF-02
                             // link-pass. None for source-form exports where
                             // no ambient declare preceded the export specifier.
                             type_signature: export.type_signature,
                             overloads: Vec::new(),
-                            decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), // D-14
+                            decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), //
                             type_guard_type: None,
                             is_async: false,
                             is_generator: false,
                             is_reexport: false,
                             is_type_only: export.is_type_only,
                             release_tag: export.release_tag, // META-04: propagate TSDoc release tag
-                            // TYPE-01 (Phase 20): forward the populated
+                            // TYPE-01: forward the populated
                             // satisfies_type onto the resolved ExportSymbol
                             // alongside release_tag — single-write from the
                             // post-parse populate pass above.
                             satisfies_type: export.satisfies_type,
-                            // ARCH-02 (Phase 18): propagate compound-component members
+                            // ARCH-02: propagate compound-component members
                             // from the RawExport (populated by attach_compound_members).
                             compound_members: export.compound_members,
-                            // INF-04 (Phase 22): forward typeof_import_refs from
+                            // INF-04: forward typeof_import_refs from
                             // the populated RawExport (extract_typeof_import_refs
                             // populate pass below at lines ~485-506). Empty Vec
                             // when the export's type position contains no
                             // `typeof import(...).Y` references.
                             typeof_import_refs: export.typeof_import_refs.clone(),
-                            // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
+                            // DOC-01: forward proxy-dispatched flag from RawExport.
                             is_proxy_dispatched: export.is_proxy_dispatched,
                             local_name: export.local_name.clone(),
                         },
@@ -1214,7 +1214,7 @@ fn collect_exports_uncached(
                 }
             }
             RawExportKind::Default => {
-                // Phase 18 D-13: pre-merge at insertion. Default space is derived
+                //: pre-merge at insertion. Default space is derived
                 // from the declaration's kind when one is present (e.g., `export
                 // default function foo` -> Value; `export default class Foo` ->
                 // Value); anonymous expression-form defaults default to Value.
@@ -1229,7 +1229,7 @@ fn collect_exports_uncached(
                     merge_hybrid(
                         existing,
                         export.decl_kind.clone(),
-                        // INF-02 (Phase 18): carry declare-site signature
+                        // INF-02: carry declare-site signature
                         // through default-export merge path for symmetry with
                         // Named.
                         export.type_signature.clone(),
@@ -1244,33 +1244,33 @@ fn collect_exports_uncached(
                             file: rel_path.clone(),
                             line: export.declaration_site.map_or(export.line, |site| site.0),
                             col: export.declaration_site.map_or(export.col, |site| site.1),
-                            // INF-02 (Phase 18): default-export carries the
+                            // INF-02: default-export carries the
                             // declare-site type signature when the INF-03
                             // trailer (`export { foo as default }`) linked the
                             // default to a local `declare const foo: T`.
                             type_signature: export.type_signature,
                             overloads: Vec::new(),
-                            decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), // D-14
+                            decl_kinds: export.decl_kind.map(|k| vec![k]).unwrap_or_default(), //
                             type_guard_type: None,
                             is_async: false,
                             is_generator: false,
                             is_reexport: false,
                             is_type_only: export.is_type_only,
-                            // META-06 (Phase 19): propagate the release_tag populated
+                            // META-06: propagate the release_tag populated
                             // by the comment_scan pass on the current file's RawExport.
                             // Without this, `/** @deprecated */ export default foo`
                             // loses its tag at insertion time.
                             release_tag: export.release_tag,
-                            // TYPE-01 (Phase 20): propagate satisfies_type for
+                            // TYPE-01: propagate satisfies_type for
                             // default-export forms — covers cases like
                             // `const foo = {...} satisfies T; export default foo;`
                             // where the pop-pass tagged the binding.
                             satisfies_type: export.satisfies_type,
                             compound_members: Vec::new(),
-                            // INF-04 (Phase 22): default exports propagate
+                            // INF-04: default exports propagate
                             // typeof_import_refs from the populated RawExport.
                             typeof_import_refs: export.typeof_import_refs.clone(),
-                            // DOC-01 (Phase 25): forward proxy-dispatched flag from RawExport.
+                            // DOC-01: forward proxy-dispatched flag from RawExport.
                             is_proxy_dispatched: export.is_proxy_dispatched,
                             local_name: export.local_name.clone(),
                         },
@@ -1318,7 +1318,7 @@ fn collect_exports_uncached(
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
                             let mut candidates = resolve_module_path(&canonical, specifier);
-                            // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                            // Try tsconfig alias resolution if standard resolution fails
                             if let Some(tc) = tsconfig {
                                 if !candidates.iter().any(|p| p.exists()) {
                                     candidates
@@ -1328,7 +1328,7 @@ fn collect_exports_uncached(
                             let resolved = candidates.into_iter().find(|p| p.exists());
                             match resolved {
                                 Some(target) => {
-                                    // Phase 18: propagate current subpath/condition into the
+                                    // propagate current subpath/condition into the
                                     // recursive resolution so all exports reached through this
                                     // re-export chain are keyed consistently.
                                     collect_exports_cached(
@@ -1346,11 +1346,11 @@ fn collect_exports_uncached(
                                     )?;
                                 }
                                 None => {
-                                    // GAP-15-05: If specifier looks like an external package (not relative),
+                                    // If specifier looks like an external package (not relative),
                                     // track it as an external re-export entry rather than just warning.
                                     if !specifier.starts_with('.') && !specifier.starts_with('/') {
                                         let reexport_key = format!("*<{}>", specifier);
-                                        // Phase 18 D-13: pre-merge at insertion (StarReexport external).
+                                        //: pre-merge at insertion (StarReexport external).
                                         // External re-exports carry no decl_kind to merge — first-write-wins
                                         // via get_mut/insert branch is the correct semantic.
                                         let key = ExportKey {
@@ -1380,7 +1380,7 @@ fn collect_exports_uncached(
                                                     release_tag: None,
                                                     satisfies_type: None,
                                                     compound_members: Vec::new(),
-                                                    // INF-04 (Phase 22): external star re-exports
+                                                    // INF-04: external star re-exports
                                                     // carry no source-site type position; empty Vec
                                                     // is correct.
                                                     typeof_import_refs: Vec::new(),
@@ -1474,7 +1474,7 @@ fn collect_exports_uncached(
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
                             let mut candidates = resolve_module_path(&canonical, specifier);
-                            // GAP-15-04: Try tsconfig alias resolution if standard resolution fails
+                            // Try tsconfig alias resolution if standard resolution fails
                             if let Some(tc) = tsconfig {
                                 if !candidates.iter().any(|p| p.exists()) {
                                     candidates
@@ -1490,7 +1490,7 @@ fn collect_exports_uncached(
                                     // file's location rather than recursing fully.
                                     // The ExportSymbol references the re-export site
                                     // (current file) for accurate position reporting.
-                                    // Phase 18 D-13: pre-merge at insertion (NamedReexport resolved).
+                                    //: pre-merge at insertion (NamedReexport resolved).
                                     // Named re-exports don't declaration-merge (they point to another
                                     // file's symbol) — first-write-wins is the correct semantic.
                                     let space = space_for(export.decl_kind.as_ref());
@@ -1525,14 +1525,14 @@ fn collect_exports_uncached(
                                                 is_generator: false,
                                                 is_reexport: false,
                                                 is_type_only: false,
-                                                // META-06 (Phase 19): propagate the release_tag populated
+                                                // META-06: propagate the release_tag populated
                                                 // by the comment_scan pass on the current file's RawExport.
-                                                // Without this, a `/** @deprecated */ export { foo } from ...`
+                                                // Without this, a `/** @deprecated */ export { foo } from...`
                                                 // loses its tag at the re-export boundary.
                                                 release_tag: export.release_tag.clone(),
                                                 satisfies_type: None,
                                                 compound_members: Vec::new(),
-                                                // INF-04 (Phase 22): named re-exports point at the
+                                                // INF-04: named re-exports point at the
                                                 // target file's symbol; their typeof refs (if any)
                                                 // live on the target's ExportSymbol. Empty Vec here.
                                                 typeof_import_refs: Vec::new(),
@@ -1543,10 +1543,10 @@ fn collect_exports_uncached(
                                     }
                                 }
                                 None => {
-                                    // GAP-15-05: If specifier looks like an external package (not relative),
+                                    // If specifier looks like an external package (not relative),
                                     // track it as an external named re-export entry.
                                     if !specifier.starts_with('.') && !specifier.starts_with('/') {
-                                        // Phase 18 D-13: pre-merge at insertion (NamedReexport external).
+                                        //: pre-merge at insertion (NamedReexport external).
                                         // decl_kind is unknown for external packages so space defaults to Value.
                                         // External re-export names don't participate in declaration
                                         // merging — first-write-wins via get_mut/insert is correct.
@@ -1577,7 +1577,7 @@ fn collect_exports_uncached(
                                                     release_tag: None,
                                                     satisfies_type: None,
                                                     compound_members: Vec::new(),
-                                                    // INF-04 (Phase 22): external named re-exports
+                                                    // INF-04: external named re-exports
                                                     // carry no source-site type position; empty Vec.
                                                     typeof_import_refs: Vec::new(),
                                                     is_proxy_dispatched: false,
@@ -1621,7 +1621,7 @@ fn collect_exports_uncached(
         for spec in sorted_specifiers {
             let names = &barrel_failures[&spec];
             if names.len() >= BARREL_AGGREGATE_THRESHOLD {
-                // WR-03 (Phase 17 review): sort re-export names so the aggregated
+                //: sort re-export names so the aggregated
                 // message is deterministic across source reorderings. Matches the
                 // sorted_specifiers pattern two lines above.
                 let mut sorted_names = names.clone();
@@ -1832,7 +1832,7 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     candidates.push(append_extension(&joined, "mts"));
     candidates.push(append_extension(&joined, "cts"));
 
-    // 3. Declaration files (.d.ts, .d.mts, .d.cts).
+    // 3. Declaration files (.d.ts,.d.mts,.d.cts).
     let stem = joined.file_name().unwrap_or_default().to_string_lossy();
     candidates.push(joined.with_file_name(format!("{}.d.ts", stem)));
     candidates.push(joined.with_file_name(format!("{}.d.mts", stem)));
@@ -1844,7 +1844,7 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     candidates.push(append_extension(&joined, "mjs"));
     candidates.push(append_extension(&joined, "cjs"));
 
-    // 5. Directory index files (GAP-13-07: complete candidate list).
+    // 5. Directory index files (complete candidate list).
     // Order: TypeScript source → JavaScript source → Declaration files.
     candidates.push(joined.join("index.ts"));
     candidates.push(joined.join("index.tsx"));
@@ -1962,7 +1962,7 @@ mod tests {
 
     #[test]
     fn test_js_to_ts_probing() {
-        // GAP-13-06: ./foo.js should probe foo.ts before foo.js.ts
+        // ./foo.js should probe foo.ts before foo.js.ts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo.js");
         let ts_idx = candidates
             .iter()
@@ -1985,7 +1985,7 @@ mod tests {
 
     #[test]
     fn test_mjs_to_mts_probing() {
-        // GAP-13-06: ./bar.mjs should probe bar.mts
+        // ./bar.mjs should probe bar.mts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./bar.mjs");
         let has_mts = candidates
             .iter()
@@ -1998,7 +1998,7 @@ mod tests {
 
     #[test]
     fn test_cjs_to_cts_probing() {
-        // GAP-13-06: ./baz.cjs should probe baz.cts
+        // ./baz.cjs should probe baz.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./baz.cjs");
         let has_cts = candidates
             .iter()
@@ -2011,7 +2011,7 @@ mod tests {
 
     #[test]
     fn test_js_to_ts_compound_stem() {
-        // GAP-13-06 + ECF-06: ./utils.config.js should probe utils.config.ts (not utils.ts)
+        // + ECF-06:./utils.config.js should probe utils.config.ts (not utils.ts)
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./utils.config.js");
         let has_config_ts = candidates
             .iter()
@@ -2020,7 +2020,7 @@ mod tests {
             has_config_ts,
             "candidates must include utils.config.ts; got: {candidates:?}"
         );
-        // Should NOT produce just utils.ts (dropping .config)
+        // Should NOT produce just utils.ts (dropping.config)
         let has_bare_utils = candidates.iter().any(|p| {
             let s = p.to_string_lossy();
             s.ends_with("/utils.ts") && !s.contains("config")
@@ -2033,7 +2033,7 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_index_cts() {
-        // GAP-13-07: directory index should include index.cts
+        // directory index should include index.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
         let has = candidates
             .iter()
@@ -2046,7 +2046,7 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_index_jsx() {
-        // GAP-13-07: directory index should include index.jsx
+        // directory index should include index.jsx
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
         let has = candidates
             .iter()
@@ -2059,7 +2059,7 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_index_cjs() {
-        // GAP-13-07: directory index should include index.cjs
+        // directory index should include index.cjs
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
         let has = candidates
             .iter()
@@ -2072,7 +2072,7 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_index_d_mts() {
-        // GAP-13-07: directory index should include index.d.mts
+        // directory index should include index.d.mts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
         let has = candidates
             .iter()
@@ -2085,7 +2085,7 @@ mod tests {
 
     #[test]
     fn test_resolve_includes_index_d_cts() {
-        // GAP-13-07: directory index should include index.d.cts
+        // directory index should include index.d.cts
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./dir");
         let has = candidates
             .iter()
@@ -2098,7 +2098,7 @@ mod tests {
 
     #[test]
     fn test_js_to_dts_probing() {
-        // GAP-13-06: ./foo.js should also probe foo.d.ts for pre-built packages
+        // ./foo.js should also probe foo.d.ts for pre-built packages
         let candidates = resolve_module_path(Path::new("/a/src/index.ts"), "./foo.js");
         let has_dts = candidates.iter().any(|p| {
             let s = p.to_string_lossy();
@@ -2111,7 +2111,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // GAP-15-04: tsconfig path alias resolution tests
+    // tsconfig path alias resolution tests
     // -------------------------------------------------------------------------
 
     #[test]
@@ -2232,7 +2232,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // GAP-15-05: External re-export tracking tests
+    // External re-export tracking tests
     // -------------------------------------------------------------------------
 
     #[test]
@@ -2359,13 +2359,13 @@ mod tests {
     // ── META-05: barrel-unresolvable aggregation ─────────────────────────────
 
     #[test]
-    fn meta_05_three_or_more_failures_aggregated_at_depth_zero() {
+    fn three_or_more_failures_aggregated_at_depth_zero() {
         // A barrel with ≥3 unresolvable named re-exports from the same relative
         // specifier at depth==0 must produce ONE aggregated warning containing
         // "barrel" and the count, not three individual warnings.
         let dir = tempfile::tempdir().expect("tempdir");
         let index_path = dir.path().join("index.ts");
-        // Three named re-exports from ./missing, none of which can be resolved.
+        // Three named re-exports from./missing, none of which can be resolved.
         std::fs::write(
             &index_path,
             b"export { foo } from './missing';\nexport { bar } from './missing';\nexport { baz } from './missing';\n",
@@ -2410,7 +2410,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_05_below_threshold_individual_warnings() {
+    fn below_threshold_individual_warnings() {
         // Only 2 failures from the same specifier → NOT aggregated, must produce
         // 2 individual warnings (threshold is 3).
         let dir = tempfile::tempdir().expect("tempdir");
@@ -2458,8 +2458,8 @@ mod tests {
     }
 
     #[test]
-    fn wr_03_meta_05_names_emitted_in_sorted_order() {
-        // WR-03 (Phase 17 review): names in the aggregated barrel warning must be
+    fn meta_05_names_emitted_in_sorted_order() {
+        //: names in the aggregated barrel warning must be
         // emitted in sorted order so the message is deterministic across source
         // reorderings (and resistant to downstream warning-diff tools seeing
         // spurious changes when the author reorders unrelated lines).
@@ -2505,7 +2505,7 @@ mod tests {
     // ── CHUNK-01: normalize_chunk_path ───────────────────────────────────────
 
     #[test]
-    fn chunk_01_hashed_chunk_normalized() {
+    fn hashed_chunk_normalized() {
         let p = std::path::Path::new("dist/chunks/chunk-A1B2C3D4.js");
         assert_eq!(
             normalize_chunk_path(p).to_string_lossy(),
@@ -2514,13 +2514,13 @@ mod tests {
     }
 
     #[test]
-    fn chunk_01_unrelated_path_unchanged() {
+    fn unrelated_path_unchanged() {
         let p = std::path::Path::new("src/index.ts");
         assert_eq!(normalize_chunk_path(p).to_string_lossy(), "src/index.ts");
     }
 
     #[test]
-    fn chunk_01_short_hash_unchanged() {
+    fn short_hash_unchanged() {
         let p = std::path::Path::new("dist/chunks/chunk-ABC.js");
         assert_eq!(
             normalize_chunk_path(p).to_string_lossy(),
@@ -2529,7 +2529,7 @@ mod tests {
     }
 
     #[test]
-    fn chunk_01_mjs_extension_normalized() {
+    fn mjs_extension_normalized() {
         let p = std::path::Path::new("pkg/dist/chunks/chunk-DEADBEEF.mjs");
         assert_eq!(
             normalize_chunk_path(p).to_string_lossy(),
@@ -2537,14 +2537,14 @@ mod tests {
         );
     }
 
-    // ── WR-02 (Phase 19 review): normalize_chunk_path separator parity ──
-    //    On a Windows host the resolver reports paths with `\` separators;
-    //    on Unix it reports `/`. The normalized output MUST be byte-equal
-    //    across the two so a rollup rebuild on either OS produces the same
-    //    diff key.
+    // ──: normalize_chunk_path separator parity ──
+    // On a Windows host the resolver reports paths with `\` separators;
+    // on Unix it reports `/`. The normalized output MUST be byte-equal
+    // across the two so a rollup rebuild on either OS produces the same
+    // diff key.
 
     #[test]
-    fn wr_02_normalize_chunk_path_separator_parity() {
+    fn normalize_chunk_path_separator_parity() {
         let forward = normalize_chunk_path(std::path::Path::new("dist/chunks/chunk-A1B2C3D4.js"));
         let backward =
             normalize_chunk_path(std::path::Path::new("dist\\chunks\\chunk-A1B2C3D4.js"));
@@ -2558,35 +2558,35 @@ mod tests {
     }
 
     #[test]
-    fn wr_02_backslash_path_outside_chunks_unchanged() {
+    fn backslash_path_outside_chunks_unchanged() {
         let p = std::path::Path::new("dist\\src\\index.js");
         assert_eq!(normalize_chunk_path(p), p.to_path_buf());
     }
 
     #[test]
-    fn wr_02_backslash_path_non_hashed_basename_unchanged() {
+    fn backslash_path_non_hashed_basename_unchanged() {
         let p = std::path::Path::new("dist\\chunks\\chunk-foo.js");
         assert_eq!(normalize_chunk_path(p), p.to_path_buf());
     }
 
     #[test]
-    fn wr_02_backslash_mjs_extension_normalized() {
+    fn backslash_mjs_extension_normalized() {
         let result = normalize_chunk_path(std::path::Path::new(
             "pkg\\dist\\chunks\\chunk-DEADBEEF.mjs",
         ));
         assert_eq!(result.to_string_lossy(), "pkg/dist/chunks/chunk-*.mjs");
     }
 
-    // ── WR-02 (Phase 19 review): path-equality invariant between
-    //    ExportSymbol.file and ExportMap.directives keys for rollup chunks.
-    //    The resolver MUST key the directives sidecar by the SAME normalized
-    //    path it stamps onto ExportSymbol.file. If this ever drifts, a
-    //    rollup chunk with a stable set of directives across rebuilds
-    //    would diff as "directive-added + directive-removed" instead of
-    //    appearing under a single shared key.
+    // ──: path-equality invariant between
+    // ExportSymbol.file and ExportMap.directives keys for rollup chunks.
+    // The resolver MUST key the directives sidecar by the SAME normalized
+    // path it stamps onto ExportSymbol.file. If this ever drifts, a
+    // rollup chunk with a stable set of directives across rebuilds
+    // would diff as "directive-added + directive-removed" instead of
+    // appearing under a single shared key.
 
     #[test]
-    fn wr_02_chunk_directives_keyed_by_normalized_path() {
+    fn chunk_directives_keyed_by_normalized_path() {
         let dir = tempfile::tempdir().expect("tempdir");
         // Canonicalize pkg_root so that strip_prefix succeeds on macOS
         // (tempdir returns /var/..., canonicalize() returns /private/var/...).
@@ -2647,7 +2647,7 @@ mod tests {
     // ── ROB-01: UTF-8 / parse failure → per-file warning ────────────────────
 
     #[test]
-    fn rob_01_invalid_utf8_produces_warning_not_abort() {
+    fn invalid_utf8_produces_warning_not_abort() {
         let dir = tempfile::tempdir().unwrap();
         let pkg = dir.path();
         std::fs::create_dir_all(pkg.join("src")).unwrap();
@@ -2689,7 +2689,7 @@ mod tests {
     // ── ROB-04: JSONC tsconfig parsing (block comments + trailing commas) ────
 
     #[test]
-    fn rob_04_tsconfig_block_comments_stripped() {
+    fn tsconfig_block_comments_stripped() {
         let input = r#"{
             "compilerOptions": {
                 /* multiline
@@ -2707,7 +2707,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_04_tsconfig_trailing_comma_accepted() {
+    fn tsconfig_trailing_comma_accepted() {
         let input = r#"{ "paths": { "@/*": ["./src/*"], }, }"#;
         let cleaned = strip_jsonc(input);
         let parsed: Result<serde_json::Value, _> = serde_json::from_str(&cleaned);
@@ -2718,7 +2718,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_04_tsconfig_line_comment_regression() {
+    fn tsconfig_line_comment_regression() {
         // Regression: existing line comment stripping must still work
         let input = r#"{ "paths": { "@/*": ["./src/*"] // a comment
         } }"#;
@@ -2731,8 +2731,8 @@ mod tests {
     }
 
     #[test]
-    fn rob_04_tsconfig_preserves_utf8_in_strings() {
-        // CR-01 (Phase 17 review): strip_jsonc previously cast each byte to `char`
+    fn tsconfig_preserves_utf8_in_strings() {
+        // CR-01: strip_jsonc previously cast each byte to `char`
         // which corrupted multi-byte UTF-8 sequences. Non-ASCII path aliases and
         // comments must survive stripping intact so serde_json sees valid UTF-8.
         let input = r#"{
@@ -2755,7 +2755,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_04_tsconfig_preserves_utf8_trailing_comma_path() {
+    fn tsconfig_preserves_utf8_trailing_comma_path() {
         // Ensure the second pass (trailing-comma stripper) also operates on chars,
         // not bytes — so a trailing comma near non-ASCII content is handled safely.
         let input = r#"{ "name": "léa", }"#;
@@ -2765,7 +2765,7 @@ mod tests {
         assert_eq!(parsed["name"].as_str(), Some("léa"));
     }
 
-    // ─── Phase 18: D-13 pre-merge + D-14 decl_kinds union ────────────────────
+    // ───: pre-merge + decl_kinds union ────────────────────
 
     fn make_empty_sym(name: &str) -> crate::types::ExportSymbol {
         use crate::types::{ExportKind, ExportSymbol};
@@ -2794,7 +2794,7 @@ mod tests {
 
     #[test]
     fn test_resolver_pre_merge_class_plus_namespace_unions_decl_kinds() {
-        // D-14: class User + namespace User in the same file must merge into a
+        // class User + namespace User in the same file must merge into a
         // single ExportSymbol with decl_kinds = {Class, Namespace}.
         use crate::types::{ExportKey, ExportMap};
         let dir = tempfile::tempdir().unwrap();
@@ -2823,7 +2823,7 @@ export namespace User { export const kind = "u"; }
         .unwrap();
 
         // Find the User symbol — regardless of space, the class+namespace merge
-        // per D-14 means the same key should carry both decl_kinds.
+        // means the same key should carry both decl_kinds.
         let user_keys: Vec<ExportKey> = map.keys().filter(|k| k.name == "User").cloned().collect();
         assert!(
             !user_keys.is_empty(),
@@ -2831,8 +2831,8 @@ export namespace User { export const kind = "u"; }
             map.keys().collect::<Vec<_>>()
         );
         // With space_for mapping class -> Value and namespace -> Namespace the
-        // two declarations fall into different ExportKeys by design (D-03).
-        // What D-14 requires is that declaration-merging WITHIN the same
+        // two declarations fall into different ExportKeys by design.
+        // What requires is that declaration-merging WITHIN the same
         // ExportKey bucket unions decl_kinds. For tree-sitter's declaration-
         // merging the two would need to collide in the SAME space. The test
         // here verifies at least one User entry exists — the merge_hybrid
@@ -2893,7 +2893,7 @@ export namespace User { export const kind = "u"; }
         assert_eq!(map.len(), 2, "different subpaths MUST be distinct map keys");
     }
 
-    // ── Phase 18 ARCH-02: end-to-end compound-member propagation ────────────
+    // ── ARCH-02: end-to-end compound-member propagation ────────────
 
     #[test]
     fn test_arch02_end_to_end_compound_members_propagate_to_symbol() {

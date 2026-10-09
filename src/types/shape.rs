@@ -53,7 +53,7 @@ pub struct FieldShape {
     pub write_type: Option<TypeShape>,
 }
 
-/// REF-10 (Phase 22): per-position metadata for labeled tuple elements.
+/// REF-10: per-position metadata for labeled tuple elements.
 ///
 /// Unlabeled tuples have `label: None` at every position. Labels are nominal
 /// metadata — they participate in the diff (`tuple-label-renamed`,
@@ -105,9 +105,9 @@ pub enum TypeShape {
     Object(BTreeMap<std::string::String, FieldShape>),
     /// Array types: `string[]` or `Array<string>`
     Array(Box<TypeShape>),
-    /// Tuple types: `[string, number]` or labeled `[x: number, y?: string, ...rest: T[]]`.
+    /// Tuple types: `[string, number]` or labeled `[x: number, y?: string,...rest: T[]]`.
     ///
-    /// REF-10 (Phase 22): labeled-tuple support. Each element is a `TupleElement`
+    /// REF-10: labeled-tuple support. Each element is a `TupleElement`
     /// carrying `label`, `optional`, `rest`, and `shape`. Unlabeled tuples have
     /// `label: None` at every position; `optional` and `rest` map to the
     /// per-position `?:` and `...` markers. Labels are nominal metadata — they
@@ -134,7 +134,7 @@ pub enum TypeShape {
         params: Vec<ParamShape>,
         return_type: Box<TypeShape>,
     },
-    /// Conditional types: `T extends U ? Then : Else`
+    /// Conditional types: `T extends U ? Then: Else`
     Conditional {
         check: Box<TypeShape>,
         extends: Box<TypeShape>,
@@ -158,7 +158,7 @@ pub enum TypeShape {
     },
     /// Template literal types: `` `prefix_${T}` ``
     Template(Vec<TemplatePart>),
-    /// TYPE-01 (Phase 20): value-level `X satisfies T`. `constraint` is the
+    /// TYPE-01: value-level `X satisfies T`. `constraint` is the
     /// RHS `T`; `narrowed` is the LSP-derived narrowed type of the value
     /// (`None` in degraded mode — carries
     /// `limitation: satisfies-narrowed-type-not-verified` in its finding).
@@ -166,18 +166,18 @@ pub enum TypeShape {
         constraint: Box<TypeShape>,
         narrowed: Option<Box<TypeShape>>,
     },
-    /// TYPE-02 (Phase 20): `infer U extends C` — structured so the
-    /// constraint is a diff-visible child. Replaces the pre-Phase-20 path
+    /// TYPE-02: `infer U extends C` — structured so the
+    /// constraint is a diff-visible child. Replaces the path
     /// that flattened `infer U` into `TypeShape::TypeParam("infer U")`
-    /// and dropped the `extends` clause. Produced by Plan 20-02's parser
-    /// extension; diff-consumed by Plan 20-02's `type_diff.rs` branch.
+    /// and dropped the `extends` clause. Produced by 's parser
+    /// extension; diff-consumed by 's `type_diff.rs` branch.
     InferExtends {
         name: std::string::String,
         constraint: Box<TypeShape>,
     },
-    /// GEN-07 (Phase 20): `NoInfer<T>` wrapper — canonical form so diff
+    /// GEN-07: `NoInfer<T>` wrapper — canonical form so diff
     /// engines observe wrapper-vs-unwrapped at a position without string
-    /// parsing. Produced by Plan 20-03's `parse_generic` extension.
+    /// parsing. Produced by 's `parse_generic` extension.
     NoInferWrap(Box<TypeShape>),
     /// Fallback for unparseable types — carries raw text.
     /// Comparison treats two Opaque values as incomparable unless identical.
@@ -618,7 +618,7 @@ mod tests {
         assert!(matches!(shape, TypeShape::Tuple(_)));
     }
 
-    /// REF-10 (Phase 22): verify that `normalize()` on a labeled tuple
+    /// REF-10: verify that `normalize` on a labeled tuple
     /// preserves label/optional/rest metadata and recurses into inner shapes.
     #[test]
     fn test_tuple_labeled_normalize_preserves_metadata() {

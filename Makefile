@@ -20,7 +20,7 @@ test-tools:
 	bun scripts/check.ts tools
 
 reference-suite:
-	cargo test --locked --release --test reference_suite
+	cargo test --locked --release --test node reference::
 
 # Regenerated findings need manual review; see docs/reference-suite.md.
 reference-suite-regen:

@@ -1,17 +1,17 @@
 // Package metadata comparison: detect breaking changes in package.json fields.
 //
 // Covers META-01..07:
-//   META-01: peer dependency minimum version bumped (peer-dep-version-bumped)
-//   META-02: peer dependency added (peer-dep-added)
-//   META-03: peer dependency removed (peer-dep-removed)
-//   META-04: engine minimum version bumped (engine-version-bumped)
-//   META-05: engine requirement added (engine-added)
-//   META-06: entry point changed or removed (entry-point-changed)
-//   META-07: module type changed (module-type-changed)
+// META-01: peer dependency minimum version bumped (peer-dep-version-bumped)
+// META-02: peer dependency added (peer-dep-added)
+// META-03: peer dependency removed (peer-dep-removed)
+// META-04: engine minimum version bumped (engine-version-bumped)
+// META-05: engine requirement added (engine-added)
+// META-06: entry point changed or removed (entry-point-changed)
+// META-07: module type changed (module-type-changed)
 //
-// Per D-06: clean separation from type comparison.
-// Per D-07: does its own lightweight package.json parsing.
-// Per D-08: all findings use "package.json" as file path with line 1, col 1.
+// clean separation from type comparison.
+// does its own lightweight package.json parsing.
+// all findings use "package.json" as file path with line 1, col 1.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -60,7 +60,7 @@ fn read_package_json(path: &Path) -> Option<serde_json::Value> {
     serde_json::from_str(&content).ok()
 }
 
-/// Create a Finding anchored to package.json line 1, col 1 (D-08).
+/// Create a Finding anchored to package.json line 1, col 1.
 fn pkg_json_finding(severity: Severity, rule: &'static str, message: String) -> Finding {
     Finding {
         severity,
@@ -317,7 +317,7 @@ fn compare_engines(
 ///
 /// Conservative — only suppresses the main/module finding when exports["."] is a
 /// string literal equal in both versions. Objects and conditional exports maps are
-/// handled by exports_diff.rs at higher granularity (D-07).
+/// handled by exports_diff.rs at higher granularity.
 fn exports_dot_string(pkg: &serde_json::Value) -> Option<String> {
     pkg.get("exports")
         .and_then(|e| e.get("."))
@@ -328,7 +328,7 @@ fn exports_dot_string(pkg: &serde_json::Value) -> Option<String> {
 /// META-06: detect entry point field changes.
 ///
 /// Checks `main`, `module`, `types` (string fields).
-/// Note: `exports` field diffing is handled by exports_diff.rs (D-07).
+/// Note: `exports` field diffing is handled by exports_diff.rs.
 fn compare_entry_points(
     old_pkg: &serde_json::Value,
     new_pkg: &serde_json::Value,
@@ -371,7 +371,7 @@ fn compare_entry_points(
             _ => {}
         }
     }
-    // `exports` field is intentionally NOT checked here (D-07):
+    // `exports` field is intentionally NOT checked here:
     // granular exports diffing is delegated to exports_diff.rs
 }
 
@@ -695,7 +695,7 @@ mod tests {
 
     #[test]
     fn test_exports_field_changed_no_longer_triggers_entry_point_changed() {
-        // D-07: exports changes are handled by exports_diff.rs, not compare_entry_points
+        // exports changes are handled by exports_diff.rs, not compare_entry_points
         let old = make_pkg(r#"{"exports": {".": "./src/index.js"}}"#);
         let new = make_pkg(r#"{"exports": {".": "./dist/index.js"}}"#);
         let mut findings = Vec::new();
@@ -759,7 +759,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // D-08: all findings use package.json path, line 1, col 1
+    // all findings use package.json path, line 1, col 1
     // -------------------------------------------------------------------------
 
     #[test]
@@ -998,7 +998,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // GAP-15-03: typesVersions diff
+    // typesVersions diff
     // -------------------------------------------------------------------------
 
     #[test]
@@ -1083,7 +1083,7 @@ mod tests {
     // ── META-01: side-effects-widened ─────────────────────────────────────────
 
     #[test]
-    fn meta_01_side_effects_false_to_true_fires_warning() {
+    fn side_effects_false_to_true_fires_warning() {
         let old = make_pkg(r#"{"sideEffects": false}"#);
         let new = make_pkg(r#"{"sideEffects": true}"#);
         let mut findings = Vec::new();
@@ -1098,7 +1098,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_01_side_effects_false_to_array_fires_warning() {
+    fn side_effects_false_to_array_fires_warning() {
         let old = make_pkg(r#"{"sideEffects": false}"#);
         let new = make_pkg(r#"{"sideEffects": ["./*.css"]}"#);
         let mut findings = Vec::new();
@@ -1111,7 +1111,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_01_side_effects_array_widened_fires_warning() {
+    fn side_effects_array_widened_fires_warning() {
         let old = make_pkg(r#"{"sideEffects": ["./a.css"]}"#);
         let new = make_pkg(r#"{"sideEffects": ["./a.css", "./b.css"]}"#);
         let mut findings = Vec::new();
@@ -1124,7 +1124,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_01_side_effects_true_to_false_no_finding() {
+    fn side_effects_true_to_false_no_finding() {
         let old = make_pkg(r#"{"sideEffects": true}"#);
         let new = make_pkg(r#"{"sideEffects": false}"#);
         let mut findings = Vec::new();
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_01_side_effects_unchanged_no_finding() {
+    fn side_effects_unchanged_no_finding() {
         let old = make_pkg(r#"{"sideEffects": false}"#);
         let new = make_pkg(r#"{"sideEffects": false}"#);
         let mut findings = Vec::new();
@@ -1152,7 +1152,7 @@ mod tests {
     // ── META-02: peer-dep-optional-removed ────────────────────────────────────
 
     #[test]
-    fn meta_02_peer_dep_optional_true_to_false_fires_major() {
+    fn peer_dep_optional_true_to_false_fires_major() {
         let old = make_pkg(r#"{"peerDependenciesMeta": {"react": {"optional": true}}}"#);
         let new = make_pkg(r#"{"peerDependenciesMeta": {"react": {"optional": false}}}"#);
         let mut findings = Vec::new();
@@ -1168,7 +1168,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_02_peer_dep_optional_entry_removed_fires_major() {
+    fn peer_dep_optional_entry_removed_fires_major() {
         let old = make_pkg(r#"{"peerDependenciesMeta": {"react": {"optional": true}}}"#);
         let new = make_pkg(r#"{}"#);
         let mut findings = Vec::new();
@@ -1183,7 +1183,7 @@ mod tests {
     }
 
     #[test]
-    fn meta_02_peer_dep_optional_unchanged_no_finding() {
+    fn peer_dep_optional_unchanged_no_finding() {
         let v = make_pkg(r#"{"peerDependenciesMeta": {"react": {"optional": true}}}"#);
         let mut findings = Vec::new();
         compare_peer_deps_meta_optional(&v, &v, &mut findings);
@@ -1199,7 +1199,7 @@ mod tests {
     // ── SEM-06: main+exports dedup ────────────────────────────────────────────
 
     #[test]
-    fn sem_06_main_change_suppressed_when_exports_dot_stable() {
+    fn main_change_suppressed_when_exports_dot_stable() {
         // main changes but exports["."] is identical in both — suppress main finding
         let old = make_pkg(r#"{"main": "./old.js", "exports": {".": "./same.js"}}"#);
         let new = make_pkg(r#"{"main": "./new.js", "exports": {".": "./same.js"}}"#);
@@ -1216,7 +1216,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_06_main_change_fires_when_exports_dot_absent() {
+    fn main_change_fires_when_exports_dot_absent() {
         // main changes and there is no exports field — finding must still fire
         let old = make_pkg(r#"{"main": "./old.js"}"#);
         let new = make_pkg(r#"{"main": "./new.js"}"#);

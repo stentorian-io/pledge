@@ -1,6 +1,6 @@
 //! Print a candidate reference snapshot for manual review.
 
-#[path = "../tests/support/reference.rs"]
+#[path = "../tests/ecosystems/node/reference/support.rs"]
 mod reference;
 
 fn main() {
@@ -8,7 +8,7 @@ fn main() {
         .nth(1)
         .expect("usage: reference_suite_dump <package>");
     let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/reference-suite")
+        .join("tests/fixtures/node/reference")
         .join(package);
     let unpack = |name| {
         interlint::acquire::extract_tgz_from_bytes(&std::fs::read(directory.join(name)).unwrap())

@@ -1,26 +1,26 @@
-//! IDN-02 (Phase 18): Namespace-move cascade consolidation.
+//! IDN-02: Namespace-move cascade consolidation.
 //!
-//! Per D-09 (exact-subtree match): fires ONLY when every dotted-name member
+//! Per (exact-subtree match): fires ONLY when every dotted-name member
 //! under the old namespace path has a shape-equal counterpart under the new
 //! namespace path. Partial overlap, threshold-based matching, and fuzzy
 //! consolidation are explicitly rejected — partial moves stay on individual
 //! add/remove findings.
 //!
-//! Per D-10 + D-11: one Major `namespace-member-moved` finding per moved
+//! Per +: one Major `namespace-member-moved` finding per moved
 //! member. Moving a member from `A.B.x` to `A.D.x` breaks any consumer writing
 //! the old dotted path.
 //!
-//! Per D-12: depth = 1 level deep, consistent with Phase 14's namespace-member
+//! depth = 1 level deep, consistent with namespace-member
 //! expansion decision. Two-dotted moves (`A.B.x` → `A.C.x`) match; anything
 //! deeper falls back to individual add/remove findings.
 //!
-//! Per D-08 bucket-scoping (also applied here): consolidation only within the
+//! Per bucket-scoping (also applied here): consolidation only within the
 //! same (subpath, condition, space) bucket.
 //!
-//! Warning 9: suppression of the base `export-removed` / `export-added`
+//! suppression of the base `export-removed` / `export-added`
 //! findings is guarded by explicit rule identity AND structural
 //! (file, line, col) position match against an `ExportSymbol` belonging to
-//! a consolidated namespace-move pair (see WR-01 fix). Future rules with
+//! a consolidated namespace-move pair (see fix). Future rules with
 //! similar message shapes cannot be accidentally swallowed.
 
 use std::collections::{HashMap, HashSet};
@@ -59,7 +59,7 @@ pub fn consolidate_namespace_moves(
     let mut moved_pairs: Vec<(ExportKey, ExportKey)> = Vec::new();
 
     // For each old-side namespace group, try to find a new-side namespace with
-    // exact-subtree match (D-09).
+    // exact-subtree match.
     for ((bucket, old_ns), old_members) in &old_groups {
         for ((new_bucket, new_ns), new_members) in &new_groups {
             if bucket != new_bucket {
@@ -81,12 +81,12 @@ pub fn consolidate_namespace_moves(
                 continue;
             }
 
-            // Shape-equality for each paired member (D-09).
+            // Shape-equality for each paired member.
             let mut per_member_pairs: Vec<(ExportKey, ExportKey)> = Vec::new();
             let mut all_shape_equal = true;
             for old_key in old_members {
                 let leaf = leaf_of(&old_key.name);
-                // WR-03 fix: per PROJECT.md "warn-and-continue, never panic"
+                // Skip unavailable source text without losing unrelated findings.
                 // policy, replace the load-bearing `.expect()` with a graceful
                 // break. The invariant (leaves-set equality + unique HashMap
                 // keys) guarantees the match exists today, but a future
@@ -128,13 +128,13 @@ pub fn consolidate_namespace_moves(
         }
     }
 
-    // WR-01 fix: Structural (file, line, col) HashSet for suppression.
+    // fix: Structural (file, line, col) HashSet for suppression.
     // Eliminates the fragile message-substring dependency (see TODO at top
     // of file) — a Finding is suppressed iff its exact source position
     // matches an `old_sym` (for removals) or `new_sym` (for additions) of a
     // consolidated namespace-move pair.
     //
-    // Warning 9: still rule-type-guarded. Only export-removed / export-added
+    // still rule-type-guarded. Only export-removed / export-added
     // are eligible for suppression.
     let suppress_removed_positions: HashSet<(PathBuf, u32, u32)> = moved_pairs
         .iter()
@@ -197,7 +197,7 @@ fn leaf_of(name: &str) -> &str {
 /// Group dotted-name keys by `(bucket, parent_namespace)`. Bucket preserves
 /// subpath/condition/space identity; parent is the portion before the final
 /// `.`. Only depth-1 dotted names (`A.x`, `Menu.Item` — exactly one `.`) are
-/// included; deeper paths (`A.B.x`) fall back to individual findings per D-12.
+/// included; deeper paths (`A.B.x`) fall back to individual findings.
 #[allow(clippy::type_complexity)]
 fn group_depth1_dotted<'a>(
     keys: &[&'a ExportKey],
@@ -217,7 +217,7 @@ fn group_depth1_dotted<'a>(
     > = HashMap::new();
     for key in keys {
         let name = &key.name;
-        // Exactly one `.` — depth 1 per D-12.
+        // Exactly one `.` — depth 1.
         let dot_count = name.chars().filter(|c| *c == '.').count();
         if dot_count != 1 {
             continue;
@@ -246,7 +246,7 @@ fn group_depth1_dotted<'a>(
 /// consumers regardless of minor type tweaks), so we require decl_kinds to
 /// match and type_signature to match when BOTH sides provide one.
 ///
-/// WR-02 fix: use HashSet-based comparison so duplicate decl_kinds (e.g.,
+/// fix: use HashSet-based comparison so duplicate decl_kinds (e.g.,
 /// `[Class, Class]` vs `[Class, Namespace]`) are not falsely reported equal.
 /// In production, `merge_hybrid` (resolver.rs) dedups on insertion, so
 /// decl_kinds is effectively a set; this makes the local structural
@@ -398,13 +398,13 @@ mod tests {
             0,
             "base export-added must be suppressed"
         );
-        // All consolidated findings must be Major per D-11.
+        // All consolidated findings must be Major.
         for f in out.iter().filter(|f| f.rule == RULE_NAMESPACE_MEMBER_MOVED) {
             assert_eq!(f.severity, Severity::Major);
         }
     }
 
-    // Test 2: partial overlap → no collapse (D-09 exact-subtree rejects partial).
+    // Test 2: partial overlap → no collapse ( exact-subtree rejects partial).
     #[test]
     fn test_idn02_partial_overlap_no_collapse() {
         let mut old = ExportMap::new();
@@ -488,7 +488,7 @@ mod tests {
         );
     }
 
-    // Test 4: depth 2 → no collapse (D-12).
+    // Test 4: depth 2 → no collapse.
     #[test]
     fn test_idn02_depth_2_no_collapse() {
         let mut old = ExportMap::new();
@@ -589,7 +589,7 @@ mod tests {
         );
     }
 
-    // Test 7 (Warning 9): rule-type guard prevents cross-contamination.
+    // Test 7: rule-type guard prevents cross-contamination.
     #[test]
     fn test_idn02_warning9_rule_type_guard_prevents_cross_contamination() {
         let mut old = ExportMap::new();

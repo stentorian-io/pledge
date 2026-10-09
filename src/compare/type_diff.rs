@@ -1,11 +1,11 @@
 // Structural TypeShape diff engine — compares two type shapes and produces findings.
 //
 // Design decisions:
-// - D-08: recursive shape diff
+// -: recursive shape diff
 // - Unresolvable changed types produce incomplete analysis.
-// - D-11: normalization applied before comparison
-// - D-02: all findings use fine-grained rule IDs — no generic "type-changed" rule
-// - D-04: finding messages include both old and new type values
+// -: normalization applied before comparison
+// -: all findings use fine-grained rule IDs — no generic "type-changed" rule
+// -: finding messages include both old and new type values
 // - SIG-01..05: variance-aware function signature analysis
 
 use std::path::Path;
@@ -42,7 +42,7 @@ fn is_any_shape(s: &TypeShape) -> bool {
 /// `line`, `col`: source position for the finding
 ///
 /// Changed opaque shapes cannot establish compatibility and emit incomplete analysis.
-/// Per D-11: recursion depth capped at 20 levels.
+/// recursion depth capped at 20 levels.
 pub fn diff_types(
     old: &TypeShape,
     new: &TypeShape,
@@ -116,13 +116,13 @@ pub fn diff_values(
     findings
 }
 
-/// BEH-06 (Phase 20): Heuristic — is this union of `TypeShape`s a
+/// BEH-06: Heuristic — is this union of `TypeShape`s a
 /// discriminated (tagged) union? Returns the discriminant property name
 /// if so, `None` otherwise.
 ///
-/// Locked heuristic (v0.3-decisions.md Phase 20):
-///   "union of object types where >=1 property has literal type AND that
-///    property name is present in every variant".
+/// Discriminant heuristic:
+///  "union of object types where >=1 property has literal type AND that
+/// property name is present in every variant".
 ///
 /// Algorithm:
 /// 1. Require every member to be `TypeShape::Object`. Non-object unions
@@ -167,7 +167,7 @@ pub(crate) fn is_discriminated_union(members: &[TypeShape]) -> Option<String> {
     None
 }
 
-/// BEH-06 (Phase 20): Given two discriminated unions confirmed to share
+/// BEH-06: Given two discriminated unions confirmed to share
 /// the same discriminant property name and to be in the widening
 /// direction (old \subseteq new), return the literal discriminant values
 /// present in `new` but absent from `old`. Each returned string is a
@@ -211,7 +211,7 @@ fn diff_recursive(
     depth: usize,
     findings: &mut Vec<Finding>,
 ) {
-    // D-11: stop at max depth with a warning-level finding
+    // stop at max depth with a warning-level finding
     if depth >= MAX_DEPTH {
         findings.push(Finding {
             severity: Severity::Warning,
@@ -668,9 +668,9 @@ fn diff_recursive(
 
         // Both Union — use subtype checker for variance-aware comparison.
         //
-        // BEH-06 (Phase 20): BEFORE the plain-union subtype check, detect
+        // BEH-06: BEFORE the plain-union subtype check, detect
         // discriminated-union widening — variants added to an exported
-        // discriminated (tagged) union. Per the locked v0.3 decision, this
+        // discriminated (tagged) union. This
         // fires Warning `union-variant-added` (mirroring BEH-04
         // `enum-member-added`) because an exhaustive-switch consumer will
         // break at runtime even though the type is structurally widened.
@@ -831,7 +831,7 @@ fn diff_recursive(
             }
         }
 
-        // TYPE-02 (Phase 20): Both InferExtends — any change in the `extends`
+        // TYPE-02: Both InferExtends — any change in the `extends`
         // constraint is Major. The `name` field (the inferred identifier,
         // e.g. `U` vs `V`) is NOT consumer-observable and so differences in
         // the name alone do NOT fire a finding.
@@ -846,7 +846,7 @@ fn diff_recursive(
             },
         ) => {
             // Silence unused-variable warnings — the name is intentionally
-            // NOT part of the comparison per the locked TYPE-02 scope.
+            // NOT part of the comparison because infer binders are local to their conditional type.
             let _ = (old_name, new_name);
             if old_c != new_c {
                 let display = make_display_name(symbol_name, field_path);
@@ -867,7 +867,7 @@ fn diff_recursive(
             }
         }
 
-        // TYPE-02 (Phase 20) plumbing: Both Conditional — walk into each
+        // TYPE-02 plumbing: Both Conditional — walk into each
         // of the four child shapes (check / extends / then_type / else_type)
         // so an `InferExtends` buried inside the extends-leg (the canonical
         // TYPE-02 position) is visible to the (InferExtends, InferExtends)
@@ -1090,7 +1090,7 @@ fn diff_functions(
         }
     }
 
-    // GAP-16-01: Optional parameter becoming required at same position.
+    // Optional parameter becoming required at same position.
     // ParamShape has `optional: bool` (shape.rs:60). When old_param.optional=true
     // and new_param.optional=false at the same position, this is a breaking change:
     // callers that omitted the argument will now get a type error.
@@ -1273,7 +1273,7 @@ fn returned_readonly_additions(
     }
 }
 
-/// GEN-07 (Phase 20): Detect `NoInfer<T>` wrapper removal at
+/// GEN-07: Detect `NoInfer<T>` wrapper removal at
 /// function-parameter positions across paired function overloads.
 ///
 /// Walks each pair of `Function` shapes (one from old, one from new) and,
@@ -1301,8 +1301,7 @@ fn returned_readonly_additions(
 /// `file`/`line`/`col` carry source location. Findings are appended to
 /// the returned `Vec<Finding>`.
 ///
-/// Out of scope (per RESEARCH §GEN-07 Open Question 3): return-type
-/// position. Return-type NoInfer doesn't have the same consumer-
+/// Return types are excluded: return-type NoInfer doesn't have the same consumer-
 /// observable inference semantics as parameter NoInfer.
 pub fn diff_function_param_noinfer_removed(
     old_overloads: &[TypeShape],
@@ -1510,11 +1509,11 @@ fn make_display_name(symbol_name: &str, field_path: &str) -> String {
     }
 }
 
-/// TYPE-01 (Phase 20): Emits `type-narrowing-widened` (Minor) when the old
+/// TYPE-01: Emits `type-narrowing-widened` (Minor) when the old
 /// version of an exported binding carried a `satisfies T` clause and the new
 /// version does not.
 ///
-/// Semantic (per v0.3-decisions.md Phase 20 TYPE-01):
+/// Emission conditions:
 /// - `old_sym.satisfies_type.is_some()` AND `new_sym.satisfies_type.is_none()`
 ///   fires exactly 1 Minor finding for the symbol.
 /// - Otherwise emits nothing.
@@ -1524,7 +1523,6 @@ fn make_display_name(symbol_name: &str, field_path: &str) -> String {
 /// not surface a narrowed type), the finding message embeds
 /// `limitation: satisfies-narrowed-type-not-verified` so downstream consumers
 /// know narrowing direction was not confirmed. Never silently drop coverage
-/// (v0.3 Phase 20 locked decision).
 pub fn diff_satisfies_types(
     old_sym: &crate::types::ExportSymbol,
     new_sym: &crate::types::ExportSymbol,
@@ -1584,7 +1582,7 @@ pub fn diff_satisfies_types(
         col,
         message,
     });
-    // DOC-01 (Phase 25): paired Info finding when degraded-mode emit fires
+    // DOC-01: paired Info finding when degraded-mode emit fires
     // (i.e., narrowing direction was not LSP-verified). Original Minor message
     // retains the substring for backward-compat with existing fixture assertions.
     if !narrowed_was_verified {
@@ -1603,21 +1601,21 @@ pub fn diff_satisfies_types(
     findings
 }
 
-/// INF-04 (Phase 22): emit `type-reference-removed` findings for
+/// INF-04: emit `type-reference-removed` findings for
 /// `typeof import('./y').Z` references whose target symbol is absent
 /// from the new version.
 ///
 /// Two branches, gated by `lsp_was_available`:
 ///
 /// - **LSP-available (Major):** old/new versions both ran the LSP
-///   second pass (Task 4). For each ref, we compare the resolved-target
+///   second pass. For each ref, we compare the resolved-target
 ///   side. If the OLD side resolved to a Location and the NEW side did
 ///   NOT (`Some(&None)` or `None`), the reference target was removed —
 ///   fires Major `type-reference-removed`.
 /// - **LSP-unavailable (Minor):** at least one side was Degraded. We
 ///   cannot verify removal but must NOT silently drop coverage. Emit
 ///   one Minor finding per ref with `(limitation: lsp-required)` in the
-///   message (Phase 20 / Phase 21 limitation-annotation precedent).
+///   message to make the missing evidence explicit.
 ///
 /// Shape mirrors `diff_satisfies_types` (above) — the same
 /// "optional LSP-derived slot determines verified-vs-limitation branch"
@@ -1641,7 +1639,7 @@ pub fn diff_typeof_import_refs(
     }
     for (idx, r) in old_sym.typeof_import_refs.iter().enumerate() {
         if !lsp_was_available {
-            // Degraded path: emit limitation-annotated advisory (Phase 20/21
+            // Degraded path: emit limitation-annotated advisory (/21
             // pattern). Severity = Minor — a verifiable Major requires LSP
             // confirmation that the target is actually missing in the new
             // version.
@@ -1656,7 +1654,7 @@ pub fn diff_typeof_import_refs(
                     r.specifier, r.property, new_sym.name
                 ),
             });
-            // DOC-01 (Phase 25): paired Info for the lsp-required limitation.
+            // DOC-01: paired Info for the lsp-required limitation.
             findings.push(Finding {
                 severity: Severity::Info,
                 rule: crate::compare::subtype::RULE_LIMITATION_LSP_REQUIRED,
@@ -1727,7 +1725,7 @@ mod tests {
         );
     }
 
-    // Test 2: Different primitives produce type-incompatible (D-02: no more "type-changed")
+    // Test 2: Different primitives produce type-incompatible (no more "type-changed")
     #[test]
     fn test_different_primitives_type_changed() {
         let findings = diff(
@@ -1736,7 +1734,7 @@ mod tests {
         );
         assert_eq!(rule_ids(&findings), vec!["type-incompatible"]);
         assert_eq!(findings[0].severity, Severity::Major);
-        // D-04: message includes old and new type values
+        // message includes old and new type values
         assert!(
             findings[0].message.contains("string"),
             "message should contain old type 'string'"
@@ -2020,7 +2018,7 @@ mod tests {
             findings.iter().any(|f| f.rule == "type-incompatible"),
             "narrowed union should use type-incompatible, not type-changed"
         );
-        // D-04: message should include old and new type values
+        // message should include old and new type values
         let f = findings
             .iter()
             .find(|f| f.rule == "type-incompatible")
@@ -2032,8 +2030,8 @@ mod tests {
         );
     }
 
-    // Test 11: Opaque on either side — CRITICAL: D-10 behavior change
-    // Phase 3: Opaque now produces type-incompatible Major (not empty findings)
+    // Test 11: Opaque on either side — CRITICAL: behavior change
+    // Opaque now produces type-incompatible Major (not empty findings)
     #[test]
     fn changed_opaque_types_report_incomplete_analysis() {
         // Opaque on old side
@@ -2089,7 +2087,7 @@ mod tests {
     // Test 12: Max recursion depth 20 — stops at depth 20 without panicking
     #[test]
     fn test_max_recursion_depth() {
-        // Build a deeply nested object: {a: {a: {a: ... (21 levels)}}}
+        // Build a deeply nested object: {a: {a: {a:... (21 levels)}}}
         fn nested_object(depth: usize) -> TypeShape {
             if depth == 0 {
                 TypeShape::Primitive(PrimitiveKind::String)
@@ -2310,7 +2308,7 @@ mod tests {
             .iter()
             .find(|f| f.rule == "param-type-narrowed")
             .unwrap();
-        // D-04: message should include old and new type values
+        // message should include old and new type values
         assert!(
             f.message.contains("string | number") || f.message.contains("number | string"),
             "message should contain old type 'string | number': {}",
@@ -2576,11 +2574,11 @@ mod tests {
         );
     }
 
-    // Test 24: Opaque produces type-incompatible Major (D-10 explicit test)
+    // Test 24: Opaque produces type-incompatible Major ( explicit test)
     #[test]
     fn opaque_type_changes_preserve_uncertainty() {
         // Note: test name kept for backward compat, but behavior is now opposite:
-        // Phase 3 D-10: Opaque produces type-incompatible Major
+        //: Opaque produces type-incompatible Major
 
         // Opaque on old side
         let findings = diff(
@@ -2619,7 +2617,7 @@ mod tests {
         );
     }
 
-    // Test 25: Message includes old and new values (D-04)
+    // Test 25: Message includes old and new values
     #[test]
     fn test_message_includes_old_new_values() {
         let findings = diff(
@@ -2640,7 +2638,7 @@ mod tests {
         );
     }
 
-    // GAP-16-01: Optional param made required — fires param-made-required Major
+    // Optional param made required — fires param-made-required Major
     #[test]
     fn test_param_made_required_fires_major() {
         use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
@@ -2690,7 +2688,7 @@ mod tests {
         );
     }
 
-    // GAP-16-01: required param stays required — no finding
+    // required param stays required — no finding
     #[test]
     fn test_required_stays_required_no_finding() {
         use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
@@ -2724,7 +2722,7 @@ mod tests {
         );
     }
 
-    // GAP-16-01: required param becomes optional — no finding (loosening is safe)
+    // required param becomes optional — no finding (loosening is safe)
     #[test]
     fn test_required_to_optional_no_finding() {
         use crate::compare::subtype::RULE_PARAM_MADE_REQUIRED;
@@ -2804,7 +2802,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_02_readonly_added_on_type_alias_field_fires_major() {
+    fn readonly_added_on_type_alias_field_fires_major() {
         let mut old_fields = BTreeMap::new();
         old_fields.insert("foo".to_string(), make_field(false, false));
         let mut new_fields = BTreeMap::new();
@@ -2835,7 +2833,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_02_readonly_removed_on_type_alias_field_fires_major() {
+    fn readonly_removed_on_type_alias_field_fires_major() {
         let mut old_fields = BTreeMap::new();
         old_fields.insert("foo".to_string(), make_field(false, true));
         let mut new_fields = BTreeMap::new();
@@ -2861,7 +2859,7 @@ mod tests {
     }
 
     #[test]
-    fn ift_02_readonly_same_no_finding() {
+    fn readonly_same_no_finding() {
         let mut old_fields = BTreeMap::new();
         old_fields.insert("foo".to_string(), make_field(false, true));
         let mut new_fields = BTreeMap::new();
@@ -2882,7 +2880,7 @@ mod tests {
     // ── SEM-03: any → T tightening ────────────────────────────────────────────
 
     #[test]
-    fn sem_03_any_to_string_fires_narrowing() {
+    fn any_to_string_fires_narrowing() {
         // Old: fn(x: any) -> void, New: fn(x: string) -> void
         // any → string is TIGHTENING — must fire param-type-narrowed Major
         let findings = diff(
@@ -2918,7 +2916,7 @@ mod tests {
     }
 
     #[test]
-    fn sem_03_any_to_any_no_finding() {
+    fn any_to_any_no_finding() {
         // Old: fn(x: any) -> void, New: fn(x: any) -> void — idempotent, no finding
         let findings = diff(
             TypeShape::Function {
@@ -2955,7 +2953,7 @@ mod tests {
     }
 
     // ---------------------------------------------------------------------
-    // BEH-06 (Phase 20): `is_discriminated_union` heuristic unit tests
+    // BEH-06: `is_discriminated_union` heuristic unit tests
     // ---------------------------------------------------------------------
 
     fn field(shape: TypeShape) -> FieldShape {
@@ -2980,7 +2978,7 @@ mod tests {
     }
 
     #[test]
-    fn beh_06_is_disc_union_two_kinds_returns_kind() {
+    fn is_disc_union_two_kinds_returns_kind() {
         let members = vec![
             obj_kind(
                 "circle",
@@ -3001,7 +2999,7 @@ mod tests {
     }
 
     #[test]
-    fn beh_06_is_disc_union_primitives_returns_none() {
+    fn is_disc_union_primitives_returns_none() {
         let members = vec![
             TypeShape::Primitive(PrimitiveKind::String),
             TypeShape::Primitive(PrimitiveKind::Number),
@@ -3014,7 +3012,7 @@ mod tests {
     }
 
     #[test]
-    fn beh_06_is_disc_union_missing_kind_in_one_returns_none() {
+    fn is_disc_union_missing_kind_in_one_returns_none() {
         let mut fields_a = BTreeMap::new();
         fields_a.insert(
             "kind".to_string(),
@@ -3034,7 +3032,7 @@ mod tests {
     }
 
     #[test]
-    fn beh_06_added_discriminant_values_reports_new_variants() {
+    fn added_discriminant_values_reports_new_variants() {
         let old = vec![
             obj_kind(
                 "circle",
@@ -3070,7 +3068,7 @@ mod tests {
         assert_eq!(added[0], "\"triangle\"");
     }
 
-    // ── Phase 25 DOC-01: paired Severity::Info tests ───────────────────────────
+    // ── DOC-01: paired Severity::Info tests ───────────────────────────
 
     fn make_sym_with_satisfies(name: &str, has_narrowed: bool) -> crate::types::ExportSymbol {
         use crate::types::shape::{PrimitiveKind, TypeShape};

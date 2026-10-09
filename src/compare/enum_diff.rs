@@ -1,20 +1,20 @@
 // Enum diff: detect breaking changes in TypeScript enum declarations.
 //
 // Covers ENUM-01..05:
-//   ENUM-01: enum member removed (enum-member-removed)
-//   ENUM-02: enum member value changed (enum-member-value-changed)
-//   ENUM-03: enum member reordered causing value shift (enum-member-reordered)
-//   ENUM-04: const enum to regular enum conversion (enum-const-to-regular)
-//   ENUM-05: numeric enum changed to string enum (enum-numeric-to-string)
+// ENUM-01: enum member removed (enum-member-removed)
+// ENUM-02: enum member value changed (enum-member-value-changed)
+// ENUM-03: enum member reordered causing value shift (enum-member-reordered)
+// ENUM-04: const enum to regular enum conversion (enum-const-to-regular)
+// ENUM-05: numeric enum changed to string enum (enum-numeric-to-string)
 //
 // Key design decisions:
-//   D-04: Evaluate actual numeric values (auto-increment). Flag reordering only when
-//         computed values actually shift. Explicit values identical after reorder = not flagged.
-//   D-05: Non-evaluable initializers: compare initializer expression text.
-//         Identical text = unchanged; different text or absent = breaking.
-//   ENUM-02 and ENUM-03 do not double-fire for the same member:
-//         ENUM-02 fires for explicit value changes; ENUM-03 fires only for implicit value
-//         shifts caused by reordering (raw_value: None in both old and new).
+//: Evaluate actual numeric values (auto-increment). Flag reordering only when
+// computed values actually shift. Explicit values identical after reorder = not flagged.
+//: Non-evaluable initializers: compare initializer expression text.
+// Identical text = unchanged; different text or absent = breaking.
+// ENUM-02 and ENUM-03 do not double-fire for the same member:
+// ENUM-02 fires for explicit value changes; ENUM-03 fires only for implicit value
+// shifts caused by reordering (raw_value: None in both old and new).
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -143,7 +143,7 @@ pub fn compare_enum_shapes(
     }
 
     // ── BEH-04: enum member added (Warning) ─────────────────────────────────
-    // Per D-05: always Warning, regardless of const/regular.
+    // always Warning, regardless of const/regular.
     // Any new member may break exhaustive switch statements in consumers.
     let old_names: HashSet<&str> = old_by_name.keys().copied().collect();
     for new_member in &new.members {
@@ -165,7 +165,7 @@ pub fn compare_enum_shapes(
     // ── ENUM-02: member value changed ────────────────────────────────────────
     // Track members where ENUM-02 already fired (to avoid ENUM-03 double-fire).
     //
-    // Key heuristic (from plan): if both old and new have raw_value: None (implicit),
+    // Key heuristic: if both old and new have raw_value: None (implicit),
     // any value change came from reordering -> handled by ENUM-03, not ENUM-02.
     // ENUM-02 only fires when at least one side has an explicit raw_value.
     let mut enum02_fired: HashSet<&str> = HashSet::new();
@@ -191,7 +191,7 @@ pub fn compare_enum_shapes(
                     None
                 }
             }
-            // At least one is non-evaluable — compare raw text per D-05
+            // At least one is non-evaluable, so compare the raw text.
             _ => {
                 let old_raw = old_member.raw_value.as_deref();
                 let new_raw = new_member.raw_value.as_deref();
@@ -453,7 +453,7 @@ mod tests {
     fn test_enum03_reorder_with_value_shift() {
         // old {A, B, C} (implicit values 0,1,2), new {B, A, C} (implicit values 0,1,2)
         // After reorder: A was at index 0 (value 0), now at index 1 (value 1) -> shift
-        //                B was at index 1 (value 1), now at index 0 (value 0) -> shift
+        // B was at index 1 (value 1), now at index 0 (value 0) -> shift
         let old = enum_shape(
             vec![
                 numeric_member("A", 0),
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn test_enum03_negative_explicit_values_unchanged() {
         // old {A=10, B=20}, new {B=20, A=10} — explicit values identical after reordering
-        // Per D-04: should NOT be flagged
+        // should NOT be flagged
         let old = enum_shape(
             vec![
                 explicit_numeric_member("A", "10", 10),
@@ -611,11 +611,11 @@ mod tests {
         );
     }
 
-    // ── ENUM-02 with non-evaluable initializers (D-05) ────────────────────────
+    // ── ENUM-02 with non-evaluable initializers ────────────────────────
 
     #[test]
     fn test_enum02_non_evaluable_text_differs() {
-        // old A="Foo.Bar", new A="Foo.Baz" — text differs per D-05 -> Finding
+        // old A="Foo.Bar", new A="Foo.Baz" — text differs per -> Finding
         let old = enum_shape(vec![other_expr_member("A", "Foo.Bar")], false);
         let new = enum_shape(vec![other_expr_member("A", "Foo.Baz")], false);
         let findings = run(&old, &new);
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_enum02_non_evaluable_text_same_no_finding() {
-        // old A="Foo.Bar", new A="Foo.Bar" — text same per D-05 -> No finding
+        // old A="Foo.Bar", new A="Foo.Bar" — text same per -> No finding
         let old = enum_shape(vec![other_expr_member("A", "Foo.Bar")], false);
         let new = enum_shape(vec![other_expr_member("A", "Foo.Bar")], false);
         let findings = run(&old, &new);
@@ -711,7 +711,7 @@ mod tests {
 
     #[test]
     fn test_beh04_const_enum_member_added() {
-        // D-05: Warning regardless of const/regular
+        // Warning regardless of const/regular
         let old = enum_shape(vec![numeric_member("A", 0)], true);
         let new = enum_shape(vec![numeric_member("A", 0), numeric_member("B", 1)], true);
         let findings = run(&old, &new);

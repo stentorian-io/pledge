@@ -1,0 +1,5 @@
+{
+  "name": "lodash-style-default-with-members",
+  "version": "1.0.0",
+  "main": "./dist/index.js"
+}

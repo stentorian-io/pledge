@@ -2,6 +2,7 @@
 name = "interlint"
 version = "0.1.0"
 edition = "2021"
+autotests = false
 
 [features]
 lsp-tests = []
@@ -60,3 +61,19 @@ tokio-util = { version = "0.7", features = ["compat"] }
 dirs = "6.0.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[test]]
+name = "core"
+path = "tests/core/main.rs"
+
+[[test]]
+name = "javascript"
+path = "tests/languages/javascript/main.rs"
+
+[[test]]
+name = "typescript"
+path = "tests/languages/typescript/main.rs"
+
+[[test]]
+name = "node"
+path = "tests/ecosystems/node/main.rs"

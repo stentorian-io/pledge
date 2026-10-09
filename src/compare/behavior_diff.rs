@@ -1,7 +1,7 @@
 // Behavior diff: detect async/sync and generator/non-generator transitions.
 //
 // BEH-01: async-to-sync (async function became sync)
-//         sync-to-async (sync function became async)
+// sync-to-async (sync function became async)
 // BEH-02: generator-removed (generator function became non-generator)
 //
 // Most findings use Severity::Warning (Tier 2), except generator-removed
@@ -17,8 +17,8 @@ use super::subtype::{RULE_ASYNC_TO_SYNC, RULE_GENERATOR_REMOVED, RULE_SYNC_TO_AS
 /// Compare behavioral modifiers (async, generator) between old and new exports.
 ///
 /// Returns Warning findings for:
-/// - async -> sync transition (BEH-01, D-07: consumers awaiting get non-Promise)
-/// - sync -> async transition (BEH-01, D-07: consumers not awaiting get Promise)
+/// - async -> sync transition (BEH-01,: consumers awaiting get non-Promise)
+/// - sync -> async transition (BEH-01,: consumers not awaiting get Promise)
 /// - generator -> non-generator transition (BEH-02: consumers iterating get non-iterable)
 ///
 /// Does NOT flag generator addition (non-generator -> generator) as that is
@@ -177,7 +177,7 @@ mod tests {
     // ── SEM-04: generator-removed must be Major ───────────────────────────────
 
     #[test]
-    fn sem_04_generator_removed_is_major_severity() {
+    fn generator_removed_is_major_severity() {
         let old = make_sym(false, true);
         let new = make_sym(false, false);
         let findings = run(&old, &new);

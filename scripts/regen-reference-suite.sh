@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/regen-reference-suite.sh
 #
-# Regenerates tests/fixtures/reference-suite/<pkg>/expected-findings.json
+# Regenerates tests/fixtures/node/reference/<pkg>/expected-findings.json
 # for one or all reference packages by running the harness pipeline
 # and writing candidate findings, public-surface counts, and incomplete evidence.
 #
@@ -36,7 +36,7 @@ cd "$REPO_ROOT"
 cargo build --locked --release --example reference_suite_dump
 
 for PKG in "${PKGS[@]}"; do
-    OUT="tests/fixtures/reference-suite/$PKG/expected-findings.json"
+    OUT="tests/fixtures/node/reference/$PKG/expected-findings.json"
     echo "[regen] Generating $OUT ..."
     cargo run --quiet --locked --release --example reference_suite_dump -- "$PKG" > "$OUT.tmp"
     # Validate JSON syntax before swap.
@@ -50,5 +50,5 @@ done
 
 echo
 echo "[regen] Done. MANUALLY review the diff:"
-echo "  git diff tests/fixtures/reference-suite/*/expected-findings.json"
+echo "  git diff tests/fixtures/node/reference/*/expected-findings.json"
 echo "Then commit if the changes align with intentional behavior shifts."

@@ -11,8 +11,8 @@ pub struct EntryPoint {
     /// The condition key from the exports map (e.g., "import", "require", "types"), or None
     /// when resolved from top-level `main`, `module`, or `types` fields.
     pub condition: Option<String>,
-    /// D-02 (Phase 18): Canonical subpath the entry point belongs to. Always `"."` for
-    /// root fallback (main/module/types/typings/browser) and for `exports: { ".": ... }`.
+    ///: Canonical subpath the entry point belongs to. Always `"."` for
+    /// root fallback (main/module/types/typings/browser) and for `exports: { ".":... }`.
     /// Set to the subpath key (e.g., `"./utils"`) when resolved from a non-root
     /// subpath entry in the `exports` map.
     pub subpath: String,
@@ -20,7 +20,7 @@ pub struct EntryPoint {
 
 /// Resolve all entry points for a package rooted at `pkg_root`.
 ///
-/// Resolution order per the Node.js spec (D-11):
+/// Resolution order per the Node.js spec:
 /// 1. `exports` field (takes precedence, parsed recursively)
 /// 2. `main`, `module`, `types` fields (fallback, in that order)
 /// 3. `index.js` (final fallback when nothing else is present)
@@ -55,8 +55,8 @@ pub(crate) fn resolve_entry_points_with_warnings(
     } else {
         // Fall back to main / module / types / typings in priority order.
         // Note: `typings` is the legacy TypeScript alias for `types`; we check
-        // `types` first so that when both are present `types` wins (D-11).
-        // GAP-16-12: Include "browser" as a fallback entry point.
+        // `types` first so that when both are present `types` wins.
+        // Include "browser" as a fallback entry point.
         // The browser field is commonly used by bundlers (webpack, Rollup) to specify
         // a browser-specific entry point. We handle the string case (common) here;
         // the object case (field remapping) is out of scope for entry-point discovery.
@@ -101,7 +101,7 @@ pub(crate) fn resolve_entry_points_with_warnings(
                                 if let Some(path_str) = target.as_str() {
                                     // typesVersions paths may contain wildcards like "dist/types/*"
                                     // For entry point discovery, resolve non-wildcard paths directly.
-                                    // GAP-16-11: Wildcard paths are expanded by scanning the target directory.
+                                    // Wildcard paths are expanded by scanning the target directory.
                                     if !path_str.contains('*') {
                                         let abs = pkg_root.join(path_str.trim_start_matches("./"));
                                         results.push(EntryPoint {
@@ -110,9 +110,9 @@ pub(crate) fn resolve_entry_points_with_warnings(
                                             subpath: ".".to_string(),
                                         });
                                     } else {
-                                        // GAP-16-11: Wildcard path expansion.
+                                        // Wildcard path expansion.
                                         // Pattern like "dist/types/*" — strip the `*` to get the directory,
-                                        // then list all .ts/.d.ts files within it.
+                                        // then list all.ts/.d.ts files within it.
                                         let dir_pattern = path_str.trim_start_matches("./");
                                         let dir_path = dir_pattern.replace('*', "");
                                         let dir_abs = pkg_root.join(&dir_path);
@@ -190,7 +190,7 @@ pub(crate) fn resolve_entry_points_with_warnings(
         let canonical = match entry.path.canonicalize() {
             Ok(p) => p,
             Err(_) => {
-                // File does not exist — skip per D-14.
+                // File does not exist — skip.
                 warnings.push(format!(
                     "entry point does not exist: {}",
                     entry.path.display()
@@ -217,7 +217,7 @@ pub(crate) fn resolve_entry_points_with_warnings(
 ///
 /// Returns the collected `EntryPoint`s. Warnings are appended to `warnings`.
 ///
-/// Phase 18 D-02: `subpath` is threaded through recursion so every emitted EntryPoint
+///: `subpath` is threaded through recursion so every emitted EntryPoint
 /// carries its originating subpath (canonically `"."` for root).
 pub(crate) fn resolve_exports_value_with_warnings(
     value: &serde_json::Value,
@@ -241,7 +241,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
             for (key, child) in map {
                 if key.starts_with('.') {
                     if key.contains('*') {
-                        // GAP-16-06: Subpath wildcard key like "./*" or "./features/*".
+                        // Subpath wildcard key like "./*" or "./features/*".
                         let expanded =
                             expand_subpath_wildcard(key, child, base_path, condition, warnings);
                         results.extend(expanded.into_iter().filter(|entry| {
@@ -254,7 +254,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
                         }));
                     } else {
                         // Subpath export like "./utils" — recurse with the subpath key,
-                        // preserving the inherited condition (Phase 18 D-02: subpath-key
+                        // preserving the inherited condition (subpath-key
                         // recursion updates subpath; condition is preserved so that
                         // condition-before-subpath and subpath-before-condition orderings
                         // both produce correct (subpath, condition) pairs on leaves).
@@ -538,7 +538,7 @@ mod tests {
         );
     }
 
-    // GAP-16-12: browser field test
+    // browser field test
     #[test]
     fn test_browser_field_parsed_as_entry_point() {
         // Package uses the "browser" field as a bundler entry point.
@@ -555,7 +555,7 @@ mod tests {
         );
     }
 
-    // GAP-16-07: exports array fallback tests
+    // exports array fallback tests
     #[test]
     fn exports_array_does_not_fall_back_on_missing_file() {
         let dir = make_pkg(r#"{"exports":["./missing.js","./real.js"]}"#, &["real.js"]);
@@ -579,11 +579,11 @@ mod tests {
         );
     }
 
-    // GAP-16-11: typesVersions wildcard expansion tests
+    // typesVersions wildcard expansion tests
     #[test]
     fn test_typesversions_wildcard_expands_to_d_ts_files() {
         // typesVersions: { ">=4.0": { "*": ["dist/types/*"] } }
-        // dist/types/ contains two .d.ts files — both should be discovered.
+        // dist/types/ contains two.d.ts files — both should be discovered.
         let pkg_json = r#"{
             "name": "mypkg",
             "typesVersions": {
@@ -631,7 +631,7 @@ mod tests {
         );
     }
 
-    // GAP-16-06: subpath wildcard expansion tests
+    // subpath wildcard expansion tests
     #[test]
     fn test_subpath_wildcard_expands_to_matching_files() {
         // exports: { "./*": "./dist/*.js" }
@@ -687,7 +687,7 @@ mod tests {
     // ── ROB-03: Non-standard `exports` values produce warnings + fallback ────
 
     #[test]
-    fn rob_03_exports_false_produces_warning_and_empty() {
+    fn exports_false_produces_warning_and_empty() {
         let v = serde_json::json!(false);
         let mut warnings: Vec<String> = Vec::new();
         let res = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn rob_03_exports_numeric_produces_warning() {
+    fn exports_numeric_produces_warning() {
         let v = serde_json::json!(42);
         let mut warnings: Vec<String> = Vec::new();
         let _ = resolve_exports_value_with_warnings(&v, Path::new("/"), None, ".", &mut warnings);
@@ -726,7 +726,7 @@ mod tests {
         );
     }
 
-    // ─── Phase 18: subpath threading (D-02) ──────────────────────────────────
+    // ───: subpath threading ──────────────────────────────────
 
     #[test]
     fn test_subpath_canonical_dot_for_main_fallback() {
@@ -742,7 +742,7 @@ mod tests {
     #[test]
     fn test_subpath_preserved_across_condition_branch() {
         // Two distinct subpaths, each wrapped under condition objects.
-        // Prior to Phase 18 the subpath-key recursion lost subpath context.
+        // Prior to the subpath-key recursion lost subpath context.
         let pkg_json = r#"{
             "name": "x",
             "exports": {

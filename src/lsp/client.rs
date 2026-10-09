@@ -1,6 +1,5 @@
 //! LSP client lifecycle: spawn typescript-language-server, initialize, and shutdown.
 //!
-//! Per decisions D-04, D-06, D-07.
 
 use std::ops::ControlFlow;
 use std::path::Path;
@@ -57,7 +56,7 @@ impl LspSession {
 /// Writes a synthetic tsconfig.json, then starts the LSP session and completes
 /// the initialize handshake. Dependencies must be prepared before discovery.
 pub async fn start_session(binary: &LspBinary, root_dir: &Path) -> Result<LspSession, LspError> {
-    // Synthesize tsconfig.json if not already present (D-14)
+    // Synthesize tsconfig.json if not already present
     maybe_write_tsconfig(root_dir).await?;
 
     // Build the command

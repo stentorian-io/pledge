@@ -41,10 +41,10 @@ fn cached_query(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SourceLanguage {
     TypeScript,
-    /// INF-01 (Phase 18): JSX-bearing TypeScript files (`.tsx`) — routed to
+    /// INF-01: JSX-bearing TypeScript files (`.tsx`) — routed to
     /// `tree_sitter_typescript::LANGUAGE_TSX`. TSX is a strict superset of
     /// LANGUAGE_TYPESCRIPT so every TypeScript query compiles and matches
-    /// identically on TSX source. Pre-Phase-18 `.tsx` was routed to
+    /// identically on TSX source. `.tsx` was routed to
     /// LANGUAGE_TYPESCRIPT and produced ERROR nodes on any JSX body,
     /// suppressing export discovery.
     TypeScriptTsx,
@@ -69,7 +69,7 @@ pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
         return Some(SourceLanguage::TypeScript);
     }
     match ext {
-        // INF-01 (Phase 18): `.tsx` routes to LANGUAGE_TSX — a strict superset
+        // INF-01: `.tsx` routes to LANGUAGE_TSX — a strict superset
         // of LANGUAGE_TYPESCRIPT that handles JSX expression syntax.
         "tsx" => Some(SourceLanguage::TypeScriptTsx),
         "ts" | "mts" | "cts" => Some(SourceLanguage::TypeScript),
@@ -82,7 +82,7 @@ pub fn language_for_file(path: &Path) -> Option<SourceLanguage> {
 ///
 /// Uses the non-deprecated `LANGUAGE_TYPESCRIPT` / `LANGUAGE_TSX` / `LANGUAGE` constants.
 ///
-/// Phase 19: made `pub(super)` so `comment_scan.rs` can call it.
+/// made `pub(super)` so `comment_scan.rs` can call it.
 pub(super) fn get_language(lang: &SourceLanguage) -> tree_sitter::Language {
     match lang {
         SourceLanguage::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -134,34 +134,34 @@ pub struct RawExport {
     /// META-04: TSDoc release tag extracted from adjacent block comment.
     /// Populated during parse_exports for named declaration exports.
     pub release_tag: Option<crate::types::ReleaseTag>,
-    /// ARCH-02 (Phase 18): compound-component members attached to this export
+    /// ARCH-02: compound-component members attached to this export
     /// via `Target.Member = X` or `Object.assign(Target, { Member: X })`.
     /// Populated during the compound-assignment second pass in `parse_exports`.
-    /// D-16 conservative: only populated when Target is itself an exported
+    /// conservative: only populated when Target is itself an exported
     /// symbol in the same file.
     pub compound_members: Vec<String>,
-    /// INF-02 (Phase 18): type annotation text extracted from a matching
+    /// INF-02: type annotation text extracted from a matching
     /// `declare` statement in the same file (rollup-plugin-dts / api-extractor
-    /// bundle pattern: `declare const foo: T; ... export { foo };`). Populated
+    /// bundle pattern: `declare const foo: T;... export { foo };`). Populated
     /// during `parse_exports` Pass 1 by lookup against the file-scope ambient-
     /// declaration sidecar map. `None` for source-form exports where no
     /// `declare` statement precedes the `export { foo }` specifier and for
     /// re-exports where the symbol comes from another module.
     pub type_signature: Option<String>,
-    /// TYPE-01 (Phase 20): `satisfies T` RHS — populated by the resolver's
+    /// TYPE-01: `satisfies T` RHS — populated by the resolver's
     /// post-parse populate pass that calls `extract_satisfies_types` and
     /// routes each hit through `parse_type_string`. `None` for exports that
     /// have no adjacent `satisfies` clause, and on every initial construction
     /// from this module (the populate pass is the single producer).
     pub satisfies_type: Option<crate::types::shape::TypeShape>,
-    /// INF-04 (Phase 22): `typeof import('./y').Z` references in this raw
+    /// INF-04: `typeof import('./y').Z` references in this raw
     /// export's type position. Empty by default; populated by
     /// `extract_typeof_import_refs` in the resolver's post-parse populate
     /// pass alongside the TYPE-01 satisfies-type populate. Each entry is
     /// later forwarded onto the resolved `ExportSymbol.typeof_import_refs`
     /// at the resolver's insertion sites.
     pub typeof_import_refs: Vec<crate::types::TypeofImportRef>,
-    /// DOC-01 (Phase 25): true when this RawExport was synthesized from a
+    /// DOC-01: true when this RawExport was synthesized from a
     /// `module.exports = new Proxy(...)` or `module.exports = Reflect.construct(...)`
     /// RHS. The comparator emits a paired Severity::Info finding with rule
     /// `limitation: proxy-dispatched-exports` when transitioning to or from this
@@ -183,7 +183,7 @@ pub struct RawExport {
 /// `source` child — that distinguishes plain named exports from named re-exports.
 /// For `export { foo as bar }` see `NAMED_EXPORT_ALIAS_QUERY`.
 ///
-/// GAP-13-03 (inline type modifiers): `export { type Foo, Bar }` is handled
+/// (inline type modifiers): `export { type Foo, Bar }` is handled
 /// transparently by this query because the grammar's `export_specifier` matches
 /// the `identifier` @name node regardless of a preceding per-specifier `"type"` token.
 /// Both `Foo` and `Bar` appear exactly once as Named exports.
@@ -207,12 +207,10 @@ const NAMED_EXPORT_ALIAS_QUERY: &str = r#"
       alias: (identifier) @alias_name)))
 "#;
 
-/// INF-06 (Phase 22): JS grammar's `export { foo as default }` alias form.
+/// INF-06: JS grammar's `export { foo as default }` alias form.
 /// In tree-sitter-javascript 0.25.0 the alias child is an anonymous `default`
 /// keyword token (kind = "default"), NOT an identifier. Requires the string-
-/// literal matcher in the query pattern. Corrects v0.2 INF-03 audit's
-/// incorrect root-cause diagnosis (CONTEXT.md D-06 — overrides REQUIREMENTS.md
-/// "regex fallback" wording).
+/// literal matcher in the query pattern.
 ///
 /// Capture index 0 = `@local_name` (the local binding, e.g. "foo").
 /// Capture index 1 = `@alias_default` (the anonymous `default` keyword token).
@@ -240,7 +238,7 @@ const COMPOUND_ASSIGN_MEMBER_QUERY: &str = r#"
       right: (_) @value)))
 "#;
 
-/// ARCH-02 Form 3: `Object.assign(Target, { Member: X, ... })` compound
+/// ARCH-02 Form 3: `Object.assign(Target, { Member: X,... })` compound
 /// component composition.
 ///
 /// Captures `@obj` + `@assign_prop` (to check Object.assign), `@target` (first
@@ -365,7 +363,6 @@ const NAMED_REEXPORT_ALIAS_QUERY: &str = r#"
 ///
 /// The `"type"` keyword is an anonymous token child of `export_statement`.
 /// Type-only exports are public API surface and must be tracked in the export map.
-/// See Phase 12 RESEARCH Pattern 1.
 const TYPE_ONLY_NAMED_EXPORT_QUERY_TS: &str = r#"
 (export_statement
   "type"
@@ -415,7 +412,6 @@ const TYPE_ONLY_ALIAS_REEXPORT_QUERY_TS: &str = r#"
 /// Captures `export const { foo, bar } = obj` — shorthand destructuring patterns.
 ///
 /// Each `shorthand_property_identifier_pattern` is a separately exported name.
-/// See Phase 12 RESEARCH Pattern 2.
 const DESTRUCTURED_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
@@ -428,7 +424,6 @@ const DESTRUCTURED_EXPORT_QUERY: &str = r#"
 ///
 /// The `value` (identifier) is the PUBLIC exported name (the local binding).
 /// The `key` is the source property.
-/// See Phase 12 RESEARCH Pattern 2 and BUG-13-03 fix.
 const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
@@ -442,7 +437,6 @@ const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
 ///
 /// This is a TypeScript-only syntax. The export is treated as a default export
 /// with name "default" in interlint's model (equivalent to `module.exports = Foo`).
-/// See Phase 12 RESEARCH Pattern 3.
 const EXPORT_ASSIGNMENT_QUERY_TS: &str = r#"
 (export_statement
   "="
@@ -458,7 +452,6 @@ const EXPORT_ASSIGNMENT_QUERY_TS: &str = r#"
 /// This is critical for packages that ship `.d.ts` type declaration files —
 /// virtually all TypeScript packages. Their public API is expressed as
 /// `declare` statements.
-/// See Phase 12 RESEARCH Pattern 6 (Gap 8).
 const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
 (export_statement
   declaration: (ambient_declaration
@@ -475,7 +468,7 @@ const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
     ]))
 "#;
 
-/// Captures `declare module 'express' { ... }` — module augmentation in .d.ts files.
+/// Captures `declare module 'express' {... }` — module augmentation in.d.ts files.
 ///
 /// Module augmentations extend external package types. The module name (string literal)
 /// identifies which module is being augmented. These are captured as named exports
@@ -484,7 +477,7 @@ const AMBIENT_DECL_EXPORT_QUERY_TS: &str = r#"
 /// Grammar: `(ambient_declaration (module name: (string) body: (statement_block)))`.
 /// The `string` node has a `string_fragment` child; `node.utf8_text` returns the
 /// full quoted string (e.g., `"'express'"`). We strip quotes after capture.
-/// GAP-15-06.
+///.
 const DECLARE_MODULE_AUGMENTATION_QUERY_TS: &str = r#"
 (ambient_declaration
   (module
@@ -492,16 +485,16 @@ const DECLARE_MODULE_AUGMENTATION_QUERY_TS: &str = r#"
     body: (statement_block) @module_body))
 "#;
 
-/// Captures `declare global { ... }` — global augmentation in .d.ts files.
+/// Captures `declare global {... }` — global augmentation in.d.ts files.
 ///
 /// Global augmentations add declarations to the global scope. Captured with a
 /// synthetic `augment:global` key.
 ///
-/// Grammar: `declare global { ... }` parses as `(ambient_declaration (statement_block ...))`
-/// — no `module` wrapper, no identifier. We detect it by matching `ambient_declaration`
+/// Grammar: `declare global {... }` parses as `(ambient_declaration (statement_block...))`
+/// no `module` wrapper, no identifier. We detect it by matching `ambient_declaration`
 /// nodes whose only named child is a `statement_block` (with no preceding module name node).
 /// The query captures the `statement_block` so we can filter on node position.
-/// GAP-15-06.
+///.
 const DECLARE_GLOBAL_AUGMENTATION_QUERY_TS: &str = r#"
 (ambient_declaration
   (statement_block) @global_body)
@@ -509,7 +502,7 @@ const DECLARE_GLOBAL_AUGMENTATION_QUERY_TS: &str = r#"
 
 /// Captures `export { default as Named }` — keyword `default` as source with alias.
 /// The `default` keyword is an unnamed node, not `identifier`, so existing queries miss it.
-/// GAP-13-02.
+///.
 const DEFAULT_SPECIFIER_ALIAS_QUERY: &str = r#"
 (export_statement
   (export_clause
@@ -519,7 +512,7 @@ const DEFAULT_SPECIFIER_ALIAS_QUERY: &str = r#"
 "#;
 
 /// Captures `export { default } from './foo'` — re-export of default.
-/// GAP-13-02.
+///.
 const DEFAULT_SPECIFIER_REEXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
@@ -529,7 +522,7 @@ const DEFAULT_SPECIFIER_REEXPORT_QUERY: &str = r#"
 "#;
 
 /// Captures `export { default as Named } from './foo'` — re-export default with alias.
-/// GAP-13-02.
+///.
 const DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
@@ -540,7 +533,7 @@ const DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY: &str = r#"
 "#;
 
 /// Captures `export const [a, b] = arr` — array destructuring with named identifiers.
-/// GAP-13-04.
+///.
 const ARRAY_DESTRUCTURED_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
@@ -549,8 +542,8 @@ const ARRAY_DESTRUCTURED_EXPORT_QUERY: &str = r#"
         (identifier) @name))))
 "#;
 
-/// Captures rest patterns in array destructuring: `export const [a, ...rest] = arr`.
-/// GAP-13-04.
+/// Captures rest patterns in array destructuring: `export const [a,...rest] = arr`.
+///.
 const ARRAY_DESTRUCTURED_REST_EXPORT_QUERY: &str = r#"
 (export_statement
   declaration: (lexical_declaration
@@ -561,7 +554,7 @@ const ARRAY_DESTRUCTURED_REST_EXPORT_QUERY: &str = r#"
 
 /// Captures `module.exports = { foo, bar }` — CJS bulk export with shorthand properties.
 /// JavaScript/CJS only. Each shorthand_property_identifier is a named export.
-/// GAP-13-01.
+///.
 const CJS_MODULE_EXPORTS_SHORTHAND_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -574,7 +567,7 @@ const CJS_MODULE_EXPORTS_SHORTHAND_QUERY: &str = r#"
 
 /// Captures `module.exports = { key: value }` — CJS bulk export with explicit pairs.
 /// The key (property_identifier) is the exported name.
-/// GAP-13-01.
+///.
 const CJS_MODULE_EXPORTS_PAIR_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -588,7 +581,7 @@ const CJS_MODULE_EXPORTS_PAIR_QUERY: &str = r#"
 
 /// Captures `exports.foo = bar` — CJS property-by-property export.
 /// The property identifier is the exported name.
-/// GAP-13-01.
+///.
 const CJS_EXPORTS_PROPERTY_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -598,7 +591,7 @@ const CJS_EXPORTS_PROPERTY_QUERY: &str = r#"
 "#;
 
 /// Captures `module.exports = SomeIdentifier` — CJS single default-like export.
-/// GAP-13-01.
+///.
 const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -608,9 +601,9 @@ const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
     right: (identifier) @value))
 "#;
 
-/// Captures `module.exports = class { ... }` — CJS inline class export.
-/// The class may be named (`class Foo { ... }`) or anonymous (`class { ... }`).
-/// GAP-15-01.
+/// Captures `module.exports = class {... }` — CJS inline class export.
+/// The class may be named (`class Foo {... }`) or anonymous (`class {... }`).
+///.
 const CJS_MODULE_EXPORTS_CLASS_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -620,11 +613,11 @@ const CJS_MODULE_EXPORTS_CLASS_QUERY: &str = r#"
     right: (class) @class_value))
 "#;
 
-/// Captures `module.exports = function(...) { ... }`, including async functions,
+/// Captures `module.exports = function(...) {... }`, including async functions,
 /// generator functions, and arrow functions.
 /// Note: In the JS grammar, generator function expressions use the node type
 /// `generator_function` (not `generator_function_expression`).
-/// GAP-15-01.
+///.
 const CJS_MODULE_EXPORTS_FUNCTION_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -638,7 +631,7 @@ const CJS_MODULE_EXPORTS_FUNCTION_QUERY: &str = r#"
     ]))
 "#;
 
-/// DOC-01 (Phase 25): Captures `module.exports = new Proxy(...)` and
+/// DOC-01: Captures `module.exports = new Proxy(...)` and
 /// `module.exports = Reflect.construct(...)` — Proxy-dispatched default
 /// export. Synthesizes a `default` RawExport flagged is_proxy_dispatched
 /// so the comparator can emit a paired `limitation: proxy-dispatched-exports`
@@ -662,11 +655,11 @@ const CJS_MODULE_EXPORTS_PROXY_QUERY: &str = r#"
     ]))
 "#;
 
-/// Captures `exports.handler = async (req, res) => { ... }` and
-/// `exports.foo = function() { ... }` — CJS named function property exports.
+/// Captures `exports.handler = async (req, res) => {... }` and
+/// `exports.foo = function() {... }` — CJS named function property exports.
 /// Note: In the JS grammar, generator function expressions use the node type
 /// `generator_function` (not `generator_function_expression`).
-/// GAP-15-01.
+///.
 const CJS_EXPORTS_PROPERTY_FUNCTION_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -680,10 +673,10 @@ const CJS_EXPORTS_PROPERTY_FUNCTION_QUERY: &str = r#"
     ]))
 "#;
 
-/// Captures `exports = module.exports = { ... }` — CJS aliasing pattern.
+/// Captures `exports = module.exports = {... }` — CJS aliasing pattern.
 /// Some packages use this pattern where the RHS is a chained assignment.
 /// We capture the object properties from the final object literal.
-/// GAP-16-09.
+///.
 const CJS_EXPORTS_ALIASING_QUERY: &str = r#"
 (expression_statement
   (assignment_expression
@@ -695,7 +688,7 @@ const CJS_EXPORTS_ALIASING_QUERY: &str = r#"
       right: (object) @obj)))
 "#;
 
-/// BUN-01: esbuild `0 && (module.exports = { ... })` tree-shake wrapper.
+/// BUN-01: esbuild `0 && (module.exports = {... })` tree-shake wrapper.
 /// The binary_expression's RHS (under parenthesized_expression) is the module.exports assignment.
 const ESBUILD_TREE_SHAKE_WRAPPER_QUERY: &str = r#"
 (binary_expression
@@ -758,7 +751,7 @@ const SWC_STAR_REEXPORT_SHIM_QUERY: &str = r#"
   arguments: (arguments (_) @callback))
 "#;
 
-/// BUN-06a: `Object.defineProperty(exports, "foo", ...)`,
+/// BUN-06a: `Object.defineProperty(exports, "foo",...)`,
 /// `Object.defineProperties(exports, { foo: {...} })`,
 /// `Object.assign(exports, { foo: x })` forms.
 /// Also resolves __defProp aliases from the BUN-03 map. BUN-06.
@@ -780,7 +773,7 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
   right: (_))
 "#;
 
-/// BUN-11-A (Phase 24): UMD wrapper IIFE shape — Form 1: `(func)(args)`.
+/// BUN-11-A: UMD wrapper IIFE shape — Form 1: `(func)(args)`.
 ///
 /// Captures @umd_factory_body — the IIFE's second-arg function body — so the
 /// driver can recurse the existing CJS / BUN-06a queries against just that
@@ -790,16 +783,15 @@ const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
 /// name for anonymous `function(…) {}` literals. The query-compile
 /// unit test below is the regression guard for grammar version bumps.
 ///
-/// Two parenthesization forms exist in real-world UMD output and BOTH must be
-/// covered (Rule 1 deviation from the original plan, which only covered Form 1):
+/// UMD output uses two parenthesization forms:
 ///
-/// Form 1 — `(function (root, factory) { ... })(this, function () { ... });`
-///   (parens wrap only the outer function; call sits outside)
-///   AST: `(call_expression function: (parenthesized_expression (function_expression ...)) ...)`
+/// Form 1 — `(function (root, factory) {... })(this, function () {... });`
+///  (parens wrap only the outer function; call sits outside)
+/// AST: `(call_expression function: (parenthesized_expression (function_expression...))...)`
 ///
-/// Form 2 — `(function (root, factory) { ... }(this, function () { ... }));`
-///   (parens wrap the entire call expression; function_expression sits directly under call_expression)
-///   AST: `(parenthesized_expression (call_expression function: (function_expression ...) ...))`
+/// Form 2 — `(function (root, factory) {... }(this, function () {... }));`
+///  (parens wrap the entire call expression; function_expression sits directly under call_expression)
+/// AST: `(parenthesized_expression (call_expression function: (function_expression...)...))`
 ///
 /// Form 2 is the lodash/UMD-template canonical shape. Both queries run in the
 /// driver and dedup at emission time prevents double-emission when both match.
@@ -817,7 +809,7 @@ const UMD_FACTORY_WRAPPER_QUERY: &str = r#"
       body: (statement_block) @umd_factory_body)))
 "#;
 
-/// BUN-11-A Form 2 (Phase 24): UMD wrapper IIFE shape — `(func(args))`.
+/// BUN-11-A Form 2: UMD wrapper IIFE shape — `(func(args))`.
 /// Companion query to UMD_FACTORY_WRAPPER_QUERY for the form where the call
 /// expression is wrapped by `parenthesized_expression`, not just the function.
 const UMD_FACTORY_WRAPPER_QUERY_FORM2: &str = r#"
@@ -834,20 +826,20 @@ const UMD_FACTORY_WRAPPER_QUERY_FORM2: &str = r#"
         body: (statement_block) @umd_factory_body))))
 "#;
 
-/// BUN-11-B (Phase 24): lodash-style IIFE with `module.exports = <ident>`.
+/// BUN-11-B: lodash-style IIFE with `module.exports = <ident>`.
 ///
 /// The simplest shape is a top-level IIFE call like:
-///   (function() { ... module.exports = X; ... }.call(this))
+///  (function() {... module.exports = X;... }.call(this))
 /// or:
-///   (function() { ... module.exports = X; ... }())
+///  (function() {... module.exports = X;... }())
 /// or with the parenthesized_expression chain (Pitfall 5):
-///   (function() { ... (module.exports = X)._ = X; ... }.call(this))
+///  (function() {... (module.exports = X)._ = X;... }.call(this))
 ///
 /// We search the AST DEPTH-AGNOSTICALLY for `module.exports = <identifier>` —
 /// tree-sitter queries are depth-agnostic by default (Pitfall 1) so this
 /// captures the assignment regardless of nesting under any IIFE wrapper.
 /// The transient Default RawExport is synthesized for the captured identifier
-/// so attach_compound_members's D-16 gate accepts the binding.
+/// so attach_compound_members's gate accepts the binding.
 const LODASH_STYLE_DEFAULT_QUERY: &str = r#"
 (assignment_expression
   left: (member_expression
@@ -856,27 +848,27 @@ const LODASH_STYLE_DEFAULT_QUERY: &str = r#"
   right: (identifier) @umd_default_binding)
 "#;
 
-/// BUN-11-B (Phase 24) Path 1A companion: depth-agnostic `<ident>.<member> = …`.
+/// BUN-11-B Path 1A companion: depth-agnostic `<ident>.<member> = …`.
 ///
 /// Companion query to LODASH_STYLE_DEFAULT_QUERY for collecting the lodash-style
 /// member assignments (`_.chunk = …`, `_.compact = …`) that live INSIDE an IIFE
 /// body. The pre-existing COMPOUND_ASSIGN_MEMBER_QUERY at line ~196 is anchored
-/// to `(program (expression_statement ...))` — it intentionally rejects
+/// to `(program (expression_statement...))` — it intentionally rejects
 /// nested-inside-function assignments. The lodash binding's members live
 /// inside the wrapper IIFE body and would be excluded.
 ///
-/// This query is DEPTH-AGNOSTIC (no `(program ...)` anchor). The driver gates
+/// This query is DEPTH-AGNOSTIC (no `(program...)` anchor). The driver gates
 /// runtime by checking `target` against the synthesized binding name list
 /// (`umd_default_bindings`) so it cannot over-capture assignments from
 /// unrelated identifiers.
 ///
-/// LIMITATION (WR-01): The gate is **binding-name-scoped, not lexically-scoped**.
+/// LIMITATION: The gate is **binding-name-scoped, not lexically-scoped**.
 /// Matching is by identifier text equality against `umd_default_bindings`, NOT
 /// by AST containment within the wrapper IIFE body. If the same identifier
 /// (e.g. `_`) is reused as a different binding elsewhere in the same file —
 /// for instance a top-level `_.foo = bar` referring to a sibling-IIFE-rebound
 /// `_`, or a shadowed variable — those member assignments will be incorrectly
-/// attached to the synthetic Default. Plan 24-02 phrases this as "over-capture
+/// attached to the synthetic Default. phrases this as "over-capture
 /// is bounded": bounded to "binding-name match anywhere in the file", NOT
 /// bounded to "descendants of the wrapper IIFE body". The robust fix is to
 /// capture the wrapper IIFE body node when synthesizing the Default and
@@ -891,13 +883,13 @@ const BUN_11_B_DEPTH_ANY_MEMBER_ASSIGN_QUERY: &str = r#"
 "#;
 
 // ---------------------------------------------------------------------------
-// INF-02 (Phase 18): rollup-plugin-dts / api-extractor split-declaration
+// INF-02: rollup-plugin-dts / api-extractor split-declaration
 // capture queries.
 //
 // rollup-plugin-dts and api-extractor emit bundle output of the shape:
-//     declare const foo: T;
-//     ...
-//     export { foo };
+// declare const foo: T;
+// ...
+// export { foo };
 // where the `declare` and the `export { foo }` are SIBLING top-level nodes —
 // the `declare` carries the type signature and decl_kind, the `export { foo }`
 // is the public re-surface. A single-pass parse_exports treats the plain
@@ -930,7 +922,7 @@ const AMBIENT_FUNCTION_DECL_QUERY: &str = r#"
       name: (identifier) @decl_name) @decl_node))
 "#;
 
-/// INF-02 Pass 1 / form C: `declare class X { ... }` — class declarations.
+/// INF-02 Pass 1 / form C: `declare class X {... }` — class declarations.
 const AMBIENT_CLASS_DECL_QUERY: &str = r#"
 (program
   (ambient_declaration
@@ -938,7 +930,7 @@ const AMBIENT_CLASS_DECL_QUERY: &str = r#"
       name: (type_identifier) @decl_name)))
 "#;
 
-/// INF-02 Pass 1 / form D: `declare interface X { ... }` — interface declarations.
+/// INF-02 Pass 1 / form D: `declare interface X {... }` — interface declarations.
 const AMBIENT_INTERFACE_DECL_QUERY: &str = r#"
 (program
   (ambient_declaration
@@ -946,7 +938,7 @@ const AMBIENT_INTERFACE_DECL_QUERY: &str = r#"
       name: (type_identifier) @decl_name)))
 "#;
 
-/// INF-02 Pass 1 / form E: `declare type X = ...;` — type alias declarations.
+/// INF-02 Pass 1 / form E: `declare type X =...;` — type alias declarations.
 const AMBIENT_TYPE_ALIAS_DECL_QUERY: &str = r#"
 (program
   (ambient_declaration
@@ -954,7 +946,7 @@ const AMBIENT_TYPE_ALIAS_DECL_QUERY: &str = r#"
       name: (type_identifier) @decl_name)))
 "#;
 
-/// INF-02 Pass 1 / form F: `declare enum X { ... }` — enum declarations.
+/// INF-02 Pass 1 / form F: `declare enum X {... }` — enum declarations.
 const AMBIENT_ENUM_DECL_QUERY: &str = r#"
 (program
   (ambient_declaration
@@ -971,9 +963,9 @@ const AMBIENT_ENUM_DECL_QUERY: &str = r#"
 /// typeless re-export. INF-02 restores the type identity by lookup.
 ///
 /// On duplicate name (rare — same identifier declared twice), first-seen wins
-/// per Phase 18 Research Pitfall 5 (entry().or_insert semantics).
+/// using entry.or_insert semantics.
 ///
-/// Query-compile failures are handled gracefully per Phase 17 key decision: each
+/// Query-compile failures are handled gracefully: each
 /// AMBIENT_*_DECL_QUERY is wrapped in `if let Ok(q)` and a failing query silently
 /// skips that pattern.
 fn collect_ambient_decls(
@@ -986,7 +978,7 @@ fn collect_ambient_decls(
     let language = get_language(lang);
 
     // Tuple element semantics:
-    //   (query_str, kind, capture_type)
+    //  (query_str, kind, capture_type)
     // where `capture_type = true` means the query exposes a `@decl_type` capture
     // (variable/type-annotation form) whose text becomes the type_signature.
     // Otherwise `@decl_node` whole-node text (minus trailing `;`) is used as the
@@ -1066,7 +1058,6 @@ fn collect_ambient_decls(
 // ---------------------------------------------------------------------------
 
 /// Map a tree-sitter node kind string to a DeclarationKind.
-/// Per D-04 and 08-RESEARCH Pattern 1.
 fn decl_kind_from_node_kind(kind: &str) -> DeclarationKind {
     match kind {
         "function_declaration" | "function_signature" => DeclarationKind::Function,
@@ -1104,10 +1095,10 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     let root = tree.root_node();
     let mut exports: Vec<RawExport> = Vec::new();
 
-    // INF-02 Pass 1 (Phase 18): collect top-level `declare` statements keyed by
+    // INF-02 Pass 1: collect top-level `declare` statements keyed by
     // identifier. The resulting sidecar is consulted post-collection by the
     // link-pass below to enrich rollup-plugin-dts / api-extractor split
-    // declarations (`declare const foo: T; ... export { foo };`) with the
+    // declarations (`declare const foo: T;... export { foo };`) with the
     // declare-site decl_kind and type_signature. Empty HashMap for non-TS or
     // TS files without ambient declarations — link-pass no-ops.
     let ambient_decls = collect_ambient_decls(root, source, &lang);
@@ -1122,7 +1113,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     let mut type_only_reexport_positions: std::collections::HashSet<(u32, u32)> =
         std::collections::HashSet::new();
 
-    // --- `export { default as Named }` forms (GAP-13-02) ----------------------
+    // --- `export { default as Named }` forms ----------------------
     // Process BEFORE regular named export queries to set positions for dedup.
     // The `default` keyword is an unnamed node in the grammar, so existing
     // identifier-based queries miss it.
@@ -1280,7 +1271,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
             if let (Some(lp), Some((name, line, col))) = (local_pos, alias_name_opt) {
                 alias_local_positions.insert(lp);
-                // INF-03 (Phase 18): tsup/esbuild ESM trailer
+                // INF-03: tsup/esbuild ESM trailer
                 // `export { foo as default }`. The alias_name is the PUBLIC
                 // exported name — when it is the keyword `default`, the
                 // specifier is semantically a default-export, not a named
@@ -1288,7 +1279,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 // "default", kind: Default }` so downstream resolver keying
                 // treats this as the default export (the resolver's default
                 // path is keyed as `"default"` and carries distinct merge
-                // semantics). Non-"default" aliases preserve pre-Phase-18
+                // semantics). Non-"default" aliases preserve
                 // Named behavior — `export { foo as Baz }` remains a Named
                 // export with name "Baz".
                 let export_kind = if name == "default" {
@@ -1317,7 +1308,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // INF-06 (Phase 22): JS-specific `export { foo as default }` alias capture.
+    // INF-06: JS-specific `export { foo as default }` alias capture.
     // The grammar uses an anonymous `default` keyword token for this alias,
     // which the identifier-typed NAMED_EXPORT_ALIAS_QUERY cannot match.
     // Shares `alias_local_positions` with the existing ALIAS loop for dedup.
@@ -1423,7 +1414,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // Processing order: alias forms first (to set type_only_alias_local_positions),
     // then non-alias forms (skipping positions handled by alias queries).
     // We also skip positions already in reexport_positions to avoid double-counting.
-    // INF-01 (Phase 18): TypeScriptTsx included — TSX is a strict superset; every TS query matches identically.
+    // INF-01: TypeScriptTsx included — TSX is a strict superset; every TS query matches identically.
     if matches!(
         lang,
         SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
@@ -1719,7 +1710,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // --- Export assignment (`export = Foo`, TypeScript only) -----------------
     // CommonJS-style TypeScript default export. Produces a "default" entry.
     // Only emit if no default export already exists at this position.
-    // INF-01 (Phase 18): TypeScriptTsx included — `export = Foo` is TS syntax
+    // INF-01: TypeScriptTsx included — `export = Foo` is TS syntax
     // the TSX grammar also parses.
     if matches!(
         lang,
@@ -1769,7 +1760,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // "default" keyword child in the parent export_statement node) — those are
     // handled by the default export queries above.
     {
-        // INF-01 (Phase 18): TypeScriptTsx shares DECL_EXPORT_QUERY_TS with
+        // INF-01: TypeScriptTsx shares DECL_EXPORT_QUERY_TS with
         // TypeScript — TSX is a strict superset of LANGUAGE_TYPESCRIPT's query
         // surface.
         let decl_query_str = match lang {
@@ -1840,12 +1831,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Ambient declaration exports (`export declare ...`, TypeScript only) ---
-    // In .d.ts files and `declare` blocks, declarations are wrapped in
+    // --- Ambient declaration exports (`export declare...`, TypeScript only) ---
+    // In `.d.ts` files and `declare` blocks, declarations are wrapped in
     // `ambient_declaration`. The existing DECL_EXPORT_QUERY_TS doesn't match
     // through this wrapper.
-    // INF-01 (Phase 18): TypeScriptTsx included — ambient declarations also
-    // appear in `.tsx` source (e.g., `declare global { ... }` inside a JSX-
+    // INF-01: TypeScriptTsx included — ambient declarations also
+    // appear in `.tsx` source (e.g., `declare global {... }` inside a JSX-
     // bearing component file).
     if matches!(
         lang,
@@ -2013,7 +2004,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     });
                     // TLF-07: Detect `export type * from '...'`.
                     // In tree-sitter-typescript 0.23.2, `export type *` is parsed as:
-                    //   export_statement { export, ERROR { type }, *, from, string }
+                    // export_statement { export, ERROR { type }, *, from, string }
                     // The `type` keyword is inside an ERROR child, not a direct unnamed child.
                     // We check both direct children AND ERROR children for the `type` token.
                     let is_type_only = {
@@ -2094,7 +2085,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                 }
                 if let (Some((ns_name, line, col)), Some(src)) = (ns_name_opt, src_opt) {
-                    // BUG-13-02: Include the name in the dedup check so that a plain star
+                    // Include the name in the dedup check so that a plain star
                     // re-export (name="*") and a namespace re-export (name="utils") from the
                     // same source are NOT considered duplicates and can coexist.
                     let already = exports.iter().any(|e| {
@@ -2236,7 +2227,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Array destructuring: `export const [a, b] = arr` (GAP-13-04) ----------
+    // --- Array destructuring: `export const [a, b] = arr` ----------
     if let Ok(query) = cached_query(&language, ARRAY_DESTRUCTURED_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
@@ -2270,7 +2261,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // Rest patterns: `export const [a, ...rest] = arr`
+    // Rest patterns: `export const [a,...rest] = arr`
     if let Ok(query) = cached_query(&language, ARRAY_DESTRUCTURED_REST_EXPORT_QUERY) {
         let mut cursor = QueryCursor::new();
         let mut matches_iter = cursor.matches(&query, root, source);
@@ -2304,7 +2295,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Nested destructuring: `export const { a: { b } } = obj` (GAP-16-08) ---
+    // --- Nested destructuring: `export const { a: { b } } = obj` ---
     // Tree-sitter queries only match 1-level deep. Walk export statements with
     // object_pattern or array_pattern and recursively extract nested identifiers.
     // Runs AFTER flat destructuring queries so the dedup check correctly skips
@@ -2353,7 +2344,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- TS 5.2 `using`/`await using` export declarations (GAP-15-02) ----------
+    // --- TS 5.2 `using`/`await using` export declarations ----------
     // The tree-sitter-typescript grammar (v0.23.2) may not have native support for
     // `export using handle = getResource()` or `export await using h = getResource()`.
     // If parsing produces ERROR nodes, we apply a heuristic: walk top-level children
@@ -2362,7 +2353,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // If the grammar parses them correctly (future grammar version), the existing
     // DECL_EXPORT_QUERY_TS will catch them as lexical_declaration/variable_declarator.
     // This is graceful degradation — if neither heuristic fires, it's a silent no-op.
-    // INF-01 (Phase 18): TypeScriptTsx included — `using`/`await using` is TS 5.2
+    // INF-01: TypeScriptTsx included — `using`/`await using` is TS 5.2
     // syntax that TSX also accepts.
     if matches!(
         lang,
@@ -2424,7 +2415,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- CJS module.exports / exports.foo detection (GAP-13-01) ---------------
+    // --- CJS module.exports / exports.foo detection ---------------
     // Only for JavaScript files — TypeScript uses `export =` instead.
     // Validation (checking "module"/"exports" text) is done in Rust after capture
     // since #eq? predicates are not automatically applied by cursor.matches().
@@ -2571,7 +2562,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // 4a. module.exports = class { ... } — CJS inline class export (GAP-15-01)
+        // 4a. module.exports = class {... } — CJS inline class export
         // Run BEFORE query #4 (module.exports = Identifier) so the dedup check on "default"
         // skips the identifier-form query when an inline class was already emitted.
         if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_CLASS_QUERY) {
@@ -2616,7 +2607,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // 4b. module.exports = function/arrow — CJS inline function export (GAP-15-01)
+        // 4b. module.exports = function/arrow — CJS inline function export
         if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_FUNCTION_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
@@ -2659,7 +2650,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // 4c. exports.NAME = function/arrow — CJS named function property export (GAP-15-01)
+        // 4c. exports.NAME = function/arrow — CJS named function property export
         // Only when @obj is "exports" (NOT "module"). The existing CJS_EXPORTS_PROPERTY_QUERY
         // already emits these as Variable; we emit a more specific Function decl_kind version.
         // Use a dedup check on name to avoid double-emitting with the existing query (#3).
@@ -2761,7 +2752,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // DOC-01 (Phase 25): module.exports = new Proxy(...) | Reflect.construct(...)
+        // DOC-01: module.exports = new Proxy(...) | Reflect.construct(...)
         if let Ok(query) = cached_query(&language, CJS_MODULE_EXPORTS_PROXY_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
@@ -2844,9 +2835,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- CJS aliasing: `exports = module.exports = { ... }` (GAP-16-09) --------
+    // --- CJS aliasing: `exports = module.exports = {... }` --------
     // Some packages use a chained assignment pattern to alias exports and module.exports.
-    // GAP-16-09.
+    //.
     if matches!(lang, SourceLanguage::JavaScript) {
         if let Ok(query) = cached_query(&language, CJS_EXPORTS_ALIASING_QUERY) {
             let mut cursor = QueryCursor::new();
@@ -2942,18 +2933,18 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Module augmentation capture (GAP-15-06, TypeScript only) ---
-    // Captures `declare module 'express' { ... }` and `declare global { ... }`.
+    // --- Module augmentation capture (TypeScript only) ---
+    // Captures `declare module 'express' {... }` and `declare global {... }`.
     // Module augmentations extend external package types — their removal breaks consumers.
     // Emitted with synthetic `augment:<module>` key (or `augment:global`) so the existing
     // export-removed detection handles their removal without extra code.
-    // INF-01 (Phase 18): TypeScriptTsx included — module augmentation is TS
+    // INF-01: TypeScriptTsx included — module augmentation is TS
     // syntax that TSX also parses.
     if matches!(
         lang,
         SourceLanguage::TypeScript | SourceLanguage::TypeScriptTsx
     ) {
-        // declare module 'express' { ... }
+        // declare module 'express' {... }
         if let Ok(query) = cached_query(&language, DECLARE_MODULE_AUGMENTATION_QUERY_TS) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
@@ -3007,8 +2998,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // declare global { ... }
-        // Grammar: `declare global { ... }` parses as `(ambient_declaration (statement_block ...))`.
+        // declare global {... }
+        // Grammar: `declare global {... }` parses as `(ambient_declaration (statement_block...))`.
         // The `statement_block` is the first (and only) named child of `ambient_declaration`.
         // We match ambient_declaration nodes whose first named child is statement_block and
         // have no preceding module-name node — that distinguishes `declare global` from
@@ -3071,11 +3062,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // --- Namespace member expansion (REQ-14-03, GAP-16-05) ---------------------
+    // --- Namespace member expansion  ---------------------
     // Recursively expands namespace members at all nesting levels.
     // For `export namespace A { export namespace B { export function baz() {} } }`,
     // emits "A.B" and "A.B.baz" as separate Named exports.
-    // GAP-16-05: supports 2+ levels of nesting.
+    // supports 2+ levels of nesting.
     {
         let ns_query_str = "(export_statement (internal_module name: (identifier) @ns_name body: (statement_block) @ns_body))";
         if let Ok(query) = cached_query(&language, ns_query_str) {
@@ -3107,7 +3098,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // tsc void 0 placeholders, swc star re-export shims, Object.defineProperty/
     // defineProperties/assign forms, and bracket-subscript assignments.
     //
-    // BUN-11-B (Phase 24) Path 1A scratch: lodash-style binding identifiers
+    // BUN-11-B Path 1A scratch: lodash-style binding identifiers
     // pushed by the BUN-11-B driver (e.g. "_" for lodash). The post-process
     // after `attach_compound_members` (~line 3730) consumes this list to
     // rename the synthetic Default's `name` from the binding to "default".
@@ -3150,7 +3141,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // BUN-01: esbuild `0 && (module.exports = { ... })` tree-shake wrapper
+        // BUN-01: esbuild `0 && (module.exports = {... })` tree-shake wrapper
         if let Ok(query) = cached_query(&language, ESBUILD_TREE_SHAKE_WRAPPER_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
@@ -3613,13 +3604,13 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     }
                     "assign" => {
                         if let Some(args) = args_node {
-                            // BUN-10 (Phase 24): accept any-position `exports`/`module.*` reference.
+                            // BUN-10: accept any-position `exports`/`module.*` reference.
                             // This handles all three real shapes uniformly:
-                            //   Object.assign(exports, {…})            — pre-Phase-24 path
-                            //   Object.assign(module.exports, {…}, …)  — pre-Phase-24 path
-                            //   Object.assign({}, exports, {…})        — NEW: BUN-10-A gap closed
+                            // Object.assign(exports, {…}) — path
+                            // Object.assign(module.exports, {…}, …) — path
+                            // Object.assign({}, exports, {…}) forwards the existing surface.
                             // The arm short-circuits when no arg references `exports`/`module.*`,
-                            // preserving the precision of the pre-Phase-24 gate.
+                            // preserving the precision of the gate.
                             let all_args: Vec<_> = args.named_children(&mut args.walk()).collect();
                             let any_arg_is_exports = all_args.iter().any(|n| {
                                 n.utf8_text(source)
@@ -3756,9 +3747,9 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // BUN-11-A (Phase 24): UMD wrapper factory-returns-object literal unwrap.
+        // BUN-11-A: UMD wrapper factory-returns-object literal unwrap.
         //
-        // ORDERING INVARIANT (WR-03): this driver MUST run AFTER
+        // ORDERING INVARIANT: this driver MUST run AFTER
         // `CJS_EXPORTS_PROPERTY_QUERY` (and `OBJECT_DEFINE_EXPORT_QUERY`) so
         // that the dedup check `exports.iter().any(|e| e.name == name)` below
         // sees those earlier emissions FIRST. If a future refactor moves this
@@ -3771,26 +3762,23 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         // AND `exports.foo = …`" shape.
         //
         // Detects the canonical UMD shape:
-        //   (function (root, factory) { ... })(this, function () { return { foo, bar }; });   // Form 1
-        //   (function (root, factory) { ... }(this, function () { return { foo, bar }; }));   // Form 2
-        // and emits each pair in the factory's `return { ... }` as a Named export.
+        //  (function (root, factory) {... })(this, function () { return { foo, bar }; }); // Form 1
+        //  (function (root, factory) {... }(this, function () { return { foo, bar }; })); // Form 2
+        // and emits each pair in the factory's `return {... }` as a Named export.
         //
         // Sub-cases covered ELSEWHERE (no code needed here):
-        //   - Factory uses `exports.X = …` / `Object.defineProperty(exports, …)`:
-        //     already detected by the depth-agnostic CJS_EXPORTS_PROPERTY_QUERY and
-        //     OBJECT_DEFINE_EXPORT_QUERY at the outer pass. The dedup check below
-        //     prevents double emission (see ORDERING INVARIANT above).
-        //   - Lodash-style `(module.exports = <ident>)._ = <ident>`: handled by the
-        //     BUN-11-B driver after this driver (Path 1A in Task 3).
+        //  - Factory uses `exports.X = …` / `Object.defineProperty(exports, …)`:
+        // already detected by the depth-agnostic CJS_EXPORTS_PROPERTY_QUERY and
+        // OBJECT_DEFINE_EXPORT_QUERY at the outer pass. The dedup check below
+        // prevents double emission (see ORDERING INVARIANT above).
+        //  - Lodash-style `(module.exports = <ident>)._ = <ident>`: handled by the
+        // BUN-11-B driver after this driver.
         //
         // Pitfall 3: a fresh QueryCursor::new() is allocated for each query
-        // (D-24-02-G). Both queries share an inner factory-body walker.
+        // (-G). Both queries share an inner factory-body walker.
         //
-        // Form 1 / Form 2 deviation note (Rule 1, post-plan): the original plan's
-        // single query covered only Form 1. Real-world UMD wrappers (including
-        // the Form-E test source and Form-2 fixture) use Form 2 where the entire
-        // call_expression is wrapped by parenthesized_expression.
-        // UMD_FACTORY_WRAPPER_QUERY_FORM2 is the companion query for Form 2.
+        // The companion query handles wrappers where parentheses enclose the
+        // whole call rather than only the function expression.
         let process_factory_body = |body: tree_sitter::Node, exports: &mut Vec<RawExport>| {
             let mut body_cursor = body.walk();
             for stmt in body.children(&mut body_cursor) {
@@ -3880,8 +3868,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
 
         // Form 1: `(func)(args)` — capture index 4 = @umd_factory_body.
         // Capture indices are stable by declaration order in the query string:
-        //   0 = @umd_root_param, 1 = @umd_factory_param, 2 = @umd_global_arg,
-        //   3 = @umd_factory_params, 4 = @umd_factory_body.
+        //  0 = @umd_root_param, 1 = @umd_factory_param, 2 = @umd_global_arg,
+        //  3 = @umd_factory_params, 4 = @umd_factory_body.
         if let Ok(query) = cached_query(&language, UMD_FACTORY_WRAPPER_QUERY) {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
@@ -3903,8 +3891,8 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // BUN-11-B SENTINEL PATH 1A IMPLEMENTED  (do not remove — Plan 24-02 Task 5 greps for this exact marker to detect path choice)
-        // BUN-11-B (Phase 24) Path 1A: lodash-style IIFE with `module.exports = <ident>`.
+        // BUN-11-B SENTINEL PATH 1A IMPLEMENTED (do not remove — greps for this exact marker to detect path choice)
+        // BUN-11-B Path 1A: lodash-style IIFE with `module.exports = <ident>`.
         //
         // Detects the assignment depth-agnostically (per Pitfall 1) so the
         // parenthesized_expression chain `(module.exports = X)._ = X` from the lodash
@@ -3913,7 +3901,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         //
         // Path 1A synthesis: pushes a transient Default RawExport tagged with the
         // captured binding NAME as its `name` field. This makes attach_compound_members
-        // (called below at ~line 3730) accept the binding in its D-16 exported_names
+        // (called below at ~line 3730) accept the binding in its exported_names
         // gate, collecting every `<ident>.<member> = …` assignment as a
         // compound_member. The post-pass after attach_compound_members renames the
         // synthetic export's `name` from the binding to "default".
@@ -3934,7 +3922,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                     .find(|c| c.index == 1)
                     .and_then(|c| c.node.utf8_text(source).ok())
                     .unwrap_or("");
-                // Gate: must be `module.exports = ...`.
+                // Gate: must be `module.exports =...`.
                 if mod_obj != "module" || mod_prop != "exports" {
                     continue;
                 }
@@ -3961,7 +3949,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
                 }
 
                 // Synthesize a transient Default tagged with the binding name.
-                // attach_compound_members's D-16 gate looks up `target` in
+                // attach_compound_members's gate looks up `target` in
                 // `exported_names: HashSet<String>` built from `exports.iter().map(|r| r.name)`.
                 // Setting `name = binding` causes the gate to accept `<binding>.<member>`
                 // attachments. We post-process this entry after attach_compound_members
@@ -3992,7 +3980,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             }
         }
 
-        // BUN-11-B (Phase 24) Path 1A: depth-agnostic compound-member scan for
+        // BUN-11-B Path 1A: depth-agnostic compound-member scan for
         // synthesized lodash-style bindings.
         //
         // The pre-existing attach_compound_members (called below at the post-pass)
@@ -4055,12 +4043,12 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     // from unrelated patterns. Remove unconditionally regardless of source.
     exports.retain(|e| e.name != "__esModule");
 
-    // ARCH-02 (Phase 18): compound-component capture as a second pass.
-    // Per D-16 conservative: members attach ONLY when the target identifier is
+    // ARCH-02: compound-component capture as a second pass.
+    // Per conservative: members attach ONLY when the target identifier is
     // itself an exported symbol discovered by the first pass.
     attach_compound_members(root, source, &language, &mut exports);
 
-    // BUN-11-B (Phase 24) Path 1A post-process: rename synthetic default exports.
+    // BUN-11-B Path 1A post-process: rename synthetic default exports.
     //
     // The BUN-11-B driver pushed transient Default RawExports whose `name` field
     // equals the local binding identifier (e.g. "_" for lodash). attach_compound_members
@@ -4098,7 +4086,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         if found {
             // Re-emit ONE Default named "default" with the merged compound_members.
             // Skip if a "default" entry already exists from elsewhere (defensive
-            // — the driver's `already_default` short-circuit makes this rare).
+            // the driver's `already_default` short-circuit makes this rare).
             let already_default = exports
                 .iter()
                 .any(|e| e.name == "default" && matches!(e.kind, RawExportKind::Default));
@@ -4123,7 +4111,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
             } else {
                 // Merge the gathered members into the existing default.
                 //
-                // WR-02 (Phase 24 review): if the existing `default` was emitted
+                //: if the existing `default` was emitted
                 // by a path that did not record real source coordinates (e.g. a
                 // synthetic placeholder with `(line, col) == (0, 0)`), upgrade
                 // its location from the synthesized entry's coords. Real coords
@@ -4147,7 +4135,7 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
         }
     }
 
-    // INF-02 link-pass (Phase 18): for each Named (non-re-export) RawExport,
+    // INF-02 link-pass: for each Named (non-re-export) RawExport,
     // look up the matching declare-site in the file-scope ambient sidecar
     // built in Pass 1. When found, enrich decl_kind and type_signature when
     // the export's own values are None. This restores type identity for
@@ -4156,11 +4144,11 @@ pub fn parse_exports(source: &[u8], lang: SourceLanguage) -> anyhow::Result<Vec<
     //
     // Guards:
     // - Only `RawExportKind::Named` entries — Default/StarReexport/NamedReexport
-    //   are excluded because their identity does not come from a local declare.
-    // - Skip when `rx.source.is_some()` — re-exports (`export { foo } from ...`)
-    //   carry an external origin; the sidecar's local declare must NOT leak in.
+    // are excluded because their identity does not come from a local declare.
+    // - Skip when `rx.source.is_some()` — re-exports (`export { foo } from...`)
+    // carry an external origin; the sidecar's local declare must NOT leak in.
     // - Skip when `rx.compound_members` is populated on a hybrid target (N/A —
-    //   compound_members is orthogonal to the declare-linking pathway).
+    // compound_members is orthogonal to the declare-linking pathway).
     for rx in exports.iter_mut() {
         if !matches!(rx.kind, RawExportKind::Named) {
             continue;
@@ -4322,10 +4310,10 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
     }
 }
 
-/// ARCH-02 (Phase 18): second-pass attachment of compound-component members.
+/// ARCH-02: second-pass attachment of compound-component members.
 ///
-/// Scans the program for `Target.Member = X;` and `Object.assign(Target, { ... })`
-/// patterns. When `Target` matches an already-exported symbol (D-16 conservative),
+/// Scans the program for `Target.Member = X;` and `Object.assign(Target, {... })`
+/// patterns. When `Target` matches an already-exported symbol ( conservative),
 /// appends matched members to that symbol's `compound_members` list. Silent when
 /// the target is not an exported symbol — this correctly handles minified/internal
 /// names where the target is an internal binding.
@@ -4371,7 +4359,7 @@ fn attach_compound_members(
         }
     }
 
-    // Form 3: `Object.assign(Target, { Member: X, ... })`.
+    // Form 3: `Object.assign(Target, { Member: X,... })`.
     // Guard with a runtime @obj == "Object" && @assign_prop == "assign" check.
     if let Ok(q) = cached_query(language, COMPOUND_OBJECT_ASSIGN_QUERY) {
         let mut cursor = QueryCursor::new();
@@ -4410,7 +4398,7 @@ fn attach_compound_members(
 
 /// Recursively expand namespace members, producing dotted names like A.B.baz.
 /// `prefix` is the dotted name so far (e.g., "A" or "A.B").
-/// GAP-16-05: supports 2+ levels of nesting.
+/// supports 2+ levels of nesting.
 #[allow(clippy::only_used_in_recursion)]
 fn expand_namespace_members(
     ns_body: tree_sitter::Node,
@@ -4426,7 +4414,7 @@ fn expand_namespace_members(
             for decl_child in stmt.children(&mut stmt_cursor) {
                 let decl_kind_str = decl_child.kind();
 
-                // Check for nested namespace: `export namespace B { ... }`
+                // Check for nested namespace: `export namespace B {... }`
                 if decl_kind_str == "internal_module" {
                     if let Some(nested_name_node) = decl_child.child_by_field_name("name") {
                         if let Ok(nested_name) = nested_name_node.utf8_text(source) {
@@ -4483,7 +4471,7 @@ fn expand_namespace_members(
                         .and_then(|n| n.utf8_text(source).ok())
                         .map(|s| s.to_string()),
                     "lexical_declaration" => {
-                        // export const baz = ... inside namespace
+                        // export const baz =... inside namespace
                         let mut found = None;
                         let mut ldc = decl_child.walk();
                         for ld_child in decl_child.children(&mut ldc) {
@@ -4532,7 +4520,7 @@ fn expand_namespace_members(
 }
 
 /// META-03: Emit synthetic keys for top-level declaration members inside an
-/// augmentation body (`declare module 'X' { ... }` or `declare global { ... }`).
+/// augmentation body (`declare module 'X' {... }` or `declare global {... }`).
 ///
 /// Naming convention: `augment:<scope>:*<member>` where scope is either the
 /// module name (e.g., `"express"`) or `"global"`.
@@ -4604,7 +4592,7 @@ fn emit_augmentation_members(
 /// the `export_statement` wrapper at the program-level, not as a sibling of the
 /// inner declaration node. This function walks up to the export_statement (or
 /// ambient_declaration) level and checks its preceding named sibling for a
-/// `/** ... */` doc comment.
+/// `/**... */` doc comment.
 ///
 /// Returns the first recognized release tag found: @internal, @alpha,
 /// @beta, @deprecated, or @public. Order defines priority.
@@ -4644,10 +4632,10 @@ pub fn extract_release_tag(
     None
 }
 
-/// CLS-10 (Phase 19): Extract `DecoratorSpec` values from the `decorator`
+/// CLS-10: Extract `DecoratorSpec` values from the `decorator`
 /// children of a given AST node, and from preceding-sibling `decorator` nodes.
 ///
-/// Per CONTEXT D-03 (AST-direct, no comment-scan): decorators are first-class
+/// decorators are first-class
 /// AST nodes in both tree-sitter-typescript 0.23.2 and tree-sitter-javascript
 /// 0.25.0.
 ///
@@ -4770,7 +4758,7 @@ fn find_statement_ancestor(mut node: tree_sitter::Node) -> tree_sitter::Node {
 
 /// Recursively extract exported names from nested destructuring patterns.
 /// Handles `{ a: { b } }`, `[a, [b, c]]`, `{ a: [b, c] }`, etc.
-/// GAP-16-08.
+///.
 fn extract_nested_destructuring_names(
     pattern_node: tree_sitter::Node,
     source: &[u8],
@@ -4847,7 +4835,7 @@ use crate::types::{
 /// Extract the `Visibility` for a method or field node by iterating its children
 /// looking for an `accessibility_modifier` child.
 ///
-/// Per Pitfall 3 in RESEARCH.md: no modifier = `Visibility::Public`.
+/// no modifier = `Visibility::Public`.
 fn extract_visibility(node: tree_sitter::Node, source: &[u8]) -> Visibility {
     for i in 0..node.child_count() as u32 {
         if let Some(child) = node.child(i) {
@@ -4917,7 +4905,7 @@ pub fn extract_param_optionality(fn_or_method_node: tree_sitter::Node) -> Vec<bo
 ///
 /// Per Pitfall 7: line/col are 1-indexed (tree-sitter provides 0-indexed).
 ///
-/// CLS-12 (Phase 21): returns `(members, has_dynamic_static_key)`. The bool is
+/// CLS-12: returns `(members, has_dynamic_static_key)`. The bool is
 /// `true` if any `class_static_block` body contains a subscript-expression LHS
 /// (`Foo[computed()] = x`) — consumed by `parse_class_shape` to set
 /// `ClassShape.has_dynamic_static_key`, which the diff layer reads to emit the
@@ -4927,10 +4915,10 @@ pub fn parse_class_members(
     class_node: tree_sitter::Node,
 ) -> (Vec<ClassMember>, bool) {
     let mut members = Vec::new();
-    // CLS-12 (Phase 21): extract the enclosing class name once — used by the
-    // class_static_block arm to gate `Foo.bar = ...` assignments. Returns an
-    // empty string for anonymous `export default class { ... }`, in which case
-    // only the `this.bar = ...` path matches inside the static-block walker.
+    // CLS-12: extract the enclosing class name once — used by the
+    // class_static_block arm to gate `Foo.bar =...` assignments. Returns an
+    // empty string for anonymous `export default class {... }`, in which case
+    // only the `this.bar =...` path matches inside the static-block walker.
     let class_name = class_node
         .child_by_field_name("name")
         .and_then(|n| n.utf8_text(source).ok())
@@ -4989,7 +4977,7 @@ pub fn parse_class_members(
                         node.utf8_text(source).unwrap_or("").to_string()
                     })
                     .unwrap_or_default();
-                // CLS-11 (Phase 21): ES2022 private methods (`#compute()`) keep
+                // CLS-11: ES2022 private methods (`#compute`) keep
                 // the `#` in `name` so diff messages stay accurate; the flag
                 // lets class_diff.rs route them out of the public-surface
                 // HashMaps (Risk 6 Option A — prevents false-positive CLS-03
@@ -5108,7 +5096,7 @@ pub fn parse_class_members(
                                             is_optional: is_opt_param,
                                             is_accessor: false,
                                             this_param_type: None,
-                                            // CLS-10 (Phase 19): parameter-property decorators
+                                            // CLS-10: parameter-property decorators
                                             // live on the required_parameter/optional_parameter node.
                                             decorators: extract_decorators(param, source),
                                             is_private: false,
@@ -5132,12 +5120,12 @@ pub fn parse_class_members(
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
-                    // CLS-10 (Phase 19): method decorators attach to the
+                    // CLS-10: method decorators attach to the
                     // method_definition node in JS, or appear as preceding
                     // decorator siblings inside class_body in TS. extract_decorators
                     // handles both patterns.
                     decorators: extract_decorators(child, source),
-                    // CLS-11 (Phase 21): propagate `#`-prefix private method detection.
+                    // CLS-11: propagate `#`-prefix private method detection.
                     is_private,
                 });
             }
@@ -5155,7 +5143,7 @@ pub fn parse_class_members(
                     })
                     .unwrap_or_default();
 
-                // CLS-11 (Phase 21): keep `#`-prefix private fields; the `is_private`
+                // CLS-11: keep `#`-prefix private fields; the `is_private`
                 // flag lets the diff layer pair public `foo` ↔ private `#foo` across
                 // versions. `#` is retained in `name` so diff messages can show the
                 // accurate source-level identifier on either side. The identity-match
@@ -5193,11 +5181,11 @@ pub fn parse_class_members(
                     is_optional: false,
                     is_accessor,
                     this_param_type: None,
-                    // CLS-10 (Phase 19): field decorators attach to the
+                    // CLS-10: field decorators attach to the
                     // public_field_definition node in TS, or appear as
                     // preceding decorator siblings in class_body.
                     decorators: extract_decorators(child, source),
-                    // CLS-11 (Phase 21): propagate `#`-prefix private field detection.
+                    // CLS-11: propagate `#`-prefix private field detection.
                     is_private,
                 });
             }
@@ -5230,12 +5218,12 @@ pub fn parse_class_members(
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    // CLS-10 (Phase 19): abstract-method decorators.
+                    // CLS-10: abstract-method decorators.
                     decorators: extract_decorators(child, source),
                     is_private: false,
                 });
             }
-            // BUG-13-01: .d.ts ambient class members use method_signature /
+            // .d.ts ambient class members use method_signature /
             // property_signature instead of method_definition / public_field_definition.
             "method_signature" => {
                 let name_node = child.child_by_field_name("name");
@@ -5275,8 +5263,8 @@ pub fn parse_class_members(
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    // CLS-10 (Phase 19): ambient method_signature decorators
-                    // (rare in .d.ts but harmless to extract).
+                    // CLS-10: ambient method_signature decorators
+                    // (rare in.d.ts but harmless to extract).
                     decorators: extract_decorators(child, source),
                     is_private: false,
                 });
@@ -5294,7 +5282,7 @@ pub fn parse_class_members(
                         node.utf8_text(source).unwrap_or("").to_string()
                     })
                     .unwrap_or_default();
-                // CLS-11 (Phase 21): keep `#`-prefix ambient private members;
+                // CLS-11: keep `#`-prefix ambient private members;
                 // same rationale as public_field_definition arm.
                 if name.is_empty() {
                     continue;
@@ -5324,9 +5312,9 @@ pub fn parse_class_members(
                     is_optional: false,
                     is_accessor: false,
                     this_param_type: None,
-                    // CLS-10 (Phase 19): ambient property_signature decorators.
+                    // CLS-10: ambient property_signature decorators.
                     decorators: extract_decorators(child, source),
-                    // CLS-11 (Phase 21): propagate `#`-prefix private ambient-member detection.
+                    // CLS-11: propagate `#`-prefix private ambient-member detection.
                     is_private,
                 });
             }
@@ -5430,7 +5418,7 @@ pub fn parse_class_members(
                         }
                         _ => {
                             // Other LHS shapes (identifier, etc.) are ignored
-                            // — not static-member exports.
+                            // not static-member exports.
                         }
                     }
                 }
@@ -5490,7 +5478,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
     let type_params = parse_type_params(source, decl_node);
     let (members, has_dynamic_static_key) = parse_class_members(source, decl_node);
 
-    // CLS-10 (Phase 19): Extract class-level decorators. In TS, decorators
+    // CLS-10: Extract class-level decorators. In TS, decorators
     // appear as direct children on the class_declaration / abstract_class_declaration
     // AND ALSO re-surface as children of the parent export_statement wrapper
     // (verified empirically against tree-sitter-typescript 0.23.2 —
@@ -5561,7 +5549,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         type_params,
         constructor_param_optionality,
         decorators: class_decorators,
-        // Phase 21 CLS-12: propagated from `parse_class_members` tuple return.
+        // CLS-12: propagated from `parse_class_members` tuple return.
         has_dynamic_static_key,
     }
 }
@@ -5569,7 +5557,7 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
 /// Returns true if the given `enum_declaration` node has a `const` anonymous
 /// keyword child (i.e., it is a `const enum`).
 ///
-/// Per Pitfall 1 in RESEARCH.md: `const` is an anonymous grammar token,
+/// `const` is an anonymous grammar token,
 /// not a named field. Must iterate children and check text.
 pub fn is_const_enum(node: tree_sitter::Node, source: &[u8]) -> bool {
     for i in 0..node.child_count() as u32 {
@@ -5593,7 +5581,7 @@ pub fn is_const_enum(node: tree_sitter::Node, source: &[u8]) -> bool {
 ///
 /// The `async` keyword is an anonymous token that appears BEFORE the `function`
 /// keyword in the AST child order. We stop iterating at the `function` keyword
-/// to avoid false positives. Per Phase 9 RESEARCH Pitfall 2.
+/// to avoid false positives.
 pub fn is_async_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool {
     let mut cursor = fn_node.walk();
     for child in fn_node.children(&mut cursor) {
@@ -5612,7 +5600,7 @@ pub fn is_async_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool {
 ///
 /// The `*` token appears between the `function` keyword and the
 /// `formal_parameters` node. We stop at `formal_parameters` to avoid
-/// matching `*` in other contexts. Per Phase 9 RESEARCH Pitfall 3.
+/// matching `*` in other contexts.
 ///
 /// Note: tree-sitter-typescript parses `function* foo() {}` as
 /// `generator_function_declaration`, not `function_declaration`.
@@ -5631,7 +5619,7 @@ pub fn is_generator_function(fn_node: tree_sitter::Node, source: &[u8]) -> bool 
 
 /// Compute auto-incremented numeric values for enum members.
 ///
-/// Per D-04 and RESEARCH.md: maintains running counter starting at 0.
+/// maintains running counter starting at 0.
 /// - No explicit value: assign computed_value = Some(counter), increment.
 /// - Numeric explicit value: assign computed_value = Some(n), set counter = n + 1.
 /// - Non-numeric initializer: set computed_value = None, still increment counter.
@@ -5743,7 +5731,7 @@ pub fn parse_enum_shape(source: &[u8], enum_node: tree_sitter::Node) -> EnumShap
 /// Extract generic type parameters from ANY declaration node that has a
 /// `type_parameters` field (class, function, interface, type_alias).
 ///
-/// Per D-06: applies to ALL exported constructs.
+/// applies to ALL exported constructs.
 /// Returns empty Vec if no `type_parameters` field.
 pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<TypeParam> {
     let mut params = Vec::new();
@@ -5755,7 +5743,7 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
 
     // TLF-05: tree-sitter-typescript 0.23.2 does not fully support variance modifiers
     // (`in T`, `out T`, `in out T`). When encountered, it parses them as:
-    //   type_parameter { name: "in" | "out" }  followed by  ERROR { identifier: "T" }
+    // type_parameter { name: "in" | "out" } followed by ERROR { identifier: "T" }
     // We collect all children first to allow lookahead for this pattern.
     let all_children: Vec<tree_sitter::Node> = {
         let mut wc = tp_node.walk();
@@ -5835,7 +5823,7 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
                     s.strip_prefix("= ").unwrap_or(s).trim().to_string()
                 });
 
-            // GAP-15-07: Check for `const` modifier on type parameter.
+            // Check for `const` modifier on type parameter.
             // In tree-sitter-typescript, `<const T>` has the "const" keyword as an
             // anonymous child before the name node in the type_parameter node.
             // Walk children to detect it — `const` appears as an unnamed node before "name".
@@ -5873,11 +5861,11 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
 }
 
 // ---------------------------------------------------------------------------
-// Phase 8 extraction functions (REF-02..REF-07)
+// extraction functions (REF-02..REF-07)
 // ---------------------------------------------------------------------------
 
 /// Check if a required_parameter node represents a rest parameter.
-/// Per 08-RESEARCH: rest params are `required_parameter` with a `rest_pattern` child.
+/// rest params are `required_parameter` with a `rest_pattern` child.
 /// NOT `rest_parameter` — that node kind does not exist in tree-sitter-typescript 0.23.2.
 pub fn is_rest_param(param_node: tree_sitter::Node) -> bool {
     let mut cursor = param_node.walk();
@@ -5893,7 +5881,7 @@ pub fn is_rest_param(param_node: tree_sitter::Node) -> bool {
 /// Returns `Some("Foo")` for `function isStr(x: unknown): x is Foo`.
 /// Returns `None` if the function does not have a type predicate return.
 ///
-/// Per 08-RESEARCH: type guard returns use `type_predicate_annotation` (not `type_annotation`).
+/// type guard returns use `type_predicate_annotation` (not `type_annotation`).
 /// The `type_predicate` child contains the parameter name and guarded type.
 pub fn extract_type_guard(fn_node: tree_sitter::Node, source: &[u8]) -> Option<String> {
     let mut cursor = fn_node.walk();
@@ -5923,7 +5911,7 @@ pub fn extract_type_guard(fn_node: tree_sitter::Node, source: &[u8]) -> Option<S
     None
 }
 
-/// TYPE-01 (Phase 20): Extract `satisfies T` constraints from exported
+/// TYPE-01: Extract `satisfies T` constraints from exported
 /// const/let/var declarations at the top level of a TS/TSX source file.
 ///
 /// Returns a map from the exported binding name to the RHS type-expression
@@ -5990,7 +5978,7 @@ pub fn extract_satisfies_types(
     out
 }
 
-/// INF-04 (Phase 22): walk a subtree for `typeof import('./x').Y` and
+/// INF-04: walk a subtree for `typeof import('./x').Y` and
 /// `import('./x').Y` member-expression shapes. Returns all refs found in
 /// the subtree — a single type position can contain multiple via unions,
 /// intersections, generic args, etc.
@@ -5999,10 +5987,10 @@ pub fn extract_satisfies_types(
 /// `member_expression` — the `type_query` wrapper is transparent here):
 /// ```text
 /// member_expression
-///   object: call_expression
-///     function: import         (anonymous keyword)
-///     arguments: (string "./x")
-///   property: property_identifier "Y"
+/// object: call_expression
+/// function: import (anonymous keyword)
+/// arguments: (string "./x")
+/// property: property_identifier "Y"
 /// ```
 ///
 /// Paired with the resolver's post-parse populate pass (resolver.rs ~line
@@ -6083,11 +6071,7 @@ fn first_string_arg_text(args: tree_sitter::Node, source: &[u8]) -> Option<Strin
     None
 }
 
-/// INF-04 helper: pre-order subtree walker that visits every node under
-/// `cursor.node()`. The plan's CONTEXT.md flags this as a candidate for
-/// reusing an existing in-tree walker, but no general-purpose walker exists
-/// in this module (only query-driven matchers). This local walker is small
-/// and self-contained.
+/// Visit every node under `cursor.node()` in pre-order.
 fn walk_typeof_import_subtree(
     cursor: &mut tree_sitter::TreeCursor,
     visit: &mut dyn FnMut(tree_sitter::Node),
@@ -6180,7 +6164,7 @@ pub fn find_interface_body(decl_node: tree_sitter::Node) -> Option<tree_sitter::
 /// Extract members from an `interface_body` node.
 ///
 /// Interface members are `method_signature` and `property_signature` nodes
-/// (same node kinds as .d.ts ambient class members, handled in Phase 13).
+/// (same node kinds as `.d.ts` ambient class members).
 /// All interface members are public (no visibility modifiers in interfaces).
 /// Reuses ClassMember type for consistency with class_diff pipeline.
 pub fn parse_interface_members(
@@ -6254,7 +6238,7 @@ pub fn parse_interface_members(
                     is_abstract: false,
                     is_readonly,
                     param_count: 0,
-                    // Phase 17: use proper is_optional field (replaces type_signature stopgap)
+                    // use proper is_optional field (replaces type_signature stopgap)
                     type_signature: None,
                     is_optional,
                     is_accessor: false,
@@ -6659,7 +6643,7 @@ mod tests {
         result
     }
 
-    // ── INF-04 (Phase 22) extract_typeof_import_refs tests ───────────────────
+    // ── INF-04 extract_typeof_import_refs tests ───────────────────
 
     #[test]
     fn extract_typeof_import_refs_single() {
@@ -6815,7 +6799,7 @@ mod tests {
 
     #[test]
     fn test_parse_class_members_private_field_kept_with_is_private_flag() {
-        // CLS-11 (Phase 21): `#`-prefix private fields are now KEPT in the
+        // CLS-11: `#`-prefix private fields are now KEPT in the
         // members vector with `is_private: true` so the diff layer can detect
         // public ↔ private transitions (e.g., `foo` → `#foo`). The `#`
         // prefix is preserved in `name` so diff messages are accurate.
@@ -7066,7 +7050,7 @@ mod tests {
         );
     }
 
-    // ── DeclarationKind propagation tests (Task 1) ────────────────────────────
+    // ── DeclarationKind propagation tests ────────────────────────────
 
     #[test]
     fn test_decl_export_query_captures_namespace() {
@@ -7123,7 +7107,7 @@ mod tests {
         );
     }
 
-    // ── Rest param, type guard, index sig, function shape tests (Task 2) ─────
+    // ── Rest param, type guard, index sig, function shape tests ─────
 
     #[test]
     fn test_is_rest_param_detects_spread() {
@@ -7308,7 +7292,7 @@ mod tests {
         assert!(!is_generator_function(fn_node, source));
     }
 
-    // ── Export alias and namespace re-export tests (Phase 11 bug fixes) ────────
+    // ── Export alias and namespace re-export tests ( bug fixes) ────────
 
     #[test]
     fn test_export_alias_uses_alias_name() {
@@ -7414,7 +7398,7 @@ mod tests {
         );
     }
 
-    // ── Type-only export tests (Task 1 — Phase 12) ────────────────────────────
+    // ── Type-only export tests ( — ) ────────────────────────────
 
     #[test]
     fn test_type_only_named_export() {
@@ -7555,7 +7539,7 @@ mod tests {
         );
     }
 
-    // ── BUG-13-02: Namespace/star dedup fix ──────────────────────────────────
+    // ── Namespace/star dedup fix ──────────────────────────────────
 
     #[test]
     fn test_namespace_and_star_from_same_source() {
@@ -7573,7 +7557,7 @@ mod tests {
         assert_eq!(ns, 1, "namespace 'utils' should appear once; got {ns}");
     }
 
-    // ── GAP-13-03: Inline type modifier exports ───────────────────────────────
+    // ── Inline type modifier exports ───────────────────────────────
 
     #[test]
     fn test_inline_type_modifier_exports() {
@@ -7593,7 +7577,7 @@ mod tests {
         );
     }
 
-    // ── Export assignment and ambient declaration tests (Task 2 — Phase 12) ───
+    // ── Export assignment and ambient declaration tests ( — ) ───
 
     #[test]
     fn test_export_assignment() {
@@ -7614,7 +7598,7 @@ mod tests {
 
     #[test]
     fn test_ambient_function_declaration() {
-        // `export declare function foo(): void;` — ambient declaration in .d.ts
+        // `export declare function foo(): void;` — ambient declaration in.d.ts
         let source = b"export declare function foo(): void;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let foo = exports
@@ -7704,7 +7688,7 @@ mod tests {
         );
     }
 
-    // ── GAP-13-01: CJS module.exports detection ───────────────────────────────
+    // ── CJS module.exports detection ───────────────────────────────
 
     #[test]
     fn test_cjs_module_exports_shorthand() {
@@ -7815,7 +7799,7 @@ mod tests {
         );
     }
 
-    // ── GAP-13-02: export { default as Named } detection ─────────────────────
+    // ── export { default as Named } detection ─────────────────────
 
     #[test]
     fn test_export_default_as_named() {
@@ -7865,7 +7849,7 @@ mod tests {
         );
     }
 
-    // ── GAP-13-04: Array destructuring exports ────────────────────────────────
+    // ── Array destructuring exports ────────────────────────────────
 
     #[test]
     fn test_array_destructured_export() {
@@ -7957,11 +7941,11 @@ mod tests {
         );
     }
 
-    // ─── REQ-14-03: Namespace member expansion ───────────────────────────────
+    // ─── Namespace member expansion ───────────────────────────────
 
     #[test]
     fn test_namespace_member_expansion() {
-        // REQ-14-03: namespace members should produce dotted-name entries
+        // namespace members should produce dotted-name entries
         let source =
             b"export namespace Foo { export function bar(): void {} export const baz = 1; }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
@@ -8002,7 +7986,7 @@ mod tests {
 
     #[test]
     fn test_namespace_member_no_duplicates() {
-        // REQ-14-03: same dotted name should not appear twice
+        // same dotted name should not appear twice
         let source = b"export namespace Foo { export function bar(): void {} }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let count = exports.iter().filter(|e| e.name == "Foo.bar").count();
@@ -8013,11 +7997,11 @@ mod tests {
         );
     }
 
-    // ── GAP-16-08: Nested destructuring exports ───────────────────────────────
+    // ── Nested destructuring exports ───────────────────────────────
 
     #[test]
     fn test_nested_destructuring_object_in_object() {
-        // GAP-16-08: `export const { a: { b } } = obj` captures both "a" (flat query) and "b" (nested)
+        // `export const { a: { b } } = obj` captures both "a" (flat query) and "b" (nested)
         let source = b"export const { a: { b } } = obj;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8030,7 +8014,7 @@ mod tests {
 
     #[test]
     fn test_nested_destructuring_array_in_array() {
-        // GAP-16-08: `export const [a, [b, c]] = arr` captures "a", "b", "c"
+        // `export const [a, [b, c]] = arr` captures "a", "b", "c"
         let source = b"export const [a, [b, c]] = arr;";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8051,11 +8035,11 @@ mod tests {
         );
     }
 
-    // ── GAP-16-09: CJS exports aliasing pattern ───────────────────────────────
+    // ── CJS exports aliasing pattern ───────────────────────────────
 
     #[test]
     fn test_cjs_aliasing_shorthand_properties() {
-        // GAP-16-09: `exports = module.exports = { foo, bar }` captures "foo" and "bar"
+        // `exports = module.exports = { foo, bar }` captures "foo" and "bar"
         let source = b"exports = module.exports = { foo, bar };";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8073,7 +8057,7 @@ mod tests {
 
     #[test]
     fn test_cjs_aliasing_pair_properties() {
-        // GAP-16-09: `exports = module.exports = { key: value }` captures "key"
+        // `exports = module.exports = { key: value }` captures "key"
         let source = b"exports = module.exports = { key: value };";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8093,11 +8077,11 @@ mod tests {
         let _ = exports;
     }
 
-    // ── GAP-16-05: Nested namespace expansion ────────────────────────────────
+    // ── Nested namespace expansion ────────────────────────────────
 
     #[test]
     fn test_namespace_nested_2_levels() {
-        // GAP-16-05: 2-level nested namespace should produce A.B and A.B.baz
+        // 2-level nested namespace should produce A.B and A.B.baz
         let source = b"export namespace A { export namespace B { export function baz() {} } }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8120,7 +8104,7 @@ mod tests {
 
     #[test]
     fn test_namespace_nested_3_levels() {
-        // GAP-16-05: 3-level nested namespace should produce A.B.C and A.B.C.fn
+        // 3-level nested namespace should produce A.B.C and A.B.C.fn
         let source = b"export namespace A { export namespace B { export namespace C { export function fn_deep() {} } } }";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let names: Vec<&str> = exports.iter().map(|e| e.name.as_str()).collect();
@@ -8155,11 +8139,11 @@ mod tests {
         );
     }
 
-    // ── GAP-15-01: CJS inline class/function exports ─────────────────────────
+    // ── CJS inline class/function exports ─────────────────────────
 
     #[test]
     fn test_cjs_module_exports_class_inline() {
-        // GAP-15-01: module.exports = class Foo { method() {} }
+        // module.exports = class Foo { method {} }
         // Should produce a "default" export with decl_kind Class
         let source = b"module.exports = class Foo { method() {} }";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8178,7 +8162,7 @@ mod tests {
 
     #[test]
     fn test_cjs_module_exports_function_inline() {
-        // GAP-15-01: module.exports = function(a, b) { return a + b; }
+        // module.exports = function(a, b) { return a + b; }
         // Should produce a "default" export with decl_kind Function
         let source = b"module.exports = function(a, b) { return a + b; }";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8197,7 +8181,7 @@ mod tests {
 
     #[test]
     fn test_cjs_module_exports_async_arrow() {
-        // GAP-15-01: module.exports = async (req, res) => { ... }
+        // module.exports = async (req, res) => {... }
         // Should produce a "default" export with decl_kind Function
         let source = b"module.exports = async (req, res) => { res.send('ok'); }";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8216,7 +8200,7 @@ mod tests {
 
     #[test]
     fn test_cjs_exports_property_function() {
-        // GAP-15-01: exports.handler = async (req, res) => { }
+        // exports.handler = async (req, res) => { }
         // Should produce a "handler" Named export with decl_kind Function
         let source = b"exports.handler = async (req, res) => { res.send('ok'); }";
         let exports = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8235,7 +8219,7 @@ mod tests {
 
     #[test]
     fn test_using_declaration_graceful() {
-        // GAP-15-02: export using handle = getResource() should not panic
+        // export using handle = getResource should not panic
         // Either detect it or silently skip it — no panics allowed.
         let source = b"export using handle = getResource();";
         let result = parse_exports(source, SourceLanguage::TypeScript);
@@ -8247,7 +8231,7 @@ mod tests {
         // The parse completing without panic/error is sufficient — detection is best-effort.
     }
 
-    // ── GAP-15-07: Const type parameter modifier ──────────────────────────────
+    // ── Const type parameter modifier ──────────────────────────────
 
     #[test]
     fn test_parse_type_params_const_modifier() {
@@ -8269,7 +8253,7 @@ mod tests {
         assert_eq!(params[0].name, "T");
     }
 
-    // ── GAP-15-06: Module augmentation capture ────────────────────────────────
+    // ── Module augmentation capture ────────────────────────────────
 
     #[test]
     fn test_declare_module_augmentation_captured() {
@@ -8315,10 +8299,10 @@ declare global {
         assert!(exports.iter().all(|e| !e.name.starts_with("augment:")));
     }
 
-    // ── Phase 17 META-03 augmentation body capture ───────────────────────────
+    // ── META-03 augmentation body capture ───────────────────────────
 
     #[test]
-    fn meta_03_declare_module_body_member_captured() {
+    fn declare_module_body_member_captured() {
         let source = br#"declare module 'express' { interface Session { uid: string; } }"#;
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
@@ -8329,7 +8313,7 @@ declare global {
     }
 
     #[test]
-    fn meta_03_declare_global_body_captured() {
+    fn declare_global_body_captured() {
         let source = br#"declare global { interface Window { foo: string; } }"#;
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
@@ -8341,10 +8325,10 @@ declare global {
         );
     }
 
-    // ── Phase 17 META-04 TSDoc release tag extraction ────────────────────────
+    // ── META-04 TSDoc release tag extraction ────────────────────────
 
     #[test]
-    fn meta_04_internal_tag_extracted() {
+    fn internal_tag_extracted() {
         let source = b"/** @internal */\nexport function privateHelper() {}";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let e = exports.iter().find(|e| e.name == "privateHelper").unwrap();
@@ -8357,7 +8341,7 @@ declare global {
     }
 
     #[test]
-    fn meta_04_deprecated_tag_extracted() {
+    fn deprecated_tag_extracted() {
         let source = b"/** @deprecated use newFoo */\nexport function oldFoo() {}";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let e = exports.iter().find(|e| e.name == "oldFoo").unwrap();
@@ -8370,8 +8354,8 @@ declare global {
     }
 
     #[test]
-    fn meta_04_beta_tag_extracted() {
-        // Phase 19 META-06: @beta replaces @experimental in the 5-tag set.
+    fn beta_tag_extracted() {
+        // META-06: @beta replaces @experimental in the 5-tag set.
         let source = b"/** @beta */\nexport function previewFoo() {}";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let e = exports.iter().find(|e| e.name == "previewFoo").unwrap();
@@ -8384,7 +8368,7 @@ declare global {
     }
 
     #[test]
-    fn meta_04_no_tag_is_none() {
+    fn no_tag_is_none() {
         let source = b"export function plainFn() {}";
         let exports = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         let e = exports.iter().find(|e| e.name == "plainFn").unwrap();
@@ -8395,10 +8379,10 @@ declare global {
         );
     }
 
-    // ── Phase 17 TLF extraction tests ────────────────────────────────────────
+    // ── TLF extraction tests ────────────────────────────────────────
 
     #[test]
-    fn tlf_01_extract_construct_signature() {
+    fn extract_construct_signature() {
         let src = "interface Foo { new (x: number): Bar; }";
         let (tree, bytes) = parse_ts(src);
         let iface_node = first_node_of_kind(tree.root_node(), "interface_declaration").unwrap();
@@ -8424,7 +8408,7 @@ declare global {
     }
 
     #[test]
-    fn tlf_02_parameter_properties_synthesized() {
+    fn parameter_properties_synthesized() {
         let src = "class Foo { constructor(public x: number, private y: string, z: boolean) {} }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
@@ -8446,7 +8430,7 @@ declare global {
     }
 
     #[test]
-    fn tlf_05_variance_in_out_extracted() {
+    fn variance_in_out_extracted() {
         let src = "type X<in T, out U, in out V> = [T, U, V];";
         let (tree, bytes) = parse_ts(src);
         let alias_node = first_node_of_kind(tree.root_node(), "type_alias_declaration").unwrap();
@@ -8476,7 +8460,7 @@ declare global {
     }
 
     #[test]
-    fn tlf_06_accessor_keyword_captured() {
+    fn accessor_keyword_captured() {
         let src = "class Foo { accessor bar: number; }";
         let (tree, bytes) = parse_ts(src);
         let class_node = first_node_of_kind(tree.root_node(), "class_declaration").unwrap();
@@ -8489,7 +8473,7 @@ declare global {
     }
 
     #[test]
-    fn tlf_07_export_type_star_is_type_only() {
+    fn export_type_star_is_type_only() {
         let source = b"export type * from './mod';";
         let raw = parse_exports(source, SourceLanguage::TypeScript).unwrap();
         assert!(
@@ -8501,10 +8485,10 @@ declare global {
         );
     }
 
-    // ── Phase 17 BUN-01..07: Bundler CJS output detection ────────────────────
+    // ── BUN-01..07: Bundler CJS output detection ────────────────────
 
     #[test]
-    fn bun_01_esbuild_tree_shake_wrapper() {
+    fn esbuild_tree_shake_wrapper() {
         // BUN-01: esbuild `0 && (module.exports = { foo, bar })` tree-shake wrapper
         let source = b"0 && (module.exports = { foo: foo, bar: bar });";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8522,7 +8506,7 @@ declare global {
     }
 
     #[test]
-    fn bun_02_esbuild_export_helper() {
+    fn esbuild_export_helper() {
         // BUN-02: __export(exports, { foo: () => foo, bar: () => bar })
         let source = b"__export(exports, { foo: () => foo, bar: () => bar });";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8540,7 +8524,7 @@ declare global {
     }
 
     #[test]
-    fn bun_04_tsc_void_placeholder() {
+    fn tsc_void_placeholder() {
         // BUN-04: exports.foo = void 0; — tsc placeholder
         let source = b"exports.foo = void 0;";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8566,7 +8550,7 @@ declare global {
     }
 
     #[test]
-    fn bun_07_esmodule_filtered() {
+    fn esmodule_filtered() {
         // BUN-07: __esModule must never appear in final export list
         let source = b"exports.__esModule = true;";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
@@ -8578,10 +8562,10 @@ declare global {
         );
     }
 
-    // ── Phase 17 IFT-01: Interface property optionality extracted ────────────
+    // ── IFT-01: Interface property optionality extracted ────────────
 
     #[test]
-    fn ift_01_interface_property_optionality_extracted() {
+    fn interface_property_optionality_extracted() {
         let source = b"interface Foo { x?: number; y: string; }";
         let mut parser = tree_sitter::Parser::new();
         parser
@@ -8600,10 +8584,10 @@ declare global {
         assert!(!y.is_optional, "y should not be optional");
     }
 
-    // ── Phase 17 IFT-03: extract_param_optionality on constructor ────────────
+    // ── IFT-03: extract_param_optionality on constructor ────────────
 
     #[test]
-    fn ift_03_extract_param_optionality_constructor() {
+    fn extract_param_optionality_constructor() {
         let source = b"class C { constructor(a: number, b?: string, c?: boolean) {} }";
         let mut parser = tree_sitter::Parser::new();
         parser
@@ -8652,7 +8636,7 @@ declare global {
         );
     }
 
-    // ── Phase 18 ARCH-02: compound-component capture ────────────────────────
+    // ── ARCH-02: compound-component capture ────────────────────────
 
     #[test]
     fn test_arch02_compound_member_assignment_attaches() {
@@ -8675,7 +8659,7 @@ Menu.Item = () => null;
 
     #[test]
     fn test_arch02_object_assign_compound_attaches() {
-        // Form 3: `Object.assign(Target, { Member: X, ... })` attaches all members.
+        // Form 3: `Object.assign(Target, { Member: X,... })` attaches all members.
         let src = br#"
 export let Menu = {};
 Menu = Object.assign(Menu, { Button: 1, Items: 2, Item: 3 });
@@ -8704,7 +8688,7 @@ Menu = Object.assign(Menu, { Button: 1, Items: 2, Item: 3 });
 
     #[test]
     fn test_arch02_conservative_no_attach_when_target_not_exported() {
-        // D-16 conservative: `Foo.Bar = X` where `Foo` is NOT an exported symbol
+        // conservative: `Foo.Bar = X` where `Foo` is NOT an exported symbol
         // must NOT attach Bar to anything. `Unrelated` should remain with empty
         // compound_members.
         let src = br#"
@@ -8749,7 +8733,7 @@ var qe = Object.assign(Pe, { Button: 1, Item: 2 });
     }
 
     // ---------------------------------------------------------------------
-    // INF-01 (Phase 18): .tsx → LANGUAGE_TSX grammar routing tests
+    // INF-01:.tsx → LANGUAGE_TSX grammar routing tests
     // ---------------------------------------------------------------------
 
     #[test]
@@ -8838,7 +8822,7 @@ export class Bar<T> { method(a: T): T { return a; } }
     }
 
     // ---------------------------------------------------------------------
-    // INF-02 (Phase 18): rollup-plugin-dts / api-extractor split-declaration
+    // INF-02: rollup-plugin-dts / api-extractor split-declaration
     // linking tests. Pass 1 collects ambient declare statements; link-pass
     // enriches Named non-re-export RawExports with decl_kind + type_signature.
     // ---------------------------------------------------------------------
@@ -8919,7 +8903,7 @@ export const unrelated = 1;
     fn test_inf02_reexport_not_affected_by_local_declare() {
         // If the export is `export { foo } from './other'` (re-export with
         // `from`), the local ambient declare must NOT leak into the exported
-        // symbol — the symbol's identity comes from ./other. The INF-02
+        // symbol — the symbol's identity comes from./other. The INF-02
         // link-pass explicitly skips entries where `rx.source.is_some()`.
         let src = br#"
 declare const foo: number;
@@ -8937,7 +8921,7 @@ export { foo } from './other';
     }
 
     // ---------------------------------------------------------------------
-    // INF-03 (Phase 18): tsup/esbuild `export { foo as default }` ESM trailer
+    // INF-03: tsup/esbuild `export { foo as default }` ESM trailer
     // dual-emission tests. When `alias_name == "default"` the NAMED_EXPORT_
     // ALIAS_QUERY handler now emits `RawExportKind::Default` instead of
     // `Named`. Dual emission (`export { foo, foo as default }`) fires both
@@ -9035,8 +9019,8 @@ export { foo as default };
     #[test]
     fn test_inf03_zod_style_trailer_with_variable_ref() {
         // Real-package inspired: Zod 3.23.8 emits
-        //   declare const z: ...;
-        //   export { z as default, z };
+        // declare const z:...;
+        // export { z as default, z };
         // alongside ambient declare at the top. INF-02 links `z` (Named) to
         // the ambient decl_kind; INF-03 emits an additional Default for the
         // `as default` alias.
@@ -9059,7 +9043,7 @@ export { z as default, z };
         );
     }
 
-    // ── Phase 19 CLS-10: decorator AST extraction ─────────────────────────────
+    // ── CLS-10: decorator AST extraction ─────────────────────────────
 
     fn find_first_node_of_kind<'a>(
         root: tree_sitter::Node<'a>,
@@ -9101,7 +9085,7 @@ export { z as default, z };
     }
 
     #[test]
-    fn cls_10_class_decorator_identifier_form() {
+    fn class_decorator_identifier_form() {
         let source = b"@Component\nexport class Foo {}\n";
         let decs = combined_class_decs(source);
         assert!(
@@ -9113,7 +9097,7 @@ export { z as default, z };
     }
 
     #[test]
-    fn cls_10_class_decorator_call_expression_form() {
+    fn class_decorator_call_expression_form() {
         let source = b"@Route('/users')\nexport class UserController {}\n";
         let decs = combined_class_decs(source);
         let route = decs.iter().find(|d| d.name == "Route");
@@ -9131,7 +9115,7 @@ export { z as default, z };
     }
 
     #[test]
-    fn cls_10_member_expression_form() {
+    fn member_expression_form() {
         let source = b"@ns.log\nexport class X {}\n";
         let decs = combined_class_decs(source);
         assert!(
@@ -9142,7 +9126,7 @@ export { z as default, z };
     }
 
     #[test]
-    fn cls_10_no_decorators_is_empty() {
+    fn no_decorators_is_empty() {
         let source = b"export class Plain {}\n";
         let decs = combined_class_decs(source);
         assert!(
@@ -9154,16 +9138,16 @@ export { z as default, z };
 }
 
 #[cfg(test)]
-mod phase24_bun11_query_tests {
+mod umd_query_tests {
     use super::UMD_FACTORY_WRAPPER_QUERY;
     use tree_sitter::{Language, Query};
 
     #[test]
     fn umd_factory_wrapper_query_compiles_for_javascript() {
-        // Pitfall 4 / Decision D-24-02-F: a future tree-sitter-javascript
+        // Pitfall 4 / Decision -F: a future tree-sitter-javascript
         // grammar version bump may rename `function_expression` or
         // `formal_parameters`. This unit test fails LOUDLY when that happens
-        // (instead of the production `if let Ok(query) = ...` silently
+        // (instead of the production `if let Ok(query) =...` silently
         // skipping detection). Do NOT swap `.expect(...)` for `.ok()`.
         let lang: Language = tree_sitter_javascript::LANGUAGE.into();
         Query::new(&lang, UMD_FACTORY_WRAPPER_QUERY)
@@ -9172,7 +9156,7 @@ mod phase24_bun11_query_tests {
 }
 
 #[cfg(test)]
-mod phase25_proxy_detection_tests {
+mod proxy_detection_tests {
     use super::{parse_exports, SourceLanguage};
 
     #[test]
@@ -9208,7 +9192,7 @@ mod phase25_proxy_detection_tests {
         let source = b"module.exports = require('./other');";
         let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
         // require() is a call_expression with a plain identifier function (not a member_expression).
-        // The Proxy query's call_expression branch requires function: (member_expression ...).
+        // The Proxy query's call_expression branch requires function: (member_expression...).
         // So this should NOT match the Proxy query; it falls through to existing identifier patterns.
         for e in &raw {
             if e.name == "default" {
