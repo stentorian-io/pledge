@@ -32,7 +32,7 @@ fi
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Build the dump binary once (defined as a cargo example).
+# Build the snapshot generator explicitly registered in Cargo.toml.
 cargo build --locked --release --example reference_suite_dump
 
 for PKG in "${PKGS[@]}"; do

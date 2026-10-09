@@ -1,7 +1,6 @@
 //! Print a candidate reference snapshot for manual review.
 
-#[path = "../tests/ecosystems/node/reference/support.rs"]
-mod reference;
+mod support;
 
 fn main() {
     let package = std::env::args()
@@ -18,6 +17,6 @@ fn main() {
     };
     let (_old_dir, old_root) = unpack("from.tgz");
     let (_new_dir, new_root) = unpack("to.tgz");
-    let snapshot = reference::run_pipeline(&old_root, &new_root);
+    let snapshot = support::run_pipeline(&old_root, &new_root);
     println!("{}", serde_json::to_string_pretty(&snapshot).unwrap());
 }

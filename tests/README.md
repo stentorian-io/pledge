@@ -92,7 +92,10 @@ The push hook runs LSP and coverage checks for code or fixture changes. See
   in fixtures are ignored. Do not commit them.
 - Pin published tarballs and review expected findings as described in
   [reference-suite curation](../docs/reference-suite.md). The Node reference
-  suite and dump example share `ecosystems/node/reference/support.rs`.
+  suite and snapshot generator share `ecosystems/node/reference/support.rs`.
+  The generator lives beside them in `ecosystems/node/reference/dump.rs` and
+  is explicitly registered as the manual `reference_suite_dump` Cargo example
+  target. Run it through `make reference-suite-regen`.
 
 ## Development tooling
 

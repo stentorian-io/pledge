@@ -77,3 +77,8 @@ path = "tests/languages/typescript/main.rs"
 [[test]]
 name = "node"
 path = "tests/ecosystems/node/main.rs"
+
+# Manual snapshot generator, kept beside the reference harness.
+[[example]]
+name = "reference_suite_dump"
+path = "tests/ecosystems/node/reference/dump.rs"

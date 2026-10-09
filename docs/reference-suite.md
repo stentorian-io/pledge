@@ -53,7 +53,10 @@ After an intentional detection change:
 Regeneration is a manual maintenance step. Verification never updates snapshots.
 Do not accept a candidate solely because a test failed. The generator shares
 its pipeline implementation with the test harness and respects Cargo's target
-directory configuration.
+directory configuration. The generator lives in
+[`tests/ecosystems/node/reference/dump.rs`](../tests/ecosystems/node/reference/dump.rs),
+beside the harness. Cargo registers it explicitly as the `reference_suite_dump`
+example target for manual execution.
 
 ## Adding or refreshing a package
 
