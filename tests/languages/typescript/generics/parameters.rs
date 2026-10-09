@@ -1,8 +1,7 @@
 //! Parameters compatibility checks.
 
-use interlint::compare::generics_diff;
-use interlint::discover::tree_query;
-use interlint::types::Finding;
+use interlint::core::findings::Finding;
+use interlint::languages::typescript::compare::generics as generics_diff;
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.
@@ -62,11 +61,14 @@ fn find_decl_by_name<'a>(
 }
 
 /// Parse TS source and extract TypeParams for the named declaration.
-fn extract_type_params_from(source: &[u8], name: &str) -> Vec<interlint::types::TypeParam> {
+fn extract_type_params_from(
+    source: &[u8],
+    name: &str,
+) -> Vec<interlint::languages::typescript::model::TypeParam> {
     let (tree, bytes) = parse_ts(source);
     let decl = find_decl_by_name(tree.root_node(), &bytes, name)
         .unwrap_or_else(|| panic!("declaration `{}` not found in source", name));
-    tree_query::parse_type_params(&bytes, decl)
+    interlint::languages::typescript::syntax::generics::parse_type_params(&bytes, decl)
 }
 
 #[test]
@@ -212,7 +214,7 @@ fn param_added_with_default() {
         .expect("GEN-06 finding must exist");
     assert_eq!(
         gen06_finding.severity,
-        interlint::types::Severity::Minor,
+        interlint::core::findings::Severity::Minor,
         "GEN-06 must be Minor severity"
     );
     assert!(

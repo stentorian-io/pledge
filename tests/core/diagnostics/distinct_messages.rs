@@ -7,7 +7,7 @@ fn widened_dedup_key_preserves_distinct_messages() {
     // This is exercised in the main.rs unit tests (cfg(test)); here we verify
     // the behavior at the integration level by constructing two findings manually
     // and verifying they would pass through the dedup.
-    use interlint::types::{Finding, Severity};
+    use interlint::core::findings::{Finding, Severity};
     use std::path::PathBuf;
 
     let f1 = Finding {

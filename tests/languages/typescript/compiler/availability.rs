@@ -1,7 +1,10 @@
 #![cfg(all(feature = "lsp-tests", unix))]
 
-use interlint::{discover::discover_exports, lsp, types::shape::TypeShape};
-use std::{path::PathBuf, process::Command};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::typescript::compiler;
+use interlint::languages::typescript::types::shape::TypeShape;
+use std::path::PathBuf;
+use std::process::Command;
 
 #[tokio::test]
 async fn compiler_enrichment_does_not_require_a_language_server() {
@@ -10,8 +13,11 @@ async fn compiler_enrichment_does_not_require_a_language_server() {
         let root = PathBuf::from(root);
         let (mut exports, warnings) = discover_exports(&root).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
-        let result = lsp::enrich_exports(&mut exports, &root).await.unwrap();
-        assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+        let result = compiler::enrich_exports(&mut exports, &root).await.unwrap();
+        assert!(
+            matches!(result, compiler::EnrichResult::Enriched),
+            "{result:?}"
+        );
         let api = exports
             .values()
             .find(|symbol| symbol.name == "api")

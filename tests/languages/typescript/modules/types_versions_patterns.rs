@@ -1,6 +1,6 @@
 //! Types versions patterns compatibility checks.
 
-use interlint::discover::entry_points::resolve_entry_points;
+use interlint::ecosystems::node::discovery::entry_points::resolve_entry_points;
 
 #[test]
 fn types_versions_wildcard_discovers_d_ts_files() {

@@ -2,7 +2,7 @@
 
 #[test]
 fn invalid_utf8_does_not_abort() {
-    use interlint::discover::entry_points::resolve_entry_points;
+    use interlint::ecosystems::node::discovery::entry_points::resolve_entry_points;
     use tempfile::tempdir;
 
     let dir = tempdir().unwrap();

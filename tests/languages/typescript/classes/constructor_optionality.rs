@@ -1,7 +1,7 @@
 //! Constructor optionality compatibility checks.
 
-use interlint::compare::class_diff::compare_class_shapes;
-use interlint::types::{ClassMember, ClassShape};
+use interlint::languages::javascript::compare::classes::compare_class_shapes;
+use interlint::languages::javascript::model::{ClassMember, ClassShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -41,7 +41,7 @@ fn constructor_param_optional_to_required_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::types::Severity::Major,
+        interlint::core::findings::Severity::Major,
         "IFT-03: constructor-param-made-required should be Major"
     );
 }

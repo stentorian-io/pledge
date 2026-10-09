@@ -1,4 +1,4 @@
-use interlint::discover::discover_exports;
+use interlint::ecosystems::node::discovery::discover_exports;
 
 #[test]
 fn skipped_public_sources_report_incomplete_analysis() {

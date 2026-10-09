@@ -1,6 +1,6 @@
 //! Disabled exports compatibility checks.
 
-use interlint::discover::entry_points::resolve_entry_points;
+use interlint::ecosystems::node::discovery::entry_points::resolve_entry_points;
 
 #[test]
 fn exports_false_falls_back() {

@@ -1,7 +1,9 @@
 //! Auto accessors compatibility checks.
 
-use interlint::compare::class_diff::compare_class_shapes;
-use interlint::types::{ClassMember, ClassMemberKind, ClassShape, Visibility};
+use interlint::languages::javascript::compare::classes::compare_class_shapes;
+use interlint::languages::javascript::model::{
+    ClassMember, ClassMemberKind, ClassShape, Visibility,
+};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -59,7 +61,7 @@ fn accessor_flip_fires_warning() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::types::Severity::Warning,
+        interlint::core::findings::Severity::Warning,
         "TLF-06: class-accessor-changed should be Warning"
     );
 }

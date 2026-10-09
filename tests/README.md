@@ -3,6 +3,9 @@
 Integration tests are grouped by language, ecosystem, and observable behavior.
 Unit tests stay beside the implementation and cover parsing, matching,
 comparison, and invariants that are easier to isolate there.
+Large unit suites use private child files such as `syntax/exports/tests.rs`,
+registered with `#[cfg(test)] mod tests;`. Source ownership mirrors these
+boundaries; see [the source architecture](../docs/architecture.md).
 
 ```text
 tests/

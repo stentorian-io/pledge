@@ -1,9 +1,14 @@
 //! Accessors compatibility checks.
 
-use interlint::compare::class_diff::compare_class_shapes;
-use interlint::compare::subtype::{RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED};
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-use interlint::types::{ClassMember, ClassMemberKind, ClassShape, Visibility};
+use interlint::languages::javascript::compare::classes::compare_class_shapes;
+use interlint::languages::javascript::compare::rules::{
+    RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED,
+};
+use interlint::languages::javascript::model::{
+    ClassMember, ClassMemberKind, ClassShape, Visibility,
+};
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -55,7 +60,7 @@ fn test_getter_setter_kind_change_detected() {
         .unwrap();
     assert_eq!(
         finding.severity,
-        interlint::types::Severity::Major,
+        interlint::core::findings::Severity::Major,
         "class-method-kind-changed must be Major severity"
     );
 }

@@ -1,6 +1,7 @@
 //! Commonjs exports compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn test_cjs_module_exports_bulk_assignment() {

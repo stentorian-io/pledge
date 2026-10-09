@@ -4,13 +4,13 @@
 //! supports, a `/** @deprecated */` block comment placed on the export
 //! MUST surface via `compare_exports` as a `RULE_EXPORT_DEPRECATED` Warning
 //! when the same symbol exists in both versions. If any form regresses,
-//! the post-process populate pass at `src/discover/resolver.rs:~420` has
+//! the post-process populate pass at `src/ecosystems/node/discovery/resolver.rs` has
 //! lost a construction site.
 
-use interlint::compare::compare_exports;
-use interlint::compare::subtype::RULE_EXPORT_DEPRECATED;
-use interlint::discover::discover_exports;
-use interlint::types::Severity;
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::typescript::compare::rules::RULE_EXPORT_DEPRECATED;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/documentation/release-tags";
@@ -109,7 +109,7 @@ fn regression_guard_all_forms() {
             continue;
         }
 
-        // Severity must be Warning (per existing META-04 emission at compare/mod.rs:288-302).
+        // Deprecating a public export produces a warning.
         let severity_ok = deprecated_hits
             .iter()
             .any(|f| f.severity == Severity::Warning);

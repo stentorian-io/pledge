@@ -1,7 +1,7 @@
 //! Type value spaces compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::types::{
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::model::{
     DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace,
 };
 use std::path::PathBuf;

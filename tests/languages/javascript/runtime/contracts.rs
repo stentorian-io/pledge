@@ -1,5 +1,6 @@
 //! Reflective wrappers have statically known subsets and explicit runtime gaps.
-use interlint::{compare, discover::discover_exports};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare;
 
 fn package(source: &str, extension: &str) -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
@@ -96,11 +97,17 @@ async fn transparent_wrappers_retain_their_node_observable_contracts() {
                 exports.values().all(|symbol| !symbol.is_proxy_dispatched),
                 "{exports:?}"
             );
-            let result = interlint::lsp::enrich_exports(&mut exports, root.path())
-                .await
-                .unwrap();
+            let result = interlint::languages::typescript::compiler::enrich_exports(
+                &mut exports,
+                root.path(),
+            )
+            .await
+            .unwrap();
             assert!(
-                matches!(result, interlint::lsp::EnrichResult::Enriched),
+                matches!(
+                    result,
+                    interlint::languages::typescript::compiler::EnrichResult::Enriched
+                ),
                 "{before_source}: {result:?}"
             );
             let output = std::process::Command::new("node").current_dir(root.path())
@@ -115,7 +122,7 @@ async fn transparent_wrappers_retain_their_node_observable_contracts() {
         }
         let findings = compare::compare_exports(&maps[0], &maps[1], new.path(), true);
         assert!(
-            compare::has_breaking_changes(&findings),
+            interlint::core::findings::has_breaking_changes(&findings),
             "{before_source}: {findings:?}"
         );
         assert!(
@@ -196,18 +203,24 @@ async fn registered_symbol_identity_agrees_with_node_consumers() {
             );
             let (mut exports, warnings) = discover_exports(root.path()).unwrap();
             assert!(warnings.is_empty(), "{warnings:?}");
-            let result = interlint::lsp::enrich_exports(&mut exports, root.path())
-                .await
-                .unwrap();
+            let result = interlint::languages::typescript::compiler::enrich_exports(
+                &mut exports,
+                root.path(),
+            )
+            .await
+            .unwrap();
             assert!(
-                matches!(result, interlint::lsp::EnrichResult::Enriched),
+                matches!(
+                    result,
+                    interlint::languages::typescript::compiler::EnrichResult::Enriched
+                ),
                 "{result:?}"
             );
             maps.push(exports);
         }
         let findings = compare::compare_exports(&maps[0], &maps[1], new.path(), false);
         assert_eq!(
-            compare::has_breaking_changes(&findings),
+            interlint::core::findings::has_breaking_changes(&findings),
             breaking,
             "{before}: {findings:?}"
         );
@@ -313,24 +326,32 @@ async fn class_runtime_contracts_agree_with_node_consumers() {
             );
             let (mut exports, warnings) = discover_exports(root.path()).unwrap();
             assert!(warnings.is_empty(), "{warnings:?}");
-            let result = interlint::lsp::enrich_exports(&mut exports, root.path())
-                .await
-                .unwrap();
+            let result = interlint::languages::typescript::compiler::enrich_exports(
+                &mut exports,
+                root.path(),
+            )
+            .await
+            .unwrap();
             assert!(
-                matches!(result, interlint::lsp::EnrichResult::Enriched),
+                matches!(
+                    result,
+                    interlint::languages::typescript::compiler::EnrichResult::Enriched
+                ),
                 "{before}: {result:?}"
             );
             maps.push(exports);
         }
         let mut findings = compare::compare_exports(&maps[0], &maps[1], new.path(), false);
-        findings.extend(compare::compare_structural_diff(
-            old.path(),
-            new.path(),
-            &maps[0],
-            &maps[1],
-        ));
+        findings.extend(
+            interlint::languages::javascript::compare::structure::compare_structural_diff(
+                old.path(),
+                new.path(),
+                &maps[0],
+                &maps[1],
+            ),
+        );
         assert_eq!(
-            compare::has_breaking_changes(&findings),
+            interlint::core::findings::has_breaking_changes(&findings),
             breaking,
             "{before}: {findings:?}"
         );
@@ -346,7 +367,12 @@ fn conditional_static_members_are_explicit_without_compiler_evidence() {
     let new = package("export class api {}", "js");
     let (before, _) = discover_exports(old.path()).unwrap();
     let (after, _) = discover_exports(new.path()).unwrap();
-    let findings = compare::compare_structural_diff(old.path(), new.path(), &before, &after);
+    let findings = interlint::languages::javascript::compare::structure::compare_structural_diff(
+        old.path(),
+        new.path(),
+        &before,
+        &after,
+    );
     assert!(
         findings
             .iter()

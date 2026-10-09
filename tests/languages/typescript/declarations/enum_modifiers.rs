@@ -1,8 +1,9 @@
 //! Enum modifiers compatibility checks.
 
-use interlint::compare::enum_diff;
-use interlint::compare::subtype::RULE_ENUM_REGULAR_TO_CONST;
-use interlint::types::{EnumMember, EnumShape, EnumValueKind, Finding, Severity};
+use interlint::core::findings::{Finding, Severity};
+use interlint::languages::typescript::compare::enums as enum_diff;
+use interlint::languages::typescript::compare::rules::RULE_ENUM_REGULAR_TO_CONST;
+use interlint::languages::typescript::model::{EnumMember, EnumShape, EnumValueKind};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

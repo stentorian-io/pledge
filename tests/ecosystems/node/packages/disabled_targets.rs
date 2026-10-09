@@ -1,6 +1,6 @@
 //! Disabled targets compatibility checks.
 
-use interlint::compare::metadata::compare_metadata;
+use interlint::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn null_to_real_target_fires_minor_not_major() {
@@ -27,7 +27,7 @@ fn null_to_real_target_fires_minor_not_major() {
     assert!(
         !findings.iter().any(|f| {
             f.rule == "condition-target-changed"
-                && matches!(f.severity, interlint::types::Severity::Major)
+                && matches!(f.severity, interlint::core::findings::Severity::Major)
         }),
         "SEM-02: null -> real should not fire Major condition-target-changed. Got: {:?}",
         findings

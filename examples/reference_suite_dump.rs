@@ -11,8 +11,10 @@ fn main() {
         .join("tests/fixtures/node/reference")
         .join(package);
     let unpack = |name| {
-        interlint::acquire::extract_tgz_from_bytes(&std::fs::read(directory.join(name)).unwrap())
-            .unwrap()
+        interlint::ecosystems::node::acquire::extract_tgz_from_bytes(
+            &std::fs::read(directory.join(name)).unwrap(),
+        )
+        .unwrap()
     };
     let (_old_dir, old_root) = unpack("from.tgz");
     let (_new_dir, new_root) = unpack("to.tgz");

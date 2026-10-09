@@ -1,6 +1,6 @@
 //! Export patterns compatibility checks.
 
-use interlint::compare::compare_exports_map_diff;
+use interlint::ecosystems::node::compare::compare_exports_map_diff;
 
 #[test]
 fn wildcard_pattern_changed() {

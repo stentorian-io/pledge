@@ -1,7 +1,8 @@
 //! Internal exports compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-use interlint::types::ReleaseTag;
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use interlint::languages::typescript::model::ReleaseTag;
 
 #[test]
 fn internal_tag_excludes_from_comparison() {

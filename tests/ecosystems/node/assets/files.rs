@@ -1,11 +1,10 @@
 //! Files compatibility checks.
 
-use interlint::compare::asset_diff;
-use interlint::compare::subtype::{
+use crate::fixtures::fixture_path;
+use interlint::ecosystems::node::compare::assets::files as asset_diff;
+use interlint::ecosystems::node::compare::rules::{
     RULE_ASSET_FILE_REMOVED, RULE_CSS_CLASS_REMOVED, RULE_JSON_FIELD_REMOVED,
 };
-
-use crate::fixtures::fixture_path;
 
 #[test]
 fn test_asset_file_removed_integration() {
@@ -45,7 +44,10 @@ fn test_orchestrator_combines_all_findings() {
     // Asset removal
     std::fs::write(dir_old.path().join("logo.svg"), "<svg></svg>").unwrap();
 
-    let findings = interlint::compare::compare_asset_diff(dir_old.path(), dir_new.path());
+    let findings = interlint::ecosystems::node::compare::assets::compare_asset_diff(
+        dir_old.path(),
+        dir_new.path(),
+    );
 
     let rules: Vec<&str> = findings.iter().map(|f| f.rule).collect();
     assert!(

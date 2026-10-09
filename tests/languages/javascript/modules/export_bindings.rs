@@ -1,7 +1,9 @@
 //! Export bindings compatibility checks.
 
-use interlint::discover::tree_query::{self, RawExportKind, SourceLanguage};
-use interlint::types::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::syntax::exports as tree_query;
+use interlint::languages::javascript::syntax::exports::RawExportKind;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -106,8 +108,12 @@ fn test_export_alias_detected_correctly() {
         );
     }
 
-    let findings =
-        interlint::compare::compare_exports(&old_map, &new_map, std::path::Path::new("."), true);
+    let findings = interlint::languages::javascript::compare::compare_exports(
+        &old_map,
+        &new_map,
+        std::path::Path::new("."),
+        true,
+    );
 
     // `bar` was removed — should fire export-removed
     assert!(

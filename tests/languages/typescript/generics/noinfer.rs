@@ -17,10 +17,11 @@
 //! mirroring the CLI composition (see `src/main.rs`) and the TYPE-02
 //! integration test (`tests/languages/typescript/generics/constrained_inference.rs`).
 
-use interlint::compare::subtype::RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED;
-use interlint::compare::{compare_exports, compare_structural_diff};
-use interlint::discover::discover_exports;
-use interlint::types::Severity;
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::typescript::compare::rules::RULE_GENERIC_INFERENCE_CONSTRAINT_REMOVED;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/generics/noinfer";
@@ -30,7 +31,7 @@ fn fixture_dir(form: &str, side: &str) -> PathBuf {
     Path::new(manifest).join(FIXTURE_ROOT).join(form).join(side)
 }
 
-fn run(form: &str) -> Vec<interlint::types::Finding> {
+fn run(form: &str) -> Vec<interlint::core::findings::Finding> {
     let old_dir = fixture_dir(form, "old");
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();

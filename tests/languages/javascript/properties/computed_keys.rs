@@ -1,5 +1,6 @@
 //! Unknown runtime keys must not look like an empty, fully analyzed interface.
-use interlint::{compare, discover::discover_exports, types::SymbolSpace};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::model::SymbolSpace;
 
 fn package(source: &str) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
@@ -53,7 +54,13 @@ fn unknown_class_keys_are_incomplete_but_unrelated_writes_are_not() {
         let new = package("export class Api {}");
         let (before, _) = discover_exports(old.path()).unwrap();
         let (after, _) = discover_exports(new.path()).unwrap();
-        let findings = compare::compare_structural_diff(old.path(), new.path(), &before, &after);
+        let findings =
+            interlint::languages::javascript::compare::structure::compare_structural_diff(
+                old.path(),
+                new.path(),
+                &before,
+                &after,
+            );
         assert_eq!(
             findings
                 .iter()
@@ -93,7 +100,12 @@ fn declared_unique_symbol_members_have_static_identity() {
     .unwrap();
     let (exports, warnings) = discover_exports(root.path()).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
-    let findings = compare::compare_structural_diff(root.path(), root.path(), &exports, &exports);
+    let findings = interlint::languages::javascript::compare::structure::compare_structural_diff(
+        root.path(),
+        root.path(),
+        &exports,
+        &exports,
+    );
     assert!(
         !findings
             .iter()

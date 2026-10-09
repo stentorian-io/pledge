@@ -1,6 +1,7 @@
 //! Shared deterministic structural pipeline for reference verification and curation.
 
-use interlint::{compare, discover::discover_exports};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -46,12 +47,20 @@ pub fn run_pipeline(old_root: &Path, new_root: &Path) -> Snapshot {
     let (old, old_warnings) = discover_exports(&old_root).unwrap();
     let (new, new_warnings) = discover_exports(&new_root).unwrap();
     let mut findings = compare::compare_exports(&old, &new, &new_root, false);
-    findings.extend(compare::metadata::compare_metadata(&old_root, &new_root));
-    findings.extend(compare::compare_exports_map_diff(&old_root, &new_root));
-    findings.extend(compare::compare_structural_diff(
-        &old_root, &new_root, &old, &new,
-    ));
-    findings.extend(compare::compare_asset_diff(&old_root, &new_root));
+    findings.extend(
+        interlint::ecosystems::node::compare::metadata::compare_metadata(&old_root, &new_root),
+    );
+    findings.extend(
+        interlint::ecosystems::node::compare::compare_exports_map_diff(&old_root, &new_root),
+    );
+    findings.extend(
+        interlint::languages::javascript::compare::structure::compare_structural_diff(
+            &old_root, &new_root, &old, &new,
+        ),
+    );
+    findings.extend(
+        interlint::ecosystems::node::compare::assets::compare_asset_diff(&old_root, &new_root),
+    );
     let mut seen = HashSet::new();
     findings.retain(|finding| {
         seen.insert((
@@ -62,7 +71,7 @@ pub fn run_pipeline(old_root: &Path, new_root: &Path) -> Snapshot {
             finding.message.clone(),
         ))
     });
-    let breaking = compare::has_breaking_changes(&findings);
+    let breaking = interlint::core::findings::has_breaking_changes(&findings);
     let mut findings: Vec<_> = findings
         .into_iter()
         .map(|finding| Finding {
@@ -95,7 +104,7 @@ pub fn run_pipeline(old_root: &Path, new_root: &Path) -> Snapshot {
     };
     let before = manifest(&old_root);
     let after = manifest(&new_root);
-    let surfaces = |exports: &interlint::types::ExportMap| {
+    let surfaces = |exports: &interlint::languages::javascript::model::ExportMap| {
         let mut counts = BTreeMap::new();
         for key in exports.keys() {
             *counts

@@ -17,12 +17,12 @@
 //!    statement is a plain comment per TS compiler semantics; zero directive
 //!    findings fire for either side.
 
-use interlint::compare::compare_exports;
-use interlint::compare::subtype::{
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::typescript::compare::rules::{
     RULE_DIRECTIVE_ADDED, RULE_DIRECTIVE_CHANGED, RULE_DIRECTIVE_REMOVED, RULE_DIRECTIVE_REORDERED,
 };
-use interlint::discover::discover_exports;
-use interlint::types::Severity;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/declarations/directives";
@@ -32,7 +32,7 @@ fn fixture_dir(form: &str, side: &str) -> PathBuf {
     Path::new(manifest).join(FIXTURE_ROOT).join(form).join(side)
 }
 
-fn run(form: &str) -> Vec<interlint::types::Finding> {
+fn run(form: &str) -> Vec<interlint::core::findings::Finding> {
     let old_dir = fixture_dir(form, "old");
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();

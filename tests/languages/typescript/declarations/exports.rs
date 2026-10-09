@@ -1,8 +1,9 @@
 //! Exports compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
-use interlint::types::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

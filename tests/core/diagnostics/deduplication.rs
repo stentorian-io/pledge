@@ -1,6 +1,6 @@
 //! Deduplication compatibility checks.
 
-use interlint::types::{Finding, Severity};
+use interlint::core::findings::{Finding, Severity};
 use std::path::PathBuf;
 
 /// BUG 7: Duplicate findings (same rule + file + line, different messages)

@@ -1,6 +1,7 @@
 //! Export forms compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn test_star_and_namespace_from_same_source_both_captured() {

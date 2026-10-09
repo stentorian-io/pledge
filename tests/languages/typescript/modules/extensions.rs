@@ -1,6 +1,6 @@
 //! Extensions compatibility checks.
 
-use interlint::discover::resolver::resolve_module_path;
+use interlint::ecosystems::node::discovery::resolver::resolve_module_path;
 use std::path::Path;
 
 /// ECF-05: resolve_module_path must preserve compound file stems.

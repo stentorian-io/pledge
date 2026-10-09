@@ -1,5 +1,7 @@
-use interlint::compare::{has_breaking_changes, subtype::is_subtype_of, type_diff::diff_types};
-use interlint::types::parser::parse_type_string;
+use interlint::core::findings::has_breaking_changes;
+use interlint::languages::typescript::compare::types::diff_types;
+use interlint::languages::typescript::types::parser::parse_type_string;
+use interlint::languages::typescript::types::subtype::is_subtype_of;
 use std::path::Path;
 
 #[test]

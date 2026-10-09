@@ -6,12 +6,11 @@
 
 #![cfg(feature = "lsp-tests")]
 
-use interlint::compare;
-use interlint::discover;
-use interlint::lsp;
-use interlint::types::{Finding, Severity};
-
 use crate::fixtures::fixture_path;
+use interlint::core::findings::{Finding, Severity};
+use interlint::ecosystems::node::discovery as discover;
+use interlint::languages::javascript::compare;
+use interlint::languages::typescript::compiler;
 
 /// Run the full pipeline: discover -> enrich -> compare
 async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
@@ -22,24 +21,24 @@ async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
     let (mut new_exports, _) = discover::discover_exports(&new_root).unwrap();
 
     // Enrich both (may degrade if LSP not available — test handles both)
-    let old_result = lsp::enrich_exports(&mut old_exports, &old_root).await;
-    let new_result = lsp::enrich_exports(&mut new_exports, &new_root).await;
+    let old_result = compiler::enrich_exports(&mut old_exports, &old_root).await;
+    let new_result = compiler::enrich_exports(&mut new_exports, &new_root).await;
 
     // Assert enrichment succeeded (these tests require LSP)
     assert!(
-        matches!(old_result, Ok(lsp::EnrichResult::Enriched)),
+        matches!(old_result, Ok(compiler::EnrichResult::Enriched)),
         "LSP enrichment failed for old: {:?}",
         old_result
     );
     assert!(
-        matches!(new_result, Ok(lsp::EnrichResult::Enriched)),
+        matches!(new_result, Ok(compiler::EnrichResult::Enriched)),
         "LSP enrichment failed for new: {:?}",
         new_result
     );
 
     let findings =
         compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
-    let has_breaking = compare::has_breaking_changes(&findings);
+    let has_breaking = interlint::core::findings::has_breaking_changes(&findings);
     (findings, has_breaking)
 }
 
@@ -231,9 +230,9 @@ async fn missing_workspace_degrades_analysis() {
     assert!(!exports.is_empty());
     drop(directory);
 
-    let result = lsp::enrich_exports(&mut exports, &root).await;
+    let result = compiler::enrich_exports(&mut exports, &root).await;
     assert!(
-        matches!(result, Ok(lsp::EnrichResult::Degraded(_))),
+        matches!(result, Ok(compiler::EnrichResult::Degraded(_))),
         "{result:?}"
     );
 }

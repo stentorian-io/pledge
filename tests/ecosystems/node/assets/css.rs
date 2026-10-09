@@ -1,9 +1,10 @@
 //! Css compatibility checks.
 
-use interlint::compare::css_diff;
-use interlint::compare::subtype::{RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED};
-
 use crate::fixtures::fixture_path;
+use interlint::ecosystems::node::compare::assets::css as css_diff;
+use interlint::ecosystems::node::compare::rules::{
+    RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED,
+};
 
 #[test]
 fn test_css_custom_property_removed_integration() {

@@ -1,8 +1,11 @@
 //! Const parameters compatibility checks.
 
-use interlint::compare::compare_structural_diff;
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
-use interlint::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::javascript::model::{
+    DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol,
+};
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn make_export_sym(

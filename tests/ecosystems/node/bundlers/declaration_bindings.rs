@@ -1,9 +1,9 @@
 //! Declaration bindings compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::compare::subtype::RULE_EXPORT_RENAMED;
-use interlint::discover::discover_exports;
-use interlint::types::{DeclarationKind, ExportKind};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::rules::RULE_EXPORT_RENAMED;
+use interlint::languages::javascript::model::{DeclarationKind, ExportKind};
 
 fn write_pkg(dir: &std::path::Path, pkg: serde_json::Value) {
     std::fs::write(

@@ -1,6 +1,6 @@
 //! Tsx compatibility checks.
 
-use interlint::discover::discover_exports;
+use interlint::ecosystems::node::discovery::discover_exports;
 
 fn write_pkg(dir: &std::path::Path, pkg: serde_json::Value) {
     std::fs::write(

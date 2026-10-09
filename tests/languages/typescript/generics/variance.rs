@@ -1,7 +1,7 @@
 //! Variance compatibility checks.
 
-use interlint::compare::generics_diff::compare_type_params;
-use interlint::types::{TypeParam, Variance};
+use interlint::languages::typescript::compare::generics::compare_type_params;
+use interlint::languages::typescript::model::{TypeParam, Variance};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

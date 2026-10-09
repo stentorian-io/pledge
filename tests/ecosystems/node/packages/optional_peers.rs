@@ -1,6 +1,6 @@
 //! Optional peers compatibility checks.
 
-use interlint::compare::metadata::compare_metadata;
+use interlint::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn peer_dep_optional_removed_fires_major() {

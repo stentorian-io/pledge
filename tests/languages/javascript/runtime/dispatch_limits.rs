@@ -1,9 +1,9 @@
 //! Dispatch limits compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::compare::subtype::RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS;
-use interlint::discover::discover_exports;
-use interlint::types::Severity;
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::rules::RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";
@@ -17,7 +17,8 @@ fn fixture_dir(case: &str, side: &str) -> PathBuf {
 
 #[test]
 fn proxy_dispatched_exports_flag_set() {
-    use interlint::discover::tree_query::{parse_exports, SourceLanguage};
+    use interlint::languages::javascript::syntax::exports::parse_exports;
+    use interlint::languages::javascript::syntax::grammar::SourceLanguage;
     let source = b"module.exports = new Proxy({}, { get: () => process.env.VALUE });";
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
     let default_exp = raw

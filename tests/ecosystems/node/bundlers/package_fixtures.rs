@@ -1,6 +1,7 @@
 //! Package fixtures compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::Path;
 
 #[test]

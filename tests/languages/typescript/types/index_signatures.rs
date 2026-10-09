@@ -1,7 +1,7 @@
 //! Index signatures compatibility checks.
 
-use interlint::compare::interface_diff::compare_interface_index_signatures;
-use interlint::discover::tree_query::IndexSignature;
+use interlint::languages::typescript::compare::interfaces::compare_interface_index_signatures;
+use interlint::languages::typescript::syntax::interfaces::IndexSignature;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -28,7 +28,10 @@ fn index_signature_removed_fires_rule() {
         "rule should be interface-index-signature-changed; got: {}",
         findings[0].rule
     );
-    assert_eq!(findings[0].severity, interlint::types::Severity::Major);
+    assert_eq!(
+        findings[0].severity,
+        interlint::core::findings::Severity::Major
+    );
     assert!(
         findings[0].message.contains("removed"),
         "message should say 'removed'; got: {}",

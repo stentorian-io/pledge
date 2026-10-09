@@ -81,10 +81,14 @@ or an explicit request. Before publishing a code change, run `make check-all`.
 
 ## Code structure
 
-Keep acquisition, discovery, LSP enrichment, type representation, comparison,
-and reporting in their existing domain modules. Add a new file when it gives a
-concept a clear owner; avoid catch-all utility modules. See
-[architecture](docs/architecture.md) for the pipeline and boundaries.
+Source follows the same language and ecosystem boundaries as the tests.
+`src/app/` owns the CLI and orchestration; `src/core/` contains language-independent
+findings and limits. Language models, syntax, and rules live under
+`src/languages/<language>/`; package and runtime conventions live under
+`src/ecosystems/<ecosystem>/`. Keep acquisition, discovery, compiler enrichment,
+comparison, and reporting separate within those owners. Add a new file when it
+gives a concept a clear owner; avoid catch-all utility modules. See
+[architecture](docs/architecture.md) for the pipeline and extension guidance.
 
 Use names that explain the behavior. Prefer borrowing and slices when ownership
 is unnecessary, structured errors in domain code, and `anyhow` context at

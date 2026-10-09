@@ -1,6 +1,8 @@
-use interlint::compare::{compare_exports, compare_structural_diff, has_breaking_changes};
-use interlint::discover::discover_exports;
-use interlint::types::SymbolSpace;
+use interlint::core::findings::has_breaking_changes;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::javascript::model::SymbolSpace;
 
 fn package(index: &str, implementation: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -162,11 +164,18 @@ fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
         }
         // Both paths must reach the same binding, so the two leaves re-export it.
         std::fs::write(old.path().join("b18.mjs"), "export * from './a18.mjs';").unwrap();
-        let (before, warnings) = interlint::discover::discover_exports(old.path()).unwrap();
+        let (before, warnings) =
+            interlint::ecosystems::node::discovery::discover_exports(old.path()).unwrap();
         assert!(warnings.is_empty());
-        let (after, warnings) = interlint::discover::discover_exports(new.path()).unwrap();
+        let (after, warnings) =
+            interlint::ecosystems::node::discovery::discover_exports(new.path()).unwrap();
         assert!(warnings.is_empty());
-        let findings = interlint::compare::compare_exports(&before, &after, new.path(), false);
+        let findings = interlint::languages::javascript::compare::compare_exports(
+            &before,
+            &after,
+            new.path(),
+            false,
+        );
         assert_eq!(
             findings
                 .iter()
@@ -174,7 +183,10 @@ fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
                 .count(),
             2
         );
-        assert!(interlint::compare::compare_exports_map_diff(old.path(), new.path()).is_empty());
+        assert!(
+            interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), new.path())
+                .is_empty()
+        );
         send.send(()).unwrap();
     });
     receive

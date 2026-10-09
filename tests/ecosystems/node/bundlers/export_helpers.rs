@@ -1,6 +1,7 @@
 //! Export helpers compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, RawExportKind, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn esbuild_export_helper_captures_arrow_getters() {

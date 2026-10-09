@@ -1,9 +1,12 @@
 //! Overload matching compatibility checks.
 
-use interlint::compare::ref_diff;
-use interlint::compare::subtype::{RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED};
-use interlint::types::shape::{ParamShape, PrimitiveKind, TypeShape};
-use interlint::types::{DeclarationKind, ExportKind, ExportSymbol, Finding};
+use interlint::core::findings::Finding;
+use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+use interlint::languages::typescript::compare::refinements as ref_diff;
+use interlint::languages::typescript::compare::rules::{
+    RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED,
+};
+use interlint::languages::typescript::types::shape::{ParamShape, PrimitiveKind, TypeShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

@@ -1,8 +1,7 @@
 //! Discovery compatibility checks.
 
-use interlint::discover::discover_exports;
-
 use crate::fixtures::fixture_path;
+use interlint::ecosystems::node::discovery::discover_exports;
 
 #[test]
 fn test_discover_simple_js_exports() {

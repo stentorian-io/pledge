@@ -13,14 +13,15 @@ compiler API, and report findings by semver impact.
 
 Primary files and boundaries:
 
-- `src/main.rs` and `src/cli.rs`: command arguments and pipeline orchestration.
-- `src/acquire/`: npm packing, registry downloads, and tarball extraction.
-- `src/discover/`: entry point resolution, export discovery, and comment scans.
-- `src/lsp/`: compiler enrichment, toolchain management, and language-server protocol support.
-- `src/types/`: shared domain types and TypeScript type parsing.
-- `src/compare/`: compatibility rules, pairing, and finding consolidation.
-- `src/report/`: terminal output and summaries.
-- `src/source_filter.rs`: shared limits for source processing.
+- `src/main.rs`: process startup and exit codes.
+- `src/app/`: command arguments, analysis orchestration, and terminal reporting.
+- `src/core/`: language-independent findings, consolidation, and source limits.
+- `src/languages/javascript/`: JS/TS export identity, shared grammar dispatch,
+  JavaScript syntax, runtime contracts, and structural comparison.
+- `src/languages/typescript/`: declaration metadata, syntax, type representation,
+  compatibility rules, compiler enrichment, and language-server protocol support.
+- `src/ecosystems/node/`: npm acquisition, dependency preparation, package
+  discovery and resolution, metadata, module loading, and distributed assets.
 - `tests/`: behavioral integration suites and package fixtures.
 - `docs/`: maintained architecture, rule references, and reference-suite guidance.
 - `scripts/`: local development checks, hooks, and fixture maintenance.
@@ -34,6 +35,10 @@ behavior. Read `tests/README.md` before changing test placement or fixtures.
   module boundaries. Make the smallest coherent change that solves the task.
 - Keep acquisition, discovery, type enrichment, comparison, and reporting
   separate. Keep process startup and CLI decisions out of pure comparison code.
+- Organize source by language or ecosystem, then responsibility. Keep `core`
+  independent of both. JS/TS may share their export and grammar implementation;
+  future languages should own their models and rules. Read
+  `docs/architecture.md` before changing these boundaries.
 - Remove duplication when the repeated code represents the same concept and
   has the same reason to change.
 - Add dependencies only with a clear justification. Prefer the standard library

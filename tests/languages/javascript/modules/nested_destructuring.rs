@@ -1,6 +1,7 @@
 //! Nested destructuring compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn nested_object_destructuring() {

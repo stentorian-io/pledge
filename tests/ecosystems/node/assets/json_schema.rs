@@ -1,11 +1,10 @@
 //! Json schema compatibility checks.
 
-use interlint::compare::json_diff;
-use interlint::compare::subtype::{
+use crate::fixtures::fixture_path;
+use interlint::ecosystems::node::compare::assets::json_schema as json_diff;
+use interlint::ecosystems::node::compare::rules::{
     RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED, RULE_JSON_REQUIRED_FIELD_ADDED,
 };
-
-use crate::fixtures::fixture_path;
 
 #[test]
 fn test_json_field_removed_integration() {

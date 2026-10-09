@@ -1,6 +1,7 @@
 //! Type stars compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn export_type_star_is_type_only_flag_set() {

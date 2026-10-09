@@ -1,13 +1,13 @@
 //! EXP-14 integration tests: package.json `imports` field diff +
 //! `#subpath` re-export tracing + exports/imports coexistence.
 
-use interlint::compare::imports_diff;
-use interlint::compare::subtype::{
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::compare::imports as imports_diff;
+use interlint::ecosystems::node::compare::rules::{
     RULE_IMPORT_ADDED, RULE_IMPORT_CONDITION_CHANGED, RULE_IMPORT_PATTERN_REFINED,
     RULE_IMPORT_REMOVED, RULE_IMPORT_REROUTE,
 };
-use interlint::discover::discover_exports;
-use interlint::types::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";
@@ -150,7 +150,8 @@ fn diff_orchestrator_appends_imports_findings() {
 
     let new_dir = fixture_dir("node/packages/imports/imports-with-exports", "new");
 
-    let findings = interlint::compare::compare_exports_map_diff(old_dir.path(), &new_dir);
+    let findings =
+        interlint::ecosystems::node::compare::compare_exports_map_diff(old_dir.path(), &new_dir);
 
     let rules: Vec<&'static str> = findings.iter().map(|f| f.rule).collect();
     assert!(

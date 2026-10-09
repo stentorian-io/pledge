@@ -1,10 +1,12 @@
 //! Kind refinements compatibility checks.
 
-use interlint::compare::ref_diff;
-use interlint::compare::subtype::{
-    RULE_DECLARATION_KIND_CHANGED, RULE_DEFAULT_EXPORT_CHANGED, RULE_NAMESPACE_TO_OTHER,
+use interlint::core::findings::Finding;
+use interlint::languages::javascript::compare::rules::RULE_DEFAULT_EXPORT_CHANGED;
+use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+use interlint::languages::typescript::compare::refinements as ref_diff;
+use interlint::languages::typescript::compare::rules::{
+    RULE_DECLARATION_KIND_CHANGED, RULE_NAMESPACE_TO_OTHER,
 };
-use interlint::types::{DeclarationKind, ExportKind, ExportSymbol, Finding};
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.

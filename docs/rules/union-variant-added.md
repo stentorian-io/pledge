@@ -26,7 +26,7 @@ function area(s: Shape): number {
 Adding a new variant — even though it *widens* the type (technically a
 compatible direction) — breaks the exhaustiveness check at the
 consumer's switch. This is the same shape of problem as
-[`enum-member-added`](../../src/compare/enum_diff.rs) (BEH-04), and both surface
+[`enum-member-added`](../../src/languages/typescript/compare/enums.rs) (BEH-04), and both surface
 at the same severity.
 
 ## Rule reference

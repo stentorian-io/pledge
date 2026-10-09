@@ -6,13 +6,14 @@
 //!   - tuple-label-dropped (Patch)
 //!   - tuple-label-added (Minor)
 
-use interlint::compare::subtype::{
+use interlint::core::findings::{Finding, Severity};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::typescript::compare::rules::{
     RULE_TUPLE_LABEL_ADDED, RULE_TUPLE_LABEL_DROPPED, RULE_TUPLE_LABEL_RENAMED,
     RULE_TUPLE_LABEL_REORDERED,
 };
-use interlint::compare::{compare_exports, compare_structural_diff};
-use interlint::discover::discover_exports;
-use interlint::types::{Finding, Severity};
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/types/tuple-labels";

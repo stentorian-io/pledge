@@ -1,21 +1,19 @@
 //! Metadata compatibility checks.
 
-use interlint::compare;
-use interlint::compare::metadata;
-use interlint::types::Severity;
-
 use crate::fixtures::fixture_path;
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::compare::metadata;
 
 /// Helper: collect rule IDs from findings.
-fn rule_ids(findings: &[interlint::types::Finding]) -> Vec<&'static str> {
+fn rule_ids(findings: &[interlint::core::findings::Finding]) -> Vec<&'static str> {
     findings.iter().map(|f| f.rule).collect()
 }
 
 /// Helper: filter findings by rule.
 fn findings_with_rule<'a>(
-    findings: &'a [interlint::types::Finding],
+    findings: &'a [interlint::core::findings::Finding],
     rule: &str,
-) -> Vec<&'a interlint::types::Finding> {
+) -> Vec<&'a interlint::core::findings::Finding> {
     findings.iter().filter(|f| f.rule == rule).collect()
 }
 
@@ -124,7 +122,7 @@ fn test_has_breaking_changes_includes_metadata() {
 
     let findings = metadata::compare_metadata(&old_path, &new_path);
     assert!(
-        compare::has_breaking_changes(&findings),
+        interlint::core::findings::has_breaking_changes(&findings),
         "metadata Major findings should count as breaking changes"
     );
 }

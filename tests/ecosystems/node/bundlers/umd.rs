@@ -3,7 +3,8 @@
 //! - BUN-11 regression: UMD wrapper with `factory(exports)` arg (already detected )
 //! - BUN-11-B: lodash-style IIFE with `module.exports = <ident>` (Path 1A best-effort)
 
-use interlint::discover::tree_query::{parse_exports, RawExport, RawExportKind, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::{parse_exports, RawExport, RawExportKind};
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";
@@ -155,7 +156,7 @@ fn lodash_style_default_with_compound_members_path1() {
     let raw = parse_exports(source, SourceLanguage::JavaScript).unwrap();
 
     // Path 1A assertion (sentinel `BUN-11-B SENTINEL PATH 1A IMPLEMENTED` present
-    // in src/discover/tree_query.rs).
+    // in src/languages/javascript/syntax/exports.rs).
     let default_export = raw
         .iter()
         .find(|e| e.name == "default" && matches!(e.kind, RawExportKind::Default));

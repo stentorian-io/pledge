@@ -1,6 +1,6 @@
 //! Barrel failures compatibility checks.
 
-use interlint::discover::entry_points::resolve_entry_points;
+use interlint::ecosystems::node::discovery::entry_points::resolve_entry_points;
 
 #[test]
 fn barrel_failure_aggregated_above_threshold() {

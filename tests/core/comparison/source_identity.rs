@@ -1,7 +1,9 @@
 //! Source identity compatibility checks.
 
-use interlint::compare::compare_structural_diff;
-use interlint::types::{DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol};
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::javascript::model::{
+    DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol,
+};
 use std::path::PathBuf;
 
 #[test]

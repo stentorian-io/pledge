@@ -2,10 +2,13 @@
 //! assignments without a known key retain explicit incomplete-analysis evidence.
 //! Removing a synthesized member uses the `class-method-removed` rule.
 
-use interlint::compare::subtype::{RULE_CLASS_METHOD_REMOVED, RULE_CLASS_STATIC_TYPE_CHANGED};
-use interlint::compare::{compare_exports, compare_structural_diff};
-use interlint::discover::discover_exports;
-use interlint::types::{Finding, Severity};
+use interlint::core::findings::{Finding, Severity};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::rules::{
+    RULE_CLASS_METHOD_REMOVED, RULE_CLASS_STATIC_TYPE_CHANGED,
+};
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/javascript/classes/static-blocks";

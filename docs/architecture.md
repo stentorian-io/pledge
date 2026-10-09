@@ -4,6 +4,96 @@ The `interlint` CLI compares the public surface of a local npm package with its
 previously published version. Pledge is the repository name; the crate and
 executable still use `interlint`.
 
+## Source layout
+
+Source is grouped by language and ecosystem, then by responsibility. The
+[integration suites](../tests/README.md) use the same ownership boundaries.
+
+```text
+src/
+  main.rs                        # Process startup and exit codes
+  app/                           # CLI arguments, orchestration, terminal output
+  core/                          # Findings, consolidation, source limits
+  languages/
+    javascript/
+      model.rs                   # JS/TS exports and class surfaces
+      syntax/                    # Grammar dispatch and syntax extraction
+      compare/                   # Export, class, runtime, structural comparisons
+    typescript/
+      model.rs                   # Declaration metadata
+      config.rs                  # tsconfig paths and JSONC parsing
+      syntax/                    # Typed declarations, annotations, directives
+      types/                     # Type shapes, parsing, subtyping, reachability
+      compare/                   # Declaration and type compatibility rules
+      compiler/                  # Compiler bridge, enrichment, managed toolchain
+        protocol/                # Language-server lifecycle and requests
+  ecosystems/
+    node/
+      acquire/                   # npm packing, registry access, extraction
+      dependencies.rs            # npm dependency preparation
+      discovery/                 # Package entry points and module resolution
+      compare/                   # Metadata, exports/imports, module loading
+        assets/                  # Distributed files, CSS, JSON schemas
+```
+
+`core` does not depend on a language or ecosystem. It contains findings and
+resource limits that another analyzer can reuse without adopting the JS/TS
+export model. `app` selects and coordinates the current analyzers and renders
+their findings; `main.rs` maps application outcomes to process exit codes.
+
+JavaScript and TypeScript share an export model and tree-sitter traversal because
+TypeScript extends JavaScript. The shared model explicitly carries TypeScript
+metadata and type evidence. TypeScript declaration extraction, type operations,
+and compiler integration have their own modules. This is a JS/TS implementation
+boundary, not a universal model that future languages must implement.
+
+Node owns npm manifests, package acquisition, dependency preparation, entry
+points, and module loading. Its discovery resolves package paths and calls the
+language syntax extractors. CommonJS syntax belongs to JavaScript; package
+`exports`, `imports`, and resolution conditions belong to Node. Compiler
+convenience APIs can prepare Node dependencies and rediscover package exports;
+that package integration is explicit in their imports.
+
+Comparison rules and their identifiers live together under each owner's
+`compare/` directory. Pure comparison code returns findings rather than printing
+output or starting subprocesses. Large unit suites are private child modules
+beside their implementation; smaller suites remain inline.
+
+## Analysis pipeline
+
+1. `ecosystems::node::acquire` packs the local package, reads registry metadata,
+   downloads the published tarball, and extracts both versions into temporary
+   directories.
+2. `ecosystems::node::dependencies` prepares declared dependencies before
+   `ecosystems::node::discovery` resolves entry points and builds export maps
+   through the JS/TS syntax extractors. Discovery also captures directives,
+   decorators, and release tags. Installation disables scripts and lockfile
+   generation; a failed installation leaves analysis incomplete.
+3. `languages::typescript::compiler` evaluates public types and declaration
+   locations with the JavaScript TypeScript compiler. It uses the workspace/PATH
+   compiler or a managed toolchain; normal enrichment does not require a
+   language-server process. Source byte columns are converted to UTF-16 before
+   resolving identifiers. Its `protocol` module remains available for
+   language-server integrations and their regression tests.
+4. The JavaScript, TypeScript, and Node `compare` modules compare exports,
+   structural declarations, types, metadata, module loading, assets, and
+   directives. Related symbol findings are paired and consolidated.
+5. `app` combines the passes, deduplicates findings through `core::findings`,
+   and renders them through `app::report`.
+
+First-publish handling skips downloading a previous version and reports the
+discovered exports as additions. Missing compiler evidence produces an explicit
+degraded result; structural comparisons continue with the evidence available.
+
+Library callers can prepare dependencies with
+`ecosystems::node::dependencies::prepare_dependencies`, discover exports with
+`ecosystems::node::discovery::discover_exports`, and call
+`languages::typescript::compiler::enrich_prepared_exports`. The compiler's
+`enrich_exports` convenience function prepares dependencies and refreshes
+exports when given a map discovered before installation.
+
+## Type evidence
+
 Compiler shapes preserve deferred conditional branches, generic mapped keys,
 key remapping, modifier addition/removal, and intrinsic string operations.
 Type parameter identities follow their binding positions so renaming a generic
@@ -14,50 +104,17 @@ variance annotations, including nested and returned callables. Readonly arrays
 and tuples retain their write restrictions; mutable results can satisfy readonly
 consumers, while removing accepted readonly inputs is breaking.
 
-## Analysis pipeline
+## Adding a language or ecosystem
 
-1. `src/acquire/` packs the local package, reads registry metadata, downloads the
-   published tarball, and extracts both versions into temporary directories.
-2. Declared dependencies are installed before `src/discover/` resolves package
-   entry points and builds export maps with tree-sitter. Discovery also captures
-   directives, decorators, and release tags. Installation disables scripts and
-   lockfile generation; a failed installation leaves analysis incomplete.
-3. `src/lsp/` evaluates public types and declaration locations with the JavaScript
-   TypeScript compiler. It uses the workspace/PATH compiler or a managed toolchain;
-   normal enrichment does not require a language-server process. Source byte
-   columns are converted to UTF-16 before resolving identifiers. The language-server
-   client remains available for protocol integrations and their regression tests.
-4. `src/compare/` compares exports, types, metadata, structural declarations,
-   assets, and directives. It pairs related symbols and consolidates findings.
-5. `src/report/` renders the findings. `src/main.rs` coordinates the passes,
-   deduplicates their results, and selects the process exit code.
+Add a language under `languages/<language>/`, with its own model, syntax, and
+comparison modules as needed. Add package-manager or runtime conventions under
+`ecosystems/<ecosystem>/`. Register modules explicitly and connect the new
+analyzer through `app`; do not add language-specific fields to `core`.
 
-First-publish handling skips downloading a previous version and reports the
-discovered exports as additions. Missing compiler evidence produces an explicit degraded
-result; structural comparisons can continue with the evidence available.
-
-Library callers can prepare dependencies with `lsp::client::prepare_dependencies`,
-discover exports, and call `lsp::enrich_prepared_exports`. The convenience
-`lsp::enrich_exports` prepares dependencies and refreshes dependency-backed
-exports when given a map discovered before installation.
-
-## Ownership boundaries
-
-| Area | Responsibility |
-| --- | --- |
-| `src/cli.rs` | Arguments and help text |
-| `src/acquire/` | Package and registry I/O |
-| `src/discover/` | Source parsing and export resolution |
-| `src/lsp/` | Language server lifecycle, requests, and enrichment |
-| `src/types/` | Shared export/finding models and type parsing |
-| `src/compare/` | Compatibility decisions and rule identifiers |
-| `src/report/` | Terminal presentation |
-| `src/source_filter.rs` | Shared filtering of oversized or minified sources |
-
-Keep CLI policy and process startup at the application boundary. Comparison
-helpers should expose findings in domain terms rather than print output or
-start subprocesses. Introduce a module for a cohesive rule family instead of
-adding a general-purpose helper collection.
+Follow the same ownership in tests and fixtures. Share a model or helper only
+when its contract is actually shared. Keep compiler subprocesses and package
+I/O separate from pure parsing and comparison. No generic plugin interface is
+required to add the next analyzer.
 
 ## Public contracts
 

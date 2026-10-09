@@ -1,7 +1,7 @@
 //! Optionality compatibility checks.
 
-use interlint::compare::interface_diff::compare_interface_members;
-use interlint::types::{ClassMember, ClassMemberKind, Visibility};
+use interlint::languages::javascript::model::{ClassMember, ClassMemberKind, Visibility};
+use interlint::languages::typescript::compare::interfaces::compare_interface_members;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -26,7 +26,7 @@ fn interface_property_optional_to_required_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::types::Severity::Major,
+        interlint::core::findings::Severity::Major,
         "IFT-01: interface-property-made-required should be Major"
     );
 }

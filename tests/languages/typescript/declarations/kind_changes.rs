@@ -1,8 +1,9 @@
 //! Kind changes compatibility checks.
 
-use interlint::compare::ref_diff;
-use interlint::compare::subtype::RULE_DECLARATION_KIND_CHANGED;
-use interlint::types::{DeclarationKind, ExportKind, ExportSymbol, Finding};
+use interlint::core::findings::Finding;
+use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+use interlint::languages::typescript::compare::refinements as ref_diff;
+use interlint::languages::typescript::compare::rules::RULE_DECLARATION_KIND_CHANGED;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

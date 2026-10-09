@@ -1,11 +1,12 @@
 //! Namespace moves compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::compare::subtype::RULE_NAMESPACE_MEMBER_MOVED;
-use interlint::discover::discover_exports;
-use interlint::types::{
-    DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, Severity, SymbolSpace,
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::model::{
+    DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace,
 };
+use interlint::languages::typescript::compare::rules::RULE_NAMESPACE_MEMBER_MOVED;
 use std::path::PathBuf;
 
 fn make_sym(name: &str, file: PathBuf, line: u32, kinds: Vec<DeclarationKind>) -> ExportSymbol {

@@ -2,12 +2,13 @@
 //! decorators stay outside the public surface. Discovery reads decorator AST
 //! nodes, including their arguments.
 
-use interlint::compare::subtype::{
+use interlint::core::findings::{Finding, Severity};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::typescript::compare::rules::{
     RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
-use interlint::compare::{compare_exports, compare_structural_diff};
-use interlint::discover::discover_exports;
-use interlint::types::{Finding, Severity};
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/classes/decorators";
@@ -108,7 +109,7 @@ fn param_decorator_added() {
     let findings = run("param-decorator-added");
     // CLS-10 coverage for parameter decorators: the extractor runs
     // against required_parameter/optional_parameter nodes inside the
-    // constructor parameter-property loop (tree_query.rs). NON-constructor
+    // constructor parameter-property extraction. NON-constructor
     // method params (like the `foo(@Inject('svc') svc)` in this fixture)
     // are NOT surfaced as ClassMember decorators because they are not
     // parameter-properties —  ships class/method/field coverage

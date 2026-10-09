@@ -1,4 +1,5 @@
-use interlint::types::{parser::parse_type_string, shape::TypeShape};
+use interlint::languages::typescript::types::parser::parse_type_string;
+use interlint::languages::typescript::types::shape::TypeShape;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 

@@ -1,6 +1,8 @@
 #![cfg(feature = "lsp-tests")]
 
-use interlint::{compare, discover::discover_exports, lsp};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare;
+use interlint::languages::typescript::compiler;
 use serde_json::json;
 
 fn package(symbol: &str) -> tempfile::TempDir {
@@ -36,8 +38,11 @@ async fn enrichment_refreshes_exports_after_installing_dependencies() {
     for directory in [&old, &new] {
         let root = directory.path().join("package");
         let (mut exports, _) = discover_exports(&root).unwrap();
-        let result = lsp::enrich_exports(&mut exports, &root).await.unwrap();
-        assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+        let result = compiler::enrich_exports(&mut exports, &root).await.unwrap();
+        assert!(
+            matches!(result, compiler::EnrichResult::Enriched),
+            "{result:?}"
+        );
         assert!(
             !exports.keys().any(|key| key.name.starts_with("*<")),
             "{exports:?}"
@@ -87,15 +92,22 @@ async fn enrichment_refreshes_exports_after_installing_dependencies() {
 async fn prepared_discovery_resolves_dependency_exports_before_enrichment() {
     let directory = package("api");
     let root = directory.path().join("package");
-    assert!(lsp::client::prepare_dependencies(&root).await.unwrap());
+    assert!(
+        interlint::ecosystems::node::dependencies::prepare_dependencies(&root)
+            .await
+            .unwrap()
+    );
     let (mut exports, warnings) = discover_exports(&root).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(exports.keys().any(|key| key.name == "api"));
     assert!(!exports.keys().any(|key| key.name.starts_with("*<")));
-    let result = lsp::enrich_prepared_exports(&mut exports, &root)
+    let result = compiler::enrich_prepared_exports(&mut exports, &root)
         .await
         .unwrap();
-    assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+    assert!(
+        matches!(result, compiler::EnrichResult::Enriched),
+        "{result:?}"
+    );
 }
 
 #[tokio::test]
@@ -104,9 +116,9 @@ async fn missing_dependencies_degrade_instead_of_enriching_placeholders() {
     std::fs::remove_dir_all(directory.path().join("dependency")).unwrap();
     let root = directory.path().join("package");
     let (mut exports, _) = discover_exports(&root).unwrap();
-    let result = lsp::enrich_exports(&mut exports, &root).await.unwrap();
+    let result = compiler::enrich_exports(&mut exports, &root).await.unwrap();
     assert!(
-        matches!(result, lsp::EnrichResult::Degraded(_)),
+        matches!(result, compiler::EnrichResult::Degraded(_)),
         "{result:?}"
     );
 }
@@ -126,9 +138,12 @@ async fn compiler_resolves_dependencies_that_publish_only_an_exports_map() {
     .unwrap();
     std::fs::write(root.join("index.d.ts"), "import type {Options} from 'local-contract'; export declare function api(input: Options): void;").unwrap();
     let (mut exports, _) = discover_exports(&root).unwrap();
-    let result = lsp::enrich_exports(&mut exports, &root).await.unwrap();
-    assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+    let result = compiler::enrich_exports(&mut exports, &root).await.unwrap();
+    assert!(
+        matches!(result, compiler::EnrichResult::Enriched),
+        "{result:?}"
+    );
     assert!(exports.values().any(|symbol| symbol.name == "api" && symbol.overloads.iter().any(|shape| {
-        matches!(shape, interlint::types::shape::TypeShape::Function { params, .. } if matches!(&params[0].shape, interlint::types::shape::TypeShape::Object(fields) if fields.contains_key("value")))
+        matches!(shape, interlint::languages::typescript::types::shape::TypeShape::Function { params, .. } if matches!(&params[0].shape, interlint::languages::typescript::types::shape::TypeShape::Object(fields) if fields.contains_key("value")))
     })), "{exports:?}");
 }

@@ -1,6 +1,7 @@
 //! Declaration names compatibility checks.
 
-use interlint::discover::tree_query::{parse_exports, SourceLanguage};
+use interlint::languages::javascript::syntax::exports::parse_exports;
+use interlint::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn rollup_suffix_no_spurious_finding_on_same_base_exported() {

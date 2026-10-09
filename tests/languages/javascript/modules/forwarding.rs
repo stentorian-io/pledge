@@ -1,4 +1,5 @@
-use interlint::{compare, discover::discover_exports};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare;
 use serde_json::json;
 
 fn package(wrapper: &str, production: &str, development: &str) -> tempfile::TempDir {
@@ -143,12 +144,9 @@ fn equivalent_condition_rewrites_and_target_relocations_stay_compatible() {
     std::fs::write(new.path().join("renamed.cjs"), "exports.api = 1;").unwrap();
     let (before, _) = discover_exports(old.path()).unwrap();
     let (after, _) = discover_exports(new.path()).unwrap();
-    assert!(!compare::has_breaking_changes(&compare::compare_exports(
-        &before,
-        &after,
-        new.path(),
-        false
-    )));
+    assert!(!interlint::core::findings::has_breaking_changes(
+        &compare::compare_exports(&before, &after, new.path(), false)
+    ));
 }
 
 #[test]
@@ -173,7 +171,8 @@ fn published_react_exports_match_node_in_both_environments() {
             .join("tests/fixtures/node/reference/react/to.tgz"),
     )
     .unwrap();
-    let (_directory, root) = interlint::acquire::extract_tgz_from_bytes(&tarball).unwrap();
+    let (_directory, root) =
+        interlint::ecosystems::node::acquire::extract_tgz_from_bytes(&tarball).unwrap();
     let (exports, _) = discover_exports(&root).unwrap();
     for (environment, branch) in [
         ("production", "NODE_ENV=production"),

@@ -1,7 +1,7 @@
 //! Optional parameters compatibility checks.
 
-use interlint::compare::type_diff::diff_types;
-use interlint::types::shape::{ParamShape, TypeShape};
+use interlint::languages::typescript::compare::types::diff_types;
+use interlint::languages::typescript::types::shape::{ParamShape, TypeShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -47,7 +47,7 @@ fn optional_to_required_param_fires_rule() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::types::Severity::Major,
+        interlint::core::findings::Severity::Major,
         "param-made-required should be Major"
     );
     assert!(

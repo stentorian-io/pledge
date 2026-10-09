@@ -1,7 +1,9 @@
 //! Compare semantic type findings with independently compiled consumers.
 #![cfg(feature = "lsp-tests")]
 
-use interlint::{compare, discover::discover_exports, lsp};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare;
+use interlint::languages::typescript::compiler;
 use serde_json::Value;
 use std::process::Command;
 
@@ -89,21 +91,25 @@ async fn assert_consumer_contracts(specifications: &str) {
 
             let (mut discovered, warnings) = discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{name}/{version}: {warnings:?}");
-            let result = lsp::enrich_exports(&mut discovered, root).await.unwrap();
+            let result = compiler::enrich_exports(&mut discovered, root)
+                .await
+                .unwrap();
             assert!(
-                matches!(result, lsp::EnrichResult::Enriched),
+                matches!(result, compiler::EnrichResult::Enriched),
                 "{name}/{version}: {result:?}"
             );
             exports.push(discovered);
         }
         let mut findings = compare::compare_exports(&exports[0], &exports[1], new.path(), false);
-        findings.extend(compare::compare_structural_diff(
-            old.path(),
-            new.path(),
-            &exports[0],
-            &exports[1],
-        ));
-        if compare::has_breaking_changes(&findings) != breaking {
+        findings.extend(
+            interlint::languages::javascript::compare::structure::compare_structural_diff(
+                old.path(),
+                new.path(),
+                &exports[0],
+                &exports[1],
+            ),
+        );
+        if interlint::core::findings::has_breaking_changes(&findings) != breaking {
             failures.push(format!(
                 "{name}: expected breaking={breaking}, got {findings:?}"
             ));
@@ -137,17 +143,22 @@ async fn unresolved_public_types_cannot_report_complete_analysis() {
         .unwrap();
         std::fs::write(directory.path().join("index.d.ts"), source).unwrap();
         let (mut exports, _) = discover_exports(directory.path()).unwrap();
-        let result = lsp::enrich_exports(&mut exports, directory.path())
+        let result = compiler::enrich_exports(&mut exports, directory.path())
             .await
             .unwrap();
         assert!(
-            matches!(result, lsp::EnrichResult::Degraded(_)),
+            matches!(result, compiler::EnrichResult::Degraded(_)),
             "{source}: {result:?}"
         );
         if source.contains("satisfies") {
             assert!(exports.values().any(|symbol| matches!(
                 symbol.satisfies_type,
-                Some(interlint::types::shape::TypeShape::Satisfies { narrowed: None, .. })
+                Some(
+                    interlint::languages::typescript::types::shape::TypeShape::Satisfies {
+                        narrowed: None,
+                        ..
+                    }
+                )
             )));
         }
     }
@@ -176,10 +187,13 @@ async fn completed_compiler_evaluation_retires_only_source_type_limits() {
             warnings.iter().any(|warning| warning.type_expansion_only),
             "{warnings:?}"
         );
-        let result = lsp::enrich_exports(&mut exports, directory.path())
+        let result = compiler::enrich_exports(&mut exports, directory.path())
             .await
             .unwrap();
-        assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+        assert!(
+            matches!(result, compiler::EnrichResult::Enriched),
+            "{result:?}"
+        );
         result.reconcile_discovery_warnings(&mut warnings);
         assert_eq!(
             warnings.iter().any(|warning| warning.incomplete),

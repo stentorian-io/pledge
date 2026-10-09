@@ -21,12 +21,15 @@ async fn definition_resolves_imported_property() {
     let pkg_root =
         PathBuf::from(manifest).join("tests/fixtures/typescript/types/import-references/clean/old");
 
-    let binary = interlint::lsp::managed::resolve_lsp_binary(&pkg_root)
-        .await
-        .expect("LSP binary must be resolvable for the protocol test");
-    let session = interlint::lsp::client::start_session(&binary, &pkg_root)
-        .await
-        .expect("LSP session must start for the protocol test");
+    let binary =
+        interlint::languages::typescript::compiler::toolchain::resolve_lsp_binary(&pkg_root)
+            .await
+            .expect("LSP binary must be resolvable for the protocol test");
+    let session = interlint::languages::typescript::compiler::protocol::client::start_session(
+        &binary, &pkg_root,
+    )
+    .await
+    .expect("LSP session must start for the protocol test");
 
     // Open both files so tsserver can resolve the cross-file definition.
     let index_path = pkg_root.join("index.ts");

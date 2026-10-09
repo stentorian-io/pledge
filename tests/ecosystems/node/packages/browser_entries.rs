@@ -1,6 +1,6 @@
 //! Browser entries compatibility checks.
 
-use interlint::discover::entry_points::resolve_entry_points;
+use interlint::ecosystems::node::discovery::entry_points::resolve_entry_points;
 
 #[test]
 fn browser_field_contributes_entry_point() {

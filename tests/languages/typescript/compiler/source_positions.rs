@@ -1,6 +1,7 @@
 #![cfg(feature = "lsp-tests")]
 
-use interlint::{discover::discover_exports, lsp};
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::typescript::compiler;
 
 #[tokio::test]
 async fn unicode_before_typeof_import_preserves_definition_identity() {
@@ -16,8 +17,11 @@ async fn unicode_before_typeof_import_preserves_definition_identity() {
     std::fs::write(root.join("dependency.ts"), declaration).unwrap();
     let (mut exports, warnings) = discover_exports(root).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
-    let result = lsp::enrich_exports(&mut exports, root).await.unwrap();
-    assert!(matches!(result, lsp::EnrichResult::Enriched), "{result:?}");
+    let result = compiler::enrich_exports(&mut exports, root).await.unwrap();
+    assert!(
+        matches!(result, compiler::EnrichResult::Enriched),
+        "{result:?}"
+    );
     let locations: Vec<_> = exports
         .typeof_targets
         .values()

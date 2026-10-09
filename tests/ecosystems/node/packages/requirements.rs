@@ -1,8 +1,8 @@
-use interlint::compare::metadata::compare_metadata;
-use interlint::types::Severity;
+use interlint::core::findings::Severity;
+use interlint::ecosystems::node::compare::metadata::compare_metadata;
 use serde_json::{json, Value};
 
-fn compare(old: Value, new: Value) -> Vec<interlint::types::Finding> {
+fn compare(old: Value, new: Value) -> Vec<interlint::core::findings::Finding> {
     let old_dir = tempfile::tempdir().unwrap();
     let new_dir = tempfile::tempdir().unwrap();
     std::fs::write(old_dir.path().join("package.json"), old.to_string()).unwrap();

@@ -1,10 +1,13 @@
 //! Property contracts compatibility checks.
 
-use interlint::compare::subtype::{RULE_INDEX_SIGNATURE_CHANGED, RULE_PROPERTY_MADE_REQUIRED};
-use interlint::compare::{ref_diff, type_diff};
-use interlint::discover::tree_query::{self, IndexSignature};
-use interlint::types::shape::{FieldShape, PrimitiveKind, TypeShape};
-use interlint::types::{DeclarationKind, ExportKind, ExportSymbol, Finding};
+use interlint::core::findings::Finding;
+use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+use interlint::languages::typescript::compare::rules::{
+    RULE_INDEX_SIGNATURE_CHANGED, RULE_PROPERTY_MADE_REQUIRED,
+};
+use interlint::languages::typescript::compare::{refinements as ref_diff, types as type_diff};
+use interlint::languages::typescript::syntax::interfaces::IndexSignature;
+use interlint::languages::typescript::types::shape::{FieldShape, PrimitiveKind, TypeShape};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -122,13 +125,23 @@ fn index_signature_changed() {
     let new_decl = find_decl_by_name(new_tree.root_node(), &new_bytes, "Dict")
         .expect("Dict not found in new source");
 
-    let old_sigs = tree_query::find_interface_body(old_decl)
-        .map(|body| tree_query::extract_index_signatures(body, &old_bytes))
-        .unwrap_or_default();
+    let old_sigs =
+        interlint::languages::typescript::syntax::interfaces::find_interface_body(old_decl)
+            .map(|body| {
+                interlint::languages::typescript::syntax::interfaces::extract_index_signatures(
+                    body, &old_bytes,
+                )
+            })
+            .unwrap_or_default();
 
-    let new_sigs = tree_query::find_interface_body(new_decl)
-        .map(|body| tree_query::extract_index_signatures(body, &new_bytes))
-        .unwrap_or_default();
+    let new_sigs =
+        interlint::languages::typescript::syntax::interfaces::find_interface_body(new_decl)
+            .map(|body| {
+                interlint::languages::typescript::syntax::interfaces::extract_index_signatures(
+                    body, &new_bytes,
+                )
+            })
+            .unwrap_or_default();
 
     let old_sym = ExportSymbol {
         name: "Dict".to_string(),

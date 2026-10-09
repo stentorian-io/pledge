@@ -9,7 +9,8 @@ fn exports_array_does_not_retry_missing_files() {
     )
     .unwrap();
     std::fs::write(dir.path().join("existing.js"), "export const api = 1;").unwrap();
-    let (exports, warnings) = interlint::discover::discover_exports(dir.path()).unwrap();
+    let (exports, warnings) =
+        interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
     assert!(exports.is_empty());
     assert!(warnings
         .iter()

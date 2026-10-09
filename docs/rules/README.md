@@ -1,9 +1,11 @@
 # Rule reference
 
 These pages describe selected compatibility rules, their severity, examples,
-and static-analysis limits. Rule identifiers are defined in
-[`src/compare/subtype.rs`](../../src/compare/subtype.rs); the list below is not
-an exhaustive list of every implemented rule.
+and static-analysis limits. Rule identifiers live beside their owning comparisons:
+[JavaScript](../../src/languages/javascript/compare/rules.rs),
+[TypeScript](../../src/languages/typescript/compare/rules.rs), and
+[Node](../../src/ecosystems/node/compare/rules.rs). The list below is not an
+exhaustive list of every implemented rule.
 
 | Area | Reference |
 | --- | --- |

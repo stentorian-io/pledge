@@ -1,7 +1,7 @@
 //! External reexports compatibility checks.
 
-use interlint::compare::compare_exports;
-use interlint::types::ExportKey;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::model::ExportKey;
 
 #[test]
 fn external_reexport_synthetic_key() {
@@ -27,7 +27,8 @@ fn external_reexport_synthetic_key() {
     )
     .unwrap();
 
-    let (map, _) = interlint::discover::discover_exports(pkg_dir.path()).unwrap();
+    let (map, _) =
+        interlint::ecosystems::node::discovery::discover_exports(pkg_dir.path()).unwrap();
 
     // The export map should contain *<lodash> for the external re-export
     assert!(
@@ -70,8 +71,10 @@ fn external_reexport_removal() {
     )
     .unwrap();
 
-    let (old_map, _) = interlint::discover::discover_exports(old_dir.path()).unwrap();
-    let (new_map, _) = interlint::discover::discover_exports(new_dir.path()).unwrap();
+    let (old_map, _) =
+        interlint::ecosystems::node::discovery::discover_exports(old_dir.path()).unwrap();
+    let (new_map, _) =
+        interlint::ecosystems::node::discovery::discover_exports(new_dir.path()).unwrap();
 
     // Verify the synthetic key is present in old
     assert!(
@@ -118,7 +121,7 @@ fn external_reexport_is_reexport_flag() {
     )
     .unwrap();
 
-    let result = interlint::discover::discover_exports(pkg_dir.path());
+    let result = interlint::ecosystems::node::discovery::discover_exports(pkg_dir.path());
     assert!(
         result.is_ok(),
         "discover_exports should succeed; got: {:?}",

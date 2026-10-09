@@ -1,8 +1,10 @@
 //! Member changes compatibility checks.
 
-use interlint::compare::class_diff;
-use interlint::discover::tree_query;
-use interlint::types::{ClassMember, ClassMemberKind, ClassShape, Finding, Visibility};
+use interlint::core::findings::Finding;
+use interlint::languages::javascript::compare::classes as class_diff;
+use interlint::languages::javascript::model::{
+    ClassMember, ClassMemberKind, ClassShape, Visibility,
+};
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.
@@ -66,7 +68,7 @@ fn extract_class(source: &[u8], name: &str) -> ClassShape {
     let (tree, bytes) = parse_ts(source);
     let decl = find_decl_by_name(tree.root_node(), &bytes, name)
         .unwrap_or_else(|| panic!("class `{}` not found in source", name));
-    tree_query::parse_class_shape(&bytes, decl)
+    interlint::languages::javascript::syntax::classes::parse_class_shape(&bytes, decl)
 }
 
 #[test]

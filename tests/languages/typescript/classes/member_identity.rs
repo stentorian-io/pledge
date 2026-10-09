@@ -1,13 +1,14 @@
 //! Private, static, and instance members occupy distinct public API slots.
 //! Declared members retain their decorators when a static block assigns to them.
 
-use interlint::compare::subtype::{
-    RULE_CLASS_FIELD_MADE_PRIVATE, RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED,
-    RULE_DECORATOR_REMOVED,
+use interlint::core::findings::Finding;
+use interlint::ecosystems::node::discovery::discover_exports;
+use interlint::languages::javascript::compare::compare_exports;
+use interlint::languages::javascript::compare::rules::RULE_CLASS_FIELD_MADE_PRIVATE;
+use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use interlint::languages::typescript::compare::rules::{
+    RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
-use interlint::compare::{compare_exports, compare_structural_diff};
-use interlint::discover::discover_exports;
-use interlint::types::Finding;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";
@@ -34,7 +35,7 @@ fn run(form: &str) -> Vec<Finding> {
 
 /// regression: a decorator change confined to a `#`-private field
 /// MUST NOT emit any public-surface decorator findings. If the
-/// `!is_private` filter at src/compare/class_diff.rs:664-673 is ever
+/// `!is_private` filter at src/languages/javascript/compare/classes.rs is ever
 /// removed, the per-member loop would compare `@log #count` against
 /// `@trace #count` and emit a `decorator-arguments-changed` (or
 /// removed/added pair) — which would leak the private decorator change
@@ -65,7 +66,7 @@ fn private_decorator_change_does_not_leak() {
 /// on the same class MUST NOT pair as a public-to-private transition.
 /// The slots differ in `is_static` (class-object vs prototype) — they
 /// are not the same logical member. If the keying at
-/// src/compare/class_diff.rs:306-321 ever drops `is_static` from the
+/// src/languages/javascript/compare/classes.rs ever drops `is_static` from the
 /// tuple, the transition pass would observe `foo` on the public-old
 /// side and `foo` (bare-name) on the private-new side and fire
 /// `class-field-made-private` — which would be wrong.
@@ -90,7 +91,7 @@ fn static_foo_and_instance_hash_foo_no_transition() {
 /// regression: a decorated `@log static bar` declared in the
 /// class body MUST survive the `class_static_block` synthesis pass when
 /// the same name is also written inside `static { Foo.bar = 'y'; }`.
-/// If `class_body_wins` at src/discover/tree_query.rs:5256-5265 is ever
+/// If `class_body_wins` at src/languages/javascript/syntax/exports.rs is ever
 /// removed, the undecorated synthesized ClassMember replaces the
 /// decorated class-body entry on both sides — the decorator diff sees
 /// no decorators on either side and emits nothing. The presence of a
@@ -136,7 +137,7 @@ fn static_decorator_changes_are_not_hidden_by_instance_namesakes() {
         findings
             .iter()
             .any(|finding| finding.rule.starts_with("decorator-")
-                && finding.severity == interlint::types::Severity::Major),
+                && finding.severity == interlint::core::findings::Severity::Major),
         "{findings:?}"
     );
 }
