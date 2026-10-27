@@ -1,5 +1,6 @@
 //! Prepare npm dependencies without executing package scripts or changing lockfiles.
 
+use crate::ecosystems::node::npm;
 use std::path::Path;
 use std::process::Stdio;
 
@@ -30,7 +31,7 @@ pub async fn prepare_dependencies(root_dir: &Path) -> Result<bool, DependencyErr
     if !has_dependencies {
         return Ok(false);
     }
-    let mut command = tokio::process::Command::new("npm");
+    let mut command = npm::command(root_dir);
     command
         .args([
             "install",
@@ -39,20 +40,21 @@ pub async fn prepare_dependencies(root_dir: &Path) -> Result<bool, DependencyErr
             "--package-lock=false",
             "--no-audit",
             "--no-fund",
+            "--workspaces=false",
         ])
-        .current_dir(root_dir)
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    let status = tokio::time::timeout(std::time::Duration::from_secs(30), command.status())
+        .stderr(Stdio::piped());
+    let output = tokio::time::timeout(std::time::Duration::from_secs(120), command.output())
         .await
         .map_err(|_| DependencyError::Timeout)?
         .map_err(|error| {
             DependencyError::Failed(format!("dependency installation failed: {error}"))
         })?;
-    if !status.success() {
+    if !output.status.success() {
         return Err(DependencyError::Failed(format!(
-            "dependency installation exited with {status}"
+            "dependency installation exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
         )));
     }
     Ok(true)

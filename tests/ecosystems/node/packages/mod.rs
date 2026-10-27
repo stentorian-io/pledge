@@ -1,6 +1,7 @@
 //! Packages checks.
 
 mod browser_entries;
+mod cli;
 mod conditional_exports;
 mod dependencies;
 mod disabled_exports;

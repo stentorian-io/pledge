@@ -2,6 +2,8 @@
 
 Pledge currently builds the `interlint` crate and executable. Development checks
 run locally; this repository does not have hosted CI workflows or pipelines.
+For installing and using the linter in another project's CI, see
+[CI integration](docs/ci.md).
 
 ## Setup
 
@@ -34,6 +36,9 @@ include a fresh managed installation and therefore require registry access.
 Consumer tests use strict TypeScript with NodeNext resolution and modern Node.js
 with synchronous ESM loading (Node 22.12+). Dependency installation disables
 scripts and lockfile generation; installation failure or timeout degrades analysis.
+The CLI also disables packing lifecycle scripts; build package outputs before
+analysis. Acquisition and dependency installation use npm configuration, including
+the original project's `.npmrc`, with 120-second subprocess timeouts.
 
 `make setup` sets this clone's `core.hooksPath` to `scripts/hooks`. It replaces an
 older hook path without overwriting files in `.git/hooks`. The tracked wrappers

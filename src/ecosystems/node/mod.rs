@@ -4,3 +4,4 @@ pub mod acquire;
 pub mod compare;
 pub mod dependencies;
 pub mod discovery;
+pub(crate) mod npm;

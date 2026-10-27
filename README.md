@@ -1,20 +1,72 @@
-# interlint
+# Pledge (`interlint`)
 
-A CLI tool that catches breaking changes to public interfaces through static analysis. Compares the current version of a JS/TS package against its previously published version on npm and reports findings with semver-aligned severity -- like ESLint for API compatibility.
+Catch breaking changes in JavaScript and TypeScript packages before publishing.
+Pledge compares the package you would publish with a version from your npm
+registry and reports changes to exports, types, package metadata, and distributed
+assets. The Cargo package and executable are currently named `interlint`.
 
-## Installation
+## Install from source
+
+You need Rust and a native build toolchain (a C/C++ compiler and CMake) to install,
+and Node.js with npm to analyze packages. Use Node.js 22.12 or newer. Bun is only
+needed for this repository's development scripts.
 
 ```sh
-cargo build --release
+git clone https://github.com/stentorian-io/pledge.git
+cd pledge
+cargo install --locked --path .
+interlint --version
 ```
+
+Cargo installs the executable into `~/.cargo/bin`; keep that directory on `PATH`.
+The repository is public and can be cloned without GitHub credentials. There is
+no published npm wrapper or prebuilt binary distribution yet.
+
+Type analysis uses the JavaScript TypeScript compiler from your project or
+`PATH`. If neither is available, interlint downloads and caches a pinned
+TypeScript 5.9.3 toolchain. For CI, install TypeScript in advance through your
+project's dev dependencies or `npm install --global typescript@5.9.3`. A language
+server is not required for normal analysis.
 
 ## Usage
 
+Run this from the package you want to check:
+
 ```sh
-interlint [path]
+npm ci
+npm run build                 # when the package needs a build
+interlint
 ```
 
-Analyzes the package at `path` (defaults to current directory), compares it against the previously published npm version, and reports breaking changes.
+Interlint packs the current package, compares it with the registry's `latest`
+version, and exits nonzero for breaking changes, tool failures, or incomplete
+analysis. It analyzes the files included by `npm pack`, so build JavaScript and
+declarations first. Packing and dependency preparation disable lifecycle scripts
+and use temporary directories; they do not overwrite your tarballs or lockfiles.
+
+```sh
+interlint ./packages/core              # one package in a workspace
+interlint --against 1.4.2              # pin the published baseline
+interlint --against next               # compare with a release channel
+interlint --against latest --format json > ../interlint-report.json
+interlint --color never
+interlint --help
+```
+
+Use `--against latest` in CI to require an existing baseline. Without `--against`,
+a registry 404 is treated as a first publish and the report lists new exports.
+Some registries also return 404 for inaccessible packages, so explicit baseline
+selection prevents this case from silently passing your CI check.
+
+Registry lookup, downloads, and dependency installation use npm configuration,
+including scoped registries and credentials. Configure authentication before
+running interlint. Each invocation checks one package; pass workspace package
+paths individually. Yarn, pnpm, and Bun projects can be analyzed after building,
+but acquisition and dependency preparation use npm. Packed dependencies must be
+resolvable by npm; unpublished workspace/file references are not substituted.
+
+See [CI integration](docs/ci.md) for reproducible installation, JSON output,
+exit codes, authentication, and troubleshooting.
 
 ## Rules
 
@@ -24,12 +76,14 @@ Interlint emits findings tagged with stable rule-IDs. Severity maps to CLI exit 
 |----------|-----------|---------|
 | Major | 1 | Breaking change — consumers will observe broken behavior |
 | Warning | 0 | Observable behavior change — exhaustive-switch breaks, deprecation. Reported but does not break the build. |
-| Degraded | 3 | Analysis could not complete cleanly (compiler unavailable, unresolved types, parse failure) |
+| Incomplete analysis | 3 | Analysis could not complete cleanly (compiler unavailable, unresolved types, parse failure) |
 | Minor | 0 | Non-breaking change worth noting |
 | Patch | 0 | Cosmetic / non-observable change |
 | Info | 0 | Documented limitation — analysis acknowledged but couldn't verify |
 
-Exit code 2 is reserved for tool-internal errors (e.g., I/O failure, registry unavailable). It is NOT used for any finding severity.
+Exit code 2 indicates a tool or invocation error (for example, invalid arguments,
+invalid package metadata, I/O failure, or an unavailable registry). It is not a
+finding severity. Incomplete analysis is a run status, not a finding severity.
 
 Incomplete analysis takes precedence over breaking findings and exits 3. This
 includes failed or empty type requests, exhausted analysis budgets, unreadable

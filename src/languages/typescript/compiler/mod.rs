@@ -121,7 +121,17 @@ pub async fn enrich_prepared_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
-    let compiler = match toolchain::resolve_compiler(pkg_root).await {
+    enrich_prepared_exports_from_workspace(exports, pkg_root, pkg_root).await
+}
+
+/// Packed snapshots exclude development dependencies. Resolve the compiler from
+/// the caller's workspace while evaluating contracts in each isolated snapshot.
+pub(crate) async fn enrich_prepared_exports_from_workspace(
+    exports: &mut ExportMap,
+    pkg_root: &Path,
+    compiler_workspace: &Path,
+) -> Result<EnrichResult, LspError> {
+    let compiler = match toolchain::resolve_compiler(compiler_workspace).await {
         Ok(compiler) => compiler,
         Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
     };

@@ -61,25 +61,27 @@ beside their implementation; smaller suites remain inline.
 
 ## Analysis pipeline
 
-1. `ecosystems::node::acquire` packs the local package, reads registry metadata,
-   downloads the published tarball, and extracts both versions into temporary
-   directories.
+1. `ecosystems::node::acquire` resolves the selected registry version through npm,
+   packs built local artifacts with scripts disabled, downloads the published
+   package through npm, and extracts both versions into owned temporary
+   directories. Project npm configuration is preserved for dependency preparation.
 2. `ecosystems::node::dependencies` prepares declared dependencies before
    `ecosystems::node::discovery` resolves entry points and builds export maps
    through the JS/TS syntax extractors. Discovery also captures directives,
    decorators, and release tags. Installation disables scripts and lockfile
    generation; a failed installation leaves analysis incomplete.
 3. `languages::typescript::compiler` evaluates public types and declaration
-   locations with the JavaScript TypeScript compiler. It uses the workspace/PATH
-   compiler or a managed toolchain; normal enrichment does not require a
-   language-server process. Source byte columns are converted to UTF-16 before
+   locations with the JavaScript TypeScript compiler. It uses the original
+   workspace's compiler, then PATH or a managed toolchain; normal enrichment does
+   not require a language-server process. Source byte columns become UTF-16 before
    resolving identifiers. Its `protocol` module remains available for
    language-server integrations and their regression tests.
 4. The JavaScript, TypeScript, and Node `compare` modules compare exports,
    structural declarations, types, metadata, module loading, assets, and
    directives. Related symbol findings are paired and consolidated.
-5. `app` combines the passes, deduplicates findings through `core::findings`,
-   and renders them through `app::report`.
+5. `app` combines the passes, deduplicates and sorts findings, derives the exit
+   status, and renders text or versioned JSON through `app::report`. Compiler
+   failures remain in the report's warnings alongside discovery failures.
 
 First-publish handling skips downloading a previous version and reports the
 discovered exports as additions. Missing compiler evidence produces an explicit

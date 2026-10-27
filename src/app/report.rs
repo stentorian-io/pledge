@@ -1,274 +1,186 @@
-// Reporter: ESLint-style output formatting
+//! Human-readable and versioned machine-readable reports.
 
+use crate::app::cli::{ColorMode, OutputFormat};
+use crate::app::RunOutcome;
 use crate::core::findings::{Finding, Severity};
+use crate::ecosystems::node::acquire::PackageComparison;
 use crate::ecosystems::node::discovery::resolver::ResolveWarning;
 use indicatif::ProgressBar;
 use owo_colors::OwoColorize;
+use serde_json::{json, Value};
+use std::io::{self, IsTerminal, Write};
 use std::time::Duration;
 use supports_color::Stream;
 
-/// Returns true if stdout supports ANSI color output (per ).
-fn should_use_color() -> bool {
-    supports_color::on_cached(Stream::Stdout).is_some()
+fn use_color(mode: ColorMode, stream: Stream) -> bool {
+    match mode {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => {
+            let terminal = match stream {
+                Stream::Stdout => io::stdout().is_terminal(),
+                Stream::Stderr => io::stderr().is_terminal(),
+            };
+            terminal && supports_color::on_cached(stream).is_some()
+        }
+    }
 }
 
-/// Print all findings in ESLint-style format with a summary line (per OUT-01, ).
-///
-/// Warnings are printed to stderr first. If findings is empty, a success
-/// message is printed (per ). Otherwise each finding is printed as:
-///
-/// file:line:col severity message rule-id
-///
-/// followed by a blank line and a summary count line.
-///
-/// When `degraded` is true, a note is appended to the summary line indicating
-/// that type analysis was unavailable.
-pub fn print_report(findings: &[Finding], warnings: &[ResolveWarning], degraded: bool) {
-    let color = should_use_color();
-
-    // Print warnings to stderr (non-fatal resolution issues)
-    for w in warnings {
-        if color {
-            eprintln!("{}", format!("warning: {}", w.message).yellow());
-        } else {
-            eprintln!("warning: {}", w.message);
-        }
+fn severity_label(severity: &Severity) -> &'static str {
+    match severity {
+        Severity::Major => "major",
+        Severity::Minor => "minor",
+        Severity::Patch => "patch",
+        Severity::Warning => "warning",
+        Severity::Info => "info",
     }
+}
 
-    if findings.is_empty() {
-        if color {
-            println!("{}", "No breaking changes found.".green());
-        } else {
-            println!("No breaking changes found.");
-        }
-        if degraded {
-            println!("0 major, 0 minor, 0 patch (type analysis unavailable)");
-        } else {
-            println!("0 major, 0 minor, 0 patch");
-        }
-        return;
-    }
+fn write_json(report: &Value) -> anyhow::Result<()> {
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer_pretty(&mut stdout, report)?;
+    writeln!(stdout)?;
+    Ok(())
+}
 
-    // Print each finding in ESLint-style format
-    for f in findings {
-        let file_str = f.file.display().to_string();
-        let location = format!("{}:{}:{}", file_str, f.line, f.col);
-
-        let severity_str: String = if color {
-            match f.severity {
-                Severity::Major => format!("{}", "major".red().bold()),
-                Severity::Minor => format!("{}", "minor".yellow()),
-                Severity::Patch => format!("{}", "patch".blue()),
-                Severity::Warning => format!("{}", "warning".bright_yellow()),
-                Severity::Info => format!("{}", "info".dimmed()),
-            }
-        } else {
-            match f.severity {
-                Severity::Major => "major".to_string(),
-                Severity::Minor => "minor".to_string(),
-                Severity::Patch => "patch".to_string(),
-                Severity::Warning => "warning".to_string(),
-                Severity::Info => "info".to_string(),
-            }
-        };
-
-        println!("{}  {}  {}  {}", location, severity_str, f.message, f.rule);
-    }
-
-    println!();
-
-    // Summary line (OUT-06)
-    let major_count = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Major)
-        .count();
-    let minor_count = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Minor)
-        .count();
-    let patch_count = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Patch)
-        .count();
-    let warning_count = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Warning)
-        .count();
-    let info_count = findings
-        .iter()
-        .filter(|f| f.severity == Severity::Info)
-        .count();
-
-    let degraded_note = if degraded {
-        " (type analysis unavailable)"
+pub fn print_error(format: OutputFormat, error: &anyhow::Error) -> anyhow::Result<()> {
+    let message = format!("{error:#}");
+    if format == OutputFormat::Json {
+        write_json(
+            &json!({"schema_version": 1, "status": "error", "exit_code": 2, "error": message}),
+        )
     } else {
-        ""
+        writeln!(io::stderr().lock(), "error: {message}")?;
+        Ok(())
+    }
+}
+
+pub(crate) fn print_cache_cleared(format: OutputFormat) -> anyhow::Result<()> {
+    if format == OutputFormat::Json {
+        write_json(&json!({"schema_version": 1, "status": "cache-cleared", "exit_code": 0}))
+    } else {
+        writeln!(io::stdout().lock(), "Cache cleared.")?;
+        Ok(())
+    }
+}
+
+pub(crate) fn print_report(
+    format: OutputFormat,
+    color: ColorMode,
+    package: &PackageComparison,
+    findings: &[Finding],
+    warnings: &[ResolveWarning],
+    outcome: RunOutcome,
+) -> anyhow::Result<()> {
+    let count = |severity| {
+        findings
+            .iter()
+            .filter(|finding| finding.severity == severity)
+            .count()
     };
+    let summary = json!({
+        "major": count(Severity::Major), "minor": count(Severity::Minor),
+        "patch": count(Severity::Patch), "warning": count(Severity::Warning), "info": count(Severity::Info),
+    });
+    if format == OutputFormat::Json {
+        let findings: Vec<_> = findings.iter().map(|finding| json!({
+            "severity": severity_label(&finding.severity), "rule": finding.rule,
+            "file": finding.file, "line": finding.line, "col": finding.col, "message": finding.message,
+        })).collect();
+        let warnings: Vec<_> = warnings
+            .iter()
+            .map(|warning| {
+                json!({
+                    "message": warning.message, "incomplete": warning.incomplete,
+                })
+            })
+            .collect();
+        return write_json(&json!({
+            "schema_version": 1, "status": outcome.label(), "exit_code": outcome.exit_code(),
+            "package": package, "summary": summary, "findings": findings, "warnings": warnings,
+        }));
+    }
 
-    if color {
-        let major_str = format!("{} major", major_count).red().bold().to_string();
-        let minor_str = format!("{} minor", minor_count).yellow().to_string();
-        let patch_str = format!("{} patch", patch_count).blue().to_string();
-        if major_count > 0 {
-            println!(
-                "{} {}, {}, {}{}",
-                "X".red().bold(),
-                major_str,
-                minor_str,
-                patch_str,
-                degraded_note
-            );
+    let mut stdout = io::stdout().lock();
+    let mut stderr = io::stderr().lock();
+    for warning in warnings {
+        let message = format!("warning: {}", warning.message);
+        if use_color(color, Stream::Stderr) {
+            writeln!(stderr, "{}", message.yellow())?;
         } else {
-            println!(
-                "{}, {}, {}{}",
-                major_str, minor_str, patch_str, degraded_note
-            );
+            writeln!(stderr, "{message}")?;
         }
-    } else if major_count > 0 {
-        println!(
-            "X {} major, {} minor, {} patch{}",
-            major_count, minor_count, patch_count, degraded_note
-        );
+    }
+    if let Some(baseline) = &package.baseline_version {
+        writeln!(
+            stdout,
+            "{}: {} → {}",
+            package.name, baseline, package.current_version
+        )?;
     } else {
-        println!(
-            "{} major, {} minor, {} patch{}",
-            major_count, minor_count, patch_count, degraded_note
-        );
+        writeln!(
+            stdout,
+            "{}@{}: first publish (no published baseline found)",
+            package.name, package.current_version
+        )?;
     }
-
-    if warning_count > 0 {
-        if color {
-            println!(
-                "{}",
-                format!("{} warning(s)", warning_count).bright_yellow()
-            );
+    if outcome == RunOutcome::Degraded {
+        writeln!(
+            stdout,
+            "Analysis is incomplete; compatibility could not be established."
+        )?;
+    } else if findings.is_empty() {
+        writeln!(stdout, "No breaking changes found.")?;
+    }
+    let color = use_color(color, Stream::Stdout);
+    for finding in findings {
+        let label = severity_label(&finding.severity);
+        let label = if color {
+            match finding.severity {
+                Severity::Major => label.red().bold().to_string(),
+                Severity::Warning => label.yellow().to_string(),
+                Severity::Minor => label.cyan().to_string(),
+                Severity::Patch => label.blue().to_string(),
+                Severity::Info => label.dimmed().to_string(),
+            }
         } else {
-            println!("{} warning(s)", warning_count);
-        }
+            label.to_owned()
+        };
+        writeln!(
+            stdout,
+            "{}:{}:{}  {}  {}  {}",
+            finding.file.display(),
+            finding.line,
+            finding.col,
+            label,
+            finding.message,
+            finding.rule
+        )?;
     }
-
-    if info_count > 0 {
-        if color {
-            println!("{}", format!("{} info", info_count).dimmed());
+    writeln!(
+        stdout,
+        "{} major, {} minor, {} patch, {} warning, {} info{}",
+        summary["major"],
+        summary["minor"],
+        summary["patch"],
+        summary["warning"],
+        summary["info"],
+        if outcome == RunOutcome::Degraded {
+            " (incomplete analysis)"
         } else {
-            println!("{} info", info_count);
+            ""
         }
-    }
+    )?;
+    Ok(())
 }
 
-/// Create a progress spinner for slow operations.
-///
-/// indicatif automatically suppresses the spinner in non-TTY environments,
-/// so no manual TTY check is needed here.
-pub fn create_spinner(msg: &str) -> ProgressBar {
-    let spinner = ProgressBar::new_spinner();
-    spinner.set_message(msg.to_string());
+pub(crate) fn create_spinner(format: OutputFormat, message: &str) -> ProgressBar {
+    let spinner = if format == OutputFormat::Json || !io::stderr().is_terminal() {
+        ProgressBar::hidden()
+    } else {
+        ProgressBar::new_spinner()
+    };
+    spinner.set_message(message.to_owned());
     spinner.enable_steady_tick(Duration::from_millis(80));
     spinner
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::app::report::*;
-    use crate::core::findings::Severity;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_warning_findings_do_not_affect_summary_breaking_count() {
-        // Verify the contract: warning count is separate from major count
-        let findings = [Finding {
-            severity: Severity::Warning,
-            rule: "async-to-sync",
-            file: PathBuf::from("test.ts"),
-            line: 1,
-            col: 1,
-            message: "test warning".to_string(),
-        }];
-        let major_count = findings
-            .iter()
-            .filter(|f| f.severity == Severity::Major)
-            .count();
-        let warning_count = findings
-            .iter()
-            .filter(|f| f.severity == Severity::Warning)
-            .count();
-        assert_eq!(major_count, 0);
-        assert_eq!(warning_count, 1);
-    }
-
-    #[test]
-    fn test_info_findings_render_with_info_label() {
-        // Verify that Severity::Info produces the literal string "info" in no-color mode
-        let severity = Severity::Info;
-        let label = match severity {
-            Severity::Major => "major",
-            Severity::Minor => "minor",
-            Severity::Patch => "patch",
-            Severity::Warning => "warning",
-            Severity::Info => "info",
-        };
-        assert_eq!(label, "info");
-    }
-
-    #[test]
-    fn test_info_findings_do_not_increment_major_count() {
-        // Info findings must NOT trip has_breaking_changes (exits 0, not 1)
-        use crate::core::findings::has_breaking_changes;
-        let findings = [Finding {
-            severity: Severity::Info,
-            rule: "limitation: lsp-required",
-            file: PathBuf::from("test.ts"),
-            line: 1,
-            col: 1,
-            message: "lsp unavailable".to_string(),
-        }];
-        assert!(!has_breaking_changes(&findings));
-        let major_count = findings
-            .iter()
-            .filter(|f| f.severity == Severity::Major)
-            .count();
-        assert_eq!(major_count, 0);
-    }
-
-    #[test]
-    fn test_info_footer_renders_when_present() {
-        // Verify that info_count logic correctly counts Severity::Info findings
-        let findings = [
-            Finding {
-                severity: Severity::Info,
-                rule: "limitation: lsp-required",
-                file: PathBuf::from("test.ts"),
-                line: 1,
-                col: 1,
-                message: "first info finding".to_string(),
-            },
-            Finding {
-                severity: Severity::Info,
-                rule: "limitation: external-type-reference",
-                file: PathBuf::from("test.ts"),
-                line: 2,
-                col: 1,
-                message: "second info finding".to_string(),
-            },
-        ];
-        let info_count = findings
-            .iter()
-            .filter(|f| f.severity == Severity::Info)
-            .count();
-        assert_eq!(info_count, 2);
-        // Zero info when no Info findings present
-        let non_info = [Finding {
-            severity: Severity::Warning,
-            rule: "async-to-sync",
-            file: PathBuf::from("test.ts"),
-            line: 1,
-            col: 1,
-            message: "warning".to_string(),
-        }];
-        let info_count_zero = non_info
-            .iter()
-            .filter(|f| f.severity == Severity::Info)
-            .count();
-        assert_eq!(info_count_zero, 0);
-    }
 }

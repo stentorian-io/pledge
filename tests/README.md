@@ -59,6 +59,8 @@ cargo test --locked --release --test core
 cargo test --locked --release --test javascript modules::reexports
 cargo test --locked --release --test typescript classes::
 cargo test --locked --release --test node packages::
+cargo test --locked --release --test node packages::cli::
+cargo test --locked --release --features lsp-tests --test node packages::cli::npm_cli:: -- --test-threads=1
 cargo test --locked --release --features lsp-tests --test typescript compiler:: -- --test-threads=1
 make reference-suite
 ```
@@ -69,6 +71,13 @@ checks that need Node.js, npm, TypeScript, and `typescript-language-server`.
 Some checks install fixture dependencies. `make check-lsp` runs the complete
 feature-enabled suite serially. Test names include their module paths; when
 using `--exact`, use the full name shown by `cargo test --test <target> -- --list`.
+
+`packages::cli` checks real process exit codes and reports using isolated npm and
+compiler stand-ins on Unix, without network access. Its opt-in `npm_cli` module
+uses real npm and TypeScript with a temporary authenticated loopback registry;
+it needs permission to bind a local TCP port, but does not fetch test packages
+from an external registry. Provide the JavaScript TypeScript compiler on `PATH`
+or populate the managed toolchain cache before running that check.
 
 Use `make check` for formatting, clippy, and all default tests before committing.
 The push hook runs LSP and coverage checks for code or fixture changes. See

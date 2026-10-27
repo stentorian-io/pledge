@@ -1,38 +1,53 @@
-use anyhow::{bail, Context};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use crate::ecosystems::node::npm;
+use anyhow::{ensure, Context};
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
 
-/// Pack the current package using `npm pack --json` and return the path to the produced tarball.
-///
-/// The filename is always read from npm's JSON output, never constructed manually.
-/// This handles scoped packages correctly: `@myorg/pkg` produces `myorg-pkg-1.0.0.tgz`.
-#[allow(dead_code)]
-pub fn pack_current(dir: &Path) -> anyhow::Result<PathBuf> {
-    // Check npm is available before attempting pack
-    Command::new("npm")
-        .arg("--version")
-        .output()
-        .map_err(|_| anyhow::anyhow!("npm not found. Install Node.js: https://nodejs.org"))?;
-
-    let output = Command::new("npm")
-        .args(["pack", "--json"])
-        .current_dir(dir)
-        .output()
-        .context("Failed to spawn npm")?;
-
+/// Pack exactly one package into an owned temporary directory. Package lifecycle
+/// scripts are deliberately disabled: callers must build publishable files first.
+pub(crate) async fn pack_package(
+    directory: &Path,
+    specification: &OsStr,
+    destination: &Path,
+) -> anyhow::Result<PathBuf> {
+    let output = npm::output(
+        npm::command(directory)
+            .args([
+                "pack",
+                "--json",
+                "--ignore-scripts",
+                "--workspaces=false",
+                "--pack-destination",
+            ])
+            .arg(destination)
+            .arg("--")
+            .arg(specification),
+        "pack",
+    )
+    .await?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "npm pack failed: {stderr}\n\nMake sure npm is installed and you are in a valid package directory."
-        );
+        return Err(npm::failure(&output, "pack"));
     }
-
-    let json: serde_json::Value =
+    let packages: serde_json::Value =
         serde_json::from_slice(&output.stdout).context("Failed to parse npm pack JSON output")?;
-
-    let filename = json[0]["filename"]
+    ensure!(
+        packages
+            .as_array()
+            .is_some_and(|packages| packages.len() == 1),
+        "npm pack must produce exactly one package; pass the path of a single package"
+    );
+    let filename = packages[0]["filename"]
         .as_str()
-        .ok_or_else(|| anyhow::anyhow!("npm pack produced no filename in JSON output"))?;
-
-    Ok(dir.join(filename))
+        .context("npm pack produced no filename in JSON output")?;
+    let mut components = Path::new(filename).components();
+    ensure!(
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none(),
+        "npm pack returned an invalid tarball filename"
+    );
+    let tarball = destination.join(filename);
+    ensure!(
+        std::fs::metadata(&tarball)?.len() <= 500 * 1024 * 1024,
+        "Packed tarball exceeds the 500MB analysis limit"
+    );
+    Ok(tarball)
 }
