@@ -46,3 +46,8 @@ retain separate conditions; compatible rewrites of the same predicate preserve
 identity. Installed dependencies and generated dot-prefixed package directories
 are resolved through `node_modules`. Missing generated output is incomplete
 evidence; Pledge does not execute package generators or lifecycle scripts.
+
+TypeScript `export =` declarations expose their assigned binding as the default
+API. Compiler enrichment follows that binding, including functions merged with
+namespaces, so their call signatures and attached properties remain available
+for compatibility checks.

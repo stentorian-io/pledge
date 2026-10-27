@@ -437,6 +437,12 @@ function declarationSymbol(request) {
     const module = checker.getSymbolAtLocation(source);
     symbol = module && checker.getExportsOfModule(module).find(candidate => candidate.getName() === request.name);
   }
+  if (!symbol && request.name === 'default') {
+    // Discovery represents TypeScript's `export =` as a default export, while
+    // the checker exposes its target under the original binding's name.
+    const assignment = source.statements.find(statement => ts.isExportAssignment(statement) && statement.isExportEquals);
+    if (assignment) symbol = checker.getSymbolAtLocation(assignment.expression);
+  }
   if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
   return symbol;
 }

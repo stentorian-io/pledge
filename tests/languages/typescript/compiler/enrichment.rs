@@ -11,6 +11,7 @@ use interlint::core::findings::{Finding, Severity};
 use interlint::ecosystems::node::discovery as discover;
 use interlint::languages::javascript::compare;
 use interlint::languages::typescript::compiler;
+use std::process::Command;
 
 /// Run the full pipeline: discover -> enrich -> compare
 async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
@@ -234,5 +235,83 @@ async fn missing_workspace_degrades_analysis() {
     assert!(
         matches!(result, Ok(compiler::EnrichResult::Degraded(_))),
         "{result:?}"
+    );
+}
+
+#[tokio::test]
+async fn export_assignment_resolves_a_function_merged_with_a_namespace() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    let mut surfaces = Vec::new();
+    for (directory, input, consumer_succeeds) in
+        [(&old, "string | number", true), (&new, "string", false)]
+    {
+        let root = directory.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"callable-namespace","exports":{"types":"./index.d.cts"}}"#,
+        )
+        .unwrap();
+        let declaration = format!(
+            "declare namespace api {{ type Input = {input}; const version: string; }}\n\
+             declare function api(input: api.Input): string;\n\
+             export = api;\n"
+        );
+        std::fs::write(root.join("index.d.cts"), declaration).unwrap();
+        std::fs::write(
+            root.join("consumer.cts"),
+            "import api = require('./index.cjs');\n\
+             const result: string = api(123);\n\
+             const version: string = api.version;\n",
+        )
+        .unwrap();
+        let consumer = Command::new("tsc")
+            .args([
+                "--noEmit",
+                "--strict",
+                "--target",
+                "ES2022",
+                "--module",
+                "NodeNext",
+                "--moduleResolution",
+                "NodeNext",
+                "consumer.cts",
+            ])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        assert_eq!(
+            consumer.status.success(),
+            consumer_succeeds,
+            "{}{}",
+            String::from_utf8_lossy(&consumer.stdout),
+            String::from_utf8_lossy(&consumer.stderr)
+        );
+
+        let (mut exports, warnings) = discover::discover_exports(root).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let result = compiler::enrich_prepared_exports(&mut exports, root)
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, compiler::EnrichResult::Enriched),
+            "{result:?}"
+        );
+        let api = exports
+            .values()
+            .find(|export| export.name == "default")
+            .unwrap();
+        assert!(!api.overloads.is_empty());
+        surfaces.push(exports);
+    }
+    let unchanged = compare::compare_exports(&surfaces[0], &surfaces[0], old.path(), true);
+    assert!(unchanged.is_empty(), "{unchanged:?}");
+    let changed = compare::compare_exports(&surfaces[0], &surfaces[1], new.path(), true);
+    assert!(
+        changed
+            .iter()
+            .any(|finding| finding.rule == "type-incompatible"
+                && finding.severity == Severity::Major),
+        "{changed:?}"
     );
 }
