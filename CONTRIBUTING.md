@@ -59,13 +59,15 @@ external processes and may install fixture dependencies through npm.
 The hooks use these same checks:
 
 - **pre-commit:** tooling checks for script/Makefile changes; formatting, linting,
-  and default tests for Rust, Cargo/config, or package fixture changes. Deleted
-  inputs count too. Documentation-only commits skip these Rust checks.
+  and default tests for Rust, embedded compiler, Cargo/config, or package fixture
+  changes. Deleted inputs count too. Documentation-only commits skip these Rust
+  checks.
 - **prepare-commit-msg:** suggests a type and changes `feat`/`fix` to `docs`,
   `test`, or `chore` when the staged changes fall entirely in that category.
 - **commit-msg:** validates unscoped Conventional Commits and rejects
   attribution trailers. `feat`/`fix` must change implementation source; `test`
-  must change tests or implementation source.
+  must change tests or implementation source. The embedded compiler's `.cjs`
+  source counts as implementation alongside Rust.
 - **pre-push:** examines the difference between each remote and local ref. Code
   and fixture changes run LSP tests and coverage; tooling changes run the hook
   checks. New refs or missing remote objects run all push checks. Ref deletions

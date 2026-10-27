@@ -5,8 +5,13 @@ export function stagedFiles() {
     .split("\0").filter(Boolean);
 }
 
-export function isRustInput(path: string) {
+function isImplementationSource(path: string) {
   return path.endsWith(".rs")
+    || (path.startsWith("src/") && path.endsWith(".cjs"));
+}
+
+export function isRustInput(path: string) {
+  return isImplementationSource(path)
     || /(^|\/)(Cargo\.(toml|lock)|rust-toolchain(\.toml)?|\.?rustfmt\.toml|\.?clippy\.toml)$/.test(path)
     || path.startsWith(".cargo/")
     || (path.startsWith("tests/fixtures/") && !path.endsWith(".md"));
@@ -21,7 +26,7 @@ export function classifyChanges(paths: string[]) {
   for (const path of paths) {
     if (path.endsWith(".md")) kinds.add("docs");
     else if (path.startsWith("tests/") || /\.(test|spec)\.ts$/.test(path)) kinds.add("test");
-    else if (path.endsWith(".rs")) kinds.add("source");
+    else if (isImplementationSource(path)) kinds.add("source");
     else if (path.startsWith("scripts/") && (/\.(ts|sh)$/.test(path)
       || /^scripts\/hooks\/(pre-commit|prepare-commit-msg|commit-msg|pre-push)$/.test(path))) kinds.add("source");
     else if (path.startsWith(".github/")) kinds.add("ci");

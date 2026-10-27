@@ -21,10 +21,12 @@ function repository() {
   temporaryRepos.push(root);
   cpSync(join(project, "scripts"), join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "src/languages/typescript/compiler"), { recursive: true });
   mkdirSync(join(root, "tests/fixtures"), { recursive: true });
   mkdirSync(join(root, "bin"));
   writeFileSync(join(root, "README.md"), "# Example\n");
   writeFileSync(join(root, "src/lib.rs"), "pub fn answer() -> u8 { 42 }\n");
+  writeFileSync(join(root, "src/languages/typescript/compiler/compiler.cjs"), "console.log('{}');\n");
   writeFileSync(join(root, "tests/fixtures/example.js"), "export const answer = 42;\n");
   writeFileSync(join(root, ".coverage-baseline"), "69\n");
   const log = join(root, "commands.log");
@@ -151,6 +153,28 @@ test("package fixture changes trigger checks without changing Rust files", () =>
   repo.stage("tests/fixtures/example.js", "export const answer = 43;\n");
   expect(repo.hook("pre-commit").exitCode).toBe(0);
   expect(repo.commands()).toContain("cargo test --locked --release");
+});
+
+test.each(["modified", "deleted"])("%s embedded compiler source runs product checks and allows fix commits", (change) => {
+  const repo = repository();
+  expect(repo.hook("install").exitCode).toBe(0);
+  const compiler = "src/languages/typescript/compiler/compiler.cjs";
+  if (change === "deleted") repo.git("rm", compiler);
+  else repo.stage(compiler, "console.log('{\"results\":[]}');\n");
+
+  const commit = repo.invoke(["git", "commit", "-m", "fix: correct compiler evaluation"]);
+
+  expect(commit.exitCode).toBe(0);
+  expect(repo.git("log", "-1", "--format=%s")).toBe("fix: correct compiler evaluation");
+  const tip = repo.git("rev-parse", "HEAD");
+  expect(repo.hook("pre-push", [], `refs/heads/main ${tip} refs/heads/main ${repo.base}\n`).exitCode).toBe(0);
+  expect(repo.commands().trim().split("\n")).toEqual([
+    "cargo fmt --all -- --check",
+    "cargo clippy --locked --all-targets -- -D warnings",
+    "cargo test --locked --release",
+    "cargo test --locked --release --features lsp-tests -- --test-threads=1",
+    "cargo llvm-cov --locked --fail-under-lines 69",
+  ]);
 });
 
 test("checks stop immediately when formatting fails", () => {
