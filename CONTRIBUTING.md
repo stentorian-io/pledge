@@ -112,12 +112,31 @@ smallest package fixture that proves the change.
 - `README.md` covers the product, installation, and usage.
 - `CONTRIBUTING.md` covers local setup and verification.
 - `tests/README.md` describes test boundaries and fixture choices.
-- `docs/README.md` indexes maintained topic documentation.
+- `docs/README.md` routes readers to a guide by the task they want to complete.
+- `docs/results.md` owns report fields, severities, and exit-code semantics.
 - `docs/rules/` explains detection, severity, examples, and limitations.
 
-Use descriptive kebab-case names for new topic docs. Link docs to current code
-and observable behavior. Planning folders, session logs, phase summaries, and
-worktree bookkeeping do not belong in the repository.
+Write for the person trying to check or publish a package:
+
+- Start with the task and expected outcome. Put the shortest useful command
+  near the beginning, with its prerequisites and working directory.
+- Show a concrete change and its effect on a consumer before explaining the
+  implementation. Use small examples and label illustrative output.
+- Separate what the tool detected, what it could not verify, and what remains
+  untested. A successful static check does not prove every runtime behavior.
+- Explain failures with a next step. Keep baseline selection, first-publish
+  behavior, and incomplete analysis explicit in CI examples.
+- Keep an exact contract in one place and link to it from task guides. The
+  README introduces the product and first check; rule catalogs, JSON fields,
+  and internal architecture belong in their focused references.
+- Describe current behavior. Verify commands, rule IDs, and claims against
+  source and relevant tests; distinguish planned features from shipped ones.
+- Check relative links, heading anchors, and examples for documentation-only
+  changes. Run the smallest relevant behavior check when an example needs it.
+
+Use descriptive kebab-case names for new topic docs and link them from the
+index. Planning folders, session logs, phase summaries, and worktree bookkeeping
+do not belong in the repository.
 
 ## Commit messages
 

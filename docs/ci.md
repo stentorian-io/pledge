@@ -1,9 +1,9 @@
 # CI integration
 
-Interlint is a command-line check for one built npm package. Run it after your
-normal install and build steps, before publishing. It supports public and
-private npm registries through npm's own configuration. No hosted CI workflow
-is installed by this repository.
+Use Pledge to check a built npm package before publishing. Run `interlint` after
+your normal install and build steps, and use its exit code as the CI job result.
+This guide covers source installation, public and private npm registries,
+report retention, and recovery from failed or incomplete checks.
 
 ## Install and run
 
@@ -82,66 +82,43 @@ settings remain available. Use absolute paths for settings such as custom CA fil
 since installation runs from a temporary directory. See npm's
 [configuration documentation](https://docs.npmjs.com/cli/v11/configuring-npm/npmrc/).
 
-An authentication/network failure exits 2. Registries that hide private packages
-with a 404 can look like first publishes; use an explicit `--against` in CI.
+An authentication or network failure during baseline acquisition exits 2.
+Dependency preparation failures make analysis incomplete (exit 3). Registries
+that hide private packages with a 404 can look like first publishes; use an
+explicit `--against` in CI.
 
 ## Exit codes and output
 
-| Exit | Meaning | CI action |
-| --- | --- | --- |
-| `0` | Complete analysis with no major findings, or first publish without a baseline | Pass; review warnings as needed |
-| `1` | Major findings | Review breaking changes |
-| `2` | Invalid invocation, acquisition, configuration, or I/O failure | Fix the job/package setup and rerun |
-| `3` | Incomplete evidence, even if major findings are also present | Resolve the reported failures and rerun |
+Keep the command's exit status as the job result. Major findings exit `1`, tool
+errors exit `2`, and incomplete analysis exits `3`. Do not append `|| true` to
+the compatibility gate. See [reading results](results.md) for the complete
+exit-code and severity reference.
 
-Warnings, minor, patch, and informational findings do not independently fail the
-check. Exit 3 takes precedence over exit 1; never turn an incomplete result into
-a compatibility pass. The check does not excuse breaking findings just because
-you incremented the package's major version.
-
-Text is the default. Redirected output has no automatic ANSI colors or spinner;
-`--color always|never|auto` controls text colors. `NO_COLOR` disables automatic
-color. Findings use paths relative to the packed package, which may point to
-built outputs rather than original source files.
-
-For a machine-readable artifact, keep the report outside the analyzed package
-so `npm pack` does not include it:
+To retain a machine-readable artifact:
 
 ```sh
 interlint --against latest --format json > ../interlint-report.json
 ```
 
-Keep the command's exit status when uploading reports; do not append `|| true`
-to the compatibility gate. JSON mode writes one document to stdout, with no
-ANSI escapes or progress output. Diagnostics from tracing go to stderr.
+Place the report outside the analyzed package so `npm pack` does not include it.
+Configure your CI system to retain available reports after a failed check while
+preserving that failure. JSON output, stderr diagnostics, and the process exit
+status are separate parts of the result. The [JSON reference](results.md#json-reports)
+describes the report fields and early argument-parsing errors.
 
-The analysis report has these fields:
+## Troubleshooting
 
-```json
-{
-  "schema_version": 1,
-  "status": "clean",
-  "exit_code": 0,
-  "package": {
-    "name": "example",
-    "current_version": "1.2.0",
-    "baseline_version": "1.1.0"
-  },
-  "summary": {"major": 0, "minor": 0, "patch": 0, "warning": 0, "info": 0},
-  "findings": [],
-  "warnings": []
-}
-```
+| What happened | What to check |
+| --- | --- |
+| The selected baseline cannot be acquired (exit `2`) | Verify the package name, version or tag, and npm registry credentials from the original workspace |
+| Dependency preparation failed (exit `3`) | Read the npm diagnostic; verify registry access and that packed dependency references are resolvable |
+| Types are missing or compiler evaluation failed (exit `3`) | Build declarations, install the JavaScript TypeScript compiler, and check the reported unresolved imports |
+| A source or analysis limit was reached (exit `3`) | Inspect the named file or contract and the relevant [rule's limits](rules/README.md); available findings are only a partial result |
+| Files you expected to check are absent | Inspect the package's `files`, `.npmignore`, and generated outputs; Pledge checks the packed artifact |
 
-Analysis status is `clean`, `breaking`, or `incomplete`. Findings contain
-`severity`, `rule`, `file`, `line`, `col`, and `message`. Warnings contain `message`
-and `incomplete`; baseline/current prefixes identify the affected snapshot.
-Finding order is deterministic by severity, file, location, rule, and message.
-
-Operational errors use `schema_version: 1`, `status: "error"`, `exit_code: 2`, and
-an `error` string. Successful cache clearing uses `status: "cache-cleared"` and
-`exit_code: 0`. Argument parsing errors, help, and version output retain the
-usual CLI text format, even if `--format json` is present.
+For a damaged managed toolchain installation, use `interlint --clear-cache` and
+rerun with registry access. Clearing the cache does not fix missing declarations
+or unsupported syntax.
 
 ## Current verification boundary
 

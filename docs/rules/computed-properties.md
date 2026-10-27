@@ -30,3 +30,14 @@ writes on unrelated local objects are excluded from module export enumeration.
 The constant evaluator is deliberately bounded. Evaluating arbitrary calls,
 proxies, and runtime inputs requires information beyond literal key folding;
 these expressions must not be mistaken for an empty public surface.
+
+## Proxies and reflective construction
+
+Fresh empty proxy handlers and direct `Reflect` trap forwarding preserve the
+target's property surface. Ordinary `Reflect.construct` calls retain the
+constructed type. Arbitrary traps, mutable handler aliases, and custom
+construction prototypes require runtime evidence. Unresolved dispatch emits
+`limitation: proxy-dispatched-exports` alongside incomplete analysis.
+
+These checks describe the property surface. They do not prove arbitrary method
+behavior or private-brand checks through a proxy.

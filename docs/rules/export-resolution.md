@@ -51,3 +51,11 @@ TypeScript `export =` declarations expose their assigned binding as the default
 API. Compiler enrichment follows that binding, including functions merged with
 namespaces, so their call signatures and attached properties remain available
 for compatibility checks.
+
+## Release tags
+
+TSDoc tags (`@deprecated`, `@internal`, `@alpha`, `@beta`, and `@public`) are
+recognized on default exports, named and star re-exports, destructured pairs,
+compound-assignment members, and bundler CommonJS output. Deprecation produces
+an `export-deprecated` warning. Internal, alpha, and beta exports are excluded
+from public API comparison.

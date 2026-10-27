@@ -122,6 +122,10 @@ Code should communicate its purpose through names, structure, and flow.
 
 - Keep `README.md` focused on the product and usage, `CONTRIBUTING.md` on local
   development, `tests/README.md` on test boundaries, and `docs/rules/` on rules.
+- Follow the [documentation conventions](CONTRIBUTING.md#documentation): lead
+  with the reader's task, show a concrete outcome, and keep exact contracts in
+  their focused references. Preserve the distinction between findings and
+  missing evidence.
 - Use descriptive kebab-case names for new topic docs and link them from
   `docs/README.md`. Prefer a short maintained explanation over session logs.
 - Update rule docs when detection, severity, or limitations change. Distinguish
