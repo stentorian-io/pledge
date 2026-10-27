@@ -2,6 +2,13 @@
 name = "interlint"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Stentorian Pledge contributors"]
+description = "Detect breaking changes in public JavaScript and TypeScript package interfaces"
+repository = "https://github.com/stentorian-io/pledge"
+readme = "README.md"
+keywords = ["semver", "typescript", "javascript", "npm", "lint"]
+categories = ["command-line-utilities", "development-tools"]
 autotests = false
 
 [features]
