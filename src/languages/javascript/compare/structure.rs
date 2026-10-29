@@ -11,7 +11,7 @@ use crate::languages::typescript::compare::{
     enums as enum_diff, generics as generic_diff, interfaces as interface_diff, refinements,
     rules as type_rules, types as type_diff,
 };
-use crate::languages::typescript::model::{ConstructSignature, EnumShape, TypeParam};
+use crate::languages::typescript::model::{ConstructSignature, EnumShape, ReleaseTag, TypeParam};
 use crate::languages::typescript::syntax::{
     enums as enum_syntax, functions as typed_functions, generics as generic_syntax,
     interfaces as interface_syntax,
@@ -711,6 +711,14 @@ pub fn compare_structural_diff(
         let Some(new_sym) = new_exports.get(key) else {
             continue;
         };
+        if [old_sym, new_sym].iter().any(|symbol| {
+            matches!(
+                symbol.release_tag,
+                Some(ReleaseTag::Internal | ReleaseTag::Alpha | ReleaseTag::Beta)
+            )
+        }) {
+            continue;
+        }
 
         // Build absolute paths to the source files
         let old_path = old_root.join(&old_sym.file);
