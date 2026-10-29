@@ -9,6 +9,7 @@
 // Separate rules for custom properties vs class names.
 
 use crate::core::findings::{Finding, Severity};
+use crate::ecosystems::node::compare::files::scan_package_files;
 use crate::ecosystems::node::compare::rules::{
     RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED,
 };
@@ -124,7 +125,7 @@ fn normalize_css_path(path: &str) -> String {
 }
 
 /// Prefer manifest stylesheet entry points; otherwise pair packed files by path.
-fn discover_css_files(pkg_root: &Path) -> Stylesheets {
+fn discover_css_files(pkg_root: &Path, findings: &mut Vec<Finding>) -> Stylesheets {
     let pkg_json_path = pkg_root.join("package.json");
 
     if let Ok(content) = std::fs::read_to_string(&pkg_json_path) {
@@ -150,47 +151,11 @@ fn discover_css_files(pkg_root: &Path) -> Stylesheets {
         }
     }
 
-    // Fallback: scan all.css files recursively
-    let mut files = BTreeSet::new();
-    collect_css_files(pkg_root, pkg_root, &mut files);
-    Stylesheets::PackedFiles(files)
-}
-
-/// Recursively collect CSS files from a package directory.
-///
-/// Returns relative paths (relative to `base`). Skips dotfiles and `node_modules/`.
-fn collect_css_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
-    let entries = match std::fs::read_dir(current) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip dotfiles
-        if file_name.starts_with('.') {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip node_modules
-            if file_name == "node_modules" {
-                continue;
-            }
-            collect_css_files(base, &path, files);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("css") {
-            if let Ok(rel) = path.strip_prefix(base) {
-                if let Some(rel_str) = rel.to_str() {
-                    files.insert(rel_str.replace('\\', "/"));
-                }
-            }
-        }
-    }
+    let scan = scan_package_files(pkg_root, |path| {
+        path.extension().and_then(|extension| extension.to_str()) == Some("css")
+    });
+    findings.extend(scan.findings);
+    Stylesheets::PackedFiles(scan.paths)
 }
 
 /// Compare CSS files between old and new package roots (AST-03, AST-04).
@@ -202,14 +167,21 @@ fn collect_css_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) 
 /// - Removed CSS class name → `css-class-removed` (Major)
 pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
-    let old_css = discover_css_files(old_root);
-    let new_css = discover_css_files(new_root);
+    let old_css = discover_css_files(old_root, &mut findings);
+    let new_css = discover_css_files(new_root, &mut findings);
 
     if let (Stylesheets::EntryPoints(old), Stylesheets::EntryPoints(new)) = (&old_css, &new_css) {
         let Some(report_file) = new.first() else {
             return findings;
         };
-        return compare_stylesheets(old_root, new_root, old, new, report_file);
+        findings.extend(compare_stylesheets(
+            old_root,
+            new_root,
+            old,
+            new,
+            report_file,
+        ));
+        return findings;
     }
 
     // Compare files present in both old and new

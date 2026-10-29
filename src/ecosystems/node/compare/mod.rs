@@ -3,6 +3,7 @@
 pub mod assets;
 mod conditions;
 pub mod exports;
+mod files;
 pub mod imports;
 mod loading;
 pub mod metadata;

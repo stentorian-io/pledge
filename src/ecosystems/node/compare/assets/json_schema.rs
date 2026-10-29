@@ -9,6 +9,7 @@
 // JSON Schema `required` array detection for AST-02.
 
 use crate::core::findings::{Finding, Severity};
+use crate::ecosystems::node::compare::files::scan_package_files;
 use crate::ecosystems::node::compare::rules::{
     RULE_JSON_COMPARISON_TRUNCATED, RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED,
     RULE_JSON_REQUIRED_FIELD_ADDED,
@@ -24,16 +25,16 @@ const MAX_DEPTH: usize = 20;
 /// Scans both roots for.json files, excludes package.json, and diffs files
 /// present in both versions key-by-key.
 pub fn compare_json_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
-    let mut old_files = BTreeSet::new();
-    let mut new_files = BTreeSet::new();
-    collect_json_files(old_root, old_root, &mut old_files);
-    collect_json_files(new_root, new_root, &mut new_files);
-
-    let mut findings = Vec::new();
+    let is_json =
+        |path: &Path| path.extension().and_then(|extension| extension.to_str()) == Some("json");
+    let old_files = scan_package_files(old_root, is_json);
+    let new_files = scan_package_files(new_root, is_json);
+    let mut findings = old_files.findings;
+    findings.extend(new_files.findings);
 
     // Only diff files present in both versions.
     // Files in old but not new are handled by asset_diff.rs (no duplicate findings).
-    for rel_path in old_files.intersection(&new_files) {
+    for rel_path in old_files.paths.intersection(&new_files.paths) {
         // Skip package.json — already handled by metadata.rs
         if rel_path == "package.json" {
             continue;
@@ -74,43 +75,6 @@ fn read_json(root: &Path, file: &str, side: &str, findings: &mut Vec<Finding>) -
                 format!("{side}: cannot parse JSON asset `{file}`: {error}"),
             ));
             None
-        }
-    }
-}
-
-/// Recursively scan a directory for.json files, collecting relative paths.
-///
-/// Skips dotfiles, node_modules/, and non-.json files.
-fn collect_json_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
-    let entries = match std::fs::read_dir(current) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip dotfiles
-        if file_name.starts_with('.') {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip node_modules
-            if file_name == "node_modules" {
-                continue;
-            }
-            collect_json_files(base, &path, files);
-        } else if path.extension().and_then(|e| e.to_str()) == Some("json") {
-            if let Ok(rel) = path.strip_prefix(base) {
-                if let Some(rel_str) = rel.to_str() {
-                    files.insert(rel_str.replace('\\', "/"));
-                }
-            }
         }
     }
 }

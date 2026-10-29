@@ -657,7 +657,9 @@ fn test_scan_importable_files_basic() {
     fs::write(dir.path().join("module.mjs"), "").unwrap();
     fs::write(dir.path().join("README.md"), "").unwrap(); // not importable
 
-    let files = scan_importable_files(dir.path());
+    let scan = scan_importable_files(dir.path());
+    assert!(scan.findings.is_empty());
+    let files = scan.paths;
     assert!(files.contains("index.js"), "should include index.js");
     assert!(files.contains("types.d.ts"), "should include types.d.ts");
     assert!(files.contains("module.mjs"), "should include module.mjs");

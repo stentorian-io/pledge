@@ -11,8 +11,8 @@
 //  — consumers can suppress one rule without affecting the other.
 
 use crate::core::findings::{Finding, Severity};
+use crate::ecosystems::node::compare::files::scan_package_files;
 use crate::ecosystems::node::compare::rules::RULE_ASSET_FILE_REMOVED;
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 /// Asset file extensions tracked for removal detection.
@@ -30,69 +30,20 @@ fn is_asset(path: &Path) -> bool {
     ASSET_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
 }
 
-/// Recursively collect asset files from a package directory.
-///
-/// Returns relative paths (relative to `base`) as a `BTreeSet<String>` for
-/// deterministic ordering. Skips `node_modules/` directories and dotfiles.
-/// Explicitly excludes `package.json` (already handled by metadata.rs).
-fn collect_asset_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
-    let entries = match std::fs::read_dir(current) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip dotfiles
-        if file_name.starts_with('.') {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip node_modules
-            if file_name == "node_modules" {
-                continue;
-            }
-            collect_asset_files(base, &path, files);
-        } else if is_asset(&path) {
-            if let Ok(rel) = path.strip_prefix(base) {
-                if let Some(rel_str) = rel.to_str() {
-                    let normalized = rel_str.replace('\\', "/");
-                    // Explicitly skip package.json — handled by metadata.rs
-                    if normalized == "package.json" {
-                        continue;
-                    }
-                    files.insert(normalized);
-                }
-            }
-        }
-    }
-}
-
-/// Scan all asset files in a package root directory.
-fn scan_asset_files(pkg_root: &Path) -> BTreeSet<String> {
-    let mut files = BTreeSet::new();
-    collect_asset_files(pkg_root, pkg_root, &mut files);
-    files
-}
-
 /// Compare asset files between old and new package roots (AST-05).
 ///
 /// Detects asset files present in `old_root` but absent in `new_root`.
 /// Only removal is breaking — additions are not detected here.
 pub fn compare_asset_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
-    let old_assets = scan_asset_files(old_root);
-    let new_assets = scan_asset_files(new_root);
+    let mut old_assets = scan_package_files(old_root, is_asset);
+    let new_assets = scan_package_files(new_root, is_asset);
+    old_assets.paths.remove("package.json");
 
-    let mut findings = Vec::new();
+    let mut findings = old_assets.findings;
+    findings.extend(new_assets.findings);
 
-    for file in &old_assets {
-        if !new_assets.contains(file) {
+    for file in &old_assets.paths {
+        if !new_assets.paths.contains(file) {
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_ASSET_FILE_REMOVED,

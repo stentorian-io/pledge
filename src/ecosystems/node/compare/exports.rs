@@ -14,6 +14,7 @@
 
 use crate::core::findings::{Finding, Severity};
 use crate::ecosystems::node::compare as package_compare;
+use crate::ecosystems::node::compare::files::{scan_package_files, PackageFiles};
 use crate::ecosystems::node::compare::rules::{
     RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED, RULE_ESM_TO_CJS,
     RULE_EXPORTS_FIELD_ADDED, RULE_IMPORTABLE_FILE_REMOVED, RULE_SUBPATH_ADDED,
@@ -450,53 +451,9 @@ fn is_importable(path: &Path) -> bool {
     IMPORTABLE_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
 }
 
-/// Recursively collect importable files from a package directory.
-///
-/// Returns relative paths (relative to `base`) as a `BTreeSet<String>` for
-/// deterministic ordering. Skips `node_modules/` directories and dotfiles.
-fn collect_files_recursive(base: &Path, current: &Path, files: &mut BTreeSet<String>) {
-    let entries = match std::fs::read_dir(current) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let file_name = match path.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip dotfiles (files or dirs starting with '.')
-        if file_name.starts_with('.') {
-            continue;
-        }
-
-        if path.is_dir() {
-            // Skip node_modules
-            if file_name == "node_modules" {
-                continue;
-            }
-            collect_files_recursive(base, &path, files);
-        } else if is_importable(&path) {
-            if let Ok(rel) = path.strip_prefix(base) {
-                if let Some(rel_str) = rel.to_str() {
-                    // Normalize path separators to forward slash for cross-platform consistency
-                    files.insert(rel_str.replace('\\', "/"));
-                }
-            }
-        }
-    }
-}
-
-/// Scan all importable files in a package root directory.
-///
-/// Returns a `BTreeSet<String>` of relative paths (relative to `pkg_root`).
-/// Skips dotfiles, `node_modules/`, and files with non-importable extensions.
-pub(crate) fn scan_importable_files(pkg_root: &Path) -> BTreeSet<String> {
-    let mut files = BTreeSet::new();
-    collect_files_recursive(pkg_root, pkg_root, &mut files);
-    files
+/// Scan importable paths, retaining diagnostics for unavailable subtrees.
+fn scan_importable_files(pkg_root: &Path) -> PackageFiles {
+    scan_package_files(pkg_root, is_importable)
 }
 
 /// Compare importable files between old and new package roots (EXP-13).
@@ -508,11 +465,12 @@ pub(crate) fn scan_importable_files(pkg_root: &Path) -> BTreeSet<String> {
 fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let old_files = scan_importable_files(old_root);
     let new_files = scan_importable_files(new_root);
-    let mut findings = Vec::new();
+    let mut findings = old_files.findings;
+    findings.extend(new_files.findings);
 
     // Removed files (Major)
-    for file in &old_files {
-        if !new_files.contains(file) {
+    for file in &old_files.paths {
+        if !new_files.paths.contains(file) {
             findings.push(pkg_json_finding(
                 Severity::Major,
                 RULE_IMPORTABLE_FILE_REMOVED,
@@ -522,8 +480,8 @@ fn compare_packed_output_fallback(old_root: &Path, new_root: &Path) -> Vec<Findi
     }
 
     // Added files (Minor)
-    for file in &new_files {
-        if !old_files.contains(file) {
+    for file in &new_files.paths {
+        if !old_files.paths.contains(file) {
             findings.push(pkg_json_finding(
                 Severity::Minor,
                 RULE_SUBPATH_ADDED,
@@ -686,10 +644,10 @@ pub fn compare_exports_diff(
             // EXP-02: exports field added — previously importable paths are now encapsulated
             // enumerate old_root importable files for the message, cap at 10
             let old_files = scan_importable_files(old_root);
-            let message = if old_files.is_empty() {
+            let message = if old_files.paths.is_empty() {
                 "package.json `exports` field added, encapsulating deep imports".to_string()
             } else {
-                let file_list: Vec<&String> = old_files.iter().collect();
+                let file_list: Vec<&String> = old_files.paths.iter().collect();
                 let (shown, rest) = if file_list.len() > 10 {
                     (&file_list[..10], file_list.len() - 10)
                 } else {
@@ -710,11 +668,13 @@ pub fn compare_exports_diff(
                     )
                 }
             };
-            vec![pkg_json_finding(
+            let mut findings = old_files.findings;
+            findings.push(pkg_json_finding(
                 Severity::Major,
                 RULE_EXPORTS_FIELD_ADDED,
                 message,
-            )]
+            ));
+            findings
         }
 
         (Some(old_val), None) => {

@@ -1,6 +1,8 @@
 //! Files compatibility checks.
 
 use crate::fixtures::fixture_path;
+#[cfg(unix)]
+use interlint::core::findings::Severity;
 use interlint::ecosystems::node::compare::assets::files as asset_diff;
 use interlint::ecosystems::node::compare::rules::{
     RULE_ASSET_FILE_REMOVED, RULE_CSS_CLASS_REMOVED, RULE_JSON_FIELD_REMOVED,
@@ -16,6 +18,77 @@ fn test_asset_file_removed_integration() {
         findings.iter().any(|f| f.rule == RULE_ASSET_FILE_REMOVED),
         "Expected asset-file-removed finding, got: {:?}",
         findings.iter().map(|f| f.rule).collect::<Vec<_>>()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_cycles_do_not_duplicate_removed_assets() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    for root in [old.path(), new.path()] {
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"cycle","main":"index.js"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("index.js"), "exports.api = 1;").unwrap();
+        std::os::unix::fs::symlink(".", root.join("again")).unwrap();
+    }
+    std::fs::write(old.path().join("icon.svg"), "<svg/>").unwrap();
+
+    let mut findings =
+        interlint::ecosystems::node::compare::assets::compare_asset_diff(old.path(), new.path());
+    findings.extend(
+        interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), new.path()),
+    );
+
+    let removed: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.rule == RULE_ASSET_FILE_REMOVED)
+        .collect();
+    assert_eq!(removed.len(), 1, "{removed:?}");
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "analysis-incomplete"
+                && finding.message.contains("cycle")),
+        "{findings:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_aliases_keep_their_paths_but_external_links_are_incomplete() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    let external = tempfile::tempdir().unwrap();
+    for root in [old.path(), new.path()] {
+        std::fs::create_dir(root.join("icons")).unwrap();
+        std::os::unix::fs::symlink("icons", root.join("alias")).unwrap();
+        std::os::unix::fs::symlink(external.path(), root.join("outside")).unwrap();
+    }
+    std::fs::write(old.path().join("icons/icon.svg"), "<svg/>").unwrap();
+
+    let findings = asset_diff::compare_asset_files(old.path(), new.path());
+
+    let removed: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.rule == RULE_ASSET_FILE_REMOVED)
+        .collect();
+    assert_eq!(removed.len(), 2, "{removed:?}");
+    assert!(removed
+        .iter()
+        .any(|finding| finding.message.contains("icons/icon.svg")));
+    assert!(removed
+        .iter()
+        .any(|finding| finding.message.contains("alias/icon.svg")));
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "analysis-incomplete"
+                && finding.severity == Severity::Warning),
+        "{findings:?}"
     );
 }
 

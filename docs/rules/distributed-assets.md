@@ -44,3 +44,11 @@ Equivalent relative path spellings such as `./style.css` and `style.css` do
 not change the comparison. When both snapshots declare stylesheet entry points,
 Pledge compares their combined CSS API even if the manifest redirects to a
 different retained file. Without declared entry points, files are paired by path.
+
+## Packed file discovery
+
+Packed asset and deep-import scans skip dotfiles and `node_modules`. Internal
+symlink aliases keep their own public paths. Directory cycles, links outside the
+package, broken links, unreadable paths, and the directory depth limit of 128
+emit Warning `analysis-incomplete`, making the CLI exit `3`. These paths are not
+followed; successfully scanned paths remain available for comparison.
