@@ -51,6 +51,13 @@ identity. Installed dependencies and generated dot-prefixed package directories
 are resolved through `node_modules`. Missing generated output is incomplete
 evidence; Pledge does not execute package generators or lifecycle scripts.
 
+Unconditional CommonJS assignments replace earlier exported surfaces. Rebinding
+a `require()` alias affects later forwarding through that alias, while an object
+already assigned to `module.exports` retains its identity. Property deletion,
+runtime-controlled reassignment, and replacements whose effects are unresolved
+produce incomplete-analysis warnings; compiler enrichment does not clear those
+runtime mutation warnings.
+
 TypeScript `export =` declarations expose their assigned binding as the default
 API. Compiler enrichment follows that binding, including functions merged with
 namespaces, so their call signatures and attached properties remain available

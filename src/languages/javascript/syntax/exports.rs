@@ -3380,6 +3380,8 @@ pub fn parse_exports(
         });
     }
 
+    let commonjs = commonjs::analyze(root, source);
+    exports.retain(|export| commonjs.retains_export_at(root, source, export.line, export.col));
     link_export_declarations(root, source, &mut exports);
     for export in &mut exports {
         let (line, col) = export.declaration_site.unwrap_or((export.line, export.col));

@@ -203,3 +203,150 @@ fn published_react_exports_match_node_in_both_environments() {
         assert_eq!(discovered, actual, "{environment}");
     }
 }
+
+#[test]
+fn later_assignments_replace_the_previous_commonjs_surface() {
+    for wrapper in [
+        "module.exports = require('./production.cjs'); module.exports = {};",
+        "exports.api = () => 1; module.exports = {};",
+        "let api = require('./production.cjs'); api = {}; module.exports = api;",
+        "let api = require('./production.cjs'); api = require('./development.cjs'); module.exports = api;",
+    ] {
+        let directory = package(wrapper, "exports.api = () => 1;", "exports.other = 1;");
+
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+
+        assert!(warnings.is_empty(), "{wrapper}: {warnings:?}");
+        assert!(
+            !exports.keys().any(|key| key.name == "api"),
+            "{wrapper}: {exports:?}"
+        );
+    }
+}
+
+#[test]
+fn rebinding_an_alias_after_forwarding_preserves_the_exported_object() {
+    for wrapper in [
+        "let api = require('./production.cjs'); module.exports = api; api = {};",
+        "let api = require('./production.cjs'); const saved = api; api = {}; module.exports = saved;",
+    ] {
+        let directory = package(wrapper, "exports.api = () => 1;", "");
+
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+
+        assert!(warnings.is_empty(), "{wrapper}: {warnings:?}");
+        assert!(exports.keys().any(|key| key.name == "api"), "{wrapper}");
+    }
+}
+
+#[test]
+fn deleting_export_properties_reports_incomplete_evidence() {
+    for wrapper in [
+        "exports.api = () => 1; delete exports.api;",
+        "module.exports = require('./production.cjs'); delete module.exports.api;",
+        "const api = require('./production.cjs'); delete api.api; module.exports = api;",
+    ] {
+        let directory = package(wrapper, "exports.api = () => 1;", "");
+
+        let (_, warnings) = discover_exports(directory.path()).unwrap();
+
+        assert!(
+            warnings.iter().any(|warning| warning.incomplete
+                && !warning.type_expansion_only
+                && warning.message.contains("CommonJS export mutation")),
+            "{wrapper}: {warnings:?}"
+        );
+    }
+}
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn node_consumers_confirm_commonjs_replacement_removes_the_api() {
+    let old = package(
+        "module.exports = require('./production.cjs');",
+        "exports.api = () => 1;",
+        "",
+    );
+    let new = package(
+        "module.exports = require('./production.cjs'); module.exports = {};",
+        "exports.api = () => 1;",
+        "",
+    );
+    for (directory, succeeds) in [(&old, true), (&new, false)] {
+        let output = std::process::Command::new("node")
+            .args(["-e", "require(process.argv[1]).api()"])
+            .arg(directory.path().join("index.cjs"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.success(), succeeds);
+    }
+    let (mut before, _) = discover_exports(old.path()).unwrap();
+    let (mut after, _) = discover_exports(new.path()).unwrap();
+    for (exports, directory) in [(&mut before, old.path()), (&mut after, new.path())] {
+        let result =
+            interlint::languages::typescript::compiler::enrich_prepared_exports(exports, directory)
+                .await
+                .unwrap();
+        assert!(
+            matches!(
+                result,
+                interlint::languages::typescript::compiler::EnrichResult::Enriched
+            ),
+            "{result:?}"
+        );
+    }
+    let findings = compare::compare_exports(&before, &after, new.path(), true);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "export-removed" && finding.message.contains("api")),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn unresolved_mutations_do_not_erase_the_known_surface() {
+    for wrapper in [
+        "module.exports = require('./production.cjs'); module.exports = factory();",
+        "module.exports = require('./production.cjs'); while (condition) { module.exports = {}; }",
+        "let api = require('./production.cjs'); if (condition) { api = {}; } module.exports = api;",
+    ] {
+        let directory = package(wrapper, "exports.api = () => 1;", "");
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(exports.keys().any(|key| key.name == "api"), "{wrapper}");
+        assert!(
+            warnings.iter().any(|warning| warning.incomplete),
+            "{wrapper}: {warnings:?}"
+        );
+    }
+    let directory = package(
+        "module.exports = require('./production.cjs'); module.exports = module.exports;",
+        "exports.api = () => 1;",
+        "",
+    );
+    let (exports, warnings) = discover_exports(directory.path()).unwrap();
+    assert!(exports.keys().any(|key| key.name == "api"));
+    assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[test]
+fn bundler_export_annotations_and_default_unwrapping_preserve_evidence() {
+    let directory = package(
+        "exports.own = 1; 0 && (module.exports = { ...require('./production.cjs') });",
+        "exports.api = 1;",
+        "",
+    );
+    let (exports, warnings) = discover_exports(directory.path()).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(exports.keys().any(|key| key.name == "own"));
+    assert!(exports.keys().any(|key| key.name == "api"));
+
+    let directory = package(
+        "exports.default = function api() {}; module.exports = exports.default;",
+        "",
+        "",
+    );
+    let (exports, warnings) = discover_exports(directory.path()).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(exports.keys().any(|key| key.name == "default"));
+}

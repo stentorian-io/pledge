@@ -617,7 +617,14 @@ fn collect_exports_uncached(
             let mut parser = tree_sitter::Parser::new();
             if parser.set_language(&language).is_ok() {
                 if let Some(tree) = parser.parse(&source, None) {
-                    forwards = commonjs::forwards(tree.root_node(), &source);
+                    let commonjs = commonjs::analyze(tree.root_node(), &source);
+                    forwards = commonjs.forwards;
+                    for line in commonjs.mutation_lines {
+                        warnings.push(ResolveWarning::new(format!(
+                            "CommonJS export mutation requires runtime information at {}:{line}",
+                            canonical.display()
+                        )));
+                    }
                     for (node, key) in commonjs::computed_exports(tree.root_node(), &source) {
                         if key.is_none() {
                             warnings.push(ResolveWarning::new(format!(
