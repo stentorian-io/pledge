@@ -106,6 +106,22 @@ fi
         command
     }
 
+    fn with_json_assets(old_json: &[u8], new_json: &[u8]) -> Self {
+        let source = "export const api = 1;";
+        let project = Self::new(source, source);
+        for (archive, version, json) in [
+            ("old.tgz", "1.0.0", old_json),
+            ("new.tgz", "2.0.0", new_json),
+        ] {
+            let bytes = package_tarball(
+                &manifest(version),
+                &[("index.js", source.as_bytes()), ("data.json", json)],
+            );
+            fs::write(project.directory.path().join(archive), bytes).unwrap();
+        }
+        project
+    }
+
     fn json(&self) -> Command {
         let mut command = self.command();
         command.args(["--format", "json"]);
@@ -127,21 +143,71 @@ fn tarball(path: &Path, version: &str, source: &str) {
 }
 
 fn tarball_bytes(manifest: &Value, source: &str) -> Vec<u8> {
+    package_tarball(manifest, &[("index.js", source.as_bytes())])
+}
+
+fn package_tarball(manifest: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
     let mut archive = tar::Builder::new(encoder);
-    for (path, contents) in [
-        ("package/package.json", manifest.to_string()),
-        ("package/index.js", source.to_owned()),
-    ] {
+    let manifest = manifest.to_string();
+    for (path, contents) in
+        std::iter::once(("package.json", manifest.as_bytes())).chain(files.iter().copied())
+    {
         let mut header = tar::Header::new_gnu();
         header.set_size(contents.len() as u64);
         header.set_mode(0o644);
         header.set_cksum();
         archive
-            .append_data(&mut header, path, contents.as_bytes())
+            .append_data(&mut header, format!("package/{path}"), contents)
             .unwrap();
     }
     archive.into_inner().unwrap().finish().unwrap()
+}
+
+#[test]
+fn json_asset_parse_failures_make_analysis_incomplete() {
+    let valid = br#"{"api":true}"#.as_slice();
+    let malformed = b"{broken".as_slice();
+    for (old, new) in [
+        (valid, malformed),
+        (malformed, valid),
+        (valid, b"\xff".as_slice()),
+    ] {
+        let project = CliProject::with_json_assets(old, new);
+
+        let output = project.json().output().unwrap();
+
+        let result = report(&output, 3, "incomplete");
+        assert!(result["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["rule"] == "analysis-incomplete"
+                && finding["file"] == "data.json"));
+    }
+}
+
+#[test]
+fn json_asset_depth_limits_make_analysis_incomplete() {
+    let mut old = json!({"removed":true});
+    let mut new = json!({});
+    for _ in 0..22 {
+        old = json!({"nested": old});
+        new = json!({"nested": new});
+    }
+    let project =
+        CliProject::with_json_assets(old.to_string().as_bytes(), new.to_string().as_bytes());
+
+    let output = project.json().output().unwrap();
+
+    let result = report(&output, 3, "incomplete");
+    let findings = result["findings"].as_array().unwrap();
+    assert!(findings
+        .iter()
+        .any(|finding| finding["rule"] == "json-comparison-truncated"));
+    assert!(findings
+        .iter()
+        .any(|finding| finding["rule"] == "analysis-incomplete"));
 }
 
 fn report(output: &Output, exit: i32, status: &str) -> Value {

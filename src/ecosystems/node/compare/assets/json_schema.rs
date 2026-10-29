@@ -39,31 +39,43 @@ pub fn compare_json_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
             continue;
         }
 
-        let old_path = old_root.join(rel_path);
-        let new_path = new_root.join(rel_path);
-
-        let old_str = match std::fs::read_to_string(&old_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        let new_str = match std::fs::read_to_string(&new_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        let old_val: Value = match serde_json::from_str(&old_str) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let new_val: Value = match serde_json::from_str(&new_str) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let old_val = read_json(old_root, rel_path, "baseline", &mut findings);
+        let new_val = read_json(new_root, rel_path, "current", &mut findings);
+        let (Some(old_val), Some(new_val)) = (old_val, new_val) else {
+            continue;
         };
 
         diff_json_values(&old_val, &new_val, "", rel_path, &mut findings, 0);
     }
 
     findings
+}
+
+fn read_json(root: &Path, file: &str, side: &str, findings: &mut Vec<Finding>) -> Option<Value> {
+    let contents = match std::fs::read(root.join(file)) {
+        Ok(contents) => contents,
+        Err(error) => {
+            findings.push(json_finding(
+                Severity::Warning,
+                "analysis-incomplete",
+                file,
+                format!("{side}: cannot read JSON asset `{file}`: {error}"),
+            ));
+            return None;
+        }
+    };
+    match serde_json::from_slice(&contents) {
+        Ok(parsed) => Some(parsed),
+        Err(error) => {
+            findings.push(json_finding(
+                Severity::Warning,
+                "analysis-incomplete",
+                file,
+                format!("{side}: cannot parse JSON asset `{file}`: {error}"),
+            ));
+            None
+        }
+    }
 }
 
 /// Recursively scan a directory for.json files, collecting relative paths.
@@ -117,14 +129,18 @@ fn diff_json_values(
     depth: usize,
 ) {
     if depth >= MAX_DEPTH {
-        // Mirror type comparison and emit a Patch-severity
-        // finding so consumers see a clear signal that analysis was incomplete at
-        // MAX_DEPTH rather than a silent return.
+        // Keep the existing diagnostic while making the run status incomplete.
         findings.push(json_finding(
             Severity::Patch,
             RULE_JSON_COMPARISON_TRUNCATED,
             file_path,
             format!("JSON comparison truncated at depth {MAX_DEPTH} for `{file_path}`"),
+        ));
+        findings.push(json_finding(
+            Severity::Warning,
+            "analysis-incomplete",
+            file_path,
+            format!("remaining fields in JSON asset `{file_path}` were not compared after depth {MAX_DEPTH}"),
         ));
         return;
     }

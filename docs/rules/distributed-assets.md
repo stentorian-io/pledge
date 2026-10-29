@@ -27,6 +27,12 @@ Objects containing a `required` array are interpreted as schemas for this
 check. Other array contents and scalar value changes are not compared; this
 is not a complete JSON Schema compatibility validator.
 
+Unreadable or malformed JSON in either snapshot emits Warning
+`analysis-incomplete`. JSON comparison stops at nesting depth 20, retaining
+the Patch `json-comparison-truncated` diagnostic and also emitting
+`analysis-incomplete`. These cases make the CLI exit `3`; they cannot establish
+compatibility. Findings from successfully compared assets remain available.
+
 ## CSS APIs
 
 Removing a class selector emits Major `css-class-removed`; removing a custom
