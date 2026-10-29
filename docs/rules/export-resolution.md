@@ -56,7 +56,11 @@ a `require()` alias affects later forwarding through that alias, while an object
 already assigned to `module.exports` retains its identity. Property deletion,
 runtime-controlled reassignment, and replacements whose effects are unresolved
 produce incomplete-analysis warnings; compiler enrichment does not clear those
-runtime mutation warnings.
+runtime mutation warnings. A possible alias reassignment makes later forwarding
+incomplete without changing an object that was already forwarded. Writes through
+`exports` after replacing `module.exports` also remain incomplete because the two
+objects may have detached; an unconditional `exports = module.exports` reattaches
+the alias for subsequent writes.
 
 TypeScript `export =` declarations expose their assigned binding as the default
 API. Compiler enrichment follows that binding, including functions merged with

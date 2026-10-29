@@ -350,3 +350,105 @@ fn bundler_export_annotations_and_default_unwrapping_preserve_evidence() {
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(exports.keys().any(|key| key.name == "default"));
 }
+
+#[test]
+fn uncertain_alias_rebinding_keeps_later_forwarding_incomplete() {
+    for wrapper in [
+        "let api = require('./production.cjs'); while (false) { api = require('./development.cjs'); } module.exports = api;",
+        "let api = require('./production.cjs'); while (false) { api = {}; } module.exports = api;",
+        "let api = require('./production.cjs'); while (false) { api = {}; } const saved = api; module.exports = saved;",
+        "let api = {}; if (false) { api = require('./production.cjs'); } module.exports = api;",
+        "let api = require('./production.cjs'); api ||= {}; module.exports = api;",
+        "var api = require('./production.cjs'); while (false) { var api = require('./development.cjs'); } module.exports = api;",
+    ] {
+        let directory = package(wrapper, "exports.api = 1;", "exports.other = 1;");
+        let (_, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.iter().any(|warning| warning.incomplete), "{wrapper}: {warnings:?}");
+    }
+}
+
+#[test]
+fn writes_through_detached_exports_keep_analysis_incomplete() {
+    for wrapper in [
+        "module.exports = require('./production.cjs'); exports.extra = 1;",
+        "module.exports = require('./production.cjs'); exports['extra'] = 1;",
+        "module.exports = require('./production.cjs'); if (false) { exports = module.exports; } exports.extra = 1;",
+        "module.exports = require('./production.cjs'); exports ||= module.exports; exports.extra = 1;",
+    ] {
+        let directory = package(wrapper, "exports.api = 1;", "");
+        let (_, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.iter().any(|warning| warning.incomplete), "{wrapper}: {warnings:?}");
+    }
+}
+
+#[test]
+fn later_alias_rebinding_and_explicit_exports_reattachment_preserve_known_identity() {
+    for wrapper in [
+        "let api = require('./production.cjs'); module.exports = api; while (false) { api = {}; }",
+        "let api = require('./production.cjs'); module.exports = api; if (false) { api = require('./development.cjs'); }",
+        "module.exports = require('./production.cjs'); exports = module.exports; exports.extra = 1;",
+        "let api = require('./production.cjs'); 0 && (api = {}); module.exports = api;",
+    ] {
+        let directory = package(wrapper, "exports.api = 1;", "exports.other = 1;");
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.is_empty(), "{wrapper}: {warnings:?}");
+        assert!(exports.keys().any(|key| key.name == "api"), "{wrapper}: {exports:?}");
+    }
+}
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn native_commonjs_alias_identity_matches_analysis_or_retains_incomplete_evidence() {
+    use interlint::languages::typescript::compiler;
+    use std::process::Command;
+
+    for (wrapper, names, incomplete) in [
+        ("module.exports = require('./production.cjs'); exports.extra = 1;", vec!["api"], true),
+        ("let api = require('./production.cjs'); while (false) { api = require('./development.cjs'); } module.exports = api;", vec!["api"], true),
+        ("let api = require('./production.cjs'); while (false) { api = {}; } const saved = api; module.exports = saved;", vec!["api"], true),
+        ("let api = {}; if (false) { api = require('./production.cjs'); } module.exports = api;", vec![], true),
+        ("let api = require('./production.cjs'); api ||= {}; module.exports = api;", vec!["api"], true),
+        ("var api = require('./production.cjs'); while (false) { var api = require('./development.cjs'); } module.exports = api;", vec!["api"], true),
+        ("let api = require('./production.cjs'); module.exports = api; while (false) { api = {}; }", vec!["api"], false),
+        ("module.exports = require('./production.cjs'); exports = module.exports; exports.extra = 1;", vec!["api", "extra"], false),
+        ("let api = require('./production.cjs'); 0 && (api = {}); module.exports = api;", vec!["api"], false),
+    ] {
+        let directory = package(wrapper, "exports.api = 1;", "exports.other = 1;");
+        let output = Command::new("node").current_dir(directory.path())
+            .args(["-e", "process.stdout.write(JSON.stringify(Object.keys(require('./index.cjs')).sort()))"])
+            .output().unwrap();
+        assert!(output.status.success(), "{wrapper}: {}", String::from_utf8_lossy(&output.stderr));
+        assert_eq!(serde_json::from_slice::<Vec<String>>(&output.stdout).unwrap(), names, "{wrapper}");
+
+        let (mut exports, mut warnings) = discover_exports(directory.path()).unwrap();
+        let result = compiler::enrich_exports(&mut exports, directory.path()).await.unwrap();
+        assert!(matches!(result, compiler::EnrichResult::Enriched), "{wrapper}: {result:?}");
+        result.reconcile_discovery_warnings(&mut warnings);
+        assert_eq!(warnings.iter().any(|warning| warning.incomplete), incomplete, "{wrapper}: {warnings:?}");
+        if !incomplete {
+            let mut discovered: Vec<_> = exports.keys().map(|key| key.name.as_str()).collect();
+            discovered.sort_unstable();
+            assert_eq!(discovered, names, "{wrapper}");
+        }
+    }
+}
+
+#[test]
+fn known_environment_alias_rebinding_preserves_branch_identity() {
+    let directory = package(
+        "let api = require('./production.cjs'); if (process.env.NODE_ENV === 'development') { api = require('./development.cjs'); module.exports = api; } else { module.exports = api; }",
+        "exports.api = 1;", "exports.other = 1;",
+    );
+    let (exports, warnings) = discover_exports(directory.path()).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(
+        exports.keys().any(|key| key.name == "api"
+            && key.condition.as_deref() == Some("cjs:NODE_ENV!=development")),
+        "{exports:?}"
+    );
+    assert!(
+        exports.keys().any(|key| key.name == "other"
+            && key.condition.as_deref() == Some("cjs:NODE_ENV=development")),
+        "{exports:?}"
+    );
+}

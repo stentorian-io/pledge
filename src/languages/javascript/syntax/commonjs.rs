@@ -13,6 +13,12 @@ pub(crate) struct Forward {
     pub shadowed: Vec<String>,
 }
 
+#[derive(Clone, PartialEq)]
+struct RequireBinding {
+    specifier: String,
+    uncertain_line: Option<u32>,
+}
+
 #[derive(Default)]
 pub(crate) struct CommonJsAnalysis {
     pub forwards: Vec<Forward>,
@@ -20,6 +26,7 @@ pub(crate) struct CommonJsAnalysis {
     last_replacement: Option<Point>,
     has_unconditional_write: bool,
     has_named_export_write: bool,
+    exports_may_be_detached: bool,
     mutated_targets: Vec<(String, u32)>,
 }
 
@@ -109,7 +116,7 @@ fn is_export_target(node: Node<'_>, source: &[u8]) -> bool {
 fn is_definite_replacement(
     node: Node<'_>,
     source: &[u8],
-    bindings: &HashMap<String, String>,
+    bindings: &HashMap<String, RequireBinding>,
 ) -> bool {
     let node = unwrap(node);
     if require_target(node, source, bindings).is_some() {
@@ -159,8 +166,8 @@ fn is_export_annotation(mut node: Node<'_>, source: &[u8]) -> bool {
 fn require_target(
     node: Node<'_>,
     source: &[u8],
-    bindings: &HashMap<String, String>,
-) -> Option<String> {
+    bindings: &HashMap<String, RequireBinding>,
+) -> Option<RequireBinding> {
     let node = unwrap(node);
     if node.kind() == "identifier" {
         return bindings.get(text(node, source)).cloned();
@@ -171,8 +178,32 @@ fn require_target(
         return None;
     }
     let argument = node.child_by_field_name("arguments")?.named_child(0)?;
-    (argument.kind() == "string")
-        .then(|| text(argument, source).trim_matches(['\'', '"']).to_string())
+    (argument.kind() == "string").then(|| RequireBinding {
+        specifier: text(argument, source).trim_matches(['\'', '"']).to_string(),
+        uncertain_line: None,
+    })
+}
+
+fn assign_require_binding(
+    bindings: &mut HashMap<String, RequireBinding>,
+    name: &str,
+    replacement: Option<RequireBinding>,
+    uncertain: bool,
+    line: u32,
+) {
+    if uncertain {
+        // A possible rebind changes future reads, not the object already forwarded.
+        if let Some(replacement) = replacement {
+            bindings.entry(name.to_string()).or_insert(replacement);
+        }
+        if let Some(binding) = bindings.get_mut(name) {
+            binding.uncertain_line = Some(line);
+        }
+    } else if let Some(replacement) = replacement {
+        bindings.insert(name.to_string(), replacement);
+    } else {
+        bindings.remove(name);
+    }
 }
 
 fn environment_test(node: Node<'_>, source: &[u8]) -> Option<(String, String)> {
@@ -218,7 +249,7 @@ fn environment_test(node: Node<'_>, source: &[u8]) -> Option<(String, String)> {
 fn walk(
     node: Node<'_>,
     source: &[u8],
-    bindings: &mut HashMap<String, String>,
+    bindings: &mut HashMap<String, RequireBinding>,
     conditions: &[String],
     uncertain: bool,
     analysis: &mut CommonJsAnalysis,
@@ -251,6 +282,7 @@ fn walk(
                 | "switch_statement"
                 | "try_statement"
                 | "ternary_expression"
+                | "augmented_assignment_expression"
         )
         || (node.kind() == "binary_expression" && !annotation);
     if node.kind() == "if_statement" {
@@ -265,18 +297,35 @@ fn walk(
                 format!("unless({})", text(test, source)),
             )
         });
+        let original_bindings = bindings.clone();
         for (field, predicate) in [("consequence", positive), ("alternative", negative)] {
             if let Some(branch) = node.child_by_field_name(field) {
                 let mut branch_conditions = conditions.to_vec();
                 branch_conditions.push(predicate);
+                let mut branch_bindings = original_bindings.clone();
                 walk(
                     branch,
                     source,
-                    &mut bindings.clone(),
+                    &mut branch_bindings,
                     &branch_conditions,
                     uncertain || unsupported,
                     analysis,
                 );
+                for (name, target) in &branch_bindings {
+                    if original_bindings.get(name) != Some(target) {
+                        bindings
+                            .entry(name.clone())
+                            .or_insert_with(|| target.clone())
+                            .uncertain_line = Some(node.start_position().row as u32 + 1);
+                    }
+                }
+                for (name, target) in &original_bindings {
+                    if !branch_bindings.contains_key(name) {
+                        let mut target = target.clone();
+                        target.uncertain_line = Some(node.start_position().row as u32 + 1);
+                        bindings.insert(name.clone(), target);
+                    }
+                }
             }
         }
         return;
@@ -287,11 +336,14 @@ fn walk(
             node.child_by_field_name("value"),
         ) {
             if name.kind() == "identifier" {
-                if let Some(target) = require_target(value, source, bindings) {
-                    bindings.insert(text(name, source).into(), target);
-                } else {
-                    bindings.remove(text(name, source));
-                }
+                let replacement = require_target(value, source, bindings);
+                assign_require_binding(
+                    bindings,
+                    text(name, source),
+                    replacement,
+                    uncertain,
+                    node.start_position().row as u32 + 1,
+                );
             }
         }
     }
@@ -306,7 +358,9 @@ fn walk(
                 analysis.mutation_lines.push(line);
             } else if let Some(object) = argument.child_by_field_name("object") {
                 if let Some(target) = bindings.get(text(object, source)) {
-                    analysis.mutated_targets.push((target.clone(), line));
+                    analysis
+                        .mutated_targets
+                        .push((target.specifier.clone(), line));
                 }
             }
         }
@@ -319,24 +373,39 @@ fn walk(
             node.child_by_field_name("left"),
             node.child_by_field_name("right"),
         ) {
-            if left.kind() == "identifier" {
-                if uncertain || !conditions.is_empty() {
-                    if let Some(target) = bindings.get(text(left, source)) {
-                        analysis
-                            .mutated_targets
-                            .push((target.clone(), node.start_position().row as u32 + 1));
-                    }
-                }
-                if let Some(target) = (node.kind() == "assignment_expression")
+            if left.kind() == "identifier" && !annotation {
+                let replacement = (node.kind() == "assignment_expression")
                     .then(|| require_target(right, source, bindings))
-                    .flatten()
-                {
-                    bindings.insert(text(left, source).into(), target);
-                } else {
-                    bindings.remove(text(left, source));
-                }
+                    .flatten();
+                assign_require_binding(
+                    bindings,
+                    text(left, source),
+                    replacement,
+                    uncertain,
+                    node.start_position().row as u32 + 1,
+                );
             }
             let target = compact(left, source);
+            if !annotation && is_export_target(left, source) {
+                let right_target = compact(right, source);
+                if target == "module.exports" && right_target != "module.exports" {
+                    analysis.exports_may_be_detached = right_target != "exports"
+                        || !is_export_target(right, source)
+                        || uncertain
+                        || !conditions.is_empty();
+                } else if target == "exports" && right_target != "exports" {
+                    analysis.exports_may_be_detached = right_target != "module.exports"
+                        || !is_export_target(right, source)
+                        || uncertain
+                        || !conditions.is_empty();
+                } else if analysis.exports_may_be_detached
+                    && (target.starts_with("exports.") || target.starts_with("exports["))
+                {
+                    analysis
+                        .mutation_lines
+                        .push(node.start_position().row as u32 + 1);
+                }
+            }
             if target == "module.exports" && is_export_target(left, source) {
                 let context = (!conditions.is_empty()).then(|| conditions.join("&"));
                 if !annotation
@@ -406,9 +475,12 @@ fn walk(
                         }
                     }
                 }
-                for (specifier, shadowed) in targets {
+                for (target, shadowed) in targets {
+                    if let Some(line) = target.uncertain_line {
+                        analysis.mutation_lines.push(line);
+                    }
                     analysis.forwards.push(Forward {
-                        specifier,
+                        specifier: target.specifier,
                         condition: (!conditions.is_empty()).then(|| conditions.join("&")),
                         line: node.start_position().row as u32 + 1,
                         uncertain,
