@@ -1043,7 +1043,16 @@ fn diff_functions(
     // New params beyond old.len() are truly added params.
     if new_params.len() > old_params.len() {
         for (i, new_param) in new_params.iter().enumerate().skip(old_params.len()) {
-            if !new_param.optional {
+            let requires_argument = !new_param.optional
+                && (!new_param.rest
+                    || match &new_param.shape {
+                        TypeShape::Array(_) => false,
+                        TypeShape::Tuple(elements) => elements
+                            .iter()
+                            .any(|element| !element.optional && !element.rest),
+                        _ => true,
+                    });
+            if requires_argument {
                 // SIG-01: required param added — Major
                 findings.push(Finding {
                     severity: Severity::Major,

@@ -4,6 +4,9 @@ Tuple element types, optional markers, and rest markers determine assignability.
 Making `[value?: string]` required or replacing `[...values: number[]]` with
 `[values: number[]]` emits Major `type-incompatible`. Function parameters also
 use these markers when checking whether previously accepted arguments remain valid.
+Adding an array rest parameter or a rest tuple with only optional elements is
+Minor `param-added`: existing calls can omit it. A new rest tuple containing a
+required element is Major `param-added`.
 
 Labels describe positions; they do not change the values or their order.
 `tuple-label-reordered` and `tuple-label-dropped` are Patch findings.

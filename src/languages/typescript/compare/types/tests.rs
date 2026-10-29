@@ -1527,3 +1527,27 @@ fn paired_info_at_typeof_import_site() {
         findings
     );
 }
+
+#[test]
+fn added_rest_parameters_preserve_calls_that_omit_them() {
+    for (rest_type, breaking) in [
+        ("number[]", false),
+        ("[count?: number]", false),
+        ("[count: number]", true),
+    ] {
+        let before = type_parser::parse_type_string("(name: string) => void");
+        let after = type_parser::parse_type_string(&format!(
+            "(name: string, ...extra: {rest_type}) => void"
+        ));
+
+        let findings = diff(before, after);
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{rest_type}: {findings:?}"
+        );
+    }
+}
