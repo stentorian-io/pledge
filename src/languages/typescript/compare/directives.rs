@@ -25,6 +25,7 @@ use std::path::Path;
 /// 2. Fuzzy-match by `(name, attrs.keys())` on the unpaired residue:
 ///    same name and same attribute-key set but at least one value
 ///    differing — one `directive-changed` per paired residue.
+///    Reference directives ignore `preserve` when matching their attribute keys.
 /// 3. Unpaired residue after step 2: `directive-added` for those only in
 ///    new, `directive-removed` for those only in old.
 ///
@@ -102,8 +103,10 @@ pub fn compare_directives(
     for (i, o) in old_residual.iter().enumerate() {
         for (j, n) in new_residual.iter().enumerate() {
             if !new_changed[j] && !old_changed[i] && o.name == n.name {
-                let o_keys: Vec<&String> = o.attrs.keys().collect();
-                let n_keys: Vec<&String> = n.attrs.keys().collect();
+                let identity_key =
+                    |key: &&String| o.name != "reference" || key.as_str() != "preserve";
+                let o_keys: Vec<&String> = o.attrs.keys().filter(identity_key).collect();
+                let n_keys: Vec<&String> = n.attrs.keys().filter(identity_key).collect();
                 if o_keys == n_keys {
                     old_changed[i] = true;
                     new_changed[j] = true;

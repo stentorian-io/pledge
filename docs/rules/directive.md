@@ -66,7 +66,8 @@ export declare const x: number;
 ### `directive-changed` — Major
 
 A directive with the same name and the same set of attribute keys has a
-different attribute value.
+different attribute value. Reference directives also match when only the
+presence of the `preserve` attribute differs.
 
 ```typescript
 // old — /// <reference lib="es2015" />

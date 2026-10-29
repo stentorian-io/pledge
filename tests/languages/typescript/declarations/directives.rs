@@ -172,3 +172,44 @@ fn directive_position_ignored() {
             .collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn adding_or_removing_preserve_is_one_directive_change() {
+    for attribute in [
+        "path=\"./ambient.d.ts\"",
+        "types=\"node\"",
+        "lib=\"es2022\"",
+    ] {
+        for (old_preserve, new_preserve) in [("", " preserve=\"true\""), (" preserve=\"true\"", "")]
+        {
+            let old = tempfile::tempdir().unwrap();
+            let new = tempfile::tempdir().unwrap();
+            for (directory, preserve) in [(&old, old_preserve), (&new, new_preserve)] {
+                std::fs::write(
+                    directory.path().join("package.json"),
+                    r#"{"types":"index.d.ts"}"#,
+                )
+                .unwrap();
+                std::fs::write(
+                    directory.path().join("index.d.ts"),
+                    format!(
+                    "/// <reference {attribute}{preserve} />\nexport declare const api: number;\n"
+                ),
+                )
+                .unwrap();
+            }
+            let (before, _) = discover_exports(old.path()).unwrap();
+            let (after, _) = discover_exports(new.path()).unwrap();
+
+            let findings = compare_exports(&before, &after, new.path(), false);
+
+            let directives: Vec<_> = findings
+                .iter()
+                .filter(|finding| finding.rule.starts_with("directive-"))
+                .collect();
+            assert_eq!(directives.len(), 1, "{directives:?}");
+            assert_eq!(directives[0].rule, RULE_DIRECTIVE_CHANGED);
+            assert_eq!(directives[0].severity, Severity::Major);
+        }
+    }
+}
