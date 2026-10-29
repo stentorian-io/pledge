@@ -65,12 +65,20 @@ pub fn compare_ref_changes(
                 if count_required_arity(new_overload) != old_arity {
                     continue; // arity bucket mismatch
                 }
-                // Shape equality: exact match or bidirectional subtype (structural equivalence)
-                let equal_shape = old_overload == new_overload
-                    || (is_subtype_of(old_overload, new_overload, 0)
-                        && is_subtype_of(new_overload, old_overload, 0))
-                    || overload_params_compatible(old_overload, new_overload);
-                if equal_shape {
+                // A replacement must accept every old call and preserve its result.
+                let compatible = old_overload == new_overload
+                    || (is_subtype_of(new_overload, old_overload, 0)
+                        && super::types::diff_types(
+                            old_overload,
+                            new_overload,
+                            name,
+                            file,
+                            line,
+                            col,
+                        )
+                        .iter()
+                        .all(|finding| finding.severity != Severity::Major));
+                if compatible {
                     consumed[i] = true;
                     matched = true;
                     break;
@@ -452,44 +460,6 @@ fn check_rest_param_narrowed(
             });
         }
         _ => {} // no rest in old, or same type — not breaking
-    }
-}
-
-/// Check if two overloads have compatible parameter types.
-///
-/// Returns true if each old required param type has a subtype relationship with the
-/// corresponding new required param type (either direction — we accept any overlap as
-/// "compatible" to avoid false-positive overload-removed findings).
-fn overload_params_compatible(old: &TypeShape, new: &TypeShape) -> bool {
-    match (old.without_type_parameters(), new.without_type_parameters()) {
-        (
-            TypeShape::Function {
-                params: old_params, ..
-            },
-            TypeShape::Function {
-                params: new_params, ..
-            },
-        ) => {
-            // Compare non-rest required params pairwise
-            let old_required: Vec<_> = old_params
-                .iter()
-                .filter(|p| !p.optional && !p.rest)
-                .collect();
-            let new_required: Vec<_> = new_params
-                .iter()
-                .filter(|p| !p.optional && !p.rest)
-                .collect();
-            if old_required.len() != new_required.len() {
-                return false;
-            }
-            old_required.iter().zip(new_required.iter()).all(|(o, n)| {
-                // Exact match or subtype relationship in either direction
-                o.shape == n.shape
-                    || is_subtype_of(&o.shape, &n.shape, 0)
-                    || is_subtype_of(&n.shape, &o.shape, 0)
-            })
-        }
-        _ => false,
     }
 }
 

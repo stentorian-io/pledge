@@ -118,5 +118,29 @@
     "consumer": "const value: string | number = api().value;",
     "breaking": false,
     "extension": "ts"
+  },
+  {
+    "name": "later overload return compatibility",
+    "old": "export declare function api(x: string): string; export declare function api(x: number): number;",
+    "new": "export declare function api(x: string): string; export declare function api(x: number): string;",
+    "consumer": "const n: number = api(1);",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "later overload parameter narrowing",
+    "old": "export declare function api(x: string): string; export declare function api(x: number | boolean): void;",
+    "new": "export declare function api(x: string): string; export declare function api(x: number): void;",
+    "consumer": "api(true);",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "later overload return narrowing remains compatible",
+    "old": "export declare function api(x: string): string; export declare function api(x: number): string | number;",
+    "new": "export declare function api(x: string): string; export declare function api(x: number): string;",
+    "consumer": "const n: string | number = api(1);",
+    "breaking": false,
+    "extension": "ts"
   }
 ]

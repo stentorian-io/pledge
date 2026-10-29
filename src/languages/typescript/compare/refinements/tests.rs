@@ -731,3 +731,48 @@ fn matched_shapes_no_removal() {
         findings
     );
 }
+
+#[test]
+fn later_overloads_preserve_returns_and_parameter_acceptance() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+
+    for (before, after, breaking) in [
+        ("(x: number) => number", "(x: number) => string", true),
+        ("(x: number | boolean) => void", "(x: number) => void", true),
+        (
+            "(x: number) => string | number",
+            "(x: number) => string",
+            false,
+        ),
+        (
+            "(x: number) => void",
+            "(x: number | boolean) => void",
+            false,
+        ),
+    ] {
+        let first = parse_type_string("(x: string) => string");
+        let mut old = make_sym("api", ExportKind::Named, Some(DeclarationKind::Function));
+        old.overloads = vec![first.clone(), parse_type_string(before)];
+        let mut new = old.clone();
+        new.overloads = vec![first, parse_type_string(after)];
+
+        let findings = compare_ref_changes(
+            &old,
+            &new,
+            "api",
+            &PathBuf::from("index.ts"),
+            1,
+            1,
+            &[],
+            &[],
+        );
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{before} -> {after}: {findings:?}"
+        );
+    }
+}

@@ -28,6 +28,11 @@ returned or exported `value: string | number` to `value: string` emits Major
 `field-type-changed`, because assigning `42` no longer compiles. Narrowing a
 readonly property's read type remains compatible.
 
+Every overload must retain compatible inputs and results, including signatures
+after the first declaration. An overload whose accepted inputs narrow or whose
+result becomes incompatible emits Major `overload-removed`. Widening accepted
+inputs or narrowing a readable result remains compatible.
+
 Compiler evaluation loads the package's tsconfig and retains strict nullability
 for public contracts. Packages without a tsconfig receive strict NodeNext
 resolution, including dependencies that publish types only through `exports`.
