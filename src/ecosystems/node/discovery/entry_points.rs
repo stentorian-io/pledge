@@ -1,6 +1,7 @@
+use crate::ecosystems::node::compare::exports::{parse_condition_node, select_condition};
 use crate::languages::javascript::syntax::grammar;
 use anyhow::Context;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Represents a single entry point discovered from package.json.
@@ -286,17 +287,51 @@ pub(crate) fn resolve_exports_value_with_warnings(
             }
         }
         serde_json::Value::Array(items) => {
-            for item in items {
-                if item.is_null() {
-                    break;
+            let alternatives: Vec<_> = items.iter().map(parse_condition_node).collect();
+            let contexts = fallback_condition_contexts(value, condition);
+            if contexts.is_none() {
+                warnings.push("export fallback condition analysis limit reached".to_string());
+            }
+            for (index, item) in items.iter().enumerate() {
+                if !matches!(
+                    item,
+                    serde_json::Value::String(_)
+                        | serde_json::Value::Object(_)
+                        | serde_json::Value::Array(_)
+                ) {
+                    continue;
                 }
                 let candidates = resolve_exports_value_with_warnings(
                     item, base_path, condition, subpath, warnings,
                 );
-                if !candidates.is_empty() {
-                    results.extend(candidates);
-                    break;
-                }
+                results.extend(candidates.into_iter().filter(|entry| {
+                    let Some(contexts) = &contexts else {
+                        return true;
+                    };
+                    let required: BTreeSet<_> = entry
+                        .condition
+                        .as_deref()
+                        .into_iter()
+                        .flat_map(|conditions| conditions.split('/'))
+                        .filter(|condition| *condition != "default")
+                        .map(str::to_string)
+                        .collect();
+                    contexts
+                        .iter()
+                        .filter(|active| required.is_subset(active))
+                        .any(|active| {
+                            let earlier_target = alternatives[..index].iter().any(|alternative| {
+                                select_condition(alternative, active).flatten().is_some()
+                            });
+                            !earlier_target
+                                && select_condition(&alternatives[index], active)
+                                    .flatten()
+                                    .is_some_and(|target| {
+                                        base_path.join(target.trim_start_matches("./"))
+                                            == entry.path
+                                    })
+                        })
+                }));
             }
         }
         // ROB-03: Non-standard scalar exports values — emit warning and return empty.
@@ -322,6 +357,55 @@ pub(crate) fn resolve_exports_value_with_warnings(
         }
     }
     results
+}
+
+/// Enumerate the condition combinations that can select an array alternative.
+/// Bound the exponential work and leave an explicit incomplete result on overflow.
+fn fallback_condition_contexts(
+    value: &serde_json::Value,
+    inherited: Option<&str>,
+) -> Option<Vec<BTreeSet<String>>> {
+    fn collect(value: &serde_json::Value, conditions: &mut BTreeSet<String>) {
+        match value {
+            serde_json::Value::Object(branches) => {
+                for (condition, child) in branches {
+                    if condition != "default" && !condition.starts_with('.') {
+                        conditions.insert(condition.clone());
+                    }
+                    collect(child, conditions);
+                }
+            }
+            serde_json::Value::Array(alternatives) => {
+                for alternative in alternatives {
+                    collect(alternative, conditions);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut conditions = inherited
+        .into_iter()
+        .flat_map(|path| path.split('/'))
+        .filter(|condition| *condition != "default")
+        .map(str::to_string)
+        .collect();
+    collect(value, &mut conditions);
+    if conditions.len() > 7 {
+        return None;
+    }
+    let mut contexts = vec![BTreeSet::new()];
+    for condition in conditions {
+        let additions: Vec<_> = contexts
+            .iter()
+            .filter_map(|active| {
+                let mut active = active.clone();
+                active.insert(condition.clone());
+                (!(active.contains("import") && active.contains("require"))).then_some(active)
+            })
+            .collect();
+        contexts.extend(additions);
+    }
+    Some(contexts)
 }
 
 fn pattern_priority(pattern: &str) -> (usize, usize) {

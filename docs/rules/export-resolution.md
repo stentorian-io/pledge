@@ -19,7 +19,9 @@ The priority pass is bounded; exceeding its branch limit emits
 `analysis-incomplete` and the CLI exits 3.
 Wildcard targets include nested paths, and more specific mappings or `null`
 exclusions override broader patterns. Export arrays select the first valid
-target; a missing target file does not activate a later array element.
+target for each condition set, skipping unmatched conditions and null entries;
+a missing target file does not activate a later array element. Array discovery
+checks up to 128 condition combinations; larger maps produce incomplete analysis.
 
 JavaScript entry points also discover adjacent TypeScript source or declaration
 files using extension substitution, including `.d.mts` and `.d.cts`. Packages

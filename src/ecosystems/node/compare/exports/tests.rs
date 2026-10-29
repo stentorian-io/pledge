@@ -228,13 +228,13 @@ fn test_parse_null_returns_empty() {
 }
 
 #[test]
-fn test_parse_array_takes_first_element() {
+fn export_arrays_select_the_first_matching_target() {
     let v = serde_json::json!(["./index.js", "./fallback.js"]);
     let map = parse_exports_map(&v);
     assert_eq!(map.len(), 1);
     assert_eq!(
-        map.get(".").unwrap().node,
-        ConditionNode::Leaf(Some("./index.js".to_string()))
+        select_condition(&map.get(".").unwrap().node, &BTreeSet::new()),
+        Some(Some("./index.js"))
     );
 }
 

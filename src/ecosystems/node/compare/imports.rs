@@ -83,6 +83,7 @@ fn format_condition_target(node: &ConditionNode) -> String {
         ConditionNode::Leaf(Some(path)) => path.clone(),
         ConditionNode::Leaf(None) => "null".to_string(),
         ConditionNode::Branch(_) => "[conditions object]".to_string(),
+        ConditionNode::Fallback(_) => "[fallback array]".to_string(),
     }
 }
 
@@ -96,6 +97,9 @@ fn diff_import_condition_nodes(
     new: &ConditionNode,
     findings: &mut Vec<Finding>,
 ) {
+    if old == new {
+        return;
+    }
     match (old, new) {
         (ConditionNode::Leaf(old_target), ConditionNode::Leaf(new_target)) => {
             if old_target != new_target {

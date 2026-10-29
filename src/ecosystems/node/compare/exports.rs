@@ -77,6 +77,7 @@ pub(crate) fn types_format_from_extension(path: &str) -> Option<ModuleFormat> {
 pub enum ConditionNode {
     Leaf(Option<String>),
     Branch(indexmap::IndexMap<String, ConditionNode>),
+    Fallback(Vec<ConditionNode>),
 }
 
 // None means no matching branch; Some(None) is an explicit null blocker.
@@ -86,6 +87,11 @@ pub(crate) fn select_condition<'a>(
 ) -> Option<Option<&'a str>> {
     match node {
         ConditionNode::Leaf(target) => Some(target.as_deref()),
+        ConditionNode::Fallback(alternatives) => Some(
+            alternatives
+                .iter()
+                .find_map(|alternative| select_condition(alternative, active).flatten()),
+        ),
         ConditionNode::Branch(branches) => branches
             .iter()
             .filter(|(key, _)| key.as_str() == "default" || active.contains(*key))
@@ -122,10 +128,7 @@ pub(crate) fn parse_condition_node(value: &serde_json::Value) -> ConditionNode {
             ConditionNode::Branch(map)
         }
         serde_json::Value::Array(arr) => {
-            // Take first element per Node.js spec fallback semantics
-            arr.first()
-                .map(parse_condition_node)
-                .unwrap_or(ConditionNode::Leaf(None))
+            ConditionNode::Fallback(arr.iter().map(parse_condition_node).collect())
         }
         // Boolean, Number — treat as null (no valid path)
         _ => ConditionNode::Leaf(None),
@@ -181,7 +184,7 @@ fn parse_exports_object(obj: &serde_json::Map<String, serde_json::Value>) -> Exp
 /// Handles all 7 valid exports field shapes from the Node.js spec:
 /// - Bare string: `"./index.js"` → `{ ".": Leaf(Some("./index.js")) }`
 /// - Null: `null` → empty map
-/// - Array: `["./index.js"]` → parse first element
+/// - Array: preserve ordered fallback targets under the root subpath
 /// - Subpath object: `{ ".": "./index.js", "./utils": "./utils.js" }` → subpath map
 /// - Conditions-only object: `{ "import": "./index.mjs", "require": "./index.cjs" }` → `{ ".": Branch(...) }`
 /// - Nested conditions: fully recursive
@@ -198,10 +201,12 @@ pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
             map
         }
         serde_json::Value::Null => BTreeMap::new(),
-        serde_json::Value::Array(arr) => {
-            // Take first element per Node.js spec fallback semantics
-            arr.first().map(parse_exports_map).unwrap_or_default()
-        }
+        serde_json::Value::Array(_) => BTreeMap::from([(
+            ".".to_string(),
+            SubpathEntry {
+                node: parse_condition_node(value),
+            },
+        )]),
         serde_json::Value::Object(obj) => parse_exports_object(obj),
         // Boolean, Number — treat as empty (no valid exports)
         _ => BTreeMap::new(),
@@ -232,6 +237,7 @@ fn format_condition_target(node: &ConditionNode) -> String {
         ConditionNode::Leaf(Some(path)) => path.clone(),
         ConditionNode::Leaf(None) => "null".to_string(),
         ConditionNode::Branch(_) => "[conditions object]".to_string(),
+        ConditionNode::Fallback(_) => "[fallback array]".to_string(),
     }
 }
 
@@ -247,6 +253,9 @@ fn diff_condition_nodes(
     new: &ConditionNode,
     findings: &mut Vec<Finding>,
 ) {
+    if old == new {
+        return;
+    }
     match (old, new) {
         (ConditionNode::Leaf(old_target), ConditionNode::Leaf(new_target)) => {
             if old_target != new_target {

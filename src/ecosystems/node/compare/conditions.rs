@@ -98,6 +98,7 @@ fn selection_changed(old: &ConditionNode, new: &ConditionNode) -> bool {
                         .is_some_and(|next| selection_changed(child, next))
                 })
         }
+        (ConditionNode::Fallback(_), _) | (_, ConditionNode::Fallback(_)) => old != new,
         _ => false,
     }
 }
@@ -109,6 +110,11 @@ fn leaf_conditions(
 ) {
     match node {
         ConditionNode::Leaf(_) => paths.push(active.clone()),
+        ConditionNode::Fallback(alternatives) => {
+            for alternative in alternatives {
+                leaf_conditions(alternative, active, paths);
+            }
+        }
         ConditionNode::Branch(branches) => {
             for (condition, child) in branches {
                 let mut active = active.clone();
