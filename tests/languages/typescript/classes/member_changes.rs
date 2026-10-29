@@ -92,6 +92,56 @@ fn constructor_param_added() {
 }
 
 #[test]
+fn default_and_rest_constructor_parameters_can_be_omitted() {
+    for (old_params, new_params) in [
+        ("", "a = 1"),
+        ("", "...args: string[]"),
+        ("a?: number", "a = 1"),
+        ("", "...args: [name?: string, ...flags: boolean[]]"),
+        ("", "...args: [string?, ...boolean[]]"),
+    ] {
+        let old = extract_class(
+            format!("export class Foo {{ constructor({old_params}) {{}} }}").as_bytes(),
+            "Foo",
+        );
+        let new = extract_class(
+            format!("export class Foo {{ constructor({new_params}) {{}} }}").as_bytes(),
+            "Foo",
+        );
+        let findings = class_diff::compare_class_shapes(&old, &new, "Foo", &test_file(), 1, 1);
+        assert!(
+            findings.is_empty(),
+            "{old_params} -> {new_params}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn required_constructor_arguments_still_report_breaking_changes() {
+    for (old_params, new_params) in [
+        ("a = 1", "a: number"),
+        ("", "...args: [name: string]"),
+        ("a = 1", "a = 1, b: string"),
+    ] {
+        let old = extract_class(
+            format!("export class Foo {{ constructor({old_params}) {{}} }}").as_bytes(),
+            "Foo",
+        );
+        let new = extract_class(
+            format!("export class Foo {{ constructor({new_params}) {{}} }}").as_bytes(),
+            "Foo",
+        );
+        let findings = class_diff::compare_class_shapes(&old, &new, "Foo", &test_file(), 1, 1);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "class-constructor-param-added"),
+            "{old_params} -> {new_params}: {findings:?}"
+        );
+    }
+}
+
+#[test]
 fn method_visibility_changed() {
     let old = b"export class Foo { public greet(): void {} }";
     let new = b"export class Foo { protected greet(): void {} }";

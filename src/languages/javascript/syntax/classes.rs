@@ -27,26 +27,14 @@ pub(crate) fn extract_visibility(node: tree_sitter::Node, source: &[u8]) -> Visi
     Visibility::Public // No modifier = public (TypeScript default)
 }
 
-/// Count required (non-optional) parameters on a method or constructor node.
-///
-/// Finds the `formal_parameters` child and counts children with kind
-/// `required_parameter` (not `optional_parameter`).
+/// Minimum argument count implied by the declared parameter positions.
+/// Defaults and array rests may be omitted, but a required argument following
+/// a default still requires callers to supply that earlier position.
 pub(crate) fn count_required_params(method_node: tree_sitter::Node) -> usize {
-    for i in 0..method_node.child_count() as u32 {
-        if let Some(params_node) = method_node.child(i) {
-            if params_node.kind() == "formal_parameters" {
-                let mut count = 0;
-                let mut cursor = params_node.walk();
-                for child in params_node.children(&mut cursor) {
-                    if child.kind() == "required_parameter" {
-                        count += 1;
-                    }
-                }
-                return count;
-            }
-        }
-    }
-    0
+    function_syntax::extract_param_optionality(method_node)
+        .iter()
+        .rposition(|optional| !optional)
+        .map_or(0, |last_required| last_required + 1)
 }
 
 /// Extract all class members (methods, constructors, properties, abstract methods)

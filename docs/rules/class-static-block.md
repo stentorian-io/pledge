@@ -24,7 +24,10 @@ The class's resolved contract includes its instance members, static members,
 and constructor signatures. Changes to static property types, static method
 parameters, inherited static members, and constructor parameter types are
 compared structurally. Adding a static property or optional constructor parameter,
-or widening a static method's accepted input, stays compatible.
+or widening a static method's accepted input, stays compatible. Defaulted
+constructor parameters and array rest parameters may be omitted. Removing a
+default or adding a required tuple rest argument can break existing calls;
+compiler evidence resolves tuple aliases and their complete argument contracts.
 
 ## Incomplete initialization evidence
 

@@ -13,7 +13,7 @@ pub fn extract_param_optionality(fn_or_method_node: tree_sitter::Node) -> Vec<bo
                 let mut cursor = params_node.walk();
                 for child in params_node.children(&mut cursor) {
                     match child.kind() {
-                        "required_parameter" => result.push(false),
+                        "required_parameter" => result.push(parameter_can_be_omitted(child)),
                         "optional_parameter" => result.push(true),
                         _ => {} // skip commas, parens, etc.
                     }
@@ -23,6 +23,36 @@ pub fn extract_param_optionality(fn_or_method_node: tree_sitter::Node) -> Vec<bo
         }
     }
     Vec::new()
+}
+
+fn parameter_can_be_omitted(parameter: tree_sitter::Node) -> bool {
+    parameter.kind() == "optional_parameter"
+        || parameter.child_by_field_name("value").is_some()
+        || is_rest_param(parameter) && rest_type_allows_empty(parameter.child_by_field_name("type"))
+}
+
+fn rest_type_allows_empty(annotation: Option<tree_sitter::Node>) -> bool {
+    let Some(annotation) = annotation else {
+        return true;
+    };
+    let shape = if annotation.kind() == "type_annotation" {
+        annotation.named_child(0).unwrap_or(annotation)
+    } else {
+        annotation
+    };
+    if shape.kind() != "tuple_type" {
+        // Array rests accept no arguments. Tuple aliases and generic rests need
+        // compiler resolution before their required arity can be established.
+        return true;
+    }
+    shape
+        .named_children(&mut shape.walk())
+        .all(|element| match element.kind() {
+            "optional_type" | "optional_parameter" => true,
+            "required_parameter" => parameter_can_be_omitted(element),
+            "rest_type" => rest_type_allows_empty(element.named_child(0)),
+            _ => false,
+        })
 }
 
 /// Check if a function_declaration node has the `async` modifier.
