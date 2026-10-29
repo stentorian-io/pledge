@@ -16,6 +16,8 @@ Removing a class getter while retaining its setter produces Major
 runtime value, even when TypeScript assigns it an apparent read type. Getter,
 setter, and ordinary property transitions on classes also retain the existing
 class member-kind rules because subclasses can depend on the declaration kind.
+Reordering a getter and its setter preserves both contracts and is compatible;
+each accessor also retains its own decorators during comparison.
 
 Protected member types belong to the subclass contract. Private implementation
 members are excluded from public removal and decorator findings; visibility

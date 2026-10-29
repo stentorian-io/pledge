@@ -55,6 +55,22 @@ fn member_kind_label(kind: &ClassMemberKind) -> &'static str {
     }
 }
 
+fn corresponding_member<'a>(
+    members: &'a [ClassMember],
+    counterpart: &ClassMember,
+) -> Option<&'a ClassMember> {
+    let mut same_slot = members.iter().filter(|member| {
+        !member.is_private
+            && member.name == counterpart.name
+            && member.is_static == counterpart.is_static
+    });
+    // Getters and setters share a property slot but keep separate contracts.
+    same_slot
+        .clone()
+        .find(|member| member.kind == counterpart.kind)
+        .or_else(|| same_slot.next())
+}
+
 /// CLS-10: Diff two decorator lists between old and new.
 ///
 /// Algorithm:
@@ -502,9 +518,9 @@ pub fn compare_class_shapes(
     }
 
     // For members present in both old and new:
-    for (key, old_member) in &old_members {
-        let name = key.0;
-        if let Some(new_member) = new_members.get(key) {
+    for old_member in old.members.iter().filter(|member| !member.is_private) {
+        let name = old_member.name.as_str();
+        if let Some(new_member) = corresponding_member(&new.members, old_member) {
             if old_member.visibility == Visibility::Private
                 && new_member.visibility == Visibility::Private
             {
@@ -699,18 +715,12 @@ pub fn compare_class_shapes(
     // members on BOTH sides — decorator churn on `@log #count` is not
     // consumer-observable and must not leak into public-surface findings.
     {
-        let old_by_name: std::collections::HashMap<(&str, bool), &ClassMember> = old
-            .members
-            .iter()
-            .filter(|m| !m.is_private && m.visibility != Visibility::Private)
-            .map(|m| ((m.name.as_str(), m.is_static), m))
-            .collect();
         for new_member in &new.members {
             if new_member.is_private || new_member.visibility == Visibility::Private {
                 continue;
             }
-            if let Some(old_member) =
-                old_by_name.get(&(new_member.name.as_str(), new_member.is_static))
+            if let Some(old_member) = corresponding_member(&old.members, new_member)
+                .filter(|member| member.visibility != Visibility::Private)
             {
                 let owner = format!(
                     "{} `{}.{}`",

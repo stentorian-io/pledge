@@ -141,3 +141,23 @@ fn static_decorator_changes_are_not_hidden_by_instance_namesakes() {
         "{findings:?}"
     );
 }
+
+#[test]
+fn accessor_pairs_retain_their_identity_when_reordered() {
+    for modifier in ["", "static "] {
+        for decorator in ["", "@trace "] {
+            let getter = format!("{decorator}{modifier}get value(): number {{ return 1; }}");
+            let setter = format!("{modifier}set value(next: number) {{}}");
+            let old = package(&format!("export class Api {{ {getter} {setter} }}"), "ts");
+            let new = package(&format!("export class Api {{ {setter} {getter} }}"), "ts");
+            let (before, warnings) = discover_exports(old.path()).unwrap();
+            assert!(warnings.is_empty(), "{warnings:?}");
+            let (after, warnings) = discover_exports(new.path()).unwrap();
+            assert!(warnings.is_empty(), "{warnings:?}");
+
+            let findings = compare_structural_diff(old.path(), new.path(), &before, &after);
+
+            assert!(findings.is_empty(), "{modifier}{decorator}: {findings:?}");
+        }
+    }
+}
