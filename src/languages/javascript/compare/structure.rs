@@ -20,6 +20,26 @@ use crate::languages::typescript::types::{parser as type_parser, shape as type_s
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+fn has_constructor_contract(shape: &type_shapes::TypeShape) -> bool {
+    use type_shapes::TypeShape;
+    match shape {
+        TypeShape::Generic { name, args } if name == "<constructor>" => {
+            args.iter().any(|signature| {
+                matches!(
+                    signature,
+                    TypeShape::Function { .. } | TypeShape::GenericDeclaration { .. }
+                )
+            })
+        }
+        TypeShape::Generic { name, args } if name == "<class-static>" => {
+            args.iter().any(has_constructor_contract)
+        }
+        TypeShape::Intersection(parts) => parts.iter().any(has_constructor_contract),
+        TypeShape::GenericDeclaration { body, .. } => has_constructor_contract(body),
+        _ => false,
+    }
+}
+
 /// Owned extraction result for a single declaration node.
 ///
 /// Created by `extract_declaration` which parses the file and immediately extracts
@@ -764,6 +784,26 @@ pub fn compare_structural_diff(
             if let (Some(old_shape), Some(new_shape)) =
                 (&old_decl.class_shape, &new_decl.class_shape)
             {
+                let has_explicit_constructor = |shape: &ClassShape| {
+                    shape.members.iter().any(|member| {
+                        member.kind == js_model::ClassMemberKind::Constructor && !member.is_static
+                    })
+                };
+                if new_shape.extends_text.is_some()
+                    && has_explicit_constructor(old_shape)
+                    && !has_explicit_constructor(new_shape)
+                    && !(old_sym.overloads.iter().any(has_constructor_contract)
+                        && new_sym.overloads.iter().any(has_constructor_contract))
+                {
+                    findings.push(Finding {
+                        severity: Severity::Warning,
+                        rule: "analysis-incomplete",
+                        file: new_sym.file.clone(),
+                        line: new_sym.line,
+                        col: new_sym.col,
+                        message: format!("class `{name}` now uses its inherited constructor; compiler evidence is required to compare its arguments"),
+                    });
+                }
                 findings.extend(class_diff::compare_class_shapes(
                     old_shape,
                     new_shape,

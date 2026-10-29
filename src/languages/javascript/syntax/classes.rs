@@ -139,16 +139,6 @@ pub fn parse_class_members(
                     }
                 }
 
-                let kind = if name == "constructor" {
-                    ClassMemberKind::Constructor
-                } else if is_getter {
-                    ClassMemberKind::Getter
-                } else if is_setter {
-                    ClassMemberKind::Setter
-                } else {
-                    ClassMemberKind::Method
-                };
-
                 let visibility = extract_visibility(child, source);
 
                 // Check for static, readonly, abstract, accessor keyword children
@@ -167,6 +157,16 @@ pub fn parse_class_members(
                         }
                     }
                 }
+
+                let kind = if name == "constructor" && !is_static {
+                    ClassMemberKind::Constructor
+                } else if is_getter {
+                    ClassMemberKind::Getter
+                } else if is_setter {
+                    ClassMemberKind::Setter
+                } else {
+                    ClassMemberKind::Method
+                };
 
                 let param_count = count_required_params(child);
 
@@ -390,9 +390,14 @@ pub fn parse_class_members(
                         }
                     }
                 }
+                let kind = if name == "constructor" && !is_static {
+                    ClassMemberKind::Constructor
+                } else {
+                    ClassMemberKind::Method
+                };
                 members.push(ClassMember {
                     name,
-                    kind: ClassMemberKind::Method,
+                    kind,
                     visibility,
                     is_static,
                     is_abstract: false,
@@ -661,12 +666,15 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
             let mut optionality = Vec::new();
             let mut cursor = body.walk();
             for child in body.children(&mut cursor) {
-                if child.kind() == "method_definition" {
+                if matches!(child.kind(), "method_definition" | "method_signature") {
                     let is_ctor = child
                         .child_by_field_name("name")
                         .and_then(|n| n.utf8_text(source).ok())
                         == Some("constructor");
-                    if is_ctor {
+                    let is_static = child
+                        .children(&mut child.walk())
+                        .any(|modifier| modifier.kind() == "static");
+                    if is_ctor && !is_static {
                         optionality = function_syntax::extract_param_optionality(child);
                         break;
                     }

@@ -406,7 +406,7 @@ pub fn compare_class_shapes(
         }
     }
 
-    // CLS-03: Method or constructor removed (also covers getters and setters)
+    // CLS-03: Method removed (also covers getters and setters)
     // Breaking: call sites that invoke the method/getter/setter will fail to compile.
     for (key, old_member) in &old_members {
         let name = key.0;
@@ -426,7 +426,8 @@ pub fn compare_class_shapes(
         if transitioned_keys.contains(&(bare.to_string(), old_member.is_static)) {
             continue;
         }
-        // CLS-03: Method/Constructor/Getter/Setter removal.
+        // An omitted constructor is implicit, so it is never a removed method.
+        // Inherited constructor contracts require compiler evidence.
         // CLS-12: additionally fires for static Property removal —
         // synthesized static-block members (ClassMemberKind::Property with
         // is_static = true) and top-level `static bar = 1;` declarations
@@ -435,10 +436,7 @@ pub fn compare_class_shapes(
         // other rules (CLS-07, etc.).
         let is_removable_kind = matches!(
             old_member.kind,
-            ClassMemberKind::Method
-                | ClassMemberKind::Constructor
-                | ClassMemberKind::Getter
-                | ClassMemberKind::Setter
+            ClassMemberKind::Method | ClassMemberKind::Getter | ClassMemberKind::Setter
         ) || (matches!(old_member.kind, ClassMemberKind::Property)
             && old_member.is_static);
         if is_removable_kind && !new_members.contains_key(key) {

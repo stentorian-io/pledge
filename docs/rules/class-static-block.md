@@ -29,6 +29,13 @@ constructor parameters and array rest parameters may be omitted. Removing a
 default or adding a required tuple rest argument can break existing calls;
 compiler evidence resolves tuple aliases and their complete argument contracts.
 
+Removing an explicit constructor leaves an implicit constructor, so this is not
+`class-method-removed`. A base class's implicit constructor accepts no arguments;
+a derived class forwards to its base constructor. Source-only comparisons report
+`analysis-incomplete` when a derived class switches to an implicit constructor.
+Compiler evidence compares the inherited signatures and detects newly required
+arguments. A static method named `constructor` remains an ordinary method.
+
 ## Incomplete initialization evidence
 
 An unresolved computed key or runtime condition controlling a static assignment
