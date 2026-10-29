@@ -12,7 +12,7 @@ are ambiguous and do not create a public named export. Namespace re-exports
 retain their namespace prefix, including its `default` member.
 
 Conditional objects retain JSON order. A `default` branch hides later siblings.
-`condition-priority-changed` is Major when reordered conditions select an
+`condition-priority-changed` is Major when added or reordered conditions select an
 incompatible API, and Minor when the selected API remains compatible.
 Reordering mutually exclusive `import` and `require` branches is compatible.
 The priority pass is bounded; exceeding its branch limit emits

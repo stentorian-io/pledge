@@ -91,3 +91,42 @@ fn private_import_conditions_follow_public_resolution_context() {
         .keys()
         .any(|k| k.condition.as_deref() == Some("require") && k.name == "imported"));
 }
+
+#[test]
+fn added_conditions_compare_the_api_previously_selected_by_default() {
+    for (target, breaking) in [("export {};", true), ("export const api = 1;", false)] {
+        let old = package(
+            r#"{"exports":{"default":"./a.ts"}}"#,
+            "export const api = 1;",
+            target,
+        );
+        let new = package(
+            r#"{"exports":{"node":"./b.ts","default":"./a.ts"}}"#,
+            "export const api = 1;",
+            target,
+        );
+
+        let findings = compare_exports_map_diff(old.path(), new.path());
+
+        assert_eq!(has_breaking_changes(&findings), breaking, "{findings:?}");
+        assert!(findings
+            .iter()
+            .any(|f| f.rule == "condition-priority-changed"));
+    }
+}
+
+#[test]
+fn conditions_added_after_default_do_not_change_the_selected_api() {
+    let old = package(
+        r#"{"exports":{"default":"./a.ts"}}"#,
+        "export const api = 1;",
+        "export {};",
+    );
+    let new = package(
+        r#"{"exports":{"default":"./a.ts","node":"./b.ts"}}"#,
+        "export const api = 1;",
+        "export {};",
+    );
+
+    assert!(compare_exports_map_diff(old.path(), new.path()).is_empty());
+}

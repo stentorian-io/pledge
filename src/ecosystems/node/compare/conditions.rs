@@ -24,7 +24,7 @@ pub(super) fn compare_priority(
         let Some(new_entry) = new.get(subpath) else {
             continue;
         };
-        if !order_changed(&old_entry.node, &new_entry.node) {
+        if !selection_changed(&old_entry.node, &new_entry.node) {
             continue;
         }
         let mut paths = Vec::new();
@@ -86,15 +86,17 @@ pub(super) fn compare_priority(
     findings
 }
 
-fn order_changed(old: &ConditionNode, new: &ConditionNode) -> bool {
+fn selection_changed(old: &ConditionNode, new: &ConditionNode) -> bool {
     match (old, new) {
         (ConditionNode::Branch(old), ConditionNode::Branch(new)) => {
-            let before: Vec<_> = old.keys().filter(|k| new.contains_key(*k)).collect();
-            let after: Vec<_> = new.keys().filter(|k| old.contains_key(*k)).collect();
-            before != after
-                || old
-                    .iter()
-                    .any(|(key, child)| new.get(key).is_some_and(|next| order_changed(child, next)))
+            let before: Vec<_> = old.keys().filter(|key| new.contains_key(*key)).collect();
+            let after: Vec<_> = new.keys().filter(|key| old.contains_key(*key)).collect();
+            new.keys().any(|key| !old.contains_key(key))
+                || before != after
+                || old.iter().any(|(key, child)| {
+                    new.get(key)
+                        .is_some_and(|next| selection_changed(child, next))
+                })
         }
         _ => false,
     }
