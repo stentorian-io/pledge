@@ -94,5 +94,29 @@
     "consumer": "api(\"x\",\"y\");",
     "breaking": false,
     "extension": "ts"
+  },
+  {
+    "name": "exported writable property narrowing",
+    "old": "export declare const api: {value: string | number};",
+    "new": "export declare const api: {value: string};",
+    "consumer": "api.value = 42;",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "nested returned writable property narrowing",
+    "old": "export declare function api(): {nested: {value: string | number}};",
+    "new": "export declare function api(): {nested: {value: string}};",
+    "consumer": "api().nested.value = 42;",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "readonly returned property narrowing",
+    "old": "export declare function api(): {readonly value: string | number};",
+    "new": "export declare function api(): {readonly value: string};",
+    "consumer": "const value: string | number = api().value;",
+    "breaking": false,
+    "extension": "ts"
   }
 ]

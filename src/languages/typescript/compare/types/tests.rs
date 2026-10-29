@@ -1551,3 +1551,33 @@ fn added_rest_parameters_preserve_calls_that_omit_them() {
         );
     }
 }
+
+#[test]
+fn returned_writable_properties_preserve_accepted_assignments() {
+    for (before, after, breaking) in [
+        ("{ value: string | number }", "{ value: string }", true),
+        (
+            "{ readonly value: string | number }",
+            "{ readonly value: string }",
+            false,
+        ),
+        (
+            "{ nested: { value: string | number } }",
+            "{ nested: { value: string } }",
+            true,
+        ),
+    ] {
+        let before = type_parser::parse_type_string(before);
+        let after = type_parser::parse_type_string(after);
+
+        let findings = diff_values(&before, &after, "api", &dummy_file(), 1, 1);
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{before:?} -> {after:?}: {findings:?}"
+        );
+    }
+}

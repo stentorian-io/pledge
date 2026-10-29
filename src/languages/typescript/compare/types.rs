@@ -986,15 +986,25 @@ fn diff_functions(
 ) {
     // TypeScript permits assigning a readonly object to a mutable object type,
     // but callers writing directly through a returned property still break.
-    let mut readonly_paths = Vec::new();
-    returned_readonly_additions(old_ret, new_ret, field_path, depth, &mut readonly_paths);
-    findings.extend(readonly_paths.into_iter().map(|path| Finding {
+    let mut property_restrictions = Vec::new();
+    returned_property_restrictions(
+        old_ret,
+        new_ret,
+        field_path,
+        depth,
+        &mut property_restrictions,
+    );
+    findings.extend(property_restrictions.into_iter().map(|(path, rule)| Finding {
         severity: Severity::Major,
-        rule: RULE_TYPE_ALIAS_READONLY_CHANGED,
+        rule,
         file: file.to_path_buf(),
         line,
         col,
-        message: format!("returned field `{path}` of `{symbol_name}` became readonly"),
+        message: if rule == RULE_TYPE_ALIAS_READONLY_CHANGED {
+            format!("returned field `{path}` of `{symbol_name}` became readonly")
+        } else {
+            format!("returned field `{path}` of `{symbol_name}` no longer accepts every previous assignment")
+        },
     }));
 
     // SIG-05: Param reorder detection (check FIRST).
@@ -1210,12 +1220,12 @@ fn diff_functions(
     }
 }
 
-fn returned_readonly_additions(
+fn returned_property_restrictions(
     old: &TypeShape,
     new: &TypeShape,
     path: &str,
     depth: usize,
-    paths: &mut Vec<String>,
+    paths: &mut Vec<(String, &'static str)>,
 ) {
     if depth >= MAX_DEPTH || old == new {
         return;
@@ -1228,9 +1238,16 @@ fn returned_readonly_additions(
                 };
                 let child = make_path(path, name);
                 if !old_field.readonly && new_field.readonly {
-                    paths.push(child.clone());
+                    paths.push((child.clone(), RULE_TYPE_ALIAS_READONLY_CHANGED));
+                } else if !old_field.readonly
+                    && old_field.write_type.is_none()
+                    && new_field.write_type.is_none()
+                    && is_subtype_of(&new_field.shape, &old_field.shape, depth + 1)
+                    && !is_subtype_of(&old_field.shape, &new_field.shape, depth + 1)
+                {
+                    paths.push((child.clone(), RULE_FIELD_TYPE_CHANGED));
                 }
-                returned_readonly_additions(
+                returned_property_restrictions(
                     &old_field.shape,
                     &new_field.shape,
                     &child,
@@ -1240,11 +1257,11 @@ fn returned_readonly_additions(
             }
         }
         (TypeShape::Array(before), TypeShape::Array(after)) => {
-            returned_readonly_additions(before, after, path, depth + 1, paths);
+            returned_property_restrictions(before, after, path, depth + 1, paths);
         }
         (TypeShape::Tuple(before), TypeShape::Tuple(after)) => {
             for (before, after) in before.iter().zip(after) {
-                returned_readonly_additions(&before.shape, &after.shape, path, depth + 1, paths);
+                returned_property_restrictions(&before.shape, &after.shape, path, depth + 1, paths);
             }
         }
         (
@@ -1256,7 +1273,7 @@ fn returned_readonly_additions(
                 return_type: after, ..
             },
         ) => {
-            returned_readonly_additions(before, after, path, depth + 1, paths);
+            returned_property_restrictions(before, after, path, depth + 1, paths);
         }
         (
             TypeShape::Generic {
@@ -1269,13 +1286,13 @@ fn returned_readonly_additions(
             },
         ) if before_name == after_name => {
             for (before, after) in before.iter().zip(after) {
-                returned_readonly_additions(before, after, path, depth + 1, paths);
+                returned_property_restrictions(before, after, path, depth + 1, paths);
             }
         }
         (TypeShape::Union(before), TypeShape::Union(after))
         | (TypeShape::Intersection(before), TypeShape::Intersection(after)) => {
             for (before, after) in before.iter().zip(after) {
-                returned_readonly_additions(before, after, path, depth + 1, paths);
+                returned_property_restrictions(before, after, path, depth + 1, paths);
             }
         }
         _ => {}

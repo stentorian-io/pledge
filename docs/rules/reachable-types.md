@@ -23,6 +23,10 @@ contract, including concrete mapped and conditional types, key remapping,
 utility types, inherited fields, and JSDoc typedefs. Equivalent evaluated shapes
 remain compatible even when their alias expressions change. Making a returned
 property readonly is breaking, including properties inside nested objects.
+Writable properties also retain their accepted assignment types: changing a
+returned or exported `value: string | number` to `value: string` emits Major
+`field-type-changed`, because assigning `42` no longer compiles. Narrowing a
+readonly property's read type remains compatible.
 
 Compiler evaluation loads the package's tsconfig and retains strict nullability
 for public contracts. Packages without a tsconfig receive strict NodeNext
