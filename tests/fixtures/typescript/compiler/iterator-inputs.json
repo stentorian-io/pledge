@@ -1,0 +1,64 @@
+[
+  {
+    "name": "generator-next-input-narrowed",
+    "old": "export declare function api(): Generator<number, void, string | number>;",
+    "new": "export declare function api(): Generator<number, void, string>;",
+    "consumer": "api().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "asyncgenerator-next-input-narrowed",
+    "old": "export declare function api(): AsyncGenerator<number, void, string | number>;",
+    "new": "export declare function api(): AsyncGenerator<number, void, string>;",
+    "consumer": "api().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "iterator-next-input-narrowed",
+    "old": "export declare function api(): Iterator<number, void, string | number>;",
+    "new": "export declare function api(): Iterator<number, void, string>;",
+    "consumer": "api().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "asynciterator-next-input-narrowed",
+    "old": "export declare function api(): AsyncIterator<number, void, string | number>;",
+    "new": "export declare function api(): AsyncIterator<number, void, string>;",
+    "consumer": "api().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "iterable-next-input-narrowed",
+    "old": "export declare function api(): Iterable<number, void, string | number>;",
+    "new": "export declare function api(): Iterable<number, void, string>;",
+    "consumer": "api()[Symbol.iterator]().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "asynciterable-next-input-narrowed",
+    "old": "export declare function api(): AsyncIterable<number, void, string | number>;",
+    "new": "export declare function api(): AsyncIterable<number, void, string>;",
+    "consumer": "api()[Symbol.asyncIterator]().next(42);",
+    "breaking": true,
+    "extension": "ts",
+    "required_rule": "return-type-widened"
+  },
+  {
+    "name": "generator-next-input-widened",
+    "old": "export declare function api(): Generator<number, void, string>;",
+    "new": "export declare function api(): Generator<number, void, string | number>;",
+    "consumer": "api().next(\"x\");",
+    "breaking": false,
+    "extension": "ts"
+  }
+]

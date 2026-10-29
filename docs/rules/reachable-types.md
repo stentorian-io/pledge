@@ -6,6 +6,10 @@ generic arguments, merged interfaces, and inherited public members. Existing
 parameter, return, and field compatibility rules compare the expanded shapes.
 Renaming a private alias with an unchanged shape is compatible.
 
+Iterator and generator contracts include the values accepted by `.next()`.
+Narrowing those inputs on a returned iterator is breaking; widening them is
+compatible. Yielded and returned values retain output compatibility.
+
 Declaration identity is scoped to its source file. Generic parameters shadow
 local declarations. Recursive references retain a recursion marker; depth and
 work limits produce incomplete analysis warnings. Expansion is limited to 32

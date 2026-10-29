@@ -27,6 +27,7 @@ consumer_contracts!(accessors, "accessors");
 consumer_contracts!(classes, "classes");
 consumer_contracts!(generics, "generics");
 consumer_contracts!(inference, "inference");
+consumer_contracts!(iterator_inputs, "iterator-inputs");
 consumer_contracts!(javascript_interop, "javascript-interop");
 consumer_contracts!(public_types, "public-types");
 consumer_contracts!(readonly, "readonly");

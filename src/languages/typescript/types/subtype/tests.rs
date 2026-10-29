@@ -769,3 +769,32 @@ fn package_import_rule_identifiers() {
     );
     assert_eq!(package_rules::RULE_IMPORT_REROUTE, "import-reroute");
 }
+
+#[test]
+fn iterator_next_inputs_are_contravariant_while_outputs_are_covariant() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for name in [
+        "Generator",
+        "AsyncGenerator",
+        "Iterator",
+        "AsyncIterator",
+        "Iterable",
+        "AsyncIterable",
+        "IterableIterator",
+        "AsyncIterableIterator",
+    ] {
+        let accepts_both = parse_type_string(&format!("{name}<number, void, string | number>"));
+        let accepts_string = parse_type_string(&format!("{name}<number, void, string>"));
+        assert!(
+            sub(&accepts_both, &accepts_string),
+            "{name} must preserve broader next inputs"
+        );
+        assert!(
+            !sub(&accepts_string, &accepts_both),
+            "{name} must reject narrower next inputs"
+        );
+        let yields_both = parse_type_string(&format!("{name}<number | string, void, string>"));
+        assert!(sub(&accepts_string, &yields_both));
+        assert!(!sub(&yields_both, &accepts_string));
+    }
+}

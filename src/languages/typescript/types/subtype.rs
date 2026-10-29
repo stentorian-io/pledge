@@ -248,7 +248,7 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
             is_subtype_of(sub_ret, sup_ret, depth + 1)
         }
 
-        // Generic: treat type arguments as invariant (conservative)
+        // Library iterator types accept next inputs and produce yield/return outputs.
         (
             Generic {
                 name: sub_name,
@@ -261,10 +261,27 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         ) => {
             sub_name == sup_name
                 && sub_args.len() == sup_args.len()
-                && sub_args
-                    .iter()
-                    .zip(sup_args.iter())
-                    .all(|(s, p)| is_subtype_of(s, p, depth + 1))
+                && sub_args.iter().zip(sup_args.iter()).enumerate().all(
+                    |(index, (sub_argument, sup_argument))| {
+                        let next_input = index == 2
+                            && matches!(
+                                sub_name.as_str(),
+                                "Generator"
+                                    | "AsyncGenerator"
+                                    | "Iterator"
+                                    | "AsyncIterator"
+                                    | "Iterable"
+                                    | "AsyncIterable"
+                                    | "IterableIterator"
+                                    | "AsyncIterableIterator"
+                            );
+                        if next_input {
+                            is_subtype_of(sup_argument, sub_argument, depth + 1)
+                        } else {
+                            is_subtype_of(sub_argument, sup_argument, depth + 1)
+                        }
+                    },
+                )
         }
 
         // TypeParam: name equality only (no constraint information available)
