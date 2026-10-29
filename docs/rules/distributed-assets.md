@@ -39,3 +39,8 @@ Removing a class selector emits Major `css-class-removed`; removing a custom
 property declaration emits Major `css-custom-property-removed`. The `style`
 or `css` manifest field selects stylesheets; without either field, all shipped
 CSS files are scanned.
+
+Equivalent relative path spellings such as `./style.css` and `style.css` do
+not change the comparison. When both snapshots declare stylesheet entry points,
+Pledge compares their combined CSS API even if the manifest redirects to a
+different retained file. Without declared entry points, files are paired by path.

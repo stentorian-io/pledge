@@ -1,10 +1,60 @@
 //! Css compatibility checks.
 
 use crate::fixtures::fixture_path;
+use interlint::core::findings::Severity;
 use interlint::ecosystems::node::compare::assets::css as css_diff;
 use interlint::ecosystems::node::compare::rules::{
     RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED,
 };
+
+#[test]
+fn equivalent_stylesheet_paths_still_compare_classes_and_properties() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    std::fs::write(
+        old.path().join("package.json"),
+        r#"{"style":"./style.css"}"#,
+    )
+    .unwrap();
+    std::fs::write(new.path().join("package.json"), r#"{"style":"style.css"}"#).unwrap();
+    std::fs::write(old.path().join("style.css"), ".api { --color: red; }").unwrap();
+    std::fs::write(new.path().join("style.css"), "").unwrap();
+
+    let findings = css_diff::compare_css_files(old.path(), new.path());
+
+    for rule in [RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED] {
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == rule && finding.severity == Severity::Major),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
+fn stylesheet_redirects_compare_the_selected_api() {
+    for (replacement, breaking) in [("", true), (".api { --color: red; }", false)] {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        for directory in [&old, &new] {
+            std::fs::write(directory.path().join("a.css"), ".api { --color: red; }").unwrap();
+            std::fs::write(directory.path().join("b.css"), replacement).unwrap();
+        }
+        std::fs::write(old.path().join("package.json"), r#"{"style":"./a.css"}"#).unwrap();
+        std::fs::write(new.path().join("package.json"), r#"{"style":"./b.css"}"#).unwrap();
+
+        let findings = css_diff::compare_css_files(old.path(), new.path());
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{findings:?}"
+        );
+    }
+}
 
 #[test]
 fn test_css_custom_property_removed_integration() {

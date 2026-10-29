@@ -101,13 +101,30 @@ fn walk_css_node(
     }
 }
 
-/// Discover CSS entry points for a package root.
-///
-/// Checks `package.json` `"style"` field first, then `"css"` field.
-/// Falls back to scanning all `.css` files recursively if neither field exists.
-///
-/// Returns relative paths (relative to `pkg_root`).
-fn discover_css_files(pkg_root: &Path) -> Vec<String> {
+enum Stylesheets {
+    EntryPoints(BTreeSet<String>),
+    PackedFiles(BTreeSet<String>),
+}
+
+impl Stylesheets {
+    fn paths(&self) -> &BTreeSet<String> {
+        match self {
+            Self::EntryPoints(paths) | Self::PackedFiles(paths) => paths,
+        }
+    }
+}
+
+fn normalize_css_path(path: &str) -> String {
+    Path::new(path)
+        .components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Prefer manifest stylesheet entry points; otherwise pair packed files by path.
+fn discover_css_files(pkg_root: &Path) -> Stylesheets {
     let pkg_json_path = pkg_root.join("package.json");
 
     if let Ok(content) = std::fs::read_to_string(&pkg_json_path) {
@@ -116,15 +133,15 @@ fn discover_css_files(pkg_root: &Path) -> Vec<String> {
             for field in &["style", "css"] {
                 match pkg.get(*field) {
                     Some(serde_json::Value::String(s)) => {
-                        return vec![s.clone()];
+                        return Stylesheets::EntryPoints(BTreeSet::from([normalize_css_path(s)]));
                     }
                     Some(serde_json::Value::Array(arr)) => {
-                        let paths: Vec<String> = arr
+                        let paths: BTreeSet<String> = arr
                             .iter()
-                            .filter_map(|v| v.as_str().map(String::from))
+                            .filter_map(|v| v.as_str().map(normalize_css_path))
                             .collect();
                         if !paths.is_empty() {
-                            return paths;
+                            return Stylesheets::EntryPoints(paths);
                         }
                     }
                     _ => {}
@@ -136,7 +153,7 @@ fn discover_css_files(pkg_root: &Path) -> Vec<String> {
     // Fallback: scan all.css files recursively
     let mut files = BTreeSet::new();
     collect_css_files(pkg_root, pkg_root, &mut files);
-    files.into_iter().collect()
+    Stylesheets::PackedFiles(files)
 }
 
 /// Recursively collect CSS files from a package directory.
@@ -185,53 +202,79 @@ fn collect_css_files(base: &Path, current: &Path, files: &mut BTreeSet<String>) 
 /// - Removed CSS class name → `css-class-removed` (Major)
 pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let mut findings = Vec::new();
+    let old_css = discover_css_files(old_root);
+    let new_css = discover_css_files(new_root);
 
-    // Discover CSS files from both roots and union them for comparison
-    let old_css: BTreeSet<String> = discover_css_files(old_root).into_iter().collect();
-    let new_css: BTreeSet<String> = discover_css_files(new_root).into_iter().collect();
-
-    // Compare files present in both old and new
-    for css_file in old_css.intersection(&new_css) {
-        let old_path = old_root.join(css_file);
-        let new_path = new_root.join(css_file);
-
-        let old_source = match std::fs::read(&old_path) {
-            Ok(s) => s,
-            Err(_) => continue,
+    if let (Stylesheets::EntryPoints(old), Stylesheets::EntryPoints(new)) = (&old_css, &new_css) {
+        let Some(report_file) = new.first() else {
+            return findings;
         };
-        let new_source = match std::fs::read(&new_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        let (old_props, old_classes) = extract_css_apis(&old_source);
-        let (new_props, new_classes) = extract_css_apis(&new_source);
-
-        // Removed custom properties → AST-03
-        for prop in old_props.difference(&new_props) {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_CSS_CUSTOM_PROPERTY_REMOVED,
-                file: PathBuf::from(css_file),
-                line: 1,
-                col: 1,
-                message: format!("CSS custom property `{}` removed from `{}`", prop, css_file),
-            });
-        }
-
-        // Removed class names → AST-04
-        for class in old_classes.difference(&new_classes) {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_CSS_CLASS_REMOVED,
-                file: PathBuf::from(css_file),
-                line: 1,
-                col: 1,
-                message: format!("CSS class `.{}` removed from `{}`", class, css_file),
-            });
-        }
+        return compare_stylesheets(old_root, new_root, old, new, report_file);
     }
 
+    // Compare files present in both old and new
+    for css_file in old_css.paths().intersection(new_css.paths()) {
+        let files = BTreeSet::from([css_file.clone()]);
+        findings.extend(compare_stylesheets(
+            old_root, new_root, &files, &files, css_file,
+        ));
+    }
+    findings
+}
+
+fn stylesheet_apis(
+    root: &Path,
+    files: &BTreeSet<String>,
+) -> Option<(BTreeSet<String>, BTreeSet<String>)> {
+    let mut properties = BTreeSet::new();
+    let mut classes = BTreeSet::new();
+    for file in files {
+        let source = std::fs::read(root.join(file)).ok()?;
+        let (file_properties, file_classes) = extract_css_apis(&source);
+        properties.extend(file_properties);
+        classes.extend(file_classes);
+    }
+    Some((properties, classes))
+}
+
+fn compare_stylesheets(
+    old_root: &Path,
+    new_root: &Path,
+    old_files: &BTreeSet<String>,
+    new_files: &BTreeSet<String>,
+    css_file: &str,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    let (Some((old_props, old_classes)), Some((new_props, new_classes))) = (
+        stylesheet_apis(old_root, old_files),
+        stylesheet_apis(new_root, new_files),
+    ) else {
+        return findings;
+    };
+
+    // Removed custom properties → AST-03
+    for prop in old_props.difference(&new_props) {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_CSS_CUSTOM_PROPERTY_REMOVED,
+            file: PathBuf::from(css_file),
+            line: 1,
+            col: 1,
+            message: format!("CSS custom property `{}` removed from `{}`", prop, css_file),
+        });
+    }
+
+    // Removed class names → AST-04
+    for class in old_classes.difference(&new_classes) {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_CSS_CLASS_REMOVED,
+            file: PathBuf::from(css_file),
+            line: 1,
+            col: 1,
+            message: format!("CSS class `.{}` removed from `{}`", class, css_file),
+        });
+    }
     findings
 }
 
