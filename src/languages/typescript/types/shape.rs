@@ -81,6 +81,28 @@ pub struct ParamShape {
     pub shape: TypeShape,
 }
 
+/// Receiver requirements and narrowing guarantees of a callable signature.
+#[derive(Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct FunctionContract {
+    pub receiver: Option<Box<TypeShape>>,
+    pub predicate: Option<TypePredicateShape>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TypePredicateShape {
+    pub target: PredicateTarget,
+    pub asserts: bool,
+    /// `None` retains a truthiness assertion such as `asserts condition`.
+    pub shape: Option<Box<TypeShape>>,
+}
+
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum PredicateTarget {
+    Receiver,
+    /// Ordinary argument position; parameter renames do not change the contract.
+    Parameter(usize),
+}
+
 /// A generic binder's contract. References in its body use canonical positions,
 /// so source names are deliberately absent from semantic equality.
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -133,6 +155,8 @@ pub enum TypeShape {
     Function {
         params: Vec<ParamShape>,
         return_type: Box<TypeShape>,
+        #[serde(default)]
+        contract: FunctionContract,
     },
     /// Conditional types: `T extends U ? Then: Else`
     Conditional {
@@ -185,6 +209,28 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
+    pub(crate) fn function(mut params: Vec<ParamShape>, return_type: TypeShape) -> Self {
+        let receiver = params
+            .first()
+            .is_some_and(|parameter| parameter.name == "this")
+            .then(|| Box::new(params.remove(0).shape));
+        Self::Function {
+            params,
+            return_type: Box::new(return_type),
+            contract: FunctionContract {
+                receiver,
+                predicate: None,
+            },
+        }
+    }
+
+    pub(crate) fn function_contract(&self) -> Option<&FunctionContract> {
+        match self.without_type_parameters() {
+            Self::Function { contract, .. } => Some(contract),
+            _ => None,
+        }
+    }
+
     pub(crate) fn without_type_parameters(&self) -> &Self {
         match self {
             Self::GenericDeclaration { body, .. } => body.without_type_parameters(),
@@ -218,11 +264,22 @@ impl TypeShape {
             Self::Function {
                 params,
                 return_type,
+                contract,
             } => {
                 for param in params {
                     visit(&mut param.shape);
                 }
                 visit(return_type);
+                if let Some(receiver) = &mut contract.receiver {
+                    visit(receiver);
+                }
+                if let Some(shape) = contract
+                    .predicate
+                    .as_mut()
+                    .and_then(|predicate| predicate.shape.as_mut())
+                {
+                    visit(shape);
+                }
             }
             Self::GenericDeclaration { params, body } => {
                 for parameter in params {
@@ -346,18 +403,29 @@ impl TypeShape {
             TypeShape::Function {
                 params,
                 return_type,
-            } => TypeShape::Function {
-                params: params
-                    .into_iter()
-                    .map(|p| ParamShape {
-                        name: p.name,
-                        optional: p.optional,
-                        rest: p.rest,
-                        shape: p.shape.normalize(),
-                    })
-                    .collect(),
-                return_type: Box::new(return_type.normalize()),
-            },
+                mut contract,
+            } => {
+                contract.receiver = contract.receiver.map(|shape| Box::new(shape.normalize()));
+                if let Some(predicate) = &mut contract.predicate {
+                    predicate.shape = predicate
+                        .shape
+                        .take()
+                        .map(|shape| Box::new(shape.normalize()));
+                }
+                TypeShape::Function {
+                    params: params
+                        .into_iter()
+                        .map(|p| ParamShape {
+                            name: p.name,
+                            optional: p.optional,
+                            rest: p.rest,
+                            shape: p.shape.normalize(),
+                        })
+                        .collect(),
+                    return_type: Box::new(return_type.normalize()),
+                    contract,
+                }
+            }
             TypeShape::Conditional {
                 check,
                 extends,
@@ -462,6 +530,7 @@ mod tests {
     #[test]
     fn test_function_with_params_and_return() {
         let shape = TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,

@@ -16,6 +16,7 @@ fn unmatched_overload_fires_removed() {
     // old: 2 overloads at arity 1; new: 1 overload at arity 1
     // After consumed-tracking, one should fire overload-removed
     let overload_string = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             false,
@@ -24,6 +25,7 @@ fn unmatched_overload_fires_removed() {
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let overload_number = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             false,

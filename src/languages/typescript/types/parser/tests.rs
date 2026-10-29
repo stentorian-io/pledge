@@ -278,6 +278,7 @@ fn test_function_type() {
     if let TypeShape::Function {
         params,
         return_type,
+        ..
     } = result
     {
         assert_eq!(params.len(), 2);
@@ -366,6 +367,7 @@ fn test_function_optional_param() {
     if let TypeShape::Function {
         params,
         return_type,
+        ..
     } = result
     {
         assert_eq!(params.len(), 1);
@@ -950,4 +952,22 @@ fn compare_template_literal_patterns_unrelated() {
         compare_template_literal_patterns(&old, &new),
         PatternDirection::Unrelated
     );
+}
+
+#[test]
+fn function_receivers_are_separate_from_positional_parameters() {
+    let shape = parse_type_string("(this: { ready: boolean }, value: string) => void");
+    let TypeShape::Function {
+        params, contract, ..
+    } = shape
+    else {
+        panic!("expected a callable shape");
+    };
+
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0].name, "value");
+    assert!(matches!(
+        contract.receiver.as_deref(),
+        Some(TypeShape::Object(_))
+    ));
 }

@@ -91,7 +91,7 @@ pub fn extract_this_param_type(fn_node: tree_sitter::Node, source: &[u8]) -> Opt
     // function_signature, method_definition, etc.)
     let params_node = fn_node.child_by_field_name("parameters")?;
     let mut cursor = params_node.walk();
-    for param in params_node.children(&mut cursor) {
+    for param in params_node.named_children(&mut cursor) {
         // `this` parameter parses as required_parameter with identifier child named "this"
         if param.kind() == "required_parameter" {
             // Check if the pattern (first named child) is the identifier `this`
@@ -122,4 +122,24 @@ pub fn extract_this_param_type(fn_node: tree_sitter::Node, source: &[u8]) -> Opt
         break;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_this_param_type;
+
+    #[test]
+    fn receiver_extraction_skips_parameter_list_punctuation() {
+        let source = "function api(this: { value: string }) {}";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        let declaration = tree.root_node().named_child(0).unwrap();
+
+        let receiver = extract_this_param_type(declaration, source.as_bytes());
+
+        assert_eq!(receiver.as_deref(), Some("{ value: string }"));
+    }
 }

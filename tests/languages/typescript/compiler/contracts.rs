@@ -25,6 +25,7 @@ macro_rules! consumer_contracts {
 
 consumer_contracts!(accessors, "accessors");
 consumer_contracts!(classes, "classes");
+consumer_contracts!(callables, "callables");
 consumer_contracts!(generics, "generics");
 consumer_contracts!(inference, "inference");
 consumer_contracts!(iterator_inputs, "iterator-inputs");

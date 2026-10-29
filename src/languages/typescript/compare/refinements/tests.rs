@@ -246,6 +246,7 @@ fn test_ref01_overload_removed() {
     let mut old = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -255,6 +256,7 @@ fn test_ref01_overload_removed() {
             return_type: Box::new(TypeShape::Opaque("string".into())),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "x".into(),
@@ -274,6 +276,7 @@ fn test_ref01_overload_removed() {
     ];
     let mut new = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".into(),
             optional: false,
@@ -292,6 +295,7 @@ fn test_ref01_overload_removed() {
 fn test_ref02_rest_param_removed() {
     let mut old = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "args".into(),
             optional: false,
@@ -302,6 +306,7 @@ fn test_ref02_rest_param_removed() {
     }];
     let mut new = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".into(),
             optional: false,
@@ -322,6 +327,7 @@ fn test_ref01_overload_same_arity_different_types() {
     let mut old = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -331,6 +337,7 @@ fn test_ref01_overload_same_arity_different_types() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -342,6 +349,7 @@ fn test_ref01_overload_same_arity_different_types() {
     ];
     let mut new = make_sym("foo", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".into(),
             optional: false,
@@ -440,10 +448,10 @@ fn this_param_changed_fires_major() {
 }
 
 #[test]
-fn this_param_removed_fires_major() {
+fn added_receiver_requirement_fires_major() {
     let findings = compare_this_param(
-        Some("HTMLElement"),
         None,
+        Some("HTMLElement"),
         "onClick",
         &PathBuf::from("test.ts"),
         1,
@@ -452,7 +460,7 @@ fn this_param_removed_fires_major() {
     assert_eq!(
         findings.len(),
         1,
-        "removed this-param should fire; got: {:?}",
+        "added receiver requirement should fire; got: {:?}",
         findings
     );
     assert_eq!(findings[0].rule, type_rules::RULE_THIS_PARAM_CHANGED);
@@ -527,6 +535,7 @@ fn test_ref02_rest_param_widened_no_finding() {
     // Widening to any[] is safe — should NOT fire rest-param-narrowed.
     let mut old = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "args".into(),
             optional: false,
@@ -537,6 +546,7 @@ fn test_ref02_rest_param_widened_no_finding() {
     }];
     let mut new = make_sym("bar", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "args".into(),
             optional: false,
@@ -633,6 +643,7 @@ fn unmatched_overload_fires_removed() {
     let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -642,6 +653,7 @@ fn unmatched_overload_fires_removed() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -653,6 +665,7 @@ fn unmatched_overload_fires_removed() {
     ];
     let mut new = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".into(),
             optional: false,
@@ -685,6 +698,7 @@ fn matched_shapes_no_removal() {
     let mut old = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
     old.overloads = vec![
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -694,6 +708,7 @@ fn matched_shapes_no_removal() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -706,6 +721,7 @@ fn matched_shapes_no_removal() {
     let mut new = make_sym("fn", ExportKind::Named, Some(DeclarationKind::Function));
     new.overloads = vec![
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,
@@ -715,6 +731,7 @@ fn matched_shapes_no_removal() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".into(),
                 optional: false,

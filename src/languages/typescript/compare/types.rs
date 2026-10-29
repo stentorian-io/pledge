@@ -21,7 +21,9 @@ use crate::languages::typescript::compare::rules::{
 };
 use crate::languages::typescript::compare::{generics as generic_diff, rules as type_rules};
 use crate::languages::typescript::types::shape::{FieldShape, ParamShape, TypeShape};
-use crate::languages::typescript::types::subtype::{format_type, is_subtype_of};
+use crate::languages::typescript::types::subtype::{
+    accepts_receiver, format_type, is_subtype_of, preserves_predicate,
+};
 use crate::languages::typescript::types::{parser as type_parser, shape as type_shapes};
 use std::path::Path;
 
@@ -763,12 +765,56 @@ fn diff_recursive(
             TypeShape::Function {
                 params: old_params,
                 return_type: old_ret,
+                contract: old_contract,
             },
             TypeShape::Function {
                 params: new_params,
                 return_type: new_ret,
+                contract: new_contract,
             },
         ) => {
+            if !accepts_receiver(
+                new_contract.receiver.as_deref(),
+                old_contract.receiver.as_deref(),
+                depth + 1,
+            ) {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: type_rules::RULE_THIS_PARAM_CHANGED,
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "receiver requirements narrowed in `{}`",
+                        make_display_name(symbol_name, field_path)
+                    ),
+                });
+            }
+            if !preserves_predicate(
+                new_contract.predicate.as_ref(),
+                old_contract.predicate.as_ref(),
+                depth + 1,
+            ) {
+                let assertion = old_contract
+                    .predicate
+                    .as_ref()
+                    .is_some_and(|predicate| predicate.asserts);
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: if assertion {
+                        type_rules::RULE_ASSERTION_WIDENED
+                    } else {
+                        type_rules::RULE_TYPE_GUARD_WIDENED
+                    },
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "type narrowing guarantee changed in `{}`",
+                        make_display_name(symbol_name, field_path)
+                    ),
+                });
+            }
             diff_functions(
                 old_params,
                 old_ret,
@@ -1494,10 +1540,12 @@ fn detect_noinfer_param_removal(old_shape: &TypeShape, new_shape: &TypeShape) ->
         TypeShape::Function {
             params: old_p,
             return_type: old_r,
+            ..
         },
         TypeShape::Function {
             params: new_p,
             return_type: new_r,
+            ..
         },
     ) = (old_shape, new_shape)
     {

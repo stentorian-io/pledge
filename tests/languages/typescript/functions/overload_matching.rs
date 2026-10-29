@@ -44,6 +44,7 @@ fn make_fn_sym_with_overloads(name: &str, overloads: Vec<TypeShape>) -> ExportSy
 #[test]
 fn test_overload_same_arity_different_types() {
     let string_overload = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,
@@ -54,6 +55,7 @@ fn test_overload_same_arity_different_types() {
     };
 
     let number_overload = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,
@@ -86,6 +88,7 @@ fn test_rest_param_widened_safe() {
     let old_sym = make_fn_sym_with_overloads(
         "bar",
         vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "args".to_string(),
                 optional: false,
@@ -99,6 +102,7 @@ fn test_rest_param_widened_safe() {
     let new_sym = make_fn_sym_with_overloads(
         "bar",
         vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "args".to_string(),
                 optional: false,
@@ -132,6 +136,7 @@ fn test_rest_param_narrowed_flagged() {
     let old_sym = make_fn_sym_with_overloads(
         "bar",
         vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "args".to_string(),
                 optional: false,
@@ -149,6 +154,7 @@ fn test_rest_param_narrowed_flagged() {
     let new_sym = make_fn_sym_with_overloads(
         "bar",
         vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "args".to_string(),
                 optional: false,

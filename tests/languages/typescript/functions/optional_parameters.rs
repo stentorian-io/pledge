@@ -14,6 +14,7 @@ fn optional_to_required_param_fires_rule() {
     // New: (x: string) => void   (required param)
     // Expected: param-made-required Major finding
     let old_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             true,
@@ -22,6 +23,7 @@ fn optional_to_required_param_fires_rule() {
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             false,
@@ -61,6 +63,7 @@ fn optional_to_required_param_fires_rule() {
 fn required_to_optional_does_not_fire() {
     // Removing the required constraint is safe (callers can still pass the arg)
     let old_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             false,
@@ -69,6 +72,7 @@ fn required_to_optional_does_not_fire() {
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             true,
@@ -95,6 +99,7 @@ fn multiple_params_middle_made_required() {
     // New: (a: string, b: number, c?: boolean) => void
     // Expected: param-made-required for 'b', no finding for unchanged params
     let old_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![
             make_param("a", false, TypeShape::Opaque("string".to_string())),
             make_param("b", true, TypeShape::Opaque("number".to_string())),
@@ -103,6 +108,7 @@ fn multiple_params_middle_made_required() {
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![
             make_param("a", false, TypeShape::Opaque("string".to_string())),
             make_param("b", false, TypeShape::Opaque("number".to_string())),

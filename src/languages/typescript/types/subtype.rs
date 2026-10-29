@@ -1,5 +1,7 @@
 use crate::languages::typescript::types::shape as type_shapes;
-use crate::languages::typescript::types::shape::{LiteralKind, ParamShape, TypeShape};
+use crate::languages::typescript::types::shape::{
+    LiteralKind, ParamShape, TypePredicateShape, TypeShape,
+};
 
 const MAX_DEPTH: usize = 20;
 
@@ -206,12 +208,25 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
             Function {
                 params: sub_params,
                 return_type: sub_ret,
+                contract: sub_contract,
             },
             Function {
                 params: sup_params,
                 return_type: sup_ret,
+                contract: sup_contract,
             },
         ) => {
+            if !accepts_receiver(
+                sub_contract.receiver.as_deref(),
+                sup_contract.receiver.as_deref(),
+                depth + 1,
+            ) || !preserves_predicate(
+                sub_contract.predicate.as_ref(),
+                sup_contract.predicate.as_ref(),
+                depth + 1,
+            ) {
+                return false;
+            }
             // sub may have fewer params than sup (TS callback pattern)
             // sub may NOT have more required params than sup has total
             let sub_required = sub_params.iter().filter(|p| !p.optional && !p.rest).count();
@@ -288,6 +303,44 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
         (TypeParam(sub_name), TypeParam(sup_name)) => sub_name == sup_name,
 
         // Catch-all: different variants not handled above — assume not a subtype
+        _ => false,
+    }
+}
+
+pub(crate) fn accepts_receiver(
+    offered: Option<&TypeShape>,
+    required: Option<&TypeShape>,
+    depth: usize,
+) -> bool {
+    let Some(offered) = offered else {
+        return true;
+    };
+    let unconstrained = TypeShape::Primitive(type_shapes::PrimitiveKind::Unknown);
+    is_subtype_of(required.unwrap_or(&unconstrained), offered, depth)
+}
+
+pub(crate) fn preserves_predicate(
+    offered: Option<&TypePredicateShape>,
+    required: Option<&TypePredicateShape>,
+    depth: usize,
+) -> bool {
+    let Some(required) = required else {
+        return true;
+    };
+    let Some(offered) = offered else {
+        return false;
+    };
+    if offered.target != required.target || offered.asserts != required.asserts {
+        return false;
+    }
+    match (&offered.shape, &required.shape) {
+        (Some(offered), Some(required_shape)) => {
+            is_subtype_of(offered, required_shape, depth)
+                // A boolean predicate also narrows the false branch. Assertions
+                // only promise the type reached after a successful return.
+                && (required.asserts || is_subtype_of(required_shape, offered, depth))
+        }
+        (None, None) => true,
         _ => false,
     }
 }
@@ -409,6 +462,7 @@ pub fn format_type(shape: &TypeShape) -> String {
         Function {
             params,
             return_type,
+            ..
         } => {
             let params_str = params
                 .iter()

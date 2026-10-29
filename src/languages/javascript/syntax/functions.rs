@@ -179,8 +179,5 @@ pub fn build_function_shape_from_node(
         .map(|s| TypeShape::Opaque(s.to_string()))
         .unwrap_or(TypeShape::Primitive(PrimitiveKind::Void));
 
-    Some(TypeShape::Function {
-        params,
-        return_type: Box::new(return_type),
-    })
+    Some(TypeShape::function(params, return_type))
 }

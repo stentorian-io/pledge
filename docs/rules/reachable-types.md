@@ -37,6 +37,14 @@ after the first declaration. An overload whose accepted inputs narrow or whose
 result becomes incompatible emits Major `overload-removed`. Widening accepted
 inputs or narrowing a readable result remains compatible.
 
+Callable shapes retain explicit `this` receivers and type predicates, including
+returned callbacks and object methods. Adding or narrowing a receiver requirement
+can break existing calls and emits Major `this-param-changed`; removing the
+requirement is compatible. Predicates must preserve narrowing in both their
+true and false branches, while an assertion must preserve the type guaranteed
+after it returns. Top-level changes emit `type-guard-widened` or
+`assertion-widened`; nested changes use the enclosing signature's type rules.
+
 Compiler evaluation loads the package's tsconfig and retains strict nullability
 for public contracts. Packages without a tsconfig receive strict NodeNext
 resolution, including dependencies that publish types only through `exports`.

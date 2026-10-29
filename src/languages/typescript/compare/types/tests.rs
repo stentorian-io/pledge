@@ -454,6 +454,7 @@ fn test_max_recursion_depth() {
 fn test_function_return_type_changed() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -463,6 +464,7 @@ fn test_function_return_type_changed() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Number)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -488,6 +490,7 @@ fn test_function_return_type_changed() {
 fn test_function_required_param_added() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -497,6 +500,7 @@ fn test_function_required_param_added() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "x".to_string(),
@@ -579,6 +583,7 @@ fn test_identical_objects_no_findings() {
 fn test_param_type_narrowed_major() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -591,6 +596,7 @@ fn test_param_type_narrowed_major() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -634,6 +640,7 @@ fn test_param_type_narrowed_major() {
 fn test_param_type_widened_safe() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -643,6 +650,7 @@ fn test_param_type_widened_safe() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -674,10 +682,12 @@ fn test_param_type_widened_safe() {
 fn test_return_type_widened_major() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![],
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![],
             return_type: Box::new(TypeShape::Union(vec![
                 TypeShape::Primitive(PrimitiveKind::String),
@@ -700,6 +710,7 @@ fn test_return_type_widened_major() {
 fn test_return_type_narrowed_safe() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![],
             return_type: Box::new(TypeShape::Union(vec![
                 TypeShape::Primitive(PrimitiveKind::String),
@@ -707,6 +718,7 @@ fn test_return_type_narrowed_safe() {
             ])),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![],
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::String)),
         },
@@ -725,6 +737,7 @@ fn test_return_type_narrowed_safe() {
 fn test_param_reordered() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "a".to_string(),
@@ -742,6 +755,7 @@ fn test_param_reordered() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "b".to_string(),
@@ -786,6 +800,7 @@ fn test_param_reordered() {
 fn test_optional_param_added_minor() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -795,6 +810,7 @@ fn test_optional_param_added_minor() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "x".to_string(),
@@ -836,6 +852,7 @@ fn test_optional_param_added_minor() {
 fn test_param_removed_major() {
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![
                 ParamShape {
                     name: "x".to_string(),
@@ -853,6 +870,7 @@ fn test_param_removed_major() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -950,6 +968,7 @@ fn test_param_made_required_fires_major() {
     use crate::languages::typescript::compare::rules::RULE_PARAM_MADE_REQUIRED;
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: true, // was optional
@@ -959,6 +978,7 @@ fn test_param_made_required_fires_major() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false, // now required
@@ -1000,6 +1020,7 @@ fn test_required_stays_required_no_finding() {
     use crate::languages::typescript::compare::rules::RULE_PARAM_MADE_REQUIRED;
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1009,6 +1030,7 @@ fn test_required_stays_required_no_finding() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1034,6 +1056,7 @@ fn test_required_to_optional_no_finding() {
     use crate::languages::typescript::compare::rules::RULE_PARAM_MADE_REQUIRED;
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false, // was required
@@ -1043,6 +1066,7 @@ fn test_required_to_optional_no_finding() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: true, // now optional
@@ -1191,6 +1215,7 @@ fn any_to_string_fires_narrowing() {
     // any → string is TIGHTENING — must fire param-type-narrowed Major
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1200,6 +1225,7 @@ fn any_to_string_fires_narrowing() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1226,6 +1252,7 @@ fn any_to_any_no_finding() {
     // Old: fn(x: any) -> void, New: fn(x: any) -> void — idempotent, no finding
     let findings = diff(
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1235,6 +1262,7 @@ fn any_to_any_no_finding() {
             return_type: Box::new(TypeShape::Primitive(PrimitiveKind::Void)),
         },
         TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -1578,6 +1606,67 @@ fn returned_writable_properties_preserve_accepted_assignments() {
                 .any(|finding| finding.severity == Severity::Major),
             breaking,
             "{before:?} -> {after:?}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn receiver_requirements_compare_contravariantly() {
+    for (before, after, breaking) in [
+        ("() => void", "(this: { ready: boolean }) => void", true),
+        ("(this: { ready: boolean }) => void", "() => void", false),
+        (
+            "(this: { ready: boolean }) => void",
+            "(this: { ready: boolean; id: string }) => void",
+            true,
+        ),
+    ] {
+        let findings = diff(
+            type_parser::parse_type_string(before),
+            type_parser::parse_type_string(after),
+        );
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
+fn predicates_preserve_true_and_false_branch_narrowing() {
+    use crate::languages::typescript::types::shape::{PredicateTarget, TypePredicateShape};
+
+    for (after, assertion, breaking) in [
+        ("string | number", false, true),
+        ("\"ready\"", false, true),
+        ("string", false, false),
+        ("\"ready\"", true, false),
+    ] {
+        let signature = |guarded: &str| {
+            let mut shape = type_parser::parse_type_string("(input: unknown) => boolean");
+            let TypeShape::Function { contract, .. } = &mut shape else {
+                unreachable!()
+            };
+            contract.predicate = Some(TypePredicateShape {
+                target: PredicateTarget::Parameter(0),
+                asserts: assertion,
+                shape: Some(Box::new(type_parser::parse_type_string(guarded))),
+            });
+            shape
+        };
+
+        let findings = diff(signature("string"), signature(after));
+
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            breaking,
+            "{after}: {findings:?}"
         );
     }
 }

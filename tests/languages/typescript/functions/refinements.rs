@@ -159,6 +159,7 @@ fn rest_param_narrowed() {
         col: 1,
         type_signature: None,
         overloads: vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "args".to_string(),
                 optional: false,
@@ -189,6 +190,7 @@ fn rest_param_narrowed() {
         col: 1,
         type_signature: None,
         overloads: vec![TypeShape::Function {
+            contract: Default::default(),
             params: vec![ParamShape {
                 name: "x".to_string(),
                 optional: false,
@@ -213,6 +215,7 @@ fn rest_param_narrowed() {
 
     // Old has rest param, new does not — rest-param-narrowed
     old_sym.overloads = vec![TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "args".to_string(),
             optional: false,

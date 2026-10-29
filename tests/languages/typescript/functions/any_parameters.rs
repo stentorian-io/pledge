@@ -12,10 +12,12 @@ fn test_file() -> PathBuf {
 fn any_to_concrete_fires_narrowing() {
     // Old param: any -> New param: string (narrowing — SEM-03)
     let old_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param("x", false, TypeShape::Opaque("any".to_string()))],
         return_type: Box::new(TypeShape::Opaque("void".to_string())),
     };
     let new_shape = TypeShape::Function {
+        contract: Default::default(),
         params: vec![make_param(
             "x",
             false,

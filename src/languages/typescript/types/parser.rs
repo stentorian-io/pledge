@@ -639,10 +639,7 @@ impl<'a> TypeParser<'a> {
             self.pos += 2;
             self.skip_whitespace();
             let return_type = self.parse_type(depth + 1)?;
-            return Some(TypeShape::Function {
-                params: params?,
-                return_type: Box::new(return_type),
-            });
+            return Some(TypeShape::function(params?, return_type));
         }
 
         // Check for `:` (TypeScript declaration syntax from LSP hover, e.g. `(x: string): void`)
@@ -651,10 +648,7 @@ impl<'a> TypeParser<'a> {
             self.advance(); // consume `:`
             self.skip_whitespace();
             let return_type = self.parse_type(depth + 1)?;
-            return Some(TypeShape::Function {
-                params: params?,
-                return_type: Box::new(return_type),
-            });
+            return Some(TypeShape::function(params?, return_type));
         }
 
         // No `=>` or `:` — this was a parenthesized type (single element)

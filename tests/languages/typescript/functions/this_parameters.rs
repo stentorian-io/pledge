@@ -27,11 +27,11 @@ fn this_param_change_fires_major() {
 }
 
 #[test]
-fn this_param_removed_fires_major() {
+fn removing_receiver_requirement_is_compatible() {
     let findings = compare_this_param(Some("Foo"), None, "fn", &test_file(), 1, 1);
     assert!(
-        findings.iter().any(|f| f.rule == "this-param-changed"),
-        "TLF-03: removing this param should fire this-param-changed. Got: {:?}",
+        findings.is_empty(),
+        "removing a receiver requirement should remain compatible: {:?}",
         findings
     );
 }

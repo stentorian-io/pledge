@@ -1,0 +1,90 @@
+[
+  {
+    "name": "adding receiver requirement",
+    "old": "export declare function api(): void;",
+    "new": "export declare function api(this: {required: string}): void;",
+    "consumer": "api();",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "narrowing receiver requirement",
+    "old": "export declare function api(this: {a: string}): void;",
+    "new": "export declare function api(this: {a: string; b: number}): void;",
+    "consumer": "api.call({a: \"a\"});",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "removing receiver requirement",
+    "old": "export declare function api(this: {a: string}): void;",
+    "new": "export declare function api(): void;",
+    "consumer": "api.call({a: \"a\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "equivalent receiver alias rename",
+    "old": "type Before = {a: string}; export declare function api(this: Before): void;",
+    "new": "type After = {a: string}; export declare function api(this: After): void;",
+    "consumer": "api.call({a: \"a\"});",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "returned receiver requirement",
+    "old": "export declare function api(): (this: {a: string}) => void;",
+    "new": "export declare function api(): (this: {a: string; b: number}) => void;",
+    "consumer": "api().call({a: \"a\"});",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "predicate target widening",
+    "old": "export declare function api(x: unknown): x is string;",
+    "new": "export declare function api(x: unknown): x is string | number;",
+    "consumer": "declare let x: unknown; if (api(x)) { const s: string = x; }",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "predicate narrowing changes the false branch",
+    "old": "export declare function api(x: unknown): x is string;",
+    "new": "export declare function api(x: unknown): x is \"ok\";",
+    "consumer": "declare let x: string | number; if (!api(x)) { const n: number = x; }",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "returned predicate removal",
+    "old": "export declare function api(): (x: unknown) => x is string;",
+    "new": "export declare function api(): (x: unknown) => boolean;",
+    "consumer": "declare let x: unknown; if (api()(x)) { const s: string = x; }",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "predicate parameter rename",
+    "old": "export declare function api(x: unknown): x is string;",
+    "new": "export declare function api(input: unknown): input is string;",
+    "consumer": "declare let x: unknown; if (api(x)) { const s: string = x; }",
+    "breaking": false,
+    "extension": "ts"
+  },
+  {
+    "name": "nested assertion widening",
+    "old": "export declare const api: {check(x: unknown): asserts x is string};",
+    "new": "export declare const api: {check(x: unknown): asserts x is string | number};",
+    "consumer": "declare let x: unknown; api.check(x); const s: string = x;",
+    "breaking": true,
+    "extension": "ts"
+  },
+  {
+    "name": "assertion target narrowing",
+    "old": "export declare function api(x: unknown): asserts x is string | number;",
+    "new": "export declare function api(x: unknown): asserts x is string;",
+    "consumer": "declare let x: unknown; api(x); const s: string | number = x;",
+    "breaking": false,
+    "extension": "ts"
+  }
+]

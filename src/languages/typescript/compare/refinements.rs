@@ -13,10 +13,11 @@ use crate::languages::typescript::compare::rules::{
 };
 use crate::languages::typescript::syntax::interfaces::IndexSignature;
 use crate::languages::typescript::types::parser::{
-    compare_template_literal_patterns, parse_template_literal_type, PatternDirection,
+    compare_template_literal_patterns, parse_template_literal_type, parse_type_string,
+    PatternDirection,
 };
 use crate::languages::typescript::types::shape::TypeShape;
-use crate::languages::typescript::types::subtype::is_subtype_of;
+use crate::languages::typescript::types::subtype::{accepts_receiver, is_subtype_of};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -473,8 +474,8 @@ fn find_rest_param(shape: &TypeShape) -> Option<&TypeShape> {
 
 /// Compare `this` parameter types between old and new function versions (TLF-03).
 ///
-/// A `this` parameter constrains the call receiver. Changing or removing it is
-/// breaking for callers who rely on the old receiver type contract.
+/// A `this` parameter constrains the call receiver. Adding a requirement or
+/// changing an unresolved requirement can break callers; removing it is safe.
 pub fn compare_this_param(
     old_this: Option<&str>,
     new_this: Option<&str>,
@@ -483,39 +484,19 @@ pub fn compare_this_param(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
-    let mut findings = Vec::new();
-
-    match (old_this, new_this) {
-        (Some(old_t), Some(new_t)) if old_t != new_t => {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_THIS_PARAM_CHANGED,
-                file: file.to_path_buf(),
-                line,
-                col,
-                message: format!(
-                    "`this` parameter type changed from `{}` to `{}` in `{}`",
-                    old_t, new_t, name
-                ),
-            });
-        }
-        (Some(old_t), None) => {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_THIS_PARAM_CHANGED,
-                file: file.to_path_buf(),
-                line,
-                col,
-                message: format!(
-                    "`this` parameter (was `{}`) was removed from `{}`",
-                    old_t, name
-                ),
-            });
-        }
-        _ => {} // unchanged, widened (None -> Some), or both None
+    let old_shape = old_this.map(parse_type_string);
+    let new_shape = new_this.map(parse_type_string);
+    if accepts_receiver(new_shape.as_ref(), old_shape.as_ref(), 0) {
+        return Vec::new();
     }
-
-    findings
+    vec![Finding {
+        severity: Severity::Major,
+        rule: RULE_THIS_PARAM_CHANGED,
+        file: file.to_path_buf(),
+        line,
+        col,
+        message: format!("receiver requirements narrowed in `{name}`"),
+    }]
 }
 
 /// Compare assertion targets between old and new function versions (TLF-04).

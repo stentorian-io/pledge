@@ -90,6 +90,7 @@ function incomplete(message, type) {
 }
 function signatureShape(signature, depth, classConstructor = false) {
   return withParameters(signature.typeParameters, () => {
+  const predicate = checker.getTypePredicateOfSignature(signature);
   const body = { Function: {
     params: signature.getParameters().map(parameter => {
       const declaration = parameter.valueDeclaration || parameter.declarations?.[0];
@@ -99,6 +100,15 @@ function signatureShape(signature, depth, classConstructor = false) {
         shape: shape(checker.getTypeOfSymbol(parameter), depth + 1) };
     }),
     return_type: classConstructor ? primitive('Void') : shape(checker.getReturnTypeOfSignature(signature), depth + 1),
+    contract: {
+      receiver: signature.thisParameter ? shape(checker.getTypeOfSymbol(signature.thisParameter), depth + 1) : null,
+      predicate: predicate ? {
+        target: predicate.kind === ts.TypePredicateKind.This || predicate.kind === ts.TypePredicateKind.AssertsThis
+          ? 'Receiver' : { Parameter: predicate.parameterIndex },
+        asserts: predicate.kind === ts.TypePredicateKind.AssertsThis || predicate.kind === ts.TypePredicateKind.AssertsIdentifier,
+        shape: predicate.type ? shape(predicate.type, depth + 1) : null,
+      } : null,
+    },
   } };
   return genericDeclaration(signature.typeParameters, body, depth);
   });

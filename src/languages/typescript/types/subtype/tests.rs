@@ -302,6 +302,7 @@ fn test_union_sup_any_match() {
 fn test_function_fewer_params_is_subtype() {
     // sub: (x: string) => void
     let sub_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,
@@ -312,6 +313,7 @@ fn test_function_fewer_params_is_subtype() {
     };
     // sup: (x: string, y: number) => void
     let sup_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![
             ParamShape {
                 name: "x".to_string(),
@@ -343,6 +345,7 @@ fn test_function_contravariant_params() {
     // sup's param (string) must be <: sub's param (string | number)
     // string <: (string | number) == true, so sub IS a subtype of sup
     let sub_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,
@@ -352,6 +355,7 @@ fn test_function_contravariant_params() {
         return_type: Box::new(p(PrimitiveKind::Void)),
     };
     let sup_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,
@@ -374,10 +378,12 @@ fn test_function_covariant_return() {
     // sup: () => (string | number)
     // string <: (string | number) is true => sub IS a subtype
     let sub_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![],
         return_type: Box::new(string()),
     };
     let sup_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![],
         return_type: Box::new(TypeShape::Union(vec![string(), number()])),
     };
@@ -395,10 +401,12 @@ fn test_function_return_widened_breaks_subtyping() {
     // sup: () => number
     // string is NOT <: number => sub is NOT a subtype
     let sub_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![],
         return_type: Box::new(string()),
     };
     let sup_fn = TypeShape::Function {
+        contract: Default::default(),
         params: vec![],
         return_type: Box::new(number()),
     };
@@ -619,6 +627,7 @@ fn test_format_type_tuple_labeled() {
 #[test]
 fn test_format_type_function() {
     let func = TypeShape::Function {
+        contract: Default::default(),
         params: vec![ParamShape {
             name: "x".to_string(),
             optional: false,

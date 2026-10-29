@@ -961,7 +961,14 @@ pub fn compare_structural_diff(
         }
 
         // TLF-03: this parameter type changed (functions)
-        if old_decl.is_function && new_decl.is_function {
+        let resolved_receiver = [old_sym, new_sym].iter().any(|symbol| {
+            symbol.overloads.iter().any(|shape| {
+                shape
+                    .function_contract()
+                    .is_some_and(|contract| contract.receiver.is_some())
+            })
+        });
+        if old_decl.is_function && new_decl.is_function && !resolved_receiver {
             findings.extend(refinements::compare_this_param(
                 old_decl.this_param_type.as_deref(),
                 new_decl.this_param_type.as_deref(),
