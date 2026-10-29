@@ -1,4 +1,6 @@
-use crate::ecosystems::node::compare::exports::{parse_condition_node, select_condition};
+use crate::ecosystems::node::compare::exports::{
+    is_valid_export_target, parse_exports_condition_node, select_condition,
+};
 use crate::languages::javascript::syntax::grammar;
 use anyhow::Context;
 use std::collections::{BTreeSet, HashSet};
@@ -230,6 +232,10 @@ pub(crate) fn resolve_exports_value_with_warnings(
     let mut results = Vec::new();
     match value {
         serde_json::Value::String(rel) => {
+            if !is_valid_export_target(rel) {
+                warnings.push(format!("invalid `exports` target `{rel}`: expected a ./ path within the package without traversal or node_modules segments"));
+                return results;
+            }
             // Leaf: a concrete file path relative to the package root.
             let path = base_path.join(rel.trim_start_matches("./"));
             results.push(EntryPoint {
@@ -287,11 +293,12 @@ pub(crate) fn resolve_exports_value_with_warnings(
             }
         }
         serde_json::Value::Array(items) => {
-            let alternatives: Vec<_> = items.iter().map(parse_condition_node).collect();
+            let alternatives: Vec<_> = items.iter().map(parse_exports_condition_node).collect();
             let contexts = fallback_condition_contexts(value, condition);
             if contexts.is_none() {
                 warnings.push("export fallback condition analysis limit reached".to_string());
             }
+            let mut alternative_warnings = Vec::new();
             for (index, item) in items.iter().enumerate() {
                 if !matches!(
                     item,
@@ -302,7 +309,11 @@ pub(crate) fn resolve_exports_value_with_warnings(
                     continue;
                 }
                 let candidates = resolve_exports_value_with_warnings(
-                    item, base_path, condition, subpath, warnings,
+                    item,
+                    base_path,
+                    condition,
+                    subpath,
+                    &mut alternative_warnings,
                 );
                 results.extend(candidates.into_iter().filter(|entry| {
                     let Some(contexts) = &contexts else {
@@ -332,6 +343,15 @@ pub(crate) fn resolve_exports_value_with_warnings(
                                     })
                         })
                 }));
+            }
+            if contexts.as_ref().is_none_or(|contexts| {
+                contexts.iter().any(|active| {
+                    !alternatives.iter().any(|alternative| {
+                        select_condition(alternative, active).flatten().is_some()
+                    })
+                })
+            }) {
+                warnings.extend(alternative_warnings);
             }
         }
         // ROB-03: Non-standard scalar exports values — emit warning and return empty.

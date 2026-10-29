@@ -35,7 +35,9 @@ still emits Major. Raw private `imports` removals, reroutes, pattern changes,
 and condition changes are Info findings. Their effects on public re-exports
 are compared separately. An unused private map entry is not a public contract.
 
-Unresolvable entry points and source processing limits produce incomplete
+Invalid export targets, including missing `./` prefixes and traversal outside
+the package, produce incomplete analysis. Invalid array alternatives are skipped
+when a later target resolves. Unresolvable entry points and source processing limits produce incomplete
 analysis warnings. See [Node package resolution](https://nodejs.org/api/packages.html)
 and [TypeScript extension substitution](https://www.typescriptlang.org/docs/handbook/modules/reference.html#file-extension-substitution).
 

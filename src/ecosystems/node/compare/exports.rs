@@ -135,6 +135,63 @@ pub(crate) fn parse_condition_node(value: &serde_json::Value) -> ConditionNode {
     }
 }
 
+/// Export targets are package-relative URLs without traversal or dependency segments.
+pub(crate) fn is_valid_export_target(target: &str) -> bool {
+    let Some(relative) = target.strip_prefix("./") else {
+        return false;
+    };
+    relative.split(['/', '\\']).all(|segment| {
+        let mut decoded = Vec::new();
+        let mut bytes = segment.bytes();
+        while let Some(byte) = bytes.next() {
+            let byte = if byte == b'%' {
+                let Some(high) = bytes.next().and_then(|byte| (byte as char).to_digit(16)) else {
+                    return false;
+                };
+                let Some(low) = bytes.next().and_then(|byte| (byte as char).to_digit(16)) else {
+                    return false;
+                };
+                (high * 16 + low) as u8
+            } else {
+                byte
+            };
+            if matches!(byte, b'/' | b'\\' | 0) {
+                return false;
+            }
+            decoded.push(byte.to_ascii_lowercase());
+        }
+        !matches!(decoded.as_slice(), b"." | b".." | b"node_modules")
+    })
+}
+
+pub(crate) fn parse_exports_condition_node(value: &serde_json::Value) -> ConditionNode {
+    fn validate(node: &mut ConditionNode) {
+        match node {
+            ConditionNode::Leaf(target) => {
+                if target
+                    .as_deref()
+                    .is_some_and(|target| !is_valid_export_target(target))
+                {
+                    *target = None;
+                }
+            }
+            ConditionNode::Branch(branches) => {
+                for child in branches.values_mut() {
+                    validate(child);
+                }
+            }
+            ConditionNode::Fallback(alternatives) => {
+                for alternative in alternatives {
+                    validate(alternative);
+                }
+            }
+        }
+    }
+    let mut node = parse_condition_node(value);
+    validate(&mut node);
+    node
+}
+
 /// Parse a `serde_json::Value` object into an `ExportsMap`.
 ///
 /// Handles the ambiguity between:
@@ -157,7 +214,7 @@ fn parse_exports_object(obj: &serde_json::Map<String, serde_json::Value>) -> Exp
                 (
                     k.clone(),
                     SubpathEntry {
-                        node: parse_condition_node(v),
+                        node: parse_exports_condition_node(v),
                     },
                 )
             })
@@ -166,7 +223,7 @@ fn parse_exports_object(obj: &serde_json::Map<String, serde_json::Value>) -> Exp
         // Conditions-only object: wrap under implicit "." subpath
         let conditions: indexmap::IndexMap<String, ConditionNode> = obj
             .iter()
-            .map(|(k, v)| (k.clone(), parse_condition_node(v)))
+            .map(|(k, v)| (k.clone(), parse_exports_condition_node(v)))
             .collect();
         let mut map = BTreeMap::new();
         map.insert(
@@ -190,12 +247,12 @@ fn parse_exports_object(obj: &serde_json::Map<String, serde_json::Value>) -> Exp
 /// - Nested conditions: fully recursive
 pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
     match value {
-        serde_json::Value::String(s) => {
+        serde_json::Value::String(_) => {
             let mut map = BTreeMap::new();
             map.insert(
                 ".".to_string(),
                 SubpathEntry {
-                    node: ConditionNode::Leaf(Some(s.clone())),
+                    node: parse_exports_condition_node(value),
                 },
             );
             map
@@ -204,7 +261,7 @@ pub fn parse_exports_map(value: &serde_json::Value) -> ExportsMap {
         serde_json::Value::Array(_) => BTreeMap::from([(
             ".".to_string(),
             SubpathEntry {
-                node: parse_condition_node(value),
+                node: parse_exports_condition_node(value),
             },
         )]),
         serde_json::Value::Object(obj) => parse_exports_object(obj),

@@ -703,3 +703,30 @@ fn string_to_null_fires_major() {
         findings
     );
 }
+
+#[test]
+fn export_targets_reject_traversal_and_encoded_invalid_segments() {
+    for target in [
+        "index.js",
+        "../index.js",
+        "./../index.js",
+        "./sub/./index.js",
+        "./node_modules/pkg.js",
+        "./NODE_MODULES/pkg.js",
+        "./%2e%2e/index.js",
+        "./%6eode_modules/pkg.js",
+        "./a%2fb.js",
+        "./a%5cb.js",
+        "./bad%xy.js",
+    ] {
+        assert!(!is_valid_export_target(target), "{target}");
+    }
+    for target in [
+        "./index.js",
+        "./nested/index.js",
+        "./name%20with%20spaces.js",
+        "./node_modules-addon.js",
+    ] {
+        assert!(is_valid_export_target(target), "{target}");
+    }
+}
