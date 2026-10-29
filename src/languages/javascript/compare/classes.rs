@@ -1,6 +1,6 @@
 // Class diff comparison engine.
 //
-// Implements all 9 class-related breaking change rules (CLS-01..09):
+// Class structural breaking change rules include:
 // CLS-01: Added required constructor parameter (class-constructor-param-added)
 // CLS-02: Method visibility narrowed (class-method-visibility-changed)
 // CLS-03: Method removed from class (class-method-removed)
@@ -9,15 +9,14 @@
 // CLS-06: Inheritance (extends) changed (class-inheritance-changed)
 // CLS-07: Static member type changed (class-static-type-changed)
 // CLS-08: Readonly modifier added or removed (class-readonly-changed)
-// CLS-09: Interface removed from implements list (class-implements-removed)
 
 use crate::core::findings::{Finding, Severity};
 use crate::languages::javascript::compare::rules as runtime_rules;
 use crate::languages::javascript::compare::rules::{
     RULE_CLASS_ABSTRACT_METHOD_ADDED, RULE_CLASS_ACCESSOR_CHANGED,
     RULE_CLASS_CONSTRUCTOR_PARAM_ADDED, RULE_CLASS_FIELD_MADE_PRIVATE,
-    RULE_CLASS_FIELD_MADE_PUBLIC, RULE_CLASS_IMPLEMENTS_REMOVED, RULE_CLASS_INHERITANCE_CHANGED,
-    RULE_CLASS_MADE_ABSTRACT, RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED,
+    RULE_CLASS_FIELD_MADE_PUBLIC, RULE_CLASS_INHERITANCE_CHANGED, RULE_CLASS_MADE_ABSTRACT,
+    RULE_CLASS_METHOD_KIND_CHANGED, RULE_CLASS_METHOD_REMOVED,
     RULE_CLASS_METHOD_VISIBILITY_CHANGED, RULE_CLASS_READONLY_CHANGED,
     RULE_CLASS_STATIC_TYPE_CHANGED, RULE_CONSTRUCTOR_PARAM_MADE_REQUIRED,
 };
@@ -250,26 +249,8 @@ pub fn compare_class_shapes(
         });
     }
 
-    // ── CLS-09: Interface removed from implements list ───────────────────────
-    // Breaking: consumers who assign the class to variables typed as the
-    // removed interface will get a compile error.
-    let new_implements: std::collections::HashSet<&str> =
-        new.implements_list.iter().map(|s| s.as_str()).collect();
-    for interface_name in &old.implements_list {
-        if !new_implements.contains(interface_name.as_str()) {
-            findings.push(Finding {
-                severity: Severity::Major,
-                rule: RULE_CLASS_IMPLEMENTS_REMOVED,
-                file: file.to_path_buf(),
-                line,
-                col,
-                message: format!(
-                    "class `{}` no longer implements `{}`",
-                    symbol_name, interface_name
-                ),
-            });
-        }
-    }
+    // An implements clause checks the class implementation; deleting it does not
+    // change the structural instance type. Compare actual members below.
 
     // ── Member-level comparisons ─────────────────────────────────────────────
     // CLS-11: filter out `#`-prefixed private members from the

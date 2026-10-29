@@ -342,33 +342,14 @@ fn test_cls08_readonly_removed() {
     );
 }
 
-// ── CLS-09: Implements removed ───────────────────────────────────────────
-
 #[test]
-fn test_cls09_implements_removed() {
+fn implements_clause_changes_do_not_change_the_instance_contract() {
     let mut old_shape = make_class(vec![]);
     old_shape.implements_list = vec!["Serializable".to_string(), "Cloneable".to_string()];
-
     let mut new_shape = make_class(vec![]);
     new_shape.implements_list = vec!["Serializable".to_string()];
 
-    let findings = run(&old_shape, &new_shape);
-
-    assert!(
-        rules(&findings).contains(&"class-implements-removed"),
-        "Removed interface should fire class-implements-removed"
-    );
-    assert!(
-        findings.iter().any(|f| f.message.contains("Cloneable")),
-        "Message should include the removed interface name"
-    );
-    // Serializable was kept — should NOT appear in findings
-    assert!(
-        !findings
-            .iter()
-            .any(|f| f.rule == "class-implements-removed" && f.message.contains("Serializable")),
-        "Retained interface should NOT produce a finding"
-    );
+    assert!(run(&old_shape, &new_shape).is_empty());
 }
 
 // ── ECF-10: Method kind changed (getter/setter/method) ────────────────────

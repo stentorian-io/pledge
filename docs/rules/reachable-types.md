@@ -10,6 +10,11 @@ Iterator and generator contracts include the values accepted by `.next()`.
 Narrowing those inputs on a returned iterator is breaking; widening them is
 compatible. Yielded and returned values retain output compatibility.
 
+A class's `implements` clause checks its implementation against an interface; it
+does not add members to the class's public type. Removing only that clause stays
+compatible and does not emit `class-implements-removed`. Removing or changing an
+actual public member still participates in the ordinary structural comparisons.
+
 Declaration identity is scoped to its source file. Generic parameters shadow
 local declarations. Recursive references retain a recursion marker; depth and
 work limits produce incomplete analysis warnings. Expansion is limited to 32

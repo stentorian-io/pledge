@@ -351,29 +351,29 @@ fn readonly_changed() {
 }
 
 #[test]
-fn implements_removed() {
-    let old = b"export class Foo implements A, B {}";
-    let new = b"export class Foo implements A {}";
+fn implements_clause_removal_preserves_the_structural_contract() {
+    let old_source = "interface Readable { read(): string } export class Foo implements Readable { read(): string { return 'ok'; } }";
+    let old = extract_class(old_source.as_bytes(), "Foo");
+    for (new_source, removes_member) in [
+        ("interface Readable { read(): string } export class Foo { read(): string { return 'ok'; } }", false),
+        ("interface Readable { read(): string } export class Foo {}", true),
+    ] {
+        let new = extract_class(new_source.as_bytes(), "Foo");
+        let findings = class_diff::compare_class_shapes(&old, &new, "Foo", &test_file(), 1, 1);
+        assert!(!findings.iter().any(|finding| finding.rule == "class-implements-removed"), "{findings:?}");
+        assert_eq!(findings.iter().any(|finding| finding.rule == "class-method-removed"), removes_member, "{findings:?}");
+        assert_eq!(interlint::core::findings::has_breaking_changes(&findings), removes_member, "{findings:?}");
 
-    let old_shape = extract_class(old, "Foo");
-    let new_shape = extract_class(new, "Foo");
-
-    let findings =
-        class_diff::compare_class_shapes(&old_shape, &new_shape, "Foo", &test_file(), 1, 1);
-
-    assert!(
-        findings
-            .iter()
-            .any(|f| f.rule == "class-implements-removed"),
-        "Expected class-implements-removed, got: {:?}",
-        rule_ids(&findings)
-    );
-    assert!(
-        findings
-            .iter()
-            .any(|f| f.rule == "class-implements-removed" && f.message.contains("B")),
-        "Finding should mention removed interface B"
-    );
+        #[cfg(feature = "lsp-tests")]
+        for (source, succeeds) in [(old_source, true), (new_source, !removes_member)] {
+            let directory = tempfile::tempdir().unwrap();
+            std::fs::write(directory.path().join("consumer.ts"), format!("{source}\nconst reader: Readable = new Foo(); reader.read();")).unwrap();
+            let consumer = std::process::Command::new("tsc")
+                .args(["--strict", "--noEmit", "consumer.ts"])
+                .current_dir(directory.path()).output().unwrap();
+            assert_eq!(consumer.status.success(), succeeds, "{}", String::from_utf8_lossy(&consumer.stdout));
+        }
+    }
 }
 
 /// Extract rule IDs from a findings slice.
