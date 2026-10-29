@@ -57,6 +57,65 @@ fn stylesheet_redirects_compare_the_selected_api() {
 }
 
 #[test]
+fn selected_stylesheets_keep_independent_contracts() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    for directory in [&old, &new] {
+        std::fs::write(
+            directory.path().join("package.json"),
+            r#"{"style":["a.css","b.css"]}"#,
+        )
+        .unwrap();
+        std::fs::write(directory.path().join("b.css"), ".api { --color: red; }").unwrap();
+    }
+    std::fs::write(old.path().join("a.css"), ".api { --color: red; }").unwrap();
+    std::fs::write(new.path().join("a.css"), "").unwrap();
+
+    let findings = css_diff::compare_css_files(old.path(), new.path());
+
+    for rule in [RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED] {
+        assert!(
+            findings.iter().any(|finding| {
+                finding.rule == rule && finding.file == std::path::Path::new("a.css")
+            }),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
+fn missing_stylesheets_do_not_hide_readable_evidence() {
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    for directory in [&old, &new] {
+        std::fs::write(
+            directory.path().join("package.json"),
+            r#"{"style":["main.css","missing.css"]}"#,
+        )
+        .unwrap();
+    }
+    std::fs::write(old.path().join("main.css"), ".api {}").unwrap();
+    std::fs::write(new.path().join("main.css"), "").unwrap();
+
+    let findings = css_diff::compare_css_files(old.path(), new.path());
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == RULE_CSS_CLASS_REMOVED
+                && finding.file == std::path::Path::new("main.css")
+        }),
+        "{findings:?}"
+    );
+    assert!(
+        findings.iter().any(|finding| {
+            finding.rule == "analysis-incomplete"
+                && finding.file == std::path::Path::new("missing.css")
+        }),
+        "{findings:?}"
+    );
+}
+
+#[test]
 fn test_css_custom_property_removed_integration() {
     let old = fixture_path("node/assets/css/old");
     let new = fixture_path("node/assets/css/new");

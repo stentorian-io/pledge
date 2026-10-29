@@ -170,26 +170,25 @@ pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let old_css = discover_css_files(old_root, &mut findings);
     let new_css = discover_css_files(new_root, &mut findings);
 
-    if let (Stylesheets::EntryPoints(old), Stylesheets::EntryPoints(new)) = (&old_css, &new_css) {
-        let Some(report_file) = new.first() else {
-            return findings;
-        };
-        findings.extend(compare_stylesheets(
-            old_root,
-            new_root,
-            old,
-            new,
-            report_file,
-        ));
-        return findings;
-    }
-
-    // Compare files present in both old and new
+    // Retained entry paths keep independent contracts even when another file
+    // happens to expose the same class or custom property.
     for css_file in old_css.paths().intersection(new_css.paths()) {
         let files = BTreeSet::from([css_file.clone()]);
         findings.extend(compare_stylesheets(
             old_root, new_root, &files, &files, css_file,
         ));
+    }
+    if let (Stylesheets::EntryPoints(old), Stylesheets::EntryPoints(new)) = (&old_css, &new_css) {
+        let redirected = old.difference(new).cloned().collect::<BTreeSet<_>>();
+        if let Some(report_file) = new.first().filter(|_| !redirected.is_empty()) {
+            findings.extend(compare_stylesheets(
+                old_root,
+                new_root,
+                &redirected,
+                new,
+                report_file,
+            ));
+        }
     }
     findings
 }
@@ -197,16 +196,33 @@ pub fn compare_css_files(old_root: &Path, new_root: &Path) -> Vec<Finding> {
 fn stylesheet_apis(
     root: &Path,
     files: &BTreeSet<String>,
+    side: &str,
+    findings: &mut Vec<Finding>,
 ) -> Option<(BTreeSet<String>, BTreeSet<String>)> {
     let mut properties = BTreeSet::new();
     let mut classes = BTreeSet::new();
+    let mut complete = true;
     for file in files {
-        let source = std::fs::read(root.join(file)).ok()?;
+        let source = match std::fs::read(root.join(file)) {
+            Ok(source) => source,
+            Err(error) => {
+                findings.push(Finding {
+                    severity: Severity::Warning,
+                    rule: "analysis-incomplete",
+                    file: PathBuf::from(file),
+                    line: 1,
+                    col: 1,
+                    message: format!("{side}: cannot read stylesheet `{file}`: {error}"),
+                });
+                complete = false;
+                continue;
+            }
+        };
         let (file_properties, file_classes) = extract_css_apis(&source);
         properties.extend(file_properties);
         classes.extend(file_classes);
     }
-    Some((properties, classes))
+    complete.then_some((properties, classes))
 }
 
 fn compare_stylesheets(
@@ -218,8 +234,8 @@ fn compare_stylesheets(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     let (Some((old_props, old_classes)), Some((new_props, new_classes))) = (
-        stylesheet_apis(old_root, old_files),
-        stylesheet_apis(new_root, new_files),
+        stylesheet_apis(old_root, old_files, "baseline", &mut findings),
+        stylesheet_apis(new_root, new_files, "current", &mut findings),
     ) else {
         return findings;
     };

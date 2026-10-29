@@ -41,9 +41,12 @@ or `css` manifest field selects stylesheets; without either field, all shipped
 CSS files are scanned.
 
 Equivalent relative path spellings such as `./style.css` and `style.css` do
-not change the comparison. When both snapshots declare stylesheet entry points,
-Pledge compares their combined CSS API even if the manifest redirects to a
-different retained file. Without declared entry points, files are paired by path.
+not change the comparison. Retained stylesheet paths keep independent APIs.
+When both snapshots declare stylesheet entry points, Pledge also compares APIs
+from redirected entries against the new selection, even if the manifest points
+to a different retained file. Without declared entry points, files are paired by
+path. Unreadable selected files emit `analysis-incomplete`; they do not suppress
+findings from other readable files.
 
 ## Packed file discovery
 
