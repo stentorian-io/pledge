@@ -13,6 +13,7 @@ every implemented check.
 | Referenced types | [Reachable public types](reachable-types.md) |
 | Package requirements | [Version ranges and platforms](package-requirements.md) |
 | Runtime loading | [Synchronous module loading](module-loading.md) |
+| Distributed files | [JSON, schemas, and stylesheets](distributed-assets.md) |
 | Computed exports and runtime surfaces | [Properties, symbols, and proxies](computed-properties.md) |
 | Triple-slash directives | [Directive changes](directive.md) |
 | Decorators | [Decorator changes](decorator.md) |

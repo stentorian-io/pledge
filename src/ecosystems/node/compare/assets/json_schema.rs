@@ -131,11 +131,23 @@ fn diff_json_values(
 
     match (old, new) {
         (Value::Object(old_map), Value::Object(new_map)) => {
-            // Collect required keys from the new schema's `required` array
-            let required = extract_required_array(new_map);
+            let old_required = extract_required_array(old_map);
+            let new_required = extract_required_array(new_map);
+            for key in new_required.difference(&old_required) {
+                let field_path = make_path(path, key);
+                findings.push(json_finding(
+                    Severity::Major,
+                    RULE_JSON_REQUIRED_FIELD_ADDED,
+                    file_path,
+                    format!("required field `{field_path}` added to `{file_path}`"),
+                ));
+            }
 
             // Keys removed: old has, new doesn't
             for key in old_map.keys() {
+                if key == "required" && old_map[key].is_array() {
+                    continue;
+                }
                 if !new_map.contains_key(key) {
                     let field_path = make_path(path, key);
                     findings.push(json_finding(
@@ -149,23 +161,17 @@ fn diff_json_values(
 
             // Keys added: new has, old doesn't
             for key in new_map.keys() {
+                if key == "required" && new_map[key].is_array() {
+                    continue;
+                }
                 if !old_map.contains_key(key) {
                     let field_path = make_path(path, key);
-                    if required.contains(key) {
-                        findings.push(json_finding(
-                            Severity::Major,
-                            RULE_JSON_REQUIRED_FIELD_ADDED,
-                            file_path,
-                            format!("required field `{}` added to `{}`", field_path, file_path),
-                        ));
-                    } else {
-                        findings.push(json_finding(
-                            Severity::Minor,
-                            RULE_JSON_FIELD_ADDED,
-                            file_path,
-                            format!("field `{}` added to `{}`", field_path, file_path),
-                        ));
-                    }
+                    findings.push(json_finding(
+                        Severity::Minor,
+                        RULE_JSON_FIELD_ADDED,
+                        file_path,
+                        format!("field `{}` added to `{}`", field_path, file_path),
+                    ));
                 }
             }
 
@@ -198,8 +204,8 @@ fn diff_json_values(
         }
 
         // Same type, non-object: no finding
-        // Arrays compared by discriminant only — content changes are not breaking
-        // per JSON import semantics.
+        // Ordinary arrays compare only their kind; schema requirements are
+        // compared as sets by their containing object above.
         _ => {}
     }
 }
@@ -294,13 +300,10 @@ mod tests {
 
     #[test]
     fn test_json_required_field_added() {
-        // The `required` array at the SAME level as the added key triggers AST-02.
-        // This matches JSON Schema semantics where `required` and added fields
-        // are at the same object level.
-        let old = serde_json::json!({"name": "alice"});
+        let old = serde_json::json!({"type": "object", "properties": {}});
         let new = serde_json::json!({
-            "name": "alice",
-            "email": "a@b.com",
+            "type": "object",
+            "properties": {"email": {"type": "string"}},
             "required": ["email"]
         });
         let mut findings = Vec::new();

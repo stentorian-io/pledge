@@ -12,6 +12,7 @@ compare a package with its published version. The executable is `interlint`.
 | Understand a finding or a failed check | [Reading results](results.md) |
 | Consume a report in another tool | [JSON reports](results.md#json-reports) |
 | Understand a specific compatibility rule | [Rule reference](rules/README.md) |
+| Check shipped JSON, schemas, and stylesheets | [Distributed assets](rules/distributed-assets.md) |
 
 ## Develop Pledge
 

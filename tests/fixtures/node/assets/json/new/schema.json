@@ -1,1 +1,1 @@
-{"name":"alice","email":"a@example.com","required":["email"]}
+{"type":"object","properties":{"name":{"type":"string"},"email":{"type":"string"}},"required":["email"]}
