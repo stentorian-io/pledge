@@ -24,9 +24,9 @@ if (configPath) {
     }
   }
 }
-// A public contract must retain nullability even when its author builds without strict mode.
+// Public contracts retain nullability and explicit undefined even under looser author settings.
 Object.assign(options, { allowJs: true, checkJs: true, noEmit: true, skipLibCheck: true,
-  strictNullChecks: true, strictFunctionTypes: true });
+  strictNullChecks: true, strictFunctionTypes: true, exactOptionalPropertyTypes: true });
 const program = ts.createProgram([...new Set(input.symbols.map(symbol => symbol.file))], options);
 const checker = program.getTypeChecker();
 const printer = ts.createPrinter();
@@ -301,7 +301,8 @@ function shape(type, depth = 0, staticClass = null) {
       const setter = declarations.find(ts.isSetAccessorDeclaration);
       fields[propertyName(property)] = { optional: !!(property.flags & ts.SymbolFlags.Optional), readonly,
         write_type: accessorWriteShape(property, setter, depth + 1),
-        shape: shape(checker.getTypeOfSymbol(property), depth + 1) };
+        // Declaration locations remove the compiler's absent-property marker while retaining explicit undefined.
+        shape: shape(checker.getTypeOfSymbolAtLocation(property, declarations[0] || program.getSourceFiles()[0]), depth + 1) };
     }
     const classDeclaration = staticClass || (type.objectFlags & ts.ObjectFlags.Anonymous && type.symbol?.flags & ts.SymbolFlags.Class
       ? type.symbol.declarations?.find(ts.isClassLike) : null);

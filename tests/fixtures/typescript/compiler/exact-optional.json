@@ -1,0 +1,40 @@
+[
+  {
+    "name": "explicit-undefined-removed-from-optional-input",
+    "old": "export type Public = { x?: string | undefined }; export declare function api(value: Public): void;",
+    "new": "export type Public = { x?: string }; export declare function api(value: Public): void;",
+    "consumer": "api({ x: undefined });",
+    "breaking": true,
+    "required_rule": "param-type-narrowed",
+    "extension": "ts",
+    "exact_optional": true
+  },
+  {
+    "name": "explicit-undefined-added-to-optional-input",
+    "old": "type Public = { x?: string }; export declare function api(value: Public): void;",
+    "new": "type Public = { x?: string | undefined }; export declare function api(value: Public): void;",
+    "consumer": "api({ x: \"value\" }); api({});",
+    "breaking": false,
+    "extension": "ts",
+    "exact_optional": true
+  },
+  {
+    "name": "optional-readonly-result-gains-explicit-undefined",
+    "old": "export declare function api(): { readonly x?: string };",
+    "new": "export declare function api(): { readonly x?: string | undefined };",
+    "consumer": "const result = api(); if (\"x\" in result) { const present: string = result.x; }",
+    "breaking": true,
+    "required_rule": "return-type-widened",
+    "extension": "ts",
+    "exact_optional": true
+  },
+  {
+    "name": "optional-readonly-result-removes-explicit-undefined",
+    "old": "export declare function api(): { readonly x?: string | undefined };",
+    "new": "export declare function api(): { readonly x?: string };",
+    "consumer": "const result = api(); const readable: string | undefined = result.x;",
+    "breaking": false,
+    "extension": "ts",
+    "exact_optional": true
+  }
+]

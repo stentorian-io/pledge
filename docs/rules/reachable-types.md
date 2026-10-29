@@ -46,7 +46,10 @@ after it returns. Top-level changes emit `type-guard-widened` or
 `assertion-widened`; nested changes use the enclosing signature's type rules.
 
 Compiler evaluation loads the package's tsconfig and retains strict nullability
-for public contracts. Packages without a tsconfig receive strict NodeNext
+and exact optional properties for public contracts. An omitted optional property
+is distinct from a present property whose value is `undefined`; removing an
+explicit `| undefined` can break consumers using `exactOptionalPropertyTypes`.
+Packages without a tsconfig receive strict NodeNext
 resolution, including dependencies that publish types only through `exports`.
 It does not execute package code. Unevaluated symbolic
 types (including uninstantiated mapped types), missing declarations, compiler

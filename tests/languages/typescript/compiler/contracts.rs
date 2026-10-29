@@ -26,6 +26,7 @@ macro_rules! consumer_contracts {
 consumer_contracts!(accessors, "accessors");
 consumer_contracts!(classes, "classes");
 consumer_contracts!(callables, "callables");
+consumer_contracts!(exact_optional, "exact-optional");
 consumer_contracts!(generics, "generics");
 consumer_contracts!(inference, "inference");
 consumer_contracts!(iterator_inputs, "iterator-inputs");
@@ -81,6 +82,12 @@ async fn assert_consumer_contracts(specifications: &str) {
                     "NodeNext",
                     "consumer.ts",
                 ])
+                .args(
+                    case["exact_optional"]
+                        .as_bool()
+                        .unwrap_or(false)
+                        .then_some("--exactOptionalPropertyTypes"),
+                )
                 .output()
                 .unwrap();
             assert_eq!(
