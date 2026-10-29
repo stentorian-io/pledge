@@ -2,9 +2,11 @@
 
 use crate::core::findings::{Finding, Severity};
 use std::collections::{BTreeSet, HashSet};
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 const MAX_DIRECTORY_DEPTH: usize = 128;
+const MAX_DIRECTORY_ENTRIES: usize = 100_000;
 
 #[derive(Default)]
 pub(super) struct PackageFiles {
@@ -31,6 +33,14 @@ impl PackageFiles {
 }
 
 pub(super) fn scan_package_files(root: &Path, accepts: fn(&Path) -> bool) -> PackageFiles {
+    scan_package_files_with_limit(root, accepts, MAX_DIRECTORY_ENTRIES)
+}
+
+fn scan_package_files_with_limit(
+    root: &Path,
+    accepts: fn(&Path) -> bool,
+    max_directory_entries: usize,
+) -> PackageFiles {
     let mut result = PackageFiles::default();
     let root = match root.canonicalize() {
         Ok(root) => root,
@@ -44,9 +54,61 @@ pub(super) fn scan_package_files(root: &Path, accepts: fn(&Path) -> bool) -> Pac
         Path::new(""),
         accepts,
         &mut HashSet::new(),
+        &mut ScanBudget {
+            remaining_entries: max_directory_entries,
+            exhausted: false,
+        },
         &mut result,
     );
     result
+}
+
+struct ScanBudget {
+    remaining_entries: usize,
+    exhausted: bool,
+}
+
+fn directory_entries(
+    path: &Path,
+    relative: &Path,
+    budget: &mut ScanBudget,
+    result: &mut PackageFiles,
+) -> Option<Vec<OsString>> {
+    let directory = match std::fs::read_dir(path) {
+        Ok(directory) => directory,
+        Err(error) => {
+            result.incomplete(relative, error);
+            return None;
+        }
+    };
+    let mut names = Vec::new();
+    for entry in directory {
+        if budget.remaining_entries == 0 {
+            budget.exhausted = true;
+            result.incomplete(relative, "directory entry work limit reached");
+            return None;
+        }
+        budget.remaining_entries -= 1;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                result.incomplete(relative, error);
+                continue;
+            }
+        };
+        let name = entry.file_name();
+        if name
+            .to_str()
+            .is_some_and(|name| name.starts_with('.') || name == "node_modules")
+        {
+            continue;
+        }
+        names.push(name);
+    }
+    // Enumerate each whole directory before descending so filesystem iteration
+    // order cannot determine which public paths survive an exhausted budget.
+    names.sort();
+    Some(names)
 }
 
 fn collect(
@@ -54,6 +116,7 @@ fn collect(
     relative: &Path,
     accepts: fn(&Path) -> bool,
     ancestors: &mut HashSet<PathBuf>,
+    budget: &mut ScanBudget,
     result: &mut PackageFiles,
 ) {
     let path = root.join(relative);
@@ -91,27 +154,20 @@ fn collect(
         result.incomplete(relative, "directory symlink cycle");
         return;
     }
-    match std::fs::read_dir(&path) {
-        Ok(entries) => {
-            for entry in entries {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(error) => {
-                        result.incomplete(relative, error);
-                        continue;
-                    }
-                };
-                let name = entry.file_name();
-                if name
-                    .to_str()
-                    .is_some_and(|name| name.starts_with('.') || name == "node_modules")
-                {
-                    continue;
-                }
-                collect(root, &relative.join(name), accepts, ancestors, result);
+    if let Some(entries) = directory_entries(&path, relative, budget, result) {
+        for name in entries {
+            collect(
+                root,
+                &relative.join(name),
+                accepts,
+                ancestors,
+                budget,
+                result,
+            );
+            if budget.exhausted {
+                break;
             }
         }
-        Err(error) => result.incomplete(relative, error),
     }
     // Track ancestors rather than all visited directories: a noncyclic alias
     // exposes its own packed paths and must remain visible to comparisons.
@@ -121,6 +177,89 @@ fn collect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn branching_acyclic_aliases_exhaust_the_shared_scan_budget() {
+        let root = tempfile::tempdir().unwrap();
+        let reordered = tempfile::tempdir().unwrap();
+        for (directory, levels, names) in [
+            (&root, [0, 1, 2, 3, 4, 5], ["a", "b"]),
+            (&reordered, [5, 4, 3, 2, 1, 0], ["b", "a"]),
+        ] {
+            for level in levels {
+                std::fs::create_dir(directory.path().join(format!("d{level}"))).unwrap();
+            }
+            for level in 0..5 {
+                for name in names {
+                    std::os::unix::fs::symlink(
+                        format!("../d{}", level + 1),
+                        directory.path().join(format!("d{level}/{name}")),
+                    )
+                    .unwrap();
+                }
+            }
+            std::fs::write(directory.path().join("d5/api.js"), "").unwrap();
+        }
+
+        let result = scan_package_files_with_limit(root.path(), |_| true, 32);
+        let reordered_result = scan_package_files_with_limit(reordered.path(), |_| true, 32);
+
+        assert_eq!(result.findings.len(), 1, "{:?}", result.findings);
+        assert_eq!(result.findings[0].rule, "analysis-incomplete");
+        assert!(result.findings[0].message.contains("entry work limit"));
+        assert!(!result.paths.is_empty());
+        assert!(result.paths.len() < 32, "{:?}", result.paths);
+        assert_eq!(result.paths, reordered_result.paths);
+        assert_eq!(reordered_result.findings.len(), 1);
+        assert_eq!(result.findings[0].file, reordered_result.findings[0].file);
+    }
+
+    #[test]
+    fn an_oversized_directory_reports_its_whole_unscanned_scope() {
+        let root = tempfile::tempdir().unwrap();
+        for name in ["c.js", "b.js", "a.js"] {
+            std::fs::write(root.path().join(name), "").unwrap();
+        }
+
+        let result = scan_package_files_with_limit(root.path(), |_| true, 2);
+
+        assert!(result.paths.is_empty());
+        assert_eq!(result.findings.len(), 1, "{:?}", result.findings);
+        assert_eq!(result.findings[0].rule, "analysis-incomplete");
+        assert!(result.findings[0].message.contains("entry work limit"));
+    }
+
+    #[test]
+    fn ignored_entries_still_count_toward_directory_work() {
+        let root = tempfile::tempdir().unwrap();
+        for name in [".a", ".b", ".c"] {
+            std::fs::write(root.path().join(name), "").unwrap();
+        }
+
+        let result = scan_package_files_with_limit(root.path(), |_| true, 2);
+
+        assert!(result.paths.is_empty());
+        assert_eq!(result.findings.len(), 1, "{:?}", result.findings);
+        assert!(result.findings[0].message.contains("entry work limit"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn small_aliases_remain_visible_at_the_exact_entry_budget() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("real")).unwrap();
+        std::fs::write(root.path().join("real/api.js"), "").unwrap();
+        std::os::unix::fs::symlink("real", root.path().join("alias")).unwrap();
+
+        let result = scan_package_files_with_limit(root.path(), |_| true, 4);
+
+        assert!(result.findings.is_empty(), "{:?}", result.findings);
+        assert_eq!(
+            result.paths,
+            BTreeSet::from(["alias/api.js".into(), "real/api.js".into()])
+        );
+    }
 
     #[cfg(unix)]
     #[test]

@@ -55,3 +55,10 @@ symlink aliases keep their own public paths. Directory cycles, links outside the
 package, broken links, unreadable paths, and the directory depth limit of 128
 emit Warning `analysis-incomplete`, making the CLI exit `3`. These paths are not
 followed; successfully scanned paths remain available for comparison.
+
+Each scan also limits work to 100,000 directory entries, counting entries seen
+through aliases again and including skipped names. Reaching this limit stops
+the scan with `analysis-incomplete`; this bounds branching aliases even without
+a directory cycle. Directories are visited in name order. If a whole directory
+cannot be enumerated within the remaining budget, its contents are left
+unscanned so partial results do not depend on filesystem enumeration order.
