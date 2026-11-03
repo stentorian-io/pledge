@@ -18,7 +18,9 @@ export function isRustInput(path: string) {
 }
 
 export function isToolingInput(path: string) {
-  return path.startsWith("scripts/") || path === "Makefile";
+  return path.startsWith("scripts/") || path.startsWith(".github/")
+    || path === "Makefile" || path === "release-please-config.json"
+    || path === ".release-please-manifest.json";
 }
 
 export function classifyChanges(paths: string[]) {
@@ -27,7 +29,7 @@ export function classifyChanges(paths: string[]) {
     if (path.endsWith(".md")) kinds.add("docs");
     else if (path.startsWith("tests/") || /\.(test|spec)\.ts$/.test(path)) kinds.add("test");
     else if (isImplementationSource(path)) kinds.add("source");
-    else if (path.startsWith("scripts/") && (/\.(ts|sh)$/.test(path)
+    else if (path.startsWith("scripts/") && (/\.(ts|cjs|sh)$/.test(path)
       || /^scripts\/hooks\/(pre-commit|prepare-commit-msg|commit-msg|pre-push)$/.test(path))) kinds.add("source");
     else if (path.startsWith(".github/")) kinds.add("ci");
     else kinds.add("build");

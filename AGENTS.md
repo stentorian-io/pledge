@@ -131,13 +131,19 @@ Code should communicate its purpose through names, structure, and flow.
 - Update rule docs when detection, severity, or limitations change. Distinguish
   emitted rule IDs from limitations documented without a finding.
 - Keep generated files, local state, secrets, and machine-specific paths out of
-  commits. There are no hosted CI workflows or pipelines at present; add them
-  only when explicitly requested.
+  commits. Hosted checks and release automation live in `.github/workflows/`;
+  see `docs/releases.md` for activation requirements and release policy.
 - Do not mix broad refactors with behavioral changes. Batch related work into
   coherent commits; commit and push only within the user's authorized scope.
 - Use unscoped Conventional Commits: `feat: ...`, `fix: ...`, `test: ...`,
   `docs: ...`, `refactor: ...`, `perf: ...`, `style: ...`, `build: ...`, or
   `chore: ...`. Choose the type by its user-facing changelog category.
+- Before every commit, review the staged diff for changelog usefulness and
+  compatibility impact. Describe the observable outcome, not the coding task.
+  Internal tooling is not a product feature. Do not infer a release category
+  solely from filenames or silently rewrite a commit's intended category.
+- Release Please owns version bumps and release notes across distributions.
+  Keep Cargo and the release manifest synchronized; follow `docs/releases.md`.
 - Start descriptions lowercase and omit the final period. Do not include
   scopes, co-author trailers, sign-offs, or generated-by attribution. Use a
   `BREAKING CHANGE:` footer when it conveys a real public contract change.

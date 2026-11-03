@@ -80,7 +80,7 @@ if [ "$1" = "$PLEDGE_FAIL_COMMAND" ]; then exit 7; fi
   return { root, base, invoke, git, stage, hook, commit, message, commands: () => readFileSync(log, "utf8") };
 }
 
-test("installed hooks correct a documentation commit without running Rust checks", () => {
+test("installed hooks reject a mistyped documentation commit without rewriting intent", () => {
   const repo = repository();
   expect(repo.hook("install").exitCode).toBe(0);
   expect(repo.git("config", "--local", "core.hooksPath")).toBe("scripts/hooks");
@@ -88,7 +88,8 @@ test("installed hooks correct a documentation commit without running Rust checks
   repo.stage("README.md", "# Updated usage\n");
   const commit = repo.invoke(["git", "commit", "-m", "feat: explain installation"]);
 
-  expect(commit.exitCode).toBe(0);
+  expect(commit.exitCode).not.toBe(0);
+  expect(repo.invoke(["git", "commit", "-m", "docs: explain installation"]).exitCode).toBe(0);
   expect(repo.git("log", "-1", "--format=%s")).toBe("docs: explain installation");
   expect(repo.commands()).toBe("");
 });
@@ -123,9 +124,9 @@ test("rejects generation credits in the commit body", () => {
   expect(repo.message("docs: explain setup\n\n🤖 Generated with [Claude Code](https://example.invalid)\n").exitCode).not.toBe(0);
 });
 
-test("hook wrappers count as implementation source", () => {
+test.each(["scripts/hooks/pre-commit", "scripts/releases/policy.cjs"])("tooling implementation permits fix commits: %s", (path) => {
   const repo = repository();
-  repo.stage("scripts/hooks/pre-commit", "#!/bin/sh\nexit 1\n");
+  repo.stage(path, path.endsWith(".cjs") ? "module.exports = {};\n" : "#!/bin/sh\nexit 1\n");
   expect(repo.message("fix: correct hook startup").exitCode).toBe(0);
 });
 

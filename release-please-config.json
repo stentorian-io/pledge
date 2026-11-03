@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "94e12a5806bbbd1f03afefa33b9c7b4b8e093ce1",
+  "release-type": "rust",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "pull-request-title-pattern": "chore: release ${version}",
+  "pull-request-header": "Review the version, compatibility impact, and user-facing release notes before merging.",
+  "pull-request-footer": "Routine releases may merge after 24 quiet hours with passing checks. Breaking releases require manual merge. Add `release: hold` to pause scheduled merging.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "refactor", "section": "Internal", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "Automation", "hidden": true },
+    { "type": "chore", "section": "Maintenance", "hidden": true },
+    { "type": "style", "section": "Style", "hidden": true }
+  ],
+  "packages": { ".": {} }
+}

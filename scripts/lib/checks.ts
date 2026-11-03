@@ -32,5 +32,5 @@ export function checkCoverage() {
 }
 
 export function checkTools() {
-  run("bun", ["test", "./scripts/hooks/hooks.test.ts"]);
+  run("bun", ["test", "./scripts/hooks/hooks.test.ts", "./scripts/releases"]);
 }

@@ -109,5 +109,7 @@ The push hook runs LSP and coverage checks for code or fixture changes. See
 ## Development tooling
 
 `scripts/hooks/hooks.test.ts` exercises hooks in temporary repositories using
-command-recording executables. Run `make test-tools` when changing hooks or their
-shared scripts; these checks do not require external services or product tests.
+command-recording executables. `scripts/releases/releases.test.ts` covers commit
+semantics, release timing, holds, and version consistency. Run `make test-tools`
+when changing hooks or release tooling; these checks do not require external
+services or product tests.

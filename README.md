@@ -121,8 +121,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and commit conventi
 [architecture](docs/architecture.md) for the analysis pipeline.
 
 The maintained development flow targets Unix environments. Windows has not
-been validated as a release platform. Checks run locally; this repository does
-not have hosted CI workflows yet.
+been validated as a release platform. Checks run locally and through hosted
+workflows. See [release automation](docs/releases.md) for activation requirements.
 
 ## Licensing
 

@@ -19,6 +19,7 @@ compare a package with its published version. The executable is `pledge`.
 | I want to… | Read |
 | --- | --- |
 | Set up a checkout and contribute a change | [Contributing](../CONTRIBUTING.md) |
+| Classify commits, review versions, or release Pledge | [Releasing](releases.md) |
 | Find the code responsible for a behavior | [Architecture](architecture.md) |
 | Choose a test or add a fixture | [Test architecture](../tests/README.md) |
 | Review a published-package regression | [Reference suite](reference-suite.md) |

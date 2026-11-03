@@ -1,7 +1,8 @@
 # Contributing
 
 Pledge builds the `pledge` crate and executable. Development checks
-run locally; this repository does not have hosted CI workflows or pipelines.
+run locally and through the hosted checks workflow. Release automation and its
+activation requirements are described in [Releasing](docs/releases.md).
 For installing and using the linter in another project's CI, see
 [CI integration](docs/ci.md).
 
@@ -67,8 +68,8 @@ The hooks use these same checks:
   and default tests for Rust, embedded compiler, Cargo/config, or package fixture
   changes. Deleted inputs count too. Documentation-only commits skip these Rust
   checks.
-- **prepare-commit-msg:** suggests a type and changes `feat`/`fix` to `docs`,
-  `test`, or `chore` when the staged changes fall entirely in that category.
+- **prepare-commit-msg:** suggests a type and reminds authors to consider
+  changelog usefulness and compatibility, without rewriting their message.
 - **commit-msg:** validates unscoped Conventional Commits and rejects
   attribution trailers. `feat`/`fix` must change implementation source; `test`
   must change tests or implementation source. The embedded compiler's `.cjs`
@@ -155,9 +156,15 @@ Choose the type by the change's changelog category. Also use `refactor`, `perf`,
 `style`, `build`, `ci`, or `revert` when appropriate. Use `chore` or `build` for
 local verification setup; `ci` is reserved for actual CI configuration.
 
+Before every commit, read the staged diff from a changelog reader's perspective:
+describe the user-visible outcome and classify its compatibility impact.
+Internal maintenance is not a product feature. Follow the
+[release policy](docs/releases.md#classify-changes-for-readers) for versioning,
+breaking changes, and squash-merge requirements.
+
 Do not add scopes such as `feat(parser):`, phase identifiers, co-author lines,
 sign-offs, reviewed-by/tested-by trailers, or generated-by attribution. A real
-public compatibility break can use `!` and a `BREAKING CHANGE:` explanation.
+public compatibility break uses `!` and a `BREAKING CHANGE:` explanation.
 Merge commits follow the same subject convention.
 
 ## Baseline maintenance
