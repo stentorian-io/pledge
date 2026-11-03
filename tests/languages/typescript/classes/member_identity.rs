@@ -1,12 +1,12 @@
 //! Private, static, and instance members occupy distinct public API slots.
 //! Declared members retain their decorators when a static block assigns to them.
 
-use interlint::core::findings::Finding;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::rules::RULE_CLASS_FIELD_MADE_PRIVATE;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::typescript::compare::rules::{
+use pledge::core::findings::Finding;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::rules::RULE_CLASS_FIELD_MADE_PRIVATE;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::typescript::compare::rules::{
     RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
 use std::path::{Path, PathBuf};
@@ -137,7 +137,7 @@ fn static_decorator_changes_are_not_hidden_by_instance_namesakes() {
         findings
             .iter()
             .any(|finding| finding.rule.starts_with("decorator-")
-                && finding.severity == interlint::core::findings::Severity::Major),
+                && finding.severity == pledge::core::findings::Severity::Major),
         "{findings:?}"
     );
 }

@@ -1,8 +1,7 @@
 # Architecture
 
-The `interlint` CLI compares the public surface of a local npm package with its
-previously published version. Pledge is the repository name; the crate and
-executable still use `interlint`.
+The `pledge` CLI compares the public surface of a local npm package with its
+previously published version. The Cargo crate and executable are named `pledge`.
 
 ## Source layout
 

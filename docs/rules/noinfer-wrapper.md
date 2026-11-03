@@ -28,7 +28,7 @@ consumers that relied on the previous result.
 
 ### `generic-inference-constraint-removed` — Minor
 
-Fires when `NoInfer<T>` is removed from a position that Interlint
+Fires when `NoInfer<T>` is removed from a position that Pledge
 tracks. Two positions are in scope:
 
 **Function-parameter position** (TS 5.4+ common case):
@@ -74,7 +74,7 @@ call. Local aliases and generic callables returned by an API are included.
 
 ## Scope
 
-Interlint tracks `NoInfer` at the two positions above.
+Pledge tracks `NoInfer` at the two positions above.
 
 Callable contracts returned by an API, or exposed as object properties, are
 also inspected. A `NoInfer` wrapper used only as a non-callable result type does

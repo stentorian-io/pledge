@@ -5,7 +5,7 @@ Catch breaking changes in JavaScript and TypeScript packages before publishing.
 Pledge compares the package you are about to publish with a version from your
 npm registry. It reports changes to public exports, types, package requirements,
 and distributed files, and returns an exit code you can use in CI.
-The command and Cargo package are currently named `interlint`.
+The command and Cargo package are named `pledge`.
 
 [Quick start](#quick-start) · [Example](#a-change-that-breaks-a-consumer) ·
 [What Pledge checks](#what-pledge-checks) · [CI integration](docs/ci.md) ·
@@ -22,12 +22,12 @@ Node.js 22.12 or newer and npm.
 git clone https://github.com/stentorian-io/pledge.git
 cd pledge
 cargo install --locked --path .
-interlint --version
+pledge --version
 ```
 
-Cargo installs `interlint` into `~/.cargo/bin`; keep that directory on `PATH`.
+Cargo installs `pledge` into `~/.cargo/bin`; keep that directory on `PATH`.
 Source installation is the current distribution method. An npm wrapper and
-prebuilt binaries are not published yet. Run `interlint --help` for the available
+prebuilt binaries are not published yet. Run `pledge --help` for the available
 options.
 
 ### Check your package
@@ -38,7 +38,7 @@ its publishable JavaScript and declarations, then run:
 ```sh
 npm ci
 npm run build                 # omit if your package needs no build
-interlint --against latest
+pledge --against latest
 ```
 
 The report names the compared versions and lists findings with their rule IDs
@@ -98,8 +98,8 @@ produce an incomplete result.
 Select one package, choose a baseline, and keep the command's exit status:
 
 ```sh
-interlint ./packages/core --against 1.4.2
-interlint --against latest --format json > ../interlint-report.json
+pledge ./packages/core --against 1.4.2
+pledge --against latest --format json > ../pledge-report.json
 ```
 
 Each command is a separate example. The first checks a workspace member against

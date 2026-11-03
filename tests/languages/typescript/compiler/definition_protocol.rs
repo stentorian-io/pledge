@@ -21,11 +21,10 @@ async fn definition_resolves_imported_property() {
     let pkg_root =
         PathBuf::from(manifest).join("tests/fixtures/typescript/types/import-references/clean/old");
 
-    let binary =
-        interlint::languages::typescript::compiler::toolchain::resolve_lsp_binary(&pkg_root)
-            .await
-            .expect("LSP binary must be resolvable for the protocol test");
-    let session = interlint::languages::typescript::compiler::protocol::client::start_session(
+    let binary = pledge::languages::typescript::compiler::toolchain::resolve_lsp_binary(&pkg_root)
+        .await
+        .expect("LSP binary must be resolvable for the protocol test");
+    let session = pledge::languages::typescript::compiler::protocol::client::start_session(
         &binary, &pkg_root,
     )
     .await

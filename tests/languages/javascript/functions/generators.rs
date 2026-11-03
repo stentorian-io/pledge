@@ -8,8 +8,8 @@ fn test_file() -> PathBuf {
 
 #[test]
 fn generator_removed_is_major_severity() {
-    use interlint::languages::javascript::compare::behavior::compare_behavior;
-    use interlint::languages::javascript::model::{ExportKind, ExportSymbol};
+    use pledge::languages::javascript::compare::behavior::compare_behavior;
+    use pledge::languages::javascript::model::{ExportKind, ExportSymbol};
 
     let file = test_file();
     let old_sym = ExportSymbol {
@@ -66,7 +66,7 @@ fn generator_removed_is_major_severity() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::core::findings::Severity::Major,
+        pledge::core::findings::Severity::Major,
         "SEM-04: generator-removed should be Major. Got: {:?}",
         f.severity
     );

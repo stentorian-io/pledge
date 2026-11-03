@@ -1,6 +1,6 @@
 //! Path aliases compatibility checks.
 
-use interlint::languages::javascript::model::ExportKey;
+use pledge::languages::javascript::model::ExportKey;
 
 #[test]
 fn tsconfig_alias_resolution() {
@@ -51,7 +51,7 @@ fn tsconfig_alias_resolution() {
     )
     .unwrap();
 
-    let result = interlint::ecosystems::node::discovery::discover_exports(pkg_dir.path());
+    let result = pledge::ecosystems::node::discovery::discover_exports(pkg_dir.path());
     assert!(
         result.is_ok(),
         "discover_exports should not error with tsconfig path aliases; got: {:?}",

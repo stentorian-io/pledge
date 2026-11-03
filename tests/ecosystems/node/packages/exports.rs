@@ -1,14 +1,14 @@
 //! Integration tests for  exports diff rules (EXP-01..13).
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::compare::rules::{
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::compare::rules::{
     RULE_BIN_ENTRY_CHANGED, RULE_CJS_TO_ESM, RULE_CONDITION_REMOVED, RULE_CONDITION_TARGET_CHANGED,
     RULE_ESM_TO_CJS, RULE_EXPORTS_FIELD_ADDED, RULE_IMPORTABLE_FILE_REMOVED,
     RULE_PLATFORM_NARROWED, RULE_SUBPATH_ADDED, RULE_SUBPATH_PATTERN_CHANGED, RULE_SUBPATH_REMOVED,
     RULE_TYPES_CONDITION_REMOVED, RULE_TYPES_RUNTIME_MISMATCH,
 };
-use interlint::ecosystems::node::compare::{exports as exports_diff, metadata};
+use pledge::ecosystems::node::compare::{exports as exports_diff, metadata};
 use std::path::{Path, PathBuf};
 
 fn read_pkg(path: &Path) -> serde_json::Value {
@@ -16,7 +16,7 @@ fn read_pkg(path: &Path) -> serde_json::Value {
     serde_json::from_str(&content).unwrap()
 }
 
-fn rule_ids(findings: &[interlint::core::findings::Finding]) -> Vec<&'static str> {
+fn rule_ids(findings: &[pledge::core::findings::Finding]) -> Vec<&'static str> {
     findings.iter().map(|f| f.rule).collect()
 }
 

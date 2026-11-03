@@ -2,10 +2,10 @@
 //! removal findings. Class members and unexported values must not leak into the
 //! module surface.
 
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/javascript/properties/symbol-exports";

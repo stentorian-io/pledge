@@ -61,7 +61,7 @@ added literal value (e.g. `"triangle"`).
 
 ### Discriminated unions only
 
-Interlint's BEH-06 detection fires **only** on discriminated unions.
+Pledge's BEH-06 detection fires **only** on discriminated unions.
 Plain-union widening — e.g., `number | boolean` → `number | boolean | string`
 — is structurally compatible and produces no finding. Only consumers of
 the full discriminated shape can exhaustive-switch on a discriminant; a

@@ -12,11 +12,11 @@
 //!    findings when the constraint is the same across versions, even if
 //!    an unrelated symbol was added nearby.
 
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::typescript::compare::rules::RULE_INFER_EXTENDS_CONSTRAINT_CHANGED;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::typescript::compare::rules::RULE_INFER_EXTENDS_CONSTRAINT_CHANGED;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/generics/constrained-inference";
@@ -26,7 +26,7 @@ fn fixture_dir(form: &str, side: &str) -> PathBuf {
     Path::new(manifest).join(FIXTURE_ROOT).join(form).join(side)
 }
 
-fn run(form: &str) -> Vec<interlint::core::findings::Finding> {
+fn run(form: &str) -> Vec<pledge::core::findings::Finding> {
     let old_dir = fixture_dir(form, "old");
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();

@@ -1,9 +1,9 @@
 //! Exports compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
 
 #[test]
 fn test_compare_detects_removed_export() {

@@ -1,7 +1,7 @@
 //! Readonly aliases compatibility checks.
 
-use interlint::languages::typescript::compare::types::diff_types;
-use interlint::languages::typescript::types::shape::TypeShape;
+use pledge::languages::typescript::compare::types::diff_types;
+use pledge::languages::typescript::types::shape::TypeShape;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -10,7 +10,7 @@ fn test_file() -> PathBuf {
 
 #[test]
 fn type_alias_readonly_flip_fires_major() {
-    use interlint::languages::typescript::types::shape::FieldShape;
+    use pledge::languages::typescript::types::shape::FieldShape;
     use std::collections::BTreeMap;
 
     let mut fields_old = BTreeMap::new();

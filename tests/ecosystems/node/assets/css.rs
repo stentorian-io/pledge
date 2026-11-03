@@ -1,9 +1,9 @@
 //! Css compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::compare::assets::css as css_diff;
-use interlint::ecosystems::node::compare::rules::{
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::compare::assets::css as css_diff;
+use pledge::ecosystems::node::compare::rules::{
     RULE_CSS_CLASS_REMOVED, RULE_CSS_CUSTOM_PROPERTY_REMOVED,
 };
 

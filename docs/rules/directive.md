@@ -9,7 +9,7 @@ package's public interface in two senses:
 2. `/// <amd-module name="..." />` and `/// <amd-dependency path="..." />`
    define the module name and factory dependencies of AMD-bundled output.
 
-Interlint's `comment_scan` pass extracts directives from
+Pledge's `comment_scan` pass extracts directives from
 `.d.ts`/`.ts` files and diffs them between the old and new versions of the
 package.
 
@@ -25,7 +25,7 @@ package.
 | `<amd-dependency path="..." name="..." />` | `/// <amd-dependency path="legacy/moduleA" name="moduleA" />` |
 
 TypeScript 5.5+ adds a `preserve="true"` attribute on reference/types/lib
-directives; Interlint captures it and treats its toggle as a
+directives; Pledge captures it and treats its toggle as a
 `directive-changed` (see below).
 
 ## Position rule

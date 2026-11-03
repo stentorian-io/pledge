@@ -1,6 +1,6 @@
 //! Entry precedence compatibility checks.
 
-use interlint::ecosystems::node::compare::metadata::compare_metadata;
+use pledge::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn main_change_suppressed_when_exports_dot_stable() {

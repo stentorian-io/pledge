@@ -17,10 +17,10 @@ pub enum ColorMode {
 
 #[derive(Parser)]
 #[command(
-    name = "interlint",
+    name = "pledge",
     version,
     about = "Catch breaking API changes before publishing",
-    after_help = "Build your package before running interlint; npm lifecycle scripts are disabled.\nExit codes: 0 compatible, 1 breaking changes, 2 tool error, 3 incomplete analysis."
+    after_help = "Build your package before running pledge; npm lifecycle scripts are disabled.\nExit codes: 0 compatible, 1 breaking changes, 2 tool error, 3 incomplete analysis."
 )]
 pub struct Cli {
     /// Package root containing package.json (one package per invocation)

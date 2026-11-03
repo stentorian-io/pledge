@@ -1,7 +1,7 @@
 //! Discovery compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::ecosystems::node::discovery::discover_exports;
+use pledge::ecosystems::node::discovery::discover_exports;
 
 #[test]
 fn test_discover_typescript_exports() {

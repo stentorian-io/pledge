@@ -84,7 +84,7 @@ impl NpmClient {
     /// Create a new NpmClient with connection pooling and User-Agent header.
     pub fn new() -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
-            .user_agent(concat!("interlint/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("pledge/", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .context("failed to build HTTP client")?;

@@ -1,4 +1,4 @@
-use interlint::ecosystems::node::compare::compare_exports_map_diff;
+use pledge::ecosystems::node::compare::compare_exports_map_diff;
 
 fn package(exports: &str, index: &str, dependency: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -31,7 +31,7 @@ fn top_level_await_breaks_synchronous_loading_through_local_dependencies() {
         let findings = compare_exports_map_diff(old.path(), new.path());
         assert!(
             findings.iter().any(|f| f.rule == "module-became-async"
-                && f.severity == interlint::core::findings::Severity::Major),
+                && f.severity == pledge::core::findings::Severity::Major),
             "{findings:?}"
         );
     }

@@ -100,7 +100,7 @@ fn cache_complete(root: &Path) -> bool {
 pub async fn resolve_lsp_binary(workspace: &Path) -> Result<LspBinary, LspError> {
     let cache_dir = dirs::cache_dir()
         .ok_or_else(|| LspError::Unavailable("cannot determine platform cache directory".into()))?
-        .join("interlint");
+        .join("pledge");
     let root = cache_dir.join(format!(
         "tls-{PINNED_VERSION}-typescript-{TYPESCRIPT_VERSION}"
     ));
@@ -260,7 +260,7 @@ fn extract_file_from_tgz(bytes: &[u8], target_path: &str) -> anyhow::Result<Vec<
 pub fn clear_cache() -> anyhow::Result<()> {
     let cache_dir = dirs::cache_dir()
         .ok_or_else(|| anyhow::anyhow!("cannot determine platform cache directory"))?
-        .join("interlint");
+        .join("pledge");
 
     if cache_dir.exists() {
         std::fs::remove_dir_all(&cache_dir).map_err(|e| {

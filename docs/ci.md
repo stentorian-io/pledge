@@ -1,6 +1,6 @@
 # CI integration
 
-Use Pledge to check a built npm package before publishing. Run `interlint` after
+Use Pledge to check a built npm package before publishing. Run `pledge` after
 your normal install and build steps, and use its exit code as the CI job result.
 This guide covers source installation, public and private npm registries,
 report retention, and recovery from failed or incomplete checks.
@@ -11,28 +11,28 @@ Install from a checkout using `cargo install --locked --path .`. To install a
 specific revision directly, use:
 
 ```sh
-cargo install --locked --git https://github.com/stentorian-io/pledge.git --rev <commit-sha> interlint
+cargo install --locked --git https://github.com/stentorian-io/pledge.git --rev <commit-sha> pledge
 ```
 
 The public repository can be cloned without GitHub credentials. Pin an audited
-commit for repeatable CI installation. The crate and binary are named
-`interlint`; an npm package with that name is not this project's
-installation method. Building requires Rust, a C/C++ toolchain, and CMake.
+commit for repeatable CI installation. The crate and binary are named `pledge`.
+Install from source; this project does not currently publish an npm package.
+Building requires Rust, a C/C++ toolchain, and CMake.
 
 In the package checkout, with Node.js 22.12+ and npm on `PATH`:
 
 ```sh
 npm ci
 npm run build
-interlint --against latest
+pledge --against latest
 ```
 
 Omit the build step only when the package already contains its publishable
-files. Interlint runs `npm pack --ignore-scripts`, so `prepare` and `prepack`
+files. Pledge runs `npm pack --ignore-scripts`, so `prepare` and `prepack`
 hooks do not build missing outputs. The same applies when using Yarn, pnpm, or
-Bun for the initial install/build; interlint still uses npm for acquisition and
+Bun for the initial install/build; pledge still uses npm for acquisition and
 analysis dependency installation. Pass a workspace member path, such as
-`interlint ./packages/core --against latest`, and check each published member
+`pledge ./packages/core --against latest`, and check each published member
 separately.
 
 An exact version (`--against 1.4.2`) pins the baseline. A dist-tag (`--against
@@ -48,7 +48,7 @@ The compiler is resolved from the analyzed package's original workspace, then
 `PATH`, then a managed cache/download. Both snapshots use that compiler. Installing
 `typescript@5.9.3` as a dev dependency or globally avoids a toolchain download;
 normal CLI analysis does not require `typescript-language-server`. Clear the
-managed cache with `interlint --clear-cache` when troubleshooting a damaged
+managed cache with `pledge --clear-cache` when troubleshooting a damaged
 installation.
 
 Runtime, optional, and peer dependencies are installed into each temporary
@@ -62,7 +62,7 @@ Install failures and missing compiler evidence produce incomplete analysis.
 Individual npm operations time out after 120 seconds; compiler evaluation is
 bounded to 30 seconds per snapshot. Configure your CI job's overall timeout as
 well. Cache Cargo build/install artifacts, npm's cache, and the platform's
-`interlint` cache directory if needed. Dependency installation still needs
+`pledge` cache directory if needed. Dependency installation still needs
 registry access when required packages are absent from npm's cache.
 
 ## Registries and credentials
@@ -76,7 +76,7 @@ a project `.npmrc` can select a scoped registry and reference an injected token:
 ```
 
 Inject the token through your CI secret store. npm handles authentication, proxy,
-and certificate settings. Interlint preserves the project's `.npmrc` in temporary
+and certificate settings. Pledge preserves the project's `.npmrc` in temporary
 snapshots for dependency preparation; user/global npm configuration and environment
 settings remain available. Use absolute paths for settings such as custom CA files,
 since installation runs from a temporary directory. See npm's
@@ -97,7 +97,7 @@ exit-code and severity reference.
 To retain a machine-readable artifact:
 
 ```sh
-interlint --against latest --format json > ../interlint-report.json
+pledge --against latest --format json > ../pledge-report.json
 ```
 
 Place the report outside the analyzed package so `npm pack` does not include it.
@@ -116,7 +116,7 @@ describes the report fields and early argument-parsing errors.
 | A source or analysis limit was reached (exit `3`) | Inspect the named file or contract and the relevant [rule's limits](rules/README.md); available findings are only a partial result |
 | Files you expected to check are absent | Inspect the package's `files`, `.npmignore`, and generated outputs; Pledge checks the packed artifact |
 
-For a damaged managed toolchain installation, use `interlint --clear-cache` and
+For a damaged managed toolchain installation, use `pledge --clear-cache` and
 rerun with registry access. Clearing the cache does not fix missing declarations
 or unsupported syntax.
 

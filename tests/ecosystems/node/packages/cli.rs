@@ -92,7 +92,7 @@ fi
 
     fn command(&self) -> Command {
         let root = self.directory.path();
-        let mut command = Command::new(env!("CARGO_BIN_EXE_interlint"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_pledge"));
         command
             .current_dir(root)
             .env("PATH", root.join("bin"))
@@ -382,10 +382,15 @@ fn help_version_and_invalid_options_have_conventional_exit_codes() {
     let project = CliProject::new("export {};", "export {};");
     let help = project.command().arg("--help").output().unwrap();
     assert!(help.status.success());
-    assert!(String::from_utf8_lossy(&help.stdout).contains("Exit codes:"));
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("Usage: pledge [OPTIONS] [PATH]"));
+    assert!(help.contains("Exit codes:"));
     let version = project.command().arg("--version").output().unwrap();
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("interlint "));
+    assert_eq!(
+        String::from_utf8_lossy(&version.stdout),
+        format!("pledge {}\n", env!("CARGO_PKG_VERSION"))
+    );
     let invalid = project.command().arg("--unknown").output().unwrap();
     assert_eq!(invalid.status.code(), Some(2));
     assert!(invalid.stdout.is_empty());

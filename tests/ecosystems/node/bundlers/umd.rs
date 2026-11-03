@@ -3,8 +3,8 @@
 //! - BUN-11 regression: UMD wrapper with `factory(exports)` arg (already detected )
 //! - BUN-11-B: lodash-style IIFE with `module.exports = <ident>` (Path 1A best-effort)
 
-use interlint::languages::javascript::syntax::exports::{parse_exports, RawExport, RawExportKind};
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::{parse_exports, RawExport, RawExportKind};
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";

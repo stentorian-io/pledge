@@ -1,8 +1,8 @@
 #![cfg(all(feature = "lsp-tests", unix))]
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::typescript::compiler;
-use interlint::languages::typescript::types::shape::TypeShape;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::typescript::compiler;
+use pledge::languages::typescript::types::shape::TypeShape;
 use std::path::PathBuf;
 use std::process::Command;
 

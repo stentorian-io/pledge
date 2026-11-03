@@ -1,8 +1,8 @@
 #![cfg(feature = "lsp-tests")]
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare;
-use interlint::languages::typescript::compiler;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare;
+use pledge::languages::typescript::compiler;
 use serde_json::json;
 
 fn package(symbol: &str) -> tempfile::TempDir {
@@ -93,7 +93,7 @@ async fn prepared_discovery_resolves_dependency_exports_before_enrichment() {
     let directory = package("api");
     let root = directory.path().join("package");
     assert!(
-        interlint::ecosystems::node::dependencies::prepare_dependencies(&root)
+        pledge::ecosystems::node::dependencies::prepare_dependencies(&root)
             .await
             .unwrap()
     );
@@ -144,6 +144,6 @@ async fn compiler_resolves_dependencies_that_publish_only_an_exports_map() {
         "{result:?}"
     );
     assert!(exports.values().any(|symbol| symbol.name == "api" && symbol.overloads.iter().any(|shape| {
-        matches!(shape, interlint::languages::typescript::types::shape::TypeShape::Function { params, .. } if matches!(&params[0].shape, interlint::languages::typescript::types::shape::TypeShape::Object(fields) if fields.contains_key("value")))
+        matches!(shape, pledge::languages::typescript::types::shape::TypeShape::Function { params, .. } if matches!(&params[0].shape, pledge::languages::typescript::types::shape::TypeShape::Object(fields) if fields.contains_key("value")))
     })), "{exports:?}");
 }

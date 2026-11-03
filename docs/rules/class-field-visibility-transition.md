@@ -5,7 +5,7 @@ distinct from same-named public fields at runtime. Transitioning a
 field across the public ↔ private boundary is an observable change on
 a package's public API surface.
 
-Interlint tracks this transition on every exported class field and
+Pledge tracks this transition on every exported class field and
 method.
 
 See the [TypeScript 3.8 release notes (ECMAScript private class fields)](https://www.typescriptlang.org/docs/handbook/release-notes/typescript-3-8.html)

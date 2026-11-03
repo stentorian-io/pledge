@@ -1,7 +1,7 @@
 //! Index signatures compatibility checks.
 
-use interlint::languages::typescript::compare::interfaces::compare_interface_index_signatures;
-use interlint::languages::typescript::syntax::interfaces::IndexSignature;
+use pledge::languages::typescript::compare::interfaces::compare_interface_index_signatures;
+use pledge::languages::typescript::syntax::interfaces::IndexSignature;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -30,7 +30,7 @@ fn index_signature_removed_fires_rule() {
     );
     assert_eq!(
         findings[0].severity,
-        interlint::core::findings::Severity::Major
+        pledge::core::findings::Severity::Major
     );
     assert!(
         findings[0].message.contains("removed"),

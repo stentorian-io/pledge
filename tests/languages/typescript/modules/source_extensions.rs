@@ -1,6 +1,6 @@
 //! Source extensions compatibility checks.
 
-use interlint::ecosystems::node::discovery::resolver::resolve_module_path;
+use pledge::ecosystems::node::discovery::resolver::resolve_module_path;
 use std::path::Path;
 
 #[test]

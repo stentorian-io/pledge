@@ -1,6 +1,6 @@
 use clap::Parser;
-use interlint::app::cli::Cli;
-use interlint::app::{report, run};
+use pledge::app::cli::Cli;
+use pledge::app::{report, run};
 use std::process::ExitCode;
 
 #[tokio::main]

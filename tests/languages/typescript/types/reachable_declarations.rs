@@ -1,7 +1,7 @@
-use interlint::core::findings::has_breaking_changes;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::core::findings::has_breaking_changes;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
 
 fn package(source: &str, dependency: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -20,7 +20,7 @@ fn compare(
     new: &str,
     old_dependency: &str,
     new_dependency: &str,
-) -> Vec<interlint::core::findings::Finding> {
+) -> Vec<pledge::core::findings::Finding> {
     let old = package(old, old_dependency);
     let new = package(new, new_dependency);
     let (old_exports, old_warnings) = discover_exports(old.path()).unwrap();
@@ -113,13 +113,13 @@ async fn real_hover_enrichment_preserves_reachable_type_changes() {
         (&mut old_exports, old.path()),
         (&mut new_exports, new.path()),
     ] {
-        let result = interlint::languages::typescript::compiler::enrich_exports(exports, root)
+        let result = pledge::languages::typescript::compiler::enrich_exports(exports, root)
             .await
             .unwrap();
         assert!(
             matches!(
                 result,
-                interlint::languages::typescript::compiler::EnrichResult::Enriched
+                pledge::languages::typescript::compiler::EnrichResult::Enriched
             ),
             "{result:?}"
         );

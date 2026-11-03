@@ -1,7 +1,7 @@
 //! Compound types compatibility checks.
 
-use interlint::languages::typescript::types::parser::parse_type_string;
-use interlint::languages::typescript::types::shape::TypeShape;
+use pledge::languages::typescript::types::parser::parse_type_string;
+use pledge::languages::typescript::types::shape::TypeShape;
 
 #[test]
 fn conditional_type_parsing() {

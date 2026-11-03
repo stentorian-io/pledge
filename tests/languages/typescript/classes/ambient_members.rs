@@ -1,8 +1,8 @@
 //! Ambient members compatibility checks.
 
-use interlint::core::findings::Severity;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::javascript::model::{
+use pledge::core::findings::Severity;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::javascript::model::{
     DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol,
 };
 use std::path::PathBuf;

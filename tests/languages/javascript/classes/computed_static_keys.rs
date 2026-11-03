@@ -1,15 +1,15 @@
 //! Computed static keys compatibility checks.
 
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::rules::RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::rules::RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
 use std::path::{Path, PathBuf};
 
 /// Helper: run the full pipeline (export diff + structural diff) on a fixture case.
 /// Used for ClassShape-dependent tests (decorators, CLS-11, CLS-12).
-fn run_full_pipeline(case: &str) -> Vec<interlint::core::findings::Finding> {
+fn run_full_pipeline(case: &str) -> Vec<pledge::core::findings::Finding> {
     let old_dir = fixture_dir(case, "old");
     let new_dir = fixture_dir(case, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();

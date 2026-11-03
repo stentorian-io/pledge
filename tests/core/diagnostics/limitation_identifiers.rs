@@ -1,10 +1,10 @@
 //! Limitation identifiers compatibility checks.
 
-use interlint::languages::javascript::compare::rules::{
+use pledge::languages::javascript::compare::rules::{
     RULE_LIMITATION_DYNAMIC_STATIC_MEMBER_KEY, RULE_LIMITATION_PRIVATE_BRAND_ACCESS,
     RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS, RULE_LIMITATION_SYMBOL_FOR_REGISTRY,
 };
-use interlint::languages::typescript::compare::rules::{
+use pledge::languages::typescript::compare::rules::{
     RULE_LIMITATION_DECORATOR_RUNTIME_EFFECT, RULE_LIMITATION_EXTERNAL_TYPE_REFERENCE,
     RULE_LIMITATION_LSP_REQUIRED, RULE_LIMITATION_NOINFER_VIA_LOCAL_ALIAS,
     RULE_LIMITATION_SATISFIES_NARROWED,

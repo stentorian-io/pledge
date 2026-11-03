@@ -7,10 +7,10 @@
 #![cfg(feature = "lsp-tests")]
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::discovery as discover;
-use interlint::languages::javascript::compare;
-use interlint::languages::typescript::compiler;
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::discovery as discover;
+use pledge::languages::javascript::compare;
+use pledge::languages::typescript::compiler;
 use std::process::Command;
 
 /// Run the full pipeline: discover -> enrich -> compare
@@ -39,7 +39,7 @@ async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
 
     let findings =
         compare::compare_exports(&old_exports, &new_exports, std::path::Path::new("."), true);
-    let has_breaking = interlint::core::findings::has_breaking_changes(&findings);
+    let has_breaking = pledge::core::findings::has_breaking_changes(&findings);
     (findings, has_breaking)
 }
 

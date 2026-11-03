@@ -160,7 +160,7 @@ fn npm_workspace_analysis_preserves_inputs_and_uses_scoped_registry_credentials(
     fs::write(package.join("index.js"), "export {};").unwrap();
     let existing_tarball = package.join("ci-example-2.0.0.tgz");
     fs::write(&existing_tarball, b"existing user artifact").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_interlint"))
+    let output = Command::new(env!("CARGO_BIN_EXE_pledge"))
         .args(["--against", "latest", "--format", "json"])
         .arg(&package)
         .current_dir(root)
@@ -217,12 +217,10 @@ fn typescript_root() -> PathBuf {
             }
         }
     }
-    use interlint::languages::typescript::compiler::toolchain::{
-        PINNED_VERSION, TYPESCRIPT_VERSION,
-    };
+    use pledge::languages::typescript::compiler::toolchain::{PINNED_VERSION, TYPESCRIPT_VERSION};
     let cached = dirs::cache_dir()
         .unwrap()
-        .join("interlint")
+        .join("pledge")
         .join(format!(
             "tls-{PINNED_VERSION}-typescript-{TYPESCRIPT_VERSION}"
         ))

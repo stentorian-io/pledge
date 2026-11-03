@@ -1,9 +1,9 @@
 //! Namespaces compatibility checks.
 
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 #[test]

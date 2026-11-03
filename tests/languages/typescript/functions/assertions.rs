@@ -1,6 +1,6 @@
 //! Assertions compatibility checks.
 
-use interlint::languages::typescript::compare::refinements::compare_assertion;
+use pledge::languages::typescript::compare::refinements::compare_assertion;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -21,7 +21,7 @@ fn assertion_dropped_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::core::findings::Severity::Major,
+        pledge::core::findings::Severity::Major,
         "TLF-04: assertion-widened should be Major"
     );
 }

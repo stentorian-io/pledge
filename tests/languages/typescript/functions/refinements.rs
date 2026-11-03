@@ -1,12 +1,12 @@
 //! Refinements compatibility checks.
 
-use interlint::core::findings::Finding;
-use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
-use interlint::languages::typescript::compare::refinements as ref_diff;
-use interlint::languages::typescript::compare::rules::{
+use pledge::core::findings::Finding;
+use pledge::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+use pledge::languages::typescript::compare::refinements as ref_diff;
+use pledge::languages::typescript::compare::rules::{
     RULE_OVERLOAD_REMOVED, RULE_REST_PARAM_NARROWED, RULE_TYPE_GUARD_WIDENED,
 };
-use interlint::languages::typescript::types::shape::{ParamShape, PrimitiveKind, TypeShape};
+use pledge::languages::typescript::types::shape::{ParamShape, PrimitiveKind, TypeShape};
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.
@@ -88,7 +88,7 @@ fn make_fn_sym_with_overloads(source: &[u8], name: &str) -> ExportSymbol {
                         .unwrap_or(false);
                     if matches_name {
                         if let Some(shape) =
-                            interlint::languages::javascript::syntax::functions::build_function_shape_from_node(export_child, &bytes)
+                            pledge::languages::javascript::syntax::functions::build_function_shape_from_node(export_child, &bytes)
                         {
                             overloads.push(shape);
                         }
@@ -250,12 +250,10 @@ fn type_guard_widened() {
     let new_decl = find_decl_by_name(new_tree.root_node(), &new_bytes, "isStr")
         .expect("isStr not found in new source");
 
-    let old_type_guard = interlint::languages::typescript::syntax::functions::extract_type_guard(
-        old_decl, &old_bytes,
-    );
-    let new_type_guard = interlint::languages::typescript::syntax::functions::extract_type_guard(
-        new_decl, &new_bytes,
-    );
+    let old_type_guard =
+        pledge::languages::typescript::syntax::functions::extract_type_guard(old_decl, &old_bytes);
+    let new_type_guard =
+        pledge::languages::typescript::syntax::functions::extract_type_guard(new_decl, &new_bytes);
 
     let old_sym = ExportSymbol {
         name: "isStr".to_string(),

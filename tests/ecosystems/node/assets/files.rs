@@ -2,9 +2,9 @@
 
 use crate::fixtures::fixture_path;
 #[cfg(unix)]
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::compare::assets::files as asset_diff;
-use interlint::ecosystems::node::compare::rules::{
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::compare::assets::files as asset_diff;
+use pledge::ecosystems::node::compare::rules::{
     RULE_ASSET_FILE_REMOVED, RULE_CSS_CLASS_REMOVED, RULE_JSON_FIELD_REMOVED,
 };
 
@@ -38,10 +38,11 @@ fn directory_cycles_do_not_duplicate_removed_assets() {
     std::fs::write(old.path().join("icon.svg"), "<svg/>").unwrap();
 
     let mut findings =
-        interlint::ecosystems::node::compare::assets::compare_asset_diff(old.path(), new.path());
-    findings.extend(
-        interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), new.path()),
-    );
+        pledge::ecosystems::node::compare::assets::compare_asset_diff(old.path(), new.path());
+    findings.extend(pledge::ecosystems::node::compare::compare_exports_map_diff(
+        old.path(),
+        new.path(),
+    ));
 
     let removed: Vec<_> = findings
         .iter()
@@ -117,7 +118,7 @@ fn test_orchestrator_combines_all_findings() {
     // Asset removal
     std::fs::write(dir_old.path().join("logo.svg"), "<svg></svg>").unwrap();
 
-    let findings = interlint::ecosystems::node::compare::assets::compare_asset_diff(
+    let findings = pledge::ecosystems::node::compare::assets::compare_asset_diff(
         dir_old.path(),
         dir_new.path(),
     );

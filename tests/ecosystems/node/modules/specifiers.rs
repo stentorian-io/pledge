@@ -2,7 +2,7 @@
 //! specifiers must NOT pollute the ExportMap as synthetic external re-exports
 //! AND must NOT emit any ResolveWarning.
 
-use interlint::ecosystems::node::discovery::discover_exports;
+use pledge::ecosystems::node::discovery::discover_exports;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";

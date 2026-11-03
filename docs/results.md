@@ -76,7 +76,7 @@ color. Text warnings and tracing diagnostics go to stderr.
 Write the report outside the analyzed package so packing does not include it:
 
 ```sh
-interlint --against latest --format json > ../interlint-report.json
+pledge --against latest --format json > ../pledge-report.json
 ```
 
 JSON mode writes one document to stdout without ANSI escapes or progress

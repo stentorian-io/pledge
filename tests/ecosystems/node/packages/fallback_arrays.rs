@@ -10,7 +10,7 @@ fn exports_array_does_not_retry_missing_files() {
     .unwrap();
     std::fs::write(dir.path().join("existing.js"), "export const api = 1;").unwrap();
     let (exports, warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
     assert!(exports.is_empty());
     assert!(warnings
         .iter()
@@ -35,11 +35,11 @@ fn unmatched_conditions_preserve_the_public_array_fallback() {
     let old = package(manifest, "export function api() {}");
     let new = package(manifest, "export {};");
     let (old_exports, old_warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(old.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(old.path()).unwrap();
     let (new_exports, new_warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(new.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(new.path()).unwrap();
 
-    let findings = interlint::languages::javascript::compare::compare_exports(
+    let findings = pledge::languages::javascript::compare::compare_exports(
         &old_exports,
         &new_exports,
         new.path(),
@@ -54,7 +54,7 @@ fn unmatched_conditions_preserve_the_public_array_fallback() {
         "{findings:?}"
     );
     assert!(
-        interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), old.path())
+        pledge::ecosystems::node::compare::compare_exports_map_diff(old.path(), old.path())
             .is_empty()
     );
 }
@@ -69,7 +69,7 @@ fn null_array_entries_allow_later_targets_but_successful_defaults_stop_fallback(
     ] {
         let dir = package(exports, "export const api = 1;");
         let (exports, warnings) =
-            interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
+            pledge::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert!(exports.keys().any(|key| key.name == "api"));
     }
@@ -78,7 +78,7 @@ fn null_array_entries_allow_later_targets_but_successful_defaults_stop_fallback(
         "export const unreachable = 1;",
     );
     let (exports, warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(!exports.keys().any(|key| key.name == "unreachable"));
 }
@@ -90,7 +90,7 @@ fn private_import_arrays_resolve_fallbacks_after_unmatched_conditions() {
     std::fs::write(dir.path().join("package.json"), r##"{"exports":"./index.mjs","imports":{"#api":[{"browser":"./browser.mjs"},"./fallback.mjs"]}}"##).unwrap();
 
     let (exports, warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
 
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(exports.keys().any(|key| key.name == "api"));
@@ -121,8 +121,7 @@ fn large_fallback_condition_sets_report_incomplete_analysis() {
         r#"[{"a":"./browser.mjs","b":"./browser.mjs","c":"./browser.mjs","d":"./browser.mjs","e":"./browser.mjs","f":"./browser.mjs","g":"./browser.mjs","h":"./browser.mjs"},"./fallback.mjs"]"#,
         "export const api = 1;",
     );
-    let (_, warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
+    let (_, warnings) = pledge::ecosystems::node::discovery::discover_exports(dir.path()).unwrap();
     assert!(warnings.iter().any(|warning| warning.incomplete
         && warning
             .message

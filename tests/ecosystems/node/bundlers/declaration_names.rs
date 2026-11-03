@@ -1,7 +1,7 @@
 //! Declaration names compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn rollup_suffix_no_spurious_finding_on_same_base_exported() {

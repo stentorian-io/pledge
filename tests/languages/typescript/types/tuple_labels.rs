@@ -6,11 +6,11 @@
 //!   - tuple-label-dropped (Patch)
 //!   - tuple-label-added (Minor)
 
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::typescript::compare::rules::{
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::typescript::compare::rules::{
     RULE_TUPLE_LABEL_ADDED, RULE_TUPLE_LABEL_DROPPED, RULE_TUPLE_LABEL_RENAMED,
     RULE_TUPLE_LABEL_REORDERED,
 };

@@ -1,7 +1,7 @@
 #![cfg(feature = "lsp-tests")]
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::typescript::compiler;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::typescript::compiler;
 
 #[tokio::test]
 async fn unicode_before_typeof_import_preserves_definition_identity() {

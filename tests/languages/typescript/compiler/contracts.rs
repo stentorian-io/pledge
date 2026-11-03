@@ -1,9 +1,9 @@
 //! Compare semantic type findings with independently compiled consumers.
 #![cfg(feature = "lsp-tests")]
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare;
-use interlint::languages::typescript::compiler;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare;
+use pledge::languages::typescript::compiler;
 use serde_json::Value;
 use std::process::Command;
 
@@ -111,14 +111,14 @@ async fn assert_consumer_contracts(specifications: &str) {
         }
         let mut findings = compare::compare_exports(&exports[0], &exports[1], new.path(), false);
         findings.extend(
-            interlint::languages::javascript::compare::structure::compare_structural_diff(
+            pledge::languages::javascript::compare::structure::compare_structural_diff(
                 old.path(),
                 new.path(),
                 &exports[0],
                 &exports[1],
             ),
         );
-        if interlint::core::findings::has_breaking_changes(&findings) != breaking {
+        if pledge::core::findings::has_breaking_changes(&findings) != breaking {
             failures.push(format!(
                 "{name}: expected breaking={breaking}, got {findings:?}"
             ));
@@ -163,7 +163,7 @@ async fn unresolved_public_types_cannot_report_complete_analysis() {
             assert!(exports.values().any(|symbol| matches!(
                 symbol.satisfies_type,
                 Some(
-                    interlint::languages::typescript::types::shape::TypeShape::Satisfies {
+                    pledge::languages::typescript::types::shape::TypeShape::Satisfies {
                         narrowed: None,
                         ..
                     }

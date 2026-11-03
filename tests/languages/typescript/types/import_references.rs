@@ -16,11 +16,11 @@ fn fixture_dir(form: &str, side: &str) -> PathBuf {
 #[cfg(feature = "lsp-tests")]
 mod lsp_path {
     use super::*;
-    use interlint::core::findings::{Finding, Severity};
-    use interlint::ecosystems::node::discovery::discover_exports;
-    use interlint::languages::javascript::compare::compare_exports;
-    use interlint::languages::typescript::compare::rules::RULE_TYPE_REFERENCE_REMOVED;
-    use interlint::languages::typescript::compiler::enrich_exports;
+    use pledge::core::findings::{Finding, Severity};
+    use pledge::ecosystems::node::discovery::discover_exports;
+    use pledge::languages::javascript::compare::compare_exports;
+    use pledge::languages::typescript::compare::rules::RULE_TYPE_REFERENCE_REMOVED;
+    use pledge::languages::typescript::compiler::enrich_exports;
     use tokio::sync::Mutex;
 
     // Serialize server sessions that share fixture roots. Concurrent initialization
@@ -107,10 +107,10 @@ mod lsp_path {
 
 mod degraded_path {
     use super::*;
-    use interlint::core::findings::Finding;
-    use interlint::ecosystems::node::discovery::discover_exports;
-    use interlint::languages::javascript::compare::compare_exports;
-    use interlint::languages::typescript::compare::rules::RULE_TYPE_REFERENCE_REMOVED;
+    use pledge::core::findings::Finding;
+    use pledge::ecosystems::node::discovery::discover_exports;
+    use pledge::languages::javascript::compare::compare_exports;
+    use pledge::languages::typescript::compare::rules::RULE_TYPE_REFERENCE_REMOVED;
 
     #[test]
     fn degraded_annotation() {

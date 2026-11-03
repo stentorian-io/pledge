@@ -1,6 +1,6 @@
 //! Disabled targets compatibility checks.
 
-use interlint::ecosystems::node::compare::metadata::compare_metadata;
+use pledge::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn null_to_real_target_fires_minor_not_major() {
@@ -27,7 +27,7 @@ fn null_to_real_target_fires_minor_not_major() {
     assert!(
         !findings.iter().any(|f| {
             f.rule == "condition-target-changed"
-                && matches!(f.severity, interlint::core::findings::Severity::Major)
+                && matches!(f.severity, pledge::core::findings::Severity::Major)
         }),
         "SEM-02: null -> real should not fire Major condition-target-changed. Got: {:?}",
         findings
@@ -47,7 +47,7 @@ fn invalid_export_targets_do_not_resolve_as_local_files() {
         .unwrap();
 
         let (exports, warnings) =
-            interlint::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
+            pledge::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
 
         assert!(
             exports.is_empty(),
@@ -77,7 +77,7 @@ fn invalid_array_targets_allow_valid_fallbacks() {
     .unwrap();
 
     let (exports, warnings) =
-        interlint::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
+        pledge::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
 
     assert!(warnings.is_empty(), "{warnings:?}");
     assert!(exports.keys().any(|key| key.name == "api"));

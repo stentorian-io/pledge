@@ -1,8 +1,8 @@
 //! BUN-10 integration tests: `Object.assign({}, exports, {…})` first-arg
 //! relax, plus regression coverage for shapes already detected by v0.2 BUN-06a.
 
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";

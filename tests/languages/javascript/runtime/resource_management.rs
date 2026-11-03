@@ -1,7 +1,7 @@
 //! Resource management compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn using_graceful() {

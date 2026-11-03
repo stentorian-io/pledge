@@ -1,9 +1,9 @@
 //! Narrowing evidence compatibility checks.
 
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::typescript::compare::rules::RULE_LIMITATION_SATISFIES_NARROWED;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::typescript::compare::rules::RULE_LIMITATION_SATISFIES_NARROWED;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures";
@@ -17,7 +17,7 @@ fn fixture_dir(case: &str, side: &str) -> PathBuf {
 
 #[test]
 fn substring_promotion_satisfies_degraded() {
-    use interlint::languages::typescript::compare::rules::RULE_TYPE_NARROWING_WIDENED;
+    use pledge::languages::typescript::compare::rules::RULE_TYPE_NARROWING_WIDENED;
 
     let old_dir = fixture_dir("typescript/types/evidence/satisfies", "old");
     let new_dir = fixture_dir("typescript/types/evidence/satisfies", "new");

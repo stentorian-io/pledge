@@ -2,11 +2,11 @@
 //! decorators stay outside the public surface. Discovery reads decorator AST
 //! nodes, including their arguments.
 
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::typescript::compare::rules::{
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::typescript::compare::rules::{
     RULE_DECORATOR_ADDED, RULE_DECORATOR_ARGUMENTS_CHANGED, RULE_DECORATOR_REMOVED,
 };
 use std::path::{Path, PathBuf};

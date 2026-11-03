@@ -1,8 +1,8 @@
 //! Internal exports compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
-use interlint::languages::typescript::model::ReleaseTag;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::typescript::model::ReleaseTag;
 
 #[test]
 fn internal_tag_excludes_from_comparison() {
@@ -39,8 +39,8 @@ fn internal_tag_excludes_from_comparison() {
 
 #[test]
 fn non_public_exports_are_excluded_from_structural_comparison() {
-    use interlint::ecosystems::node::discovery::discover_exports;
-    use interlint::languages::javascript::compare::{compare_exports, structure};
+    use pledge::ecosystems::node::discovery::discover_exports;
+    use pledge::languages::javascript::compare::{compare_exports, structure};
 
     for tag in ["internal", "alpha", "beta"] {
         let old = tempfile::tempdir().unwrap();

@@ -1,9 +1,9 @@
 //! Findings compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::{has_breaking_changes, Severity};
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
+use pledge::core::findings::{has_breaking_changes, Severity};
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
 
 #[test]
 fn test_has_breaking_changes() {

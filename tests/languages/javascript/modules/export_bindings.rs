@@ -1,9 +1,9 @@
 //! Export bindings compatibility checks.
 
-use interlint::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
-use interlint::languages::javascript::syntax::exports as tree_query;
-use interlint::languages::javascript::syntax::exports::RawExportKind;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use pledge::languages::javascript::syntax::exports as tree_query;
+use pledge::languages::javascript::syntax::exports::RawExportKind;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -108,7 +108,7 @@ fn test_export_alias_detected_correctly() {
         );
     }
 
-    let findings = interlint::languages::javascript::compare::compare_exports(
+    let findings = pledge::languages::javascript::compare::compare_exports(
         &old_map,
         &new_map,
         std::path::Path::new("."),

@@ -1,7 +1,7 @@
 //! Constraint widening compatibility checks.
 
-use interlint::languages::javascript::model::{ClassMember, ClassMemberKind, Visibility};
-use interlint::languages::typescript::compare::interfaces::compare_interface_members;
+use pledge::languages::javascript::model::{ClassMember, ClassMemberKind, Visibility};
+use pledge::languages::typescript::compare::interfaces::compare_interface_members;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

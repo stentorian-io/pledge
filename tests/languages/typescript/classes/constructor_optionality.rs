@@ -1,7 +1,7 @@
 //! Constructor optionality compatibility checks.
 
-use interlint::languages::javascript::compare::classes::compare_class_shapes;
-use interlint::languages::javascript::model::{ClassMember, ClassShape};
+use pledge::languages::javascript::compare::classes::compare_class_shapes;
+use pledge::languages::javascript::model::{ClassMember, ClassShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -41,7 +41,7 @@ fn constructor_param_optional_to_required_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::core::findings::Severity::Major,
+        pledge::core::findings::Severity::Major,
         "IFT-03: constructor-param-made-required should be Major"
     );
 }
@@ -60,17 +60,17 @@ fn package(source: &str) -> tempfile::TempDir {
 fn compare_packages(
     old: &std::path::Path,
     new: &std::path::Path,
-) -> Vec<interlint::core::findings::Finding> {
-    let (old_exports, _) = interlint::ecosystems::node::discovery::discover_exports(old).unwrap();
-    let (new_exports, _) = interlint::ecosystems::node::discovery::discover_exports(new).unwrap();
-    let mut findings = interlint::languages::javascript::compare::compare_exports(
+) -> Vec<pledge::core::findings::Finding> {
+    let (old_exports, _) = pledge::ecosystems::node::discovery::discover_exports(old).unwrap();
+    let (new_exports, _) = pledge::ecosystems::node::discovery::discover_exports(new).unwrap();
+    let mut findings = pledge::languages::javascript::compare::compare_exports(
         &old_exports,
         &new_exports,
         new,
         false,
     );
     findings.extend(
-        interlint::languages::javascript::compare::structure::compare_structural_diff(
+        pledge::languages::javascript::compare::structure::compare_structural_diff(
             old,
             new,
             &old_exports,
@@ -94,7 +94,7 @@ fn implicit_base_constructors_are_not_removed_methods() {
         let new = package("export class C {}");
         let findings = compare_packages(old.path(), new.path());
         assert!(
-            !interlint::core::findings::has_breaking_changes(&findings),
+            !pledge::core::findings::has_breaking_changes(&findings),
             "{old_source}: {findings:?}"
         );
     }
@@ -135,11 +135,11 @@ fn a_static_method_named_constructor_can_be_removed() {
 #[cfg(feature = "lsp-tests")]
 #[tokio::test]
 async fn compiler_and_consumers_agree_on_implicit_constructors() {
-    use interlint::ecosystems::node::discovery::discover_exports;
-    use interlint::languages::javascript::compare::{
+    use pledge::ecosystems::node::discovery::discover_exports;
+    use pledge::languages::javascript::compare::{
         compare_exports, structure::compare_structural_diff,
     };
-    use interlint::languages::typescript::compiler::{enrich_prepared_exports, EnrichResult};
+    use pledge::languages::typescript::compiler::{enrich_prepared_exports, EnrichResult};
     for (old_source, new_source, breaks) in [
         ("export class C { constructor() {} }", "export class C {}", false),
         ("class Base { constructor() {} } export class C extends Base { constructor() { super(); } }", "class Base { constructor() {} } export class C extends Base {}", false),
@@ -162,7 +162,7 @@ async fn compiler_and_consumers_agree_on_implicit_constructors() {
         }
         let mut findings = compare_exports(&before, &after, new.path(), true);
         findings.extend(compare_structural_diff(old.path(), new.path(), &before, &after));
-        assert_eq!(interlint::core::findings::has_breaking_changes(&findings), breaks, "{findings:?}");
+        assert_eq!(pledge::core::findings::has_breaking_changes(&findings), breaks, "{findings:?}");
         assert!(!findings.iter().any(|finding| finding.rule == "analysis-incomplete"), "{findings:?}");
     }
 }

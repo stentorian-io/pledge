@@ -1,6 +1,6 @@
 //! This parameters compatibility checks.
 
-use interlint::languages::typescript::compare::refinements::compare_this_param;
+use pledge::languages::typescript::compare::refinements::compare_this_param;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -21,7 +21,7 @@ fn this_param_change_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::core::findings::Severity::Major,
+        pledge::core::findings::Severity::Major,
         "TLF-03: this-param-changed should be Major"
     );
 }

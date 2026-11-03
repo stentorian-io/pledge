@@ -14,7 +14,7 @@ use crate::languages::typescript::compiler::{self, toolchain};
 use anyhow::Context;
 use std::path::Path;
 
-/// Outcome of the interlint analysis run. Incomplete evidence takes precedence.
+/// Outcome of the pledge analysis run. Incomplete evidence takes precedence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RunOutcome {
     Clean,

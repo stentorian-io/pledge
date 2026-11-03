@@ -8,7 +8,7 @@ fields, and parameters in ways consumers observe either:
 - **Source-identity**: a build-time diff of public API shape that
   includes which decorators are applied where.
 
-Interlint's `tree_query::extract_decorators` reads decorators
+Pledge's `tree_query::extract_decorators` reads decorators
 directly from the `decorator` AST node in both `tree-sitter-typescript`
 0.23.2 and `tree-sitter-javascript` 0.25.0 grammars. No comment-scan
 fallback is used for decorators.
@@ -31,7 +31,7 @@ fallback is used for decorators.
 | `@ns.log`                | `"ns.log"`                 | `None`                 |
 | `@(expr)` (parenthesized)| source text of expr        | `None` (best-effort)   |
 
-Argument bytes are source-text verbatim — Interlint does not parse argument
+Argument bytes are source-text verbatim — Pledge does not parse argument
 expressions semantically. Two decorator calls are considered argument-equal
 iff their argument byte-text is byte-equal.
 
@@ -69,7 +69,7 @@ Decorator changes are paired with an informational
 `limitation: decorator-runtime-effect-opaque` finding. Other unsupported cases
 below are documentation-only limitations; they do not emit dedicated rule IDs:
 
-- **`limitation: decorator-runtime-effect-opaque`** — Interlint detects
+- **`limitation: decorator-runtime-effect-opaque`** — Pledge detects
   decorator presence and argument changes, but does NOT verify what the
   decorator does at runtime. A decorator that silently changes a class's
   constructor behavior between versions will not surface as a finding
@@ -77,9 +77,9 @@ below are documentation-only limitations; they do not emit dedicated rule IDs:
   cannot reason about arbitrary decorator factory bodies.
 - **JSDoc decorator annotations** — Babel-compiled
   JavaScript sometimes emits decorators as JSDoc-style `@decorator`
-  annotations in comments adjacent to the compiled class. Interlint does not
+  annotations in comments adjacent to the compiled class. Pledge does not
   scan these. If you ship babel-compiled output with decorator comments,
-  Interlint will report no decorator findings against it. Compare sources that
+  Pledge will report no decorator findings against it. Compare sources that
   retain decorator AST nodes when these findings are needed.
 - **Method parameter decorators** — Parameter decorators
   on non-constructor method parameters (e.g., `foo(@Inject('svc') svc: Service)`)
@@ -91,5 +91,5 @@ below are documentation-only limitations; they do not emit dedicated rule IDs:
   decorators appear on the synthesized `ClassMember` Property entry.
 
 These limitations are documented so users can see from the rule docs which
-cases Interlint deliberately does not cover, rather than discovering silent
+cases Pledge deliberately does not cover, rather than discovering silent
 gaps in the field.

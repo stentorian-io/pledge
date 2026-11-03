@@ -1,9 +1,9 @@
 //! Export renames compatibility checks.
 
-use interlint::core::findings::Severity;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::rules::RULE_EXPORT_RENAMED;
-use interlint::languages::javascript::model::{
+use pledge::core::findings::Severity;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::rules::RULE_EXPORT_RENAMED;
+use pledge::languages::javascript::model::{
     DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol, SymbolSpace,
 };
 use std::path::PathBuf;

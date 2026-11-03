@@ -1,5 +1,5 @@
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare;
 use serde_json::json;
 
 fn package(wrapper: &str, production: &str, development: &str) -> tempfile::TempDir {
@@ -144,7 +144,7 @@ fn equivalent_condition_rewrites_and_target_relocations_stay_compatible() {
     std::fs::write(new.path().join("renamed.cjs"), "exports.api = 1;").unwrap();
     let (before, _) = discover_exports(old.path()).unwrap();
     let (after, _) = discover_exports(new.path()).unwrap();
-    assert!(!interlint::core::findings::has_breaking_changes(
+    assert!(!pledge::core::findings::has_breaking_changes(
         &compare::compare_exports(&before, &after, new.path(), false)
     ));
 }
@@ -172,7 +172,7 @@ fn published_react_exports_match_node_in_both_environments() {
     )
     .unwrap();
     let (_directory, root) =
-        interlint::ecosystems::node::acquire::extract_tgz_from_bytes(&tarball).unwrap();
+        pledge::ecosystems::node::acquire::extract_tgz_from_bytes(&tarball).unwrap();
     let (exports, _) = discover_exports(&root).unwrap();
     for (environment, branch) in [
         ("production", "NODE_ENV=production"),
@@ -284,13 +284,13 @@ async fn node_consumers_confirm_commonjs_replacement_removes_the_api() {
     let (mut after, _) = discover_exports(new.path()).unwrap();
     for (exports, directory) in [(&mut before, old.path()), (&mut after, new.path())] {
         let result =
-            interlint::languages::typescript::compiler::enrich_prepared_exports(exports, directory)
+            pledge::languages::typescript::compiler::enrich_prepared_exports(exports, directory)
                 .await
                 .unwrap();
         assert!(
             matches!(
                 result,
-                interlint::languages::typescript::compiler::EnrichResult::Enriched
+                pledge::languages::typescript::compiler::EnrichResult::Enriched
             ),
             "{result:?}"
         );
@@ -399,7 +399,7 @@ fn later_alias_rebinding_and_explicit_exports_reattachment_preserve_known_identi
 #[cfg(feature = "lsp-tests")]
 #[tokio::test]
 async fn native_commonjs_alias_identity_matches_analysis_or_retains_incomplete_evidence() {
-    use interlint::languages::typescript::compiler;
+    use pledge::languages::typescript::compiler;
     use std::process::Command;
 
     for (wrapper, names, incomplete) in [

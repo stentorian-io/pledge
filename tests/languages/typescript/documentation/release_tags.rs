@@ -7,10 +7,10 @@
 //! the post-process populate pass at `src/ecosystems/node/discovery/resolver.rs` has
 //! lost a construction site.
 
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::typescript::compare::rules::RULE_EXPORT_DEPRECATED;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::typescript::compare::rules::RULE_EXPORT_DEPRECATED;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/typescript/documentation/release-tags";

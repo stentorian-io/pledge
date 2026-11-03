@@ -1,7 +1,7 @@
 //! Commonjs exports compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn test_cjs_module_exports_bulk_assignment() {

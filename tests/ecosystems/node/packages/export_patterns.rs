@@ -1,6 +1,6 @@
 //! Export patterns compatibility checks.
 
-use interlint::ecosystems::node::compare::compare_exports_map_diff;
+use pledge::ecosystems::node::compare::compare_exports_map_diff;
 
 #[test]
 fn wildcard_pattern_changed() {

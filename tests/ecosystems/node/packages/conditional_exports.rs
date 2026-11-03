@@ -1,7 +1,7 @@
-use interlint::core::findings::has_breaking_changes;
-use interlint::ecosystems::node::compare::compare_exports_map_diff;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
+use pledge::core::findings::has_breaking_changes;
+use pledge::ecosystems::node::compare::compare_exports_map_diff;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
 use serde_json::Value;
 
 fn package(manifest: &str, a: &str, b: &str) -> tempfile::TempDir {

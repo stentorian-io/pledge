@@ -1,6 +1,6 @@
 //! Types versions compatibility checks.
 
-use interlint::ecosystems::node::compare::metadata::compare_metadata;
+use pledge::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn types_versions_removed_finding() {
@@ -122,7 +122,7 @@ fn types_versions_entry_discovery() {
     .unwrap();
 
     // discover_exports should complete without errors
-    let result = interlint::ecosystems::node::discovery::discover_exports(pkg_dir.path());
+    let result = pledge::ecosystems::node::discovery::discover_exports(pkg_dir.path());
     assert!(
         result.is_ok(),
         "discover_exports should not error on package with typesVersions; got: {:?}",

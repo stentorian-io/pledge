@@ -1,7 +1,7 @@
 //! Enums compatibility checks.
 
-use interlint::core::findings::Finding;
-use interlint::languages::typescript::compare::enums as enum_diff;
+use pledge::core::findings::Finding;
+use pledge::languages::typescript::compare::enums as enum_diff;
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.
@@ -61,11 +61,11 @@ fn find_decl_by_name<'a>(
 }
 
 /// Parse TS source and extract EnumShape for the named enum.
-fn extract_enum(source: &[u8], name: &str) -> interlint::languages::typescript::model::EnumShape {
+fn extract_enum(source: &[u8], name: &str) -> pledge::languages::typescript::model::EnumShape {
     let (tree, bytes) = parse_ts(source);
     let decl = find_decl_by_name(tree.root_node(), &bytes, name)
         .unwrap_or_else(|| panic!("enum `{}` not found in source", name));
-    interlint::languages::typescript::syntax::enums::parse_enum_shape(&bytes, decl)
+    pledge::languages::typescript::syntax::enums::parse_enum_shape(&bytes, decl)
 }
 
 #[test]

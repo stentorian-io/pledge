@@ -11,7 +11,7 @@
 #
 # After regeneration, MANUALLY review the diff vs the previous expected-findings.json
 # against the package's release notes / changelog. Commit only when the diff aligns
-# with intentional changes to Interlint detection behavior.
+# with intentional changes to Pledge detection behavior.
 #
 # Keep regeneration manual; verification must compare the reviewed baseline.
 

@@ -1,11 +1,11 @@
 //! Commonjs declarations compatibility checks.
 
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::javascript::model::{
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::javascript::model::{
     DeclarationKind, ExportKey, ExportKind, ExportMap, ExportSymbol,
 };
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn make_export_sym(

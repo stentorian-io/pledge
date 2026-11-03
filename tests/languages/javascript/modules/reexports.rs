@@ -1,8 +1,8 @@
-use interlint::core::findings::has_breaking_changes;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::javascript::model::SymbolSpace;
+use pledge::core::findings::has_breaking_changes;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::javascript::model::SymbolSpace;
 
 fn package(index: &str, implementation: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -165,12 +165,12 @@ fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
         // Both paths must reach the same binding, so the two leaves re-export it.
         std::fs::write(old.path().join("b18.mjs"), "export * from './a18.mjs';").unwrap();
         let (before, warnings) =
-            interlint::ecosystems::node::discovery::discover_exports(old.path()).unwrap();
+            pledge::ecosystems::node::discovery::discover_exports(old.path()).unwrap();
         assert!(warnings.is_empty());
         let (after, warnings) =
-            interlint::ecosystems::node::discovery::discover_exports(new.path()).unwrap();
+            pledge::ecosystems::node::discovery::discover_exports(new.path()).unwrap();
         assert!(warnings.is_empty());
-        let findings = interlint::languages::javascript::compare::compare_exports(
+        let findings = pledge::languages::javascript::compare::compare_exports(
             &before,
             &after,
             new.path(),
@@ -183,10 +183,11 @@ fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
                 .count(),
             2
         );
-        assert!(
-            interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), new.path())
-                .is_empty()
-        );
+        assert!(pledge::ecosystems::node::compare::compare_exports_map_diff(
+            old.path(),
+            new.path()
+        )
+        .is_empty());
         send.send(()).unwrap();
     });
     receive

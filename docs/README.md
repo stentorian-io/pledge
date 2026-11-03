@@ -1,7 +1,7 @@
 # Documentation
 
 Start with the [quick start](../README.md#quick-start) to install Pledge and
-compare a package with its published version. The executable is `interlint`.
+compare a package with its published version. The executable is `pledge`.
 
 ## Use Pledge
 

@@ -8,7 +8,7 @@ fn run_reference_case(package: &str) {
         .join("tests/fixtures/node/reference")
         .join(package);
     let unpack = |name| {
-        interlint::ecosystems::node::acquire::extract_tgz_from_bytes(
+        pledge::ecosystems::node::acquire::extract_tgz_from_bytes(
             &std::fs::read(directory.join(name)).unwrap(),
         )
         .unwrap()

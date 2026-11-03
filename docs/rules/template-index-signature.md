@@ -58,7 +58,7 @@ Fires Minor `index-signature-key-pattern-changed`.
 
 ## Algorithm
 
-Interlint parses both the old and new `key_type_text` into a
+Pledge parses both the old and new `key_type_text` into a
 `Vec<TemplatePart>` (literal segments interleaved with placeholder
 types). Direction is computed by:
 
@@ -92,7 +92,7 @@ literal pattern change would produce THREE findings:
 - REF-07 `index-signature-changed` "added `` `onClick${string}` ``"
 - REF-09 `index-signature-key-pattern-changed` (narrowing)
 
-Interlint suppresses the REF-07 pair (and its interface-level twin
+Pledge suppresses the REF-07 pair (and its interface-level twin
 `interface-index-signature-changed`) for any signature matched by
 REF-09. Consumers see exactly ONE finding per pattern change — the
 REF-09 rule with direction-aware severity.

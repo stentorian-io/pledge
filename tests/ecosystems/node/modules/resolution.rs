@@ -1,4 +1,4 @@
-use interlint::ecosystems::node::discovery::discover_exports;
+use pledge::ecosystems::node::discovery::discover_exports;
 use serde_json::{json, Value};
 
 fn package(manifest: Value, files: &[(&str, &str)]) -> tempfile::TempDir {

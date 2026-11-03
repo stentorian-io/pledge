@@ -1,7 +1,7 @@
 //! Export helpers compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn esbuild_export_helper_captures_arrow_getters() {

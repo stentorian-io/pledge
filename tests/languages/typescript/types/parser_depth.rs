@@ -1,6 +1,6 @@
 //! Parser depth compatibility checks.
 
-use interlint::languages::typescript::types::parser::parse_type_string;
+use pledge::languages::typescript::types::parser::parse_type_string;
 
 #[test]
 fn deeply_nested_type_no_stack_overflow() {

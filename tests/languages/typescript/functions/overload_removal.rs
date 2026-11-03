@@ -1,6 +1,6 @@
 //! Overload removal compatibility checks.
 
-use interlint::languages::typescript::types::shape::{ParamShape, TypeShape};
+use pledge::languages::typescript::types::shape::{ParamShape, TypeShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -9,8 +9,8 @@ fn test_file() -> PathBuf {
 
 #[test]
 fn unmatched_overload_fires_removed() {
-    use interlint::languages::javascript::model::{ExportKind, ExportSymbol};
-    use interlint::languages::typescript::compare::refinements::compare_ref_changes;
+    use pledge::languages::javascript::model::{ExportKind, ExportSymbol};
+    use pledge::languages::typescript::compare::refinements::compare_ref_changes;
 
     let file = test_file();
     // old: 2 overloads at arity 1; new: 1 overload at arity 1

@@ -1,7 +1,7 @@
 //! Any parameters compatibility checks.
 
-use interlint::languages::typescript::compare::types::diff_types;
-use interlint::languages::typescript::types::shape::{ParamShape, TypeShape};
+use pledge::languages::typescript::compare::types::diff_types;
+use pledge::languages::typescript::types::shape::{ParamShape, TypeShape};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

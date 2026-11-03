@@ -1,7 +1,7 @@
 //! Variance compatibility checks.
 
-use interlint::languages::typescript::compare::generics::compare_type_params;
-use interlint::languages::typescript::model::{TypeParam, Variance};
+use pledge::languages::typescript::compare::generics::compare_type_params;
+use pledge::languages::typescript::model::{TypeParam, Variance};
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {

@@ -1,7 +1,7 @@
 //! Construct signatures compatibility checks.
 
-use interlint::languages::typescript::compare::interfaces::compare_construct_signatures;
-use interlint::languages::typescript::model::ConstructSignature;
+use pledge::languages::typescript::compare::interfaces::compare_construct_signatures;
+use pledge::languages::typescript::model::ConstructSignature;
 use std::path::PathBuf;
 
 fn test_file() -> PathBuf {
@@ -28,7 +28,7 @@ fn construct_signature_removed_fires_major() {
         .unwrap();
     assert_eq!(
         f.severity,
-        interlint::core::findings::Severity::Major,
+        pledge::core::findings::Severity::Major,
         "TLF-01: construct-signature-removed should be Major. Got: {:?}",
         f.severity
     );

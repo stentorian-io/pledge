@@ -1,6 +1,6 @@
 //! Side effects compatibility checks.
 
-use interlint::ecosystems::node::compare::metadata::compare_metadata;
+use pledge::ecosystems::node::compare::metadata::compare_metadata;
 
 #[test]
 fn side_effects_false_to_true_fires_warning() {
@@ -25,7 +25,7 @@ fn side_effects_false_to_true_fires_warning() {
     let findings = compare_metadata(&old_dir, &new_dir);
     assert!(
         findings.iter().any(|f| f.rule == "side-effects-widened"
-            && matches!(f.severity, interlint::core::findings::Severity::Warning)),
+            && matches!(f.severity, pledge::core::findings::Severity::Warning)),
         "META-01: expected side-effects-widened Warning. Got: {:?}",
         findings
     );

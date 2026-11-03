@@ -6,8 +6,8 @@ repository. Share the relevant boundaries with any subagents when delegating.
 ## Project Context
 
 Pledge is a Rust 2021 CLI that detects breaking changes in public JavaScript and
-TypeScript package interfaces. The Cargo package and executable are currently
-named `interlint`. Compare packed local packages with their published npm
+TypeScript package interfaces. The Cargo package and executable are
+named `pledge`. Compare packed local packages with their published npm
 versions, discover exports with tree-sitter, enrich types through the TypeScript
 compiler API, and report findings by semver impact.
 

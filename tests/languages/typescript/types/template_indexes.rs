@@ -16,11 +16,11 @@
 //! on the narrowing fixture, no `interface-index-signature-changed` finding
 //! should accompany it.
 
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
-use interlint::languages::typescript::compare::rules::{
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::typescript::compare::rules::{
     RULE_INDEX_SIGNATURE_CHANGED, RULE_INDEX_SIGNATURE_KEY_PATTERN_CHANGED,
     RULE_INTERFACE_INDEX_SIGNATURE_CHANGED,
 };
@@ -33,7 +33,7 @@ fn fixture_dir(form: &str, side: &str) -> PathBuf {
     Path::new(manifest).join(FIXTURE_ROOT).join(form).join(side)
 }
 
-fn run(form: &str) -> Vec<interlint::core::findings::Finding> {
+fn run(form: &str) -> Vec<pledge::core::findings::Finding> {
     let old_dir = fixture_dir(form, "old");
     let new_dir = fixture_dir(form, "new");
     let (old_exports, _) = discover_exports(&old_dir).unwrap();

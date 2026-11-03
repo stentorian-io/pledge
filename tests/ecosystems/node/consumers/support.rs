@@ -1,8 +1,8 @@
 //! Consumer compilation/execution provides an independent compatibility oracle.
 #![cfg(feature = "lsp-tests")]
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare;
 use serde_json::Value;
 use std::process::Command;
 
@@ -36,19 +36,20 @@ pub(crate) fn assert_consumer_contracts(specifications: &str) {
         );
         let mut findings = compare::compare_exports(&before, &after, new.path(), false);
         findings.extend(
-            interlint::languages::javascript::compare::structure::compare_structural_diff(
+            pledge::languages::javascript::compare::structure::compare_structural_diff(
                 old.path(),
                 new.path(),
                 &before,
                 &after,
             ),
         );
-        findings.extend(
-            interlint::ecosystems::node::compare::compare_exports_map_diff(old.path(), new.path()),
-        );
+        findings.extend(pledge::ecosystems::node::compare::compare_exports_map_diff(
+            old.path(),
+            new.path(),
+        ));
         let breaking = case["breaking"].as_bool().unwrap();
         assert_eq!(
-            interlint::core::findings::has_breaking_changes(&findings),
+            pledge::core::findings::has_breaking_changes(&findings),
             breaking,
             "{name}: {findings:?}"
         );

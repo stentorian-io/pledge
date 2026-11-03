@@ -259,7 +259,7 @@ pub(crate) const DESTRUCTURED_PAIR_EXPORT_QUERY: &str = r#"
 /// Captures `export = Foo` — CommonJS-style TypeScript module export.
 ///
 /// This is a TypeScript-only syntax. The export is treated as a default export
-/// with name "default" in interlint's model (equivalent to `module.exports = Foo`).
+/// with name "default" in pledge's model (equivalent to `module.exports = Foo`).
 pub(crate) const EXPORT_ASSIGNMENT_QUERY_TS: &str = r#"
 (export_statement
   "="

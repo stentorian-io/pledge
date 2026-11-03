@@ -1,6 +1,6 @@
 # Contributing
 
-Pledge currently builds the `interlint` crate and executable. Development checks
+Pledge builds the `pledge` crate and executable. Development checks
 run locally; this repository does not have hosted CI workflows or pipelines.
 For installing and using the linter in another project's CI, see
 [CI integration](docs/ci.md).

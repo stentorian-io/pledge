@@ -1,13 +1,13 @@
 //! Augmentations compatibility checks.
 
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::model::{ExportKey, ExportKind, ExportMap, ExportSymbol};
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 use std::path::PathBuf;
 
 fn raw_exports_to_map(
-    raw: Vec<interlint::languages::javascript::syntax::exports::RawExport>,
+    raw: Vec<pledge::languages::javascript::syntax::exports::RawExport>,
 ) -> ExportMap {
     let mut map = ExportMap::new();
     for e in raw {

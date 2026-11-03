@@ -1,10 +1,8 @@
 //! Member changes compatibility checks.
 
-use interlint::core::findings::Finding;
-use interlint::languages::javascript::compare::classes as class_diff;
-use interlint::languages::javascript::model::{
-    ClassMember, ClassMemberKind, ClassShape, Visibility,
-};
+use pledge::core::findings::Finding;
+use pledge::languages::javascript::compare::classes as class_diff;
+use pledge::languages::javascript::model::{ClassMember, ClassMemberKind, ClassShape, Visibility};
 use std::path::PathBuf;
 
 /// Return the file path used for finding location in tests.
@@ -68,7 +66,7 @@ fn extract_class(source: &[u8], name: &str) -> ClassShape {
     let (tree, bytes) = parse_ts(source);
     let decl = find_decl_by_name(tree.root_node(), &bytes, name)
         .unwrap_or_else(|| panic!("class `{}` not found in source", name));
-    interlint::languages::javascript::syntax::classes::parse_class_shape(&bytes, decl)
+    pledge::languages::javascript::syntax::classes::parse_class_shape(&bytes, decl)
 }
 
 #[test]
@@ -362,7 +360,7 @@ fn implements_clause_removal_preserves_the_structural_contract() {
         let findings = class_diff::compare_class_shapes(&old, &new, "Foo", &test_file(), 1, 1);
         assert!(!findings.iter().any(|finding| finding.rule == "class-implements-removed"), "{findings:?}");
         assert_eq!(findings.iter().any(|finding| finding.rule == "class-method-removed"), removes_member, "{findings:?}");
-        assert_eq!(interlint::core::findings::has_breaking_changes(&findings), removes_member, "{findings:?}");
+        assert_eq!(pledge::core::findings::has_breaking_changes(&findings), removes_member, "{findings:?}");
 
         #[cfg(feature = "lsp-tests")]
         for (source, succeeds) in [(old_source, true), (new_source, !removes_member)] {

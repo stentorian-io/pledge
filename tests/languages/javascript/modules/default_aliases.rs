@@ -1,8 +1,8 @@
 //! JavaScript default aliases use an anonymous `default` keyword token in the
 //! grammar. Verify discovery and comparison for both `.mjs` and `.js` sources.
 
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::model::ExportKind;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::model::ExportKind;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/javascript/modules/default-aliases";

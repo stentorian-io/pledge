@@ -1,27 +1,27 @@
 //! Signature fixtures compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::Severity;
-use interlint::ecosystems::node::discovery as discover;
-use interlint::languages::javascript::compare;
+use pledge::core::findings::Severity;
+use pledge::ecosystems::node::discovery as discover;
+use pledge::languages::javascript::compare;
 use std::path::Path;
 
 /// Helper: discover exports from a fixture directory.
-fn discover_fixture(path: &Path) -> interlint::languages::javascript::model::ExportMap {
+fn discover_fixture(path: &Path) -> pledge::languages::javascript::model::ExportMap {
     let (exports, _warnings) = discover::discover_exports(path).expect("discover should succeed");
     exports
 }
 
 /// Helper: collect rule IDs from findings.
-fn rule_ids(findings: &[interlint::core::findings::Finding]) -> Vec<&'static str> {
+fn rule_ids(findings: &[pledge::core::findings::Finding]) -> Vec<&'static str> {
     findings.iter().map(|f| f.rule).collect()
 }
 
 /// Helper: filter findings by rule.
 fn findings_with_rule<'a>(
-    findings: &'a [interlint::core::findings::Finding],
+    findings: &'a [pledge::core::findings::Finding],
     rule: &str,
-) -> Vec<&'a interlint::core::findings::Finding> {
+) -> Vec<&'a pledge::core::findings::Finding> {
     findings.iter().filter(|f| f.rule == rule).collect()
 }
 

@@ -8,8 +8,8 @@ fn test_file() -> PathBuf {
 
 #[test]
 fn ref_04_suppressed_when_ref_08_fires() {
-    use interlint::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
-    use interlint::languages::typescript::compare::refinements::compare_ref_changes;
+    use pledge::languages::javascript::model::{DeclarationKind, ExportKind, ExportSymbol};
+    use pledge::languages::typescript::compare::refinements::compare_ref_changes;
 
     let file = test_file();
     // Build a function -> class kind change that triggers REF-08 (default-export-changed)

@@ -1,7 +1,7 @@
 //! Export forms compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn test_star_and_namespace_from_same_source_both_captured() {

@@ -1,9 +1,9 @@
 //! Json schema compatibility checks.
 
 use crate::fixtures::fixture_path;
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::compare::assets::json_schema as json_diff;
-use interlint::ecosystems::node::compare::rules::{
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::compare::assets::json_schema as json_diff;
+use pledge::ecosystems::node::compare::rules::{
     RULE_JSON_FIELD_ADDED, RULE_JSON_FIELD_REMOVED, RULE_JSON_REQUIRED_FIELD_ADDED,
 };
 use serde_json::{json, Value};

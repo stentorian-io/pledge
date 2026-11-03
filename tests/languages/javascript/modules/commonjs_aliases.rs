@@ -1,7 +1,7 @@
 //! Commonjs aliases compatibility checks.
 
-use interlint::languages::javascript::syntax::exports::parse_exports;
-use interlint::languages::javascript::syntax::grammar::SourceLanguage;
+use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 #[test]
 fn cjs_exports_aliasing_pattern() {

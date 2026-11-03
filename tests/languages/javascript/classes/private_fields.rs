@@ -7,13 +7,13 @@
 //! suppression (CLS-11 silent on private-space renames, CLS-03 suppressed
 //! when CLS-11 fires, Risk 2 both-on-both-sides collision guard).
 
-use interlint::core::findings::{Finding, Severity};
-use interlint::ecosystems::node::discovery::discover_exports;
-use interlint::languages::javascript::compare::compare_exports;
-use interlint::languages::javascript::compare::rules::{
+use pledge::core::findings::{Finding, Severity};
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare::compare_exports;
+use pledge::languages::javascript::compare::rules::{
     RULE_CLASS_FIELD_MADE_PRIVATE, RULE_CLASS_FIELD_MADE_PUBLIC, RULE_CLASS_METHOD_REMOVED,
 };
-use interlint::languages::javascript::compare::structure::compare_structural_diff;
+use pledge::languages::javascript::compare::structure::compare_structural_diff;
 use std::path::{Path, PathBuf};
 
 const FIXTURE_ROOT: &str = "tests/fixtures/javascript/classes/private-fields";
