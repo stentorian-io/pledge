@@ -76,9 +76,15 @@ The `compiler::version_support` suite checks syntax, library types, and inferred
 predicates against the compiler selected on `PATH`, with `tsc` consumer results
 as an independent oracle. CI runs it with TypeScript 4.9.5, 5.0.4, 5.2.2, 5.4.5,
 5.7.3, 5.9.3, and 6.0.3 on Node 22.12.0 and 24.0.0. The same matrix reruns the
-returned-contract, overload, and nominal-identity consumer cases. These are
+returned-contract, callable, overload, nominal-identity, namespace-default,
+CommonJS interop, forwarding and inferred property identities, unresolved factory
+and symbol-key evidence, and path-alias consumer cases. These are
 targeted version boundaries, not exhaustive ECMAScript or TypeScript
 conformance coverage.
+
+The `modules::commonjs_names` Node suite compares the installed loader's named
+imports with real ESM and `require()` consumers. CI runs it on Node 22.12.0,
+24.0.0, and 26.7.0 because these releases use different bundled CommonJS parsers.
 
 `packages::cli` checks real process exit codes and reports using isolated npm and
 compiler stand-ins on Unix, without network access. Its opt-in `npm_cli` module

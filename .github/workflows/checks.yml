@@ -56,9 +56,40 @@ jobs:
           rustup default stable
           npm install -g typescript@${{ matrix.typescript }}
       - run: >-
-          cargo test --locked --release --features lsp-tests --test typescript --
+          cargo test --locked --release --features lsp-tests --test typescript --test javascript --
           compiler::version_support::
           compiler::contracts::returned_contracts
+          compiler::contracts::callables
           compiler::contracts::overloads
           compiler::contracts::nominal_identities
+          compiler::contracts::javascript_interop
+          compiler::enrichment::namespace_default_members_retain_compiler_types
+          compiler::enrichment::unresolved_commonjs_factory_results_retain_missing_runtime_evidence
+          compiler::enrichment::unresolved_commonjs_symbol_keys_retain_missing_runtime_evidence
+          modules::path_aliases::
+          modules::forwarding::
+          runtime::consumer_contracts::inferred_commonjs_values_agree_with_require_consumers
           --test-threads=1
+
+  commonjs-loaders:
+    name: CommonJS named imports on Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.12.0', '24.0.0', '26.7.0']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Prepare Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - run: >-
+          cargo test --locked --release --features lsp-tests --test node --
+          modules::commonjs_names:: --test-threads=1
