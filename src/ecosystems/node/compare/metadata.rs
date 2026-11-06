@@ -83,16 +83,18 @@ fn extract_string_map(pkg: &serde_json::Value, field: &str) -> HashMap<String, S
         .unwrap_or_default()
 }
 
-/// Extract a string array from a JSON array field.
-fn extract_string_array(pkg: &serde_json::Value, field: &str) -> Vec<String> {
-    pkg.get(field)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
+/// npm accepts either a single platform name or an array of names.
+fn platform_requirements(pkg: &serde_json::Value, field: &str) -> Vec<String> {
+    match pkg.get(field) {
+        Some(serde_json::Value::String(platform)) if !platform.is_empty() => {
+            vec![platform.clone()]
+        }
+        Some(serde_json::Value::Array(platforms)) => platforms
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 /// Normalize the `bin` field to a `{command: path}` map.
@@ -148,15 +150,15 @@ fn compare_bin_entries(
     // Added bin entries are non-breaking (no finding)
 }
 
-/// Check a single platform field (os or cpu) for narrowing.
+/// Check a single platform field for narrowing.
 fn compare_platform_field(
     old_pkg: &serde_json::Value,
     new_pkg: &serde_json::Value,
     field: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let old_vals = extract_string_array(old_pkg, field);
-    let new_vals = extract_string_array(new_pkg, field);
+    let old_vals = platform_requirements(old_pkg, field);
+    let new_vals = platform_requirements(new_pkg, field);
 
     // A positive list is an allowlist; negative entries exclude names from it.
     // Probe every mentioned name plus one unmentioned platform, representing
@@ -185,9 +187,25 @@ fn compare_platform_field(
             ));
         }
     }
+    // npm also rejects a libc requirement when the host libc is unknown, even
+    // for [] or ["any"]. Other platform fields always have a host value.
+    if field == "libc" {
+        let required = |pkg: &serde_json::Value| {
+            pkg.get(field).is_some_and(|requirement| {
+                requirement.is_array() || requirement.as_str().is_some_and(|name| !name.is_empty())
+            })
+        };
+        if !required(old_pkg) && required(new_pkg) {
+            findings.push(pkg_json_finding(
+                Severity::Major,
+                RULE_PLATFORM_NARROWED,
+                "platforms without a recognized libc are no longer accepted by `libc`".into(),
+            ));
+        }
+    }
 }
 
-/// EXP-12: detect platform field narrowing (os, cpu).
+/// EXP-12: detect platform field narrowing (os, cpu, libc).
 fn compare_platform(
     old_pkg: &serde_json::Value,
     new_pkg: &serde_json::Value,
@@ -195,6 +213,7 @@ fn compare_platform(
 ) {
     compare_platform_field(old_pkg, new_pkg, "os", findings);
     compare_platform_field(old_pkg, new_pkg, "cpu", findings);
+    compare_platform_field(old_pkg, new_pkg, "libc", findings);
 }
 
 /// A range changes membership only at comparator boundaries or prerelease cores.

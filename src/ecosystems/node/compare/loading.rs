@@ -226,7 +226,7 @@ impl<'a> ModuleGraph<'a> {
                     resolver::resolve_imports_subpath(&map, &specifier, self.root, Some(mode))
                 })
             } else if specifier.starts_with('.') || specifier.starts_with('/') {
-                resolve_runtime_dependency(path, &specifier, mode)
+                resolver::resolve_runtime_dependency(path, &specifier, mode)
             } else {
                 // External package execution is outside this packed module graph.
                 // Its public types and dependency requirements are checked separately.
@@ -252,49 +252,6 @@ fn contains_resource_management(root: tree_sitter::Node) -> bool {
         pending.extend(node.named_children(&mut cursor));
     }
     false
-}
-
-pub(super) fn resolve_runtime_dependency(
-    from: &Path,
-    specifier: &str,
-    mode: &str,
-) -> Option<PathBuf> {
-    let target = from.parent()?.join(specifier);
-    if mode == "import" {
-        return target.is_file().then_some(target);
-    }
-    fn file(target: &Path) -> Option<PathBuf> {
-        if target.is_file() {
-            return Some(target.to_path_buf());
-        }
-        ["js", "json", "node"]
-            .iter()
-            .map(|extension| {
-                let mut path = target.as_os_str().to_os_string();
-                path.push(format!(".{extension}"));
-                PathBuf::from(path)
-            })
-            .find(|path| path.is_file())
-    }
-    if let Some(path) = file(&target) {
-        return Some(path);
-    }
-    if let Some(main) = std::fs::read_to_string(target.join("package.json"))
-        .ok()
-        .and_then(|source| serde_json::from_str::<serde_json::Value>(&source).ok())
-        .and_then(|manifest| {
-            manifest
-                .get("main")
-                .and_then(|main| main.as_str())
-                .map(str::to_owned)
-        })
-    {
-        let main = target.join(main);
-        if let Some(path) = file(&main).or_else(|| file(&main.join("index"))) {
-            return Some(path);
-        }
-    }
-    file(&target.join("index"))
 }
 
 fn inspect(

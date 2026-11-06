@@ -144,3 +144,48 @@ fn scoped_bin_shorthand_and_unscoped_command_object_are_equivalent() {
         .iter()
         .any(|finding| finding.rule == "bin-entry-changed" && finding.message.contains("tool")));
 }
+
+#[test]
+fn npm_scalar_platform_requirements_and_libc_constraints_are_preserved() {
+    for field in ["os", "cpu", "libc"] {
+        for (old, new, narrowed) in [
+            (json!({}), json!({field:"linux"}), true),
+            (json!({field:["linux"]}), json!({field:"linux"}), false),
+            (json!({field:"linux"}), json!({field:["linux"]}), false),
+            (json!({field:"any"}), json!({field:["any"]}), false),
+            (json!({field:"linux"}), json!({}), false),
+            (json!({}), json!({field:"!linux"}), true),
+        ] {
+            let findings = compare(old.clone(), new.clone());
+            assert_eq!(
+                findings
+                    .iter()
+                    .any(|finding| finding.rule == "platform-narrowed"
+                        && finding.severity == Severity::Major),
+                narrowed,
+                "{old} -> {new}: {findings:?}"
+            );
+        }
+    }
+    for (old, new, narrowed) in [
+        (json!({}), json!({"libc":["glibc"]}), true),
+        (
+            json!({"libc":["glibc", "musl"]}),
+            json!({"libc":["glibc"]}),
+            true,
+        ),
+        (json!({}), json!({"libc":[]}), true),
+        (json!({}), json!({"libc":"any"}), true),
+        (json!({"libc":[]}), json!({"libc":["any"]}), false),
+        (json!({"libc":["glibc"]}), json!({}), false),
+    ] {
+        let findings = compare(old.clone(), new.clone());
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "platform-narrowed"),
+            narrowed,
+            "{old} -> {new}: {findings:?}"
+        );
+    }
+}

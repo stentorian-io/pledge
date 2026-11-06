@@ -227,38 +227,20 @@ fn node_rhs_target_does_not_emit_warning() {
 }
 
 #[test]
-fn imports_field_wins_over_tsconfig_paths() {
-    // when package.json `imports` AND tsconfig.json `paths` both map the same
-    // `#alias`, `imports` wins. The structural property is enforced by the
-    // classifier dispatch in resolver.rs — `#`-prefixed specifiers route to
-    // SpecifierKind::ImportsField BEFORE the SpecifierKind::Relative | Bare
-    // arm where tsconfig fallback runs. This test is the regression guard.
+fn typescript_paths_do_not_invent_a_named_export_from_the_imports_fallback() {
+    // TypeScript resolves #shared through paths and rejects fromImports with
+    // TS2305: that name exists only in the unused package-imports target.
     let dir = fixture_dir("node/packages/imports/tsconfig-imports-overlap", "new");
-    let (exports, warnings) = discover_exports(&dir).expect("discover_exports must not error");
+    let (exports, warnings) = discover_exports(&dir).unwrap();
 
-    let names: Vec<&str> = exports
+    assert!(!exports
         .keys()
-        .filter(|k| k.subpath == ".")
-        .map(|k| k.name.as_str())
-        .collect();
-
-    // POSITIVE: the imports-mapped symbol resolves
+        .any(|key| key.subpath == "." && key.name == "fromImports"));
     assert!(
-        names.contains(&"fromImports"),
-        "expected `fromImports` (resolved via imports field → src/shared-imports.js); \
-         got exports: {:?}, warnings: {:?}",
-        names,
-        warnings.iter().map(|w| &w.message).collect::<Vec<_>>()
-    );
-
-    // NEGATIVE: the tsconfig-mapped symbol must NOT resolve. If `fromTsconfig`
-    // appears here, the classifier dispatch has been broken — `#shared`
-    // somehow reached the Relative | Bare arm where tsconfig fallback runs.
-    assert!(
-        !names.contains(&"fromTsconfig"),
-        "tsconfig.paths alias took precedence over imports field — Pitfall §5 \
-         locked precedence violated. Got exports: {:?}",
-        names
+        warnings
+            .iter()
+            .any(|warning| warning.incomplete && warning.message.contains("fromImports")),
+        "{warnings:?}"
     );
 }
 

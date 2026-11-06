@@ -11,12 +11,17 @@ branches and widening support are compatible.
 The historical rule names remain stable. Unparseable changed ranges are
 compared conservatively.
 
-`platform-narrowed` is Major when `os` or `cpu` rejects a previously accepted
-platform. Positive entries form an allowlist and `!` entries exclude platforms.
-Removing the field or replacing it with an empty list restores unrestricted
-support and is compatible.
+`platform-narrowed` is Major when `os`, `cpu`, or `libc` rejects a previously accepted
+platform. npm accepts either a single string or an array for these requirements;
+equivalent forms preserve support. Positive entries form an allowlist and `!`
+entries exclude platforms.
+Removing the field restores unrestricted support. For `os` and `cpu`, replacing
+the requirement with an empty list also restores unrestricted support.
 The single entry `["any"]` also accepts every platform. In a mixed list such as
 `["any", "linux"]`, npm treats `any` as a literal name; that list rejects macOS.
+For `libc`, npm additionally rejects hosts whose C library cannot be identified
+whenever a requirement is present, including an empty array or `"any"`. Removing
+the field restores support for those hosts.
 
 String `bin` entries use the unscoped package name as their command. For example,
 `@scope/tool` with `"bin":"./cli.js"` is equivalent to

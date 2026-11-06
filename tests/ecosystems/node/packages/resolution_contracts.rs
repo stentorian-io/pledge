@@ -335,3 +335,59 @@ fn top_level_exports_null_uses_legacy_main_and_deep_imports() {
         .iter()
         .any(|finding| finding.severity == Severity::Major));
 }
+
+#[test]
+fn legacy_main_resolves_extensions_directories_and_index_fallbacks() {
+    for (manifest, runtime) in [
+        (json!({"main":"./entry"}), "entry.js"),
+        (json!({"main":"./dist"}), "dist/index.js"),
+        (json!({"main":"./missing"}), "index.js"),
+        (json!({"types":"types.d.ts"}), "index.js"),
+    ] {
+        let old = package(
+            manifest.clone(),
+            &[
+                (runtime, "exports.answer=42;"),
+                ("types.d.ts", "export {};"),
+            ],
+        );
+        let new = package(
+            manifest,
+            &[
+                (runtime, "exports.changed=42;"),
+                ("types.d.ts", "export {};"),
+            ],
+        );
+
+        let (before, old_warnings) = discovery::discover_exports(old.path()).unwrap();
+        let (after, new_warnings) = discovery::discover_exports(new.path()).unwrap();
+        assert!(
+            old_warnings.is_empty() && new_warnings.is_empty(),
+            "{runtime}: {old_warnings:?} {new_warnings:?}"
+        );
+        assert!(before
+            .keys()
+            .any(|key| key.subpath == "." && key.name == "answer"));
+        let changes = compare_exports(&before, &after, new.path(), false);
+        assert!(
+            changes
+                .iter()
+                .any(|finding| finding.rule == "export-removed"
+                    && finding.severity == Severity::Major)
+        );
+        assert!(compare_exports(&before, &before, old.path(), false).is_empty());
+
+        #[cfg(feature = "lsp-tests")]
+        for (root, succeeds) in [(old.path(), true), (new.path(), false)] {
+            let output = std::process::Command::new("node")
+                .args([
+                    "--eval",
+                    "require('node:assert/strict').equal(require('./').answer,42)",
+                ])
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.success(), succeeds, "{runtime}: {output:?}");
+        }
+    }
+}

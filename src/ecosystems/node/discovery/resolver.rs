@@ -829,16 +829,25 @@ fn collect_exports_uncached(
         ) {
             let target = export.source.as_deref().and_then(|specifier| {
                 if classify_specifier(specifier) == SpecifierKind::ImportsField {
-                    imports_map
-                        .and_then(|im| resolve_imports_subpath(im, specifier, pkg_root, condition))
+                    let alias = uses_typescript_resolution(&canonical)
+                        .then(|| {
+                            tsconfig.and_then(|config| {
+                                resolve_config_alias(specifier, config, pkg_root)
+                                    .into_iter()
+                                    .find(|path| path.is_file())
+                            })
+                        })
+                        .flatten();
+                    alias.or_else(|| {
+                        imports_map.and_then(|im| {
+                            resolve_imports_subpath(im, specifier, pkg_root, condition)
+                        })
+                    })
                 } else if matches!(
                     classify_specifier(specifier),
                     SpecifierKind::Relative | SpecifierKind::Bare
                 ) {
-                    let mut paths = resolve_module_path(&canonical, specifier);
-                    if let Some(tc) = tsconfig {
-                        paths.extend(tsconfig::resolve_tsconfig_alias(specifier, tc, pkg_root));
-                    }
+                    let paths = source_resolution_paths(&canonical, specifier, tsconfig, pkg_root);
                     paths
                         .into_iter()
                         .find(|p| p.is_file())
@@ -1129,16 +1138,9 @@ fn collect_exports_uncached(
                             continue;
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
-                            let mut candidates = resolve_module_path(&canonical, specifier);
-                            // Try tsconfig alias resolution if standard resolution fails
-                            if let Some(tc) = tsconfig {
-                                if !candidates.iter().any(|p| p.exists()) {
-                                    candidates.extend(tsconfig::resolve_tsconfig_alias(
-                                        specifier, tc, pkg_root,
-                                    ));
-                                }
-                            }
-                            let resolved = candidates.into_iter().find(|p| p.exists());
+                            let candidates =
+                                source_resolution_paths(&canonical, specifier, tsconfig, pkg_root);
+                            let resolved = candidates.into_iter().find(|p| p.is_file());
                             match resolved {
                                 Some(target) => {
                                     // propagate current subpath/condition into the
@@ -1286,16 +1288,9 @@ fn collect_exports_uncached(
                             continue;
                         }
                         SpecifierKind::Relative | SpecifierKind::Bare => {
-                            let mut candidates = resolve_module_path(&canonical, specifier);
-                            // Try tsconfig alias resolution if standard resolution fails
-                            if let Some(tc) = tsconfig {
-                                if !candidates.iter().any(|p| p.exists()) {
-                                    candidates.extend(tsconfig::resolve_tsconfig_alias(
-                                        specifier, tc, pkg_root,
-                                    ));
-                                }
-                            }
-                            let resolved = candidates.into_iter().find(|p| p.exists());
+                            let candidates =
+                                source_resolution_paths(&canonical, specifier, tsconfig, pkg_root);
+                            let resolved = candidates.into_iter().find(|p| p.is_file());
                             match resolved {
                                 Some(target) => {
                                     // For named re-exports we only want the specific
@@ -1569,6 +1564,34 @@ fn append_extension(base: &Path, ext: &str) -> PathBuf {
     base.with_file_name(format!("{}.{}", name, ext))
 }
 
+fn resolve_config_alias(
+    specifier: &str,
+    config: &tsconfig::TsconfigPaths,
+    package_root: &Path,
+) -> Vec<PathBuf> {
+    tsconfig::resolve_tsconfig_alias(specifier, config, package_root)
+        .into_iter()
+        .flat_map(|target| module_path_candidates(target, true))
+        .collect()
+}
+
+fn source_resolution_paths(
+    from_file: &Path,
+    specifier: &str,
+    config: Option<&tsconfig::TsconfigPaths>,
+    package_root: &Path,
+) -> Vec<PathBuf> {
+    if classify_specifier(specifier) == SpecifierKind::Bare {
+        if let Some(config) = config {
+            let aliases = resolve_config_alias(specifier, config, package_root);
+            if !aliases.is_empty() {
+                return aliases;
+            }
+        }
+    }
+    resolve_module_path(from_file, specifier)
+}
+
 /// Return an ordered list of candidate absolute paths for a module specifier.
 ///
 /// The caller should pick the first candidate that exists on disk.
@@ -1584,14 +1607,20 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     let clean = specifier.strip_prefix("./").unwrap_or(specifier);
     let joined = base_dir.join(clean);
 
-    let mut candidates = Vec::with_capacity(20);
+    module_path_candidates(joined, uses_typescript_resolution(from_file))
+}
 
-    let typescript = matches!(
+fn uses_typescript_resolution(from_file: &Path) -> bool {
+    matches!(
         from_file
             .extension()
             .and_then(|extension| extension.to_str()),
         Some("ts" | "tsx" | "mts" | "cts")
-    );
+    )
+}
+
+fn module_path_candidates(joined: PathBuf, typescript: bool) -> Vec<PathBuf> {
+    let mut candidates = Vec::with_capacity(32);
     if !typescript {
         candidates.push(joined.clone());
     }
@@ -1679,6 +1708,50 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     candidates.push(joined.join("index.d.cts"));
 
     candidates
+}
+
+/// Resolve runtime files without TypeScript extension substitution.
+pub(crate) fn resolve_runtime_dependency(
+    from: &Path,
+    specifier: &str,
+    mode: &str,
+) -> Option<PathBuf> {
+    let target = from.parent()?.join(specifier);
+    if mode == "import" {
+        return target.is_file().then_some(target);
+    }
+    fn file(target: &Path) -> Option<PathBuf> {
+        if target.is_file() {
+            return Some(target.to_path_buf());
+        }
+        ["js", "json", "node"]
+            .iter()
+            .map(|extension| {
+                let mut path = target.as_os_str().to_os_string();
+                path.push(format!(".{extension}"));
+                PathBuf::from(path)
+            })
+            .find(|path| path.is_file())
+    }
+    if let Some(path) = file(&target) {
+        return Some(path);
+    }
+    if let Some(main) = std::fs::read_to_string(target.join("package.json"))
+        .ok()
+        .and_then(|source| serde_json::from_str::<serde_json::Value>(&source).ok())
+        .and_then(|manifest| {
+            manifest
+                .get("main")
+                .and_then(|main| main.as_str())
+                .map(str::to_owned)
+        })
+    {
+        let main = target.join(main);
+        if let Some(path) = file(&main).or_else(|| file(&main.join("index"))) {
+            return Some(path);
+        }
+    }
+    file(&target.join("index"))
 }
 
 #[cfg(test)]

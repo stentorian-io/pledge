@@ -776,7 +776,7 @@ fn legacy_runtime_access_removed(
         } else {
             mode
         };
-        package_compare::loading::resolve_runtime_dependency(
+        crate::ecosystems::node::discovery::resolver::resolve_runtime_dependency(
             &new_root.join("__legacy__.cjs"),
             &entry.subpath,
             resolution,

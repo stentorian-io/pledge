@@ -99,7 +99,7 @@ fn directory_entries(
         let name = entry.file_name();
         if name
             .to_str()
-            .is_some_and(|name| name.starts_with('.') || name == "node_modules")
+            .is_some_and(|name| matches!(name, ".git" | ".hg" | ".svn" | "node_modules"))
         {
             continue;
         }
@@ -233,7 +233,7 @@ mod tests {
     #[test]
     fn ignored_entries_still_count_toward_directory_work() {
         let root = tempfile::tempdir().unwrap();
-        for name in [".a", ".b", ".c"] {
+        for name in [".git", ".hg", ".svn"] {
             std::fs::write(root.path().join(name), "").unwrap();
         }
 

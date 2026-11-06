@@ -1,5 +1,6 @@
 //! Read TypeScript path aliases and resolve their configured source targets.
 
+use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 
 /// Parsed tsconfig.json path aliases.
@@ -9,7 +10,7 @@ pub struct TsconfigPaths {
     pub base_url: Option<String>,
     /// Path alias mappings: key is the alias pattern (e.g., "@/*"),
     /// value is the list of replacement paths (e.g., ["./src/*"]).
-    pub paths: std::collections::HashMap<String, Vec<String>>,
+    pub paths: IndexMap<String, Vec<String>>,
 }
 
 /// ROB-04: Strip JSONC syntax (line comments, block comments, trailing commas) before
@@ -129,7 +130,7 @@ pub fn parse_tsconfig_paths(pkg_root: &Path) -> Option<TsconfigPaths> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let mut paths_map = std::collections::HashMap::new();
+    let mut paths_map = IndexMap::new();
     if let Some(paths_obj) = compiler_opts.get("paths").and_then(|v| v.as_object()) {
         for (key, value) in paths_obj {
             if let Some(arr) = value.as_array() {
@@ -153,7 +154,9 @@ pub fn parse_tsconfig_paths(pkg_root: &Path) -> Option<TsconfigPaths> {
 /// Attempt to resolve a module specifier using tsconfig path aliases.
 ///
 /// Given a specifier like `@/utils` and paths like `{"@/*": ["./src/*"]}`,
-/// returns a list of candidate absolute paths to try.
+/// returns the selected replacement paths in their configured fallback order.
+/// The ecosystem resolver applies extension and directory probing. Exact aliases
+/// win, then the longest matching wildcard prefix; ties retain declaration order.
 ///
 /// Returns empty Vec if no alias matches.
 pub fn resolve_tsconfig_alias(
@@ -161,53 +164,48 @@ pub fn resolve_tsconfig_alias(
     tsconfig: &TsconfigPaths,
     pkg_root: &Path,
 ) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
+    let base_dir = tsconfig
+        .base_url
+        .as_ref()
+        .map_or_else(|| pkg_root.to_path_buf(), |base| pkg_root.join(base));
 
-    // Determine the base directory for resolution
-    let base_dir = if let Some(ref base_url) = tsconfig.base_url {
-        pkg_root.join(base_url)
+    let selection = if let Some(replacements) = tsconfig.paths.get(specifier) {
+        Some((replacements, None))
     } else {
-        pkg_root.to_path_buf()
+        let mut selection = None;
+        let mut prefix_length = None;
+        for (pattern, replacements) in &tsconfig.paths {
+            let Some((prefix, suffix)) = pattern.split_once('*') else {
+                continue;
+            };
+            if suffix.contains('*') || prefix_length.is_some_and(|length| length >= prefix.len()) {
+                continue;
+            }
+            let Some(matched) = specifier
+                .strip_prefix(prefix)
+                .and_then(|remainder| remainder.strip_suffix(suffix))
+            else {
+                continue;
+            };
+            prefix_length = Some(prefix.len());
+            selection = Some((replacements, Some(matched)));
+        }
+        selection
     };
 
-    for (pattern, replacements) in &tsconfig.paths {
-        // Pattern can be exact match or wildcard match (e.g., "@/*")
-        if pattern.contains('*') {
-            // Wildcard pattern: "@/*" matches "@/utils", "@/components/Button", etc.
-            let prefix = pattern.strip_suffix('*').unwrap_or(pattern);
-            if let Some(remainder) = specifier.strip_prefix(prefix) {
-                for replacement in replacements {
-                    if replacement.contains('*') {
-                        let replaced = replacement.replace('*', remainder);
-                        let resolved = base_dir.join(replaced.trim_start_matches("./"));
-                        // Add with standard extension probing
-                        candidates.push(resolved.clone());
-                        candidates.push(resolved.with_extension("ts"));
-                        candidates.push(resolved.with_extension("tsx"));
-                        candidates.push(resolved.with_extension("js"));
-                        candidates.push(resolved.with_extension("jsx"));
-                        // Directory index fallback
-                        candidates.push(resolved.join("index.ts"));
-                        candidates.push(resolved.join("index.tsx"));
-                        candidates.push(resolved.join("index.js"));
-                    } else {
-                        let resolved = base_dir.join(replacement.trim_start_matches("./"));
-                        candidates.push(resolved);
-                    }
-                }
-            }
-        } else {
-            // Exact pattern match
-            if specifier == pattern {
-                for replacement in replacements {
-                    let resolved = base_dir.join(replacement.trim_start_matches("./"));
-                    candidates.push(resolved);
-                }
-            }
-        }
-    }
-
-    candidates
+    let Some((replacements, matched)) = selection else {
+        return Vec::new();
+    };
+    replacements
+        .iter()
+        .map(|replacement| {
+            let replacement = matched.map_or_else(
+                || replacement.clone(),
+                |matched| replacement.replacen('*', matched, 1),
+            );
+            base_dir.join(replacement)
+        })
+        .collect()
 }
 
 #[cfg(test)]

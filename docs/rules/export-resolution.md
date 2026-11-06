@@ -1,12 +1,29 @@
 # Public export resolution
 
+TypeScript path aliases select exact mappings before wildcard mappings. Wildcard
+keys match both their prefix and suffix; the longest matching prefix wins, with
+declaration order breaking ties. Only that mapping's replacement list supplies
+fallbacks. Relative imports do not consult aliases; selected bare aliases take
+precedence over unrelated sibling files. For TypeScript sources, aliases also
+precede package `imports` resolution of `#` specifiers; runtime JavaScript keeps
+its package-imports target. Targets use the same source, declaration, and
+directory probing as other TypeScript imports. This follows the
+[TypeScript path-mapping rules](https://www.typescriptlang.org/docs/handbook/modules/reference.html#paths)
+and keeps discovery from selecting a different public barrel across runs.
+
+For Rust callers, `TsconfigPaths.paths` is an insertion-ordered `IndexMap`, and
+`resolve_tsconfig_alias` returns mapped targets without extension probing. Node
+discovery applies that probing after alias selection.
+
 Export identity includes the public subpath and the complete condition path.
 Two subpaths can expose the same file without losing either public API. A
 re-export cycle stops the current traversal; it does not prevent another entry
 point from using the same module.
 
 Named aliases retain both their public name and the original declaration name
-and position. Star exports exclude `default`, preserve type-only boundaries,
+and position. Reserved-word aliases have the same identity as their quoted
+spelling, including named and namespace re-exports. Explicit aliases to
+`default` remain public exports. Star exports exclude `default`, preserve type-only boundaries,
 and defer to explicit exports. Conflicting star exports of different bindings
 are ambiguous and do not create a public named export. Namespace re-exports
 retain their namespace prefix, including its `default` member.
@@ -17,7 +34,9 @@ incompatible API, and Minor when the selected API remains compatible.
 Reordering mutually exclusive `import` and `require` branches is compatible.
 The priority pass is bounded; exceeding its branch limit emits
 `analysis-incomplete` and the CLI exits 3.
-Wildcard targets include nested paths, and more specific mappings or `null`
+Wildcard targets include nested paths and packed dotfiles. Every `*` in a target
+is replaced with the same captured subpath, including targets such as
+`./*/index-*.js`. More specific mappings or `null`
 exclusions override broader patterns. Export arrays select the first valid
 target for each condition set, skipping unmatched conditions and null entries;
 a missing target file does not activate a later array element. Array discovery
@@ -35,12 +54,16 @@ Runtime access is checked separately from declaration resolution: a remaining
 an exact file path even when CommonJS can still find an extensionless subpath.
 
 Export targets are resolved as URLs, including percent-encoded filenames.
+An encoded `%2A` remains a literal asterisk when a target also contains wildcard slots.
 Mixed subpath/condition objects and integer condition keys are invalid Node
 configurations and produce incomplete analysis rather than a clean verdict.
 
 JavaScript entry points also discover adjacent TypeScript source or declaration
 files using extension substitution, including `.d.mts` and `.d.cts`. Packages
 without an `exports` field expose source files through legacy deep imports.
+Their root entry follows Node's extension and directory-index resolution for
+`main`, including the root `index.js` fallback when `main` is absent or missing.
+Declaring a separate types entry does not hide that runtime root.
 Hashed chunk names remain physical paths for reading and type requests;
 normalization is restricted to directive comparison identity.
 `typesVersions` declarations retain their version-range and public-subpath

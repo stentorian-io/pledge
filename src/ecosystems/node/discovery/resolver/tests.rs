@@ -250,14 +250,14 @@ fn test_js_to_dts_probing() {
 #[test]
 fn test_resolve_tsconfig_alias_wildcard() {
     // Pattern "@/*" with replacement "./src/*", specifier "@/utils" → {root}/src/utils.ts
-    let mut paths = std::collections::HashMap::new();
+    let mut paths = indexmap::IndexMap::new();
     paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
     let tsconfig = tsconfig::TsconfigPaths {
         base_url: None,
         paths,
     };
     let pkg_root = Path::new("/project");
-    let candidates = tsconfig::resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
+    let candidates = super::resolve_config_alias("@/utils", &tsconfig, pkg_root);
     let has_utils_ts = candidates
         .iter()
         .any(|p| p.to_string_lossy().ends_with("src/utils.ts"));
@@ -270,14 +270,14 @@ fn test_resolve_tsconfig_alias_wildcard() {
 #[test]
 fn test_resolve_tsconfig_alias_exact() {
     // Exact pattern "@app" with replacement "./src/app.ts", specifier "@app" resolves
-    let mut paths = std::collections::HashMap::new();
+    let mut paths = indexmap::IndexMap::new();
     paths.insert("@app".to_string(), vec!["./src/app.ts".to_string()]);
     let tsconfig = tsconfig::TsconfigPaths {
         base_url: None,
         paths,
     };
     let pkg_root = Path::new("/project");
-    let candidates = tsconfig::resolve_tsconfig_alias("@app", &tsconfig, pkg_root);
+    let candidates = super::resolve_config_alias("@app", &tsconfig, pkg_root);
     assert!(
         !candidates.is_empty(),
         "exact alias must produce candidates; got: {candidates:?}"
@@ -294,14 +294,14 @@ fn test_resolve_tsconfig_alias_exact() {
 #[test]
 fn test_resolve_tsconfig_alias_no_match() {
     // Specifier "lodash" with no matching alias returns empty candidates
-    let mut paths = std::collections::HashMap::new();
+    let mut paths = indexmap::IndexMap::new();
     paths.insert("@/*".to_string(), vec!["./src/*".to_string()]);
     let tsconfig = tsconfig::TsconfigPaths {
         base_url: None,
         paths,
     };
     let pkg_root = Path::new("/project");
-    let candidates = tsconfig::resolve_tsconfig_alias("lodash", &tsconfig, pkg_root);
+    let candidates = super::resolve_config_alias("lodash", &tsconfig, pkg_root);
     assert!(
         candidates.is_empty(),
         "non-aliased specifier must return empty; got: {candidates:?}"
@@ -347,14 +347,14 @@ fn test_parse_tsconfig_paths_missing_file() {
 #[test]
 fn test_resolve_tsconfig_alias_with_base_url() {
     // baseUrl affects resolution path
-    let mut paths = std::collections::HashMap::new();
+    let mut paths = indexmap::IndexMap::new();
     paths.insert("@/*".to_string(), vec!["src/*".to_string()]);
     let tsconfig = tsconfig::TsconfigPaths {
         base_url: Some(".".to_string()),
         paths,
     };
     let pkg_root = Path::new("/project");
-    let candidates = tsconfig::resolve_tsconfig_alias("@/utils", &tsconfig, pkg_root);
+    let candidates = super::resolve_config_alias("@/utils", &tsconfig, pkg_root);
     let has_ts = candidates
         .iter()
         .any(|p| p.to_string_lossy().contains("src/utils"));

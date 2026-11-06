@@ -137,3 +137,63 @@ fn test_orchestrator_combines_all_findings() {
         "Missing asset-file-removed"
     );
 }
+
+#[test]
+fn packed_dotfiles_and_hidden_directories_keep_their_asset_contracts() {
+    use pledge::ecosystems::node::compare::assets::compare_asset_diff;
+
+    for path in [".settings.json", ".config/settings.json"] {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        for (root, source) in [(old.path(), r#"{"answer":42}"#), (new.path(), "{}")] {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, source).unwrap();
+        }
+
+        assert!(compare_asset_diff(old.path(), old.path()).is_empty());
+        let findings = compare_asset_diff(old.path(), new.path());
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "json-field-removed"),
+            "{path}: {findings:?}"
+        );
+
+        #[cfg(feature = "lsp-tests")]
+        for (root, succeeds) in [(old.path(), true), (new.path(), false)] {
+            let consumer = format!(
+                "require('node:assert/strict').equal(require({}).answer, 42)",
+                serde_json::to_string(&format!("./{path}")).unwrap()
+            );
+            let output = std::process::Command::new("node")
+                .args(["--eval", &consumer])
+                .current_dir(root)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.success(), succeeds, "{path}: {output:?}");
+        }
+
+        std::fs::remove_file(new.path().join(path)).unwrap();
+        assert!(compare_asset_diff(old.path(), new.path())
+            .iter()
+            .any(|finding| finding.rule == "asset-file-removed"));
+    }
+    for path in [".style.css", ".styles/main.css"] {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        for (root, source) in [(old.path(), ".api { color: red; }"), (new.path(), "")] {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, source).unwrap();
+        }
+        assert!(compare_asset_diff(old.path(), old.path()).is_empty());
+        let findings = compare_asset_diff(old.path(), new.path());
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "css-class-removed"),
+            "{path}: {findings:?}"
+        );
+    }
+}

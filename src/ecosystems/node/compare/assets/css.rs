@@ -29,26 +29,106 @@ fn parse_css(source: &[u8]) -> Option<tree_sitter::Tree> {
 /// Extract custom properties and class names from a CSS source buffer.
 ///
 /// Returns `(custom_properties, class_names)` as `BTreeSet<String>`.
-/// On parse failure: logs a warning and returns empty sets (warn-and-continue).
-fn extract_css_apis(source: &[u8]) -> (BTreeSet<String>, BTreeSet<String>) {
+/// Recovery trees cannot establish whether a browser retains a selector.
+fn extract_css_apis(source: &[u8]) -> Option<(BTreeSet<String>, BTreeSet<String>)> {
+    let source = normalize_identifier_escapes(std::str::from_utf8(source).ok()?);
+    let source = source.as_bytes();
+    let tree = parse_css(source)?;
+    if tree.root_node().has_error() {
+        return None;
+    }
     let mut custom_props = BTreeSet::new();
     let mut class_names = BTreeSet::new();
-
-    match parse_css(source) {
-        None => {
-            tracing::warn!("css_diff: failed to parse CSS source, skipping");
-        }
-        Some(tree) => {
-            walk_css_node(
-                tree.root_node(),
-                source,
-                &mut custom_props,
-                &mut class_names,
-            );
-        }
+    if !walk_css_node(
+        tree.root_node(),
+        source,
+        &mut custom_props,
+        &mut class_names,
+    ) {
+        return None;
     }
+    Some((custom_props, class_names))
+}
 
-    (custom_props, class_names)
+// The grammar accepts escapes in class selectors but not property names.
+// Decode identifier letters before parsing, preserving strings, comments, and
+// escaped punctuation whose literal spelling would change the token boundaries.
+fn normalize_identifier_escapes(source: &str) -> String {
+    let mut normalized = String::with_capacity(source.len());
+    let mut offset = 0;
+    let mut quote = None;
+    while offset < source.len() {
+        let rest = &source[offset..];
+        if quote.is_none() && rest.starts_with("/*") {
+            let length = rest.find("*/").map_or(rest.len(), |end| end + 2);
+            normalized.push_str(&rest[..length]);
+            offset += length;
+            continue;
+        }
+        let character = rest.chars().next().unwrap_or_default();
+        if character == '\\' {
+            let (escaped, length) = css_escape(rest);
+            if quote.is_none() && (escaped.is_ascii_alphabetic() || escaped == '_') {
+                normalized.push(escaped);
+            } else {
+                normalized.push_str(&rest[..length]);
+            }
+            offset += length;
+            continue;
+        }
+        if Some(character) == quote {
+            quote = None;
+        } else if quote.is_none() && matches!(character, '\'' | '"') {
+            quote = Some(character);
+        }
+        normalized.push(character);
+        offset += character.len_utf8();
+    }
+    normalized
+}
+
+/// CSS Syntax's escaped-code-point algorithm, including CRLF preprocessing.
+fn css_escape(source: &str) -> (char, usize) {
+    let mut end = 1;
+    let mut codepoint = 0;
+    for character in source[1..].chars().take(6) {
+        let Some(digit) = character.to_digit(16) else {
+            break;
+        };
+        codepoint = codepoint * 16 + digit;
+        end += character.len_utf8();
+    }
+    if end > 1 {
+        let suffix = &source[end..];
+        if suffix.starts_with("\r\n") {
+            end += 2;
+        } else if suffix.starts_with([' ', '\t', '\n', '\r', '\u{c}']) {
+            end += 1;
+        }
+        let character = char::from_u32(codepoint).filter(|character| *character != '\0');
+        return (character.unwrap_or('\u{fffd}'), end);
+    }
+    match source[1..].chars().next() {
+        Some(character) => (character, 1 + character.len_utf8()),
+        None => ('\u{fffd}', 1),
+    }
+}
+
+fn css_identifier(source: &str) -> String {
+    let mut decoded = String::with_capacity(source.len());
+    let mut offset = 0;
+    while offset < source.len() {
+        let rest = &source[offset..];
+        let (character, length) = if rest.starts_with('\\') {
+            css_escape(rest)
+        } else {
+            let character = rest.chars().next().unwrap_or_default();
+            (character, character.len_utf8())
+        };
+        decoded.push(character);
+        offset += length;
+    }
+    decoded
 }
 
 /// Walk with a tree cursor so deeply nested rules do not consume the Rust stack.
@@ -57,17 +137,22 @@ fn walk_css_node(
     source: &[u8],
     custom_props: &mut BTreeSet<String>,
     class_names: &mut BTreeSet<String>,
-) {
+) -> bool {
     let mut cursor = node.walk();
     loop {
         let current = cursor.node();
         match current.kind() {
+            "pseudo_class_selector" | "pseudo_element_selector"
+                if missing_pseudo_argument(current, source) =>
+            {
+                return false
+            }
             "declaration" => {
                 if let Some(prop_node) = current.named_child(0) {
                     if prop_node.kind() == "property_name" {
                         if let Ok(text) = prop_node.utf8_text(source) {
                             if text.starts_with("--") {
-                                custom_props.insert(text.to_string());
+                                custom_props.insert(css_identifier(text));
                             }
                         }
                     }
@@ -78,9 +163,24 @@ fn walk_css_node(
                 for inner_child in current.children(&mut inner_cursor) {
                     if inner_child.kind() == "class_name" {
                         if let Ok(text) = inner_child.utf8_text(source) {
-                            class_names.insert(text.to_string());
+                            class_names.insert(css_identifier(text));
                         }
                     }
+                }
+            }
+            "at_rule"
+                if current
+                    .named_child(0)
+                    .and_then(|node| node.utf8_text(source).ok())
+                    .is_some_and(|keyword| keyword.eq_ignore_ascii_case("@property")) =>
+            {
+                if let Some(name) = current
+                    .named_child(1)
+                    .filter(|node| node.kind() == "keyword_query")
+                    .and_then(|node| node.utf8_text(source).ok())
+                    .filter(|name| name.starts_with("--"))
+                {
+                    custom_props.insert(css_identifier(name));
                 }
             }
             _ => {}
@@ -90,10 +190,57 @@ fn walk_css_node(
         }
         while !cursor.goto_next_sibling() {
             if !cursor.goto_parent() {
-                return;
+                return true;
             }
         }
     }
+}
+
+fn missing_pseudo_argument(node: tree_sitter::Node, source: &[u8]) -> bool {
+    let mut cursor = node.walk();
+    let name = node
+        .named_children(&mut cursor)
+        .find(|child| matches!(child.kind(), "class_name" | "tag_name"))
+        .and_then(|child| child.utf8_text(source).ok());
+    let Some(name) = name else {
+        return false;
+    };
+    let requires_argument = match node.kind() {
+        "pseudo_class_selector" => [
+            "not",
+            "has",
+            "lang",
+            "dir",
+            "state",
+            "host",
+            "host-context",
+            "nth-child",
+            "nth-last-child",
+            "nth-of-type",
+            "nth-last-of-type",
+        ]
+        .iter()
+        .any(|required| name.eq_ignore_ascii_case(required)),
+        "pseudo_element_selector" => ["part", "slotted"]
+            .iter()
+            .any(|required| name.eq_ignore_ascii_case(required)),
+        _ => false,
+    };
+    if !requires_argument {
+        return false;
+    }
+    // The grammar permits an empty argument list for these functions even
+    // though browsers reject it. Forgiving :is() and :where() allow emptiness.
+    let arguments = node
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "arguments");
+    arguments.is_some_and(|arguments| {
+        let mut cursor = arguments.walk();
+        let has_argument = arguments
+            .named_children(&mut cursor)
+            .any(|child| child.kind() != "comment");
+        !has_argument
+    })
 }
 
 enum Stylesheets {
@@ -212,7 +359,20 @@ fn stylesheet_apis(
                 continue;
             }
         };
-        let (file_properties, file_classes) = extract_css_apis(&source);
+        let Some((file_properties, file_classes)) = extract_css_apis(&source) else {
+            findings.push(Finding {
+                severity: Severity::Warning,
+                rule: "analysis-incomplete",
+                file: PathBuf::from(file),
+                line: 1,
+                col: 1,
+                message: format!(
+                    "{side}: stylesheet `{file}` contains invalid or unsupported CSS syntax"
+                ),
+            });
+            complete = false;
+            continue;
+        };
         properties.extend(file_properties);
         classes.extend(file_classes);
     }
@@ -291,8 +451,8 @@ mod tests {
         let old_css = b":root { --color-primary: blue; --spacing: 8px; }";
         let new_css = b":root { --spacing: 8px; }";
 
-        let (old_props, _) = extract_css_apis(old_css);
-        let (new_props, _) = extract_css_apis(new_css);
+        let (old_props, _) = extract_css_apis(old_css).unwrap();
+        let (new_props, _) = extract_css_apis(new_css).unwrap();
 
         // --color-primary removed
         let removed: Vec<_> = old_props.difference(&new_props).collect();
@@ -305,8 +465,8 @@ mod tests {
         let old_css = b".btn { color: red; } .card { padding: 8px; }";
         let new_css = b".btn { color: red; }";
 
-        let (_, old_classes) = extract_css_apis(old_css);
-        let (_, new_classes) = extract_css_apis(new_css);
+        let (_, old_classes) = extract_css_apis(old_css).unwrap();
+        let (_, new_classes) = extract_css_apis(new_css).unwrap();
 
         let removed: Vec<_> = old_classes.difference(&new_classes).collect();
         assert_eq!(removed.len(), 1, "Expected 1 removed class");
@@ -318,8 +478,8 @@ mod tests {
         let old_css = b"@media (prefers-color-scheme: dark) { :root { --bg: black; } }";
         let new_css = b"@media (prefers-color-scheme: dark) { }";
 
-        let (old_props, _) = extract_css_apis(old_css);
-        let (new_props, _) = extract_css_apis(new_css);
+        let (old_props, _) = extract_css_apis(old_css).unwrap();
+        let (new_props, _) = extract_css_apis(new_css).unwrap();
 
         let removed: Vec<_> = old_props.difference(&new_props).collect();
         assert_eq!(
@@ -335,8 +495,8 @@ mod tests {
         let old_css = b".parent .child { color: red; } .parent { display: flex; }";
         let new_css = b".parent { display: flex; }";
 
-        let (_, old_classes) = extract_css_apis(old_css);
-        let (_, new_classes) = extract_css_apis(new_css);
+        let (_, old_classes) = extract_css_apis(old_css).unwrap();
+        let (_, new_classes) = extract_css_apis(new_css).unwrap();
 
         let removed: Vec<_> = old_classes.difference(&new_classes).collect();
         assert_eq!(
@@ -352,8 +512,8 @@ mod tests {
         let old_css = b".a{color:red}.b{color:blue}";
         let new_css = b".a{color:red}";
 
-        let (_, old_classes) = extract_css_apis(old_css);
-        let (_, new_classes) = extract_css_apis(new_css);
+        let (_, old_classes) = extract_css_apis(old_css).unwrap();
+        let (_, new_classes) = extract_css_apis(new_css).unwrap();
 
         let removed: Vec<_> = old_classes.difference(&new_classes).collect();
         assert_eq!(
@@ -366,14 +526,8 @@ mod tests {
 
     #[test]
     fn test_invalid_css_no_panic() {
-        // Garbage bytes should not panic — return empty sets
         let garbage = b"\x00\xFF\xFE garbage not css at all !!@@##";
-        let (props, classes) = extract_css_apis(garbage);
-        // No panic, empty or non-panicking result
-        // tree-sitter is error-tolerant so it may extract something or nothing
-        // The key requirement is: no panic
-        let _ = props;
-        let _ = classes;
+        assert!(extract_css_apis(garbage).is_none());
     }
 
     #[test]

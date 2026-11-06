@@ -1,6 +1,8 @@
 use crate::ecosystems::node::compare::exports::{
-    export_target_path, exports_config_error, parse_exports_condition_node, select_condition,
+    export_target_path, exports_config_error, is_valid_export_target, parse_exports_condition_node,
+    select_condition,
 };
+use crate::ecosystems::node::discovery::resolver::resolve_runtime_dependency;
 use crate::languages::javascript::syntax::grammar;
 use anyhow::Context;
 use std::collections::{BTreeSet, HashSet};
@@ -68,7 +70,12 @@ pub(crate) fn resolve_entry_points_with_warnings(
         // the object case (field remapping) is out of scope for entry-point discovery.
         for field in &["main", "module", "types", "typings", "browser"] {
             if let Some(serde_json::Value::String(rel)) = pkg.get(*field) {
-                let abs = pkg_root.join(rel.trim_start_matches("./"));
+                let mut abs = pkg_root.join(rel.trim_start_matches("./"));
+                if *field == "main" {
+                    abs =
+                        resolve_runtime_dependency(&pkg_root.join("__entry__.cjs"), ".", "require")
+                            .unwrap_or(abs);
+                }
                 results.push(EntryPoint {
                     path: abs,
                     condition: None,
@@ -77,6 +84,22 @@ pub(crate) fn resolve_entry_points_with_warnings(
                 // No break — all valid fields contribute entry points.
                 // The deduplication step below handles cases where multiple
                 // fields resolve to the same physical file.
+            }
+        }
+
+        if pkg
+            .get("main")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            if let Some(path) =
+                resolve_runtime_dependency(&pkg_root.join("__entry__.cjs"), ".", "require")
+            {
+                results.push(EntryPoint {
+                    path,
+                    condition: None,
+                    subpath: ".".into(),
+                });
             }
         }
 
@@ -245,10 +268,28 @@ pub(crate) fn resolve_exports_value_with_warnings(
     subpath: &str,
     warnings: &mut Vec<String>,
 ) -> Vec<EntryPoint> {
+    resolve_exports_value(
+        value,
+        base_path,
+        condition,
+        subpath,
+        warnings,
+        export_target_path,
+    )
+}
+
+fn resolve_exports_value(
+    value: &serde_json::Value,
+    base_path: &Path,
+    condition: Option<&str>,
+    subpath: &str,
+    warnings: &mut Vec<String>,
+    resolve_target: fn(&Path, &str) -> Option<PathBuf>,
+) -> Vec<EntryPoint> {
     let mut results = Vec::new();
     match value {
         serde_json::Value::String(rel) => {
-            let Some(path) = export_target_path(base_path, rel) else {
+            let Some(path) = resolve_target(base_path, rel) else {
                 warnings.push(format!("invalid `exports` target `{rel}`: expected a ./ path within the package without traversal or node_modules segments"));
                 return results;
             };
@@ -279,12 +320,13 @@ pub(crate) fn resolve_exports_value_with_warnings(
                         // recursion updates subpath; condition is preserved so that
                         // condition-before-subpath and subpath-before-condition orderings
                         // both produce correct (subpath, condition) pairs on leaves).
-                        results.extend(resolve_exports_value_with_warnings(
+                        results.extend(resolve_exports_value(
                             child,
                             base_path,
                             condition,
                             key.as_str(),
                             warnings,
+                            resolve_target,
                         ));
                     }
                 } else {
@@ -292,12 +334,13 @@ pub(crate) fn resolve_exports_value_with_warnings(
                         Some(parent) => format!("{parent}/{key}"),
                         None => key.clone(),
                     };
-                    results.extend(resolve_exports_value_with_warnings(
+                    results.extend(resolve_exports_value(
                         child,
                         base_path,
                         Some(&nested),
                         subpath,
                         warnings,
+                        resolve_target,
                     ));
                     // Later siblings are unreachable once the default matches.
                     if key == "default" {
@@ -322,12 +365,13 @@ pub(crate) fn resolve_exports_value_with_warnings(
                 ) {
                     continue;
                 }
-                let candidates = resolve_exports_value_with_warnings(
+                let candidates = resolve_exports_value(
                     item,
                     base_path,
                     condition,
                     subpath,
                     &mut alternative_warnings,
+                    resolve_target,
                 );
                 results.extend(candidates.into_iter().filter(|entry| {
                     let Some(contexts) = &contexts else {
@@ -352,7 +396,7 @@ pub(crate) fn resolve_exports_value_with_warnings(
                                 && select_condition(&alternatives[index], active)
                                     .flatten()
                                     .is_some_and(|target| {
-                                        export_target_path(base_path, target).as_ref()
+                                        resolve_target(base_path, target).as_ref()
                                             == Some(&entry.path)
                                     })
                         })
@@ -471,21 +515,25 @@ fn expand_subpath_wildcard(
     condition: Option<&str>,
     warnings: &mut Vec<String>,
 ) -> Vec<EntryPoint> {
-    let leaves = resolve_exports_value_with_warnings(value, base_path, condition, key, warnings);
+    let leaves = resolve_exports_value(
+        value,
+        base_path,
+        condition,
+        key,
+        warnings,
+        export_pattern_path,
+    );
     let mut results = Vec::new();
     let files = package_source_files(base_path);
     for leaf in leaves {
         let target = leaf.path.to_string_lossy();
-        let Some((prefix, suffix)) = target.split_once('*') else {
+        if !target.contains('\0') {
             results.push(leaf);
             continue;
-        };
+        }
         for file in &files {
             let path = file.to_string_lossy();
-            if let Some(slot) = path
-                .strip_prefix(prefix)
-                .and_then(|s| s.strip_suffix(suffix))
-            {
+            if let Some(slot) = export_pattern_slot(&target, &path) {
                 results.push(EntryPoint {
                     path: file.clone(),
                     condition: leaf.condition.clone(),
@@ -497,6 +545,31 @@ fn expand_subpath_wildcard(
     results
 }
 
+fn export_pattern_slot<'a>(target: &str, path: &'a str) -> Option<&'a str> {
+    let prefix_len = target.find('\0')?;
+    let stars = target.bytes().filter(|byte| *byte == 0).count();
+    let replacement_bytes = path.len().checked_sub(target.len() - stars)?;
+    if !replacement_bytes.is_multiple_of(stars) {
+        return None;
+    }
+    let slot = path.get(prefix_len..prefix_len + replacement_bytes / stars)?;
+    (target.replace('\0', slot) == path).then_some(slot)
+}
+
+fn export_pattern_path(root: &Path, target: &str) -> Option<PathBuf> {
+    if !is_valid_export_target(target) {
+        return None;
+    }
+    // Preserve substitution positions before decoding: %2A is a literal star.
+    // A NUL cannot occur in a file name or a valid target, so it is unambiguous.
+    reqwest::Url::from_directory_path(root)
+        .ok()?
+        .join(&target.replace('*', "%00"))
+        .ok()?
+        .to_file_path()
+        .ok()
+}
+
 pub(crate) fn package_source_files(root: &Path) -> Vec<PathBuf> {
     fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
@@ -505,7 +578,7 @@ pub(crate) fn package_source_files(root: &Path) -> Vec<PathBuf> {
         for entry in entries.flatten() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with('.') || name == "node_modules" {
+            if matches!(name.as_ref(), ".git" | ".hg" | ".svn" | "node_modules") {
                 continue;
             }
             let Ok(kind) = entry.file_type() else {

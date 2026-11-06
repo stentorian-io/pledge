@@ -36,7 +36,9 @@ compatibility. Findings from successfully compared assets remain available.
 ## CSS APIs
 
 Removing a class selector emits Major `css-class-removed`; removing a custom
-property declaration emits Major `css-custom-property-removed`. The `style`
+property declaration or `@property` registration emits Major
+`css-custom-property-removed`. Identifier escapes are compared by their decoded
+names, so `.api` and `.\61 pi` describe the same class. The `style`
 or `css` manifest field selects stylesheets; without either field, all shipped
 CSS files are scanned.
 
@@ -48,6 +50,19 @@ to a different retained file. Without declared entry points, files are paired by
 path. Unreadable selected files emit `analysis-incomplete`; they do not suppress
 findings from other readable files.
 
+Invalid UTF-8 or CSS that requires parser recovery emits `analysis-incomplete`;
+recovered selectors cannot establish which rules a browser keeps. Unsupported
+grammar, including identifier escapes the parser cannot represent, follows the
+same policy. Empty required arguments of `:not()`, `:has()`, `:lang()`, `:dir()`,
+`:state()`, `:host()`, `:host-context()`, the `nth-*` child/type selectors,
+`::part()`, and `::slotted()` also produce incomplete analysis. Empty forgiving
+lists in `:is()` and `:where()` remain valid syntax. These syntax checks do not
+model browser-specific feature support.
+Escaped letters in property names are normalized before parsing;
+quoted strings and comments retain their original spelling. These comparisons
+track declared names, not the cascade, property values, or registration
+descriptor compatibility.
+
 Manifest-selected stylesheets must resolve inside the packed package, including
 through symlinks. Absolute paths and paths resolving outside it emit
 `analysis-incomplete` without reading external contents. Deeply nested CSS rules
@@ -56,8 +71,9 @@ process stack.
 
 ## Packed file discovery
 
-Packed asset and deep-import scans skip dotfiles and `node_modules`. Internal
-symlink aliases keep their own public paths. Directory cycles, links outside the
+Packed dotfiles and files inside dot-prefixed directories participate in asset
+comparison; only dependency and version-control metadata directories are
+excluded. Internal symlink aliases keep their own public paths. Directory cycles, links outside the
 package, broken links, unreadable paths, and the directory depth limit of 128
 emit Warning `analysis-incomplete`, making the CLI exit `3`. These paths are not
 followed; successfully scanned paths remain available for comparison.
