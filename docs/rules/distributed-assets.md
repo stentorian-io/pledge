@@ -48,6 +48,12 @@ to a different retained file. Without declared entry points, files are paired by
 path. Unreadable selected files emit `analysis-incomplete`; they do not suppress
 findings from other readable files.
 
+Manifest-selected stylesheets must resolve inside the packed package, including
+through symlinks. Absolute paths and paths resolving outside it emit
+`analysis-incomplete` without reading external contents. Deeply nested CSS rules
+are traversed without recursive Rust calls, so nesting does not exhaust the
+process stack.
+
 ## Packed file discovery
 
 Packed asset and deep-import scans skip dotfiles and `node_modules`. Internal

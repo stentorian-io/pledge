@@ -51,12 +51,7 @@ fn extract_css_apis(source: &[u8]) -> (BTreeSet<String>, BTreeSet<String>) {
     (custom_props, class_names)
 }
 
-/// Recursively walk a CSS parse tree, collecting custom properties and class names.
-///
-/// - `"declaration"` nodes whose first named child is `"property_name"` starting
-///   with `"--"` → custom property
-/// - `"class_selector"` nodes containing `"class_name"` children → class name
-/// - All other nodes → recurse (handles @media, @layer, nested rule_sets)
+/// Walk with a tree cursor so deeply nested rules do not consume the Rust stack.
 fn walk_css_node(
     node: tree_sitter::Node,
     source: &[u8],
@@ -64,11 +59,11 @@ fn walk_css_node(
     class_names: &mut BTreeSet<String>,
 ) {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
+    loop {
+        let current = cursor.node();
+        match current.kind() {
             "declaration" => {
-                // Check if the first named child is a property_name starting with "--"
-                if let Some(prop_node) = child.named_child(0) {
+                if let Some(prop_node) = current.named_child(0) {
                     if prop_node.kind() == "property_name" {
                         if let Ok(text) = prop_node.utf8_text(source) {
                             if text.starts_with("--") {
@@ -77,26 +72,25 @@ fn walk_css_node(
                         }
                     }
                 }
-                // Recurse into declaration children (handles nested declarations)
-                walk_css_node(child, source, custom_props, class_names);
             }
             "class_selector" => {
-                // Collect all class_name children
-                let mut inner_cursor = child.walk();
-                for inner_child in child.children(&mut inner_cursor) {
+                let mut inner_cursor = current.walk();
+                for inner_child in current.children(&mut inner_cursor) {
                     if inner_child.kind() == "class_name" {
                         if let Ok(text) = inner_child.utf8_text(source) {
                             class_names.insert(text.to_string());
                         }
                     }
                 }
-                // Recurse into class_selector (handles compound selectors)
-                walk_css_node(child, source, custom_props, class_names);
             }
-            _ => {
-                // Recurse into all other node kinds to handle @media, @layer,
-                // nested rule_sets, selectors, etc.
-                walk_css_node(child, source, custom_props, class_names);
+            _ => {}
+        }
+        if cursor.goto_first_child() {
+            continue;
+        }
+        while !cursor.goto_next_sibling() {
+            if !cursor.goto_parent() {
+                return;
             }
         }
     }
@@ -203,7 +197,7 @@ fn stylesheet_apis(
     let mut classes = BTreeSet::new();
     let mut complete = true;
     for file in files {
-        let source = match std::fs::read(root.join(file)) {
+        let source = match read_package_stylesheet(root, file) {
             Ok(source) => source,
             Err(error) => {
                 findings.push(Finding {
@@ -223,6 +217,24 @@ fn stylesheet_apis(
         classes.extend(file_classes);
     }
     complete.then_some((properties, classes))
+}
+
+fn read_package_stylesheet(root: &Path, relative: &str) -> std::io::Result<Vec<u8>> {
+    if Path::new(relative).is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "stylesheet path must be relative to the package",
+        ));
+    }
+    let root = root.canonicalize()?;
+    let stylesheet = root.join(relative).canonicalize()?;
+    if !stylesheet.starts_with(&root) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "stylesheet resolves outside the package",
+        ));
+    }
+    std::fs::read(stylesheet)
 }
 
 fn compare_stylesheets(

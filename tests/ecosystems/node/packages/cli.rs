@@ -210,6 +210,37 @@ fn json_asset_depth_limits_make_analysis_incomplete() {
         .any(|finding| finding["rule"] == "analysis-incomplete"));
 }
 
+#[test]
+fn deeply_nested_stylesheets_do_not_overflow_the_cli_stack() {
+    let source = "export const api = 1;";
+    let project = CliProject::new(source, source);
+    let stylesheet = format!(
+        "{}.marker {{ --color: red; }}{}",
+        "@media all {".repeat(15_000),
+        "}".repeat(15_000)
+    );
+    for (archive, version) in [("old.tgz", "1.0.0"), ("new.tgz", "2.0.0")] {
+        let mut package = manifest(version);
+        package["style"] = json!("./style.css");
+        let bytes = package_tarball(
+            &package,
+            &[
+                ("index.js", source.as_bytes()),
+                ("style.css", stylesheet.as_bytes()),
+            ],
+        );
+        fs::write(project.directory.path().join(archive), bytes).unwrap();
+    }
+
+    let output = project.json().output().unwrap();
+
+    let result = report(&output, 0, "clean");
+    assert!(
+        result["findings"].as_array().unwrap().is_empty(),
+        "{result}"
+    );
+}
+
 fn report(output: &Output, exit: i32, status: &str) -> Value {
     assert_eq!(
         output.status.code(),
