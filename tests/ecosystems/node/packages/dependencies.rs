@@ -5,6 +5,109 @@ use pledge::languages::javascript::compare;
 use pledge::languages::typescript::compiler;
 use serde_json::json;
 
+fn dependency_archive(path: &std::path::Path, manifest: &serde_json::Value) {
+    let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    let mut archive = tar::Builder::new(encoder);
+    let manifest = manifest.to_string();
+    let mut header = tar::Header::new_gnu();
+    header.set_size(manifest.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    archive
+        .append_data(&mut header, "package/package.json", manifest.as_bytes())
+        .unwrap();
+    std::fs::write(path, archive.into_inner().unwrap().finish().unwrap()).unwrap();
+}
+
+#[tokio::test]
+async fn development_peer_conflicts_do_not_block_runtime_dependency_preparation() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("package");
+    std::fs::create_dir(&root).unwrap();
+    let runtime = directory.path().join("runtime.tgz");
+    let development = directory.path().join("development.tgz");
+    dependency_archive(
+        &runtime,
+        &json!({"name":"runtime-contract","version":"1.0.0"}),
+    );
+    dependency_archive(
+        &development,
+        &json!({
+            "name":"development-tool", "version":"1.0.0",
+            "peerDependencies":{"runtime-contract":"^2.0.0"}
+        }),
+    );
+    let manifest = json!({
+        "name":"prepared-package", "version":"1.0.0",
+        "dependencies":{"runtime-contract":format!("file:{}", runtime.display())},
+        "devDependencies":{"development-tool":format!("file:{}", development.display())}
+    })
+    .to_string();
+    std::fs::write(root.join("package.json"), &manifest).unwrap();
+    std::fs::write(
+        root.join(".npmrc"),
+        format!(
+            "offline=true\ncache={}\n",
+            directory.path().join("cache").display()
+        ),
+    )
+    .unwrap();
+    let lockfile = r#"{"name":"prepared-package","lockfileVersion":3,"packages":{}}"#;
+    std::fs::write(root.join("package-lock.json"), lockfile).unwrap();
+
+    let prepared = pledge::ecosystems::node::dependencies::prepare_dependencies(&root).await;
+
+    assert!(prepared.unwrap());
+    assert!(root
+        .join("node_modules/runtime-contract/package.json")
+        .is_file());
+    assert!(!root.join("node_modules/development-tool").exists());
+    assert_eq!(
+        std::fs::read_to_string(root.join("package.json")).unwrap(),
+        manifest
+    );
+    assert_eq!(
+        std::fs::read_to_string(root.join("package-lock.json")).unwrap(),
+        lockfile
+    );
+}
+
+#[tokio::test]
+async fn relative_tarball_requirements_resolve_from_the_original_package() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("package");
+    std::fs::create_dir(&root).unwrap();
+    dependency_archive(
+        &root.join("runtime.tgz"),
+        &json!({"name":"runtime-contract","version":"1.0.0"}),
+    );
+    std::fs::write(
+        root.join("package.json"),
+        json!({
+            "name":"prepared-package", "version":"1.0.0",
+            "dependencies":{"runtime-contract":"./runtime.tgz"}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join(".npmrc"),
+        format!(
+            "offline=true\ncache={}\n",
+            directory.path().join("cache").display()
+        ),
+    )
+    .unwrap();
+
+    pledge::ecosystems::node::dependencies::prepare_dependencies(&root)
+        .await
+        .unwrap();
+
+    assert!(root
+        .join("node_modules/runtime-contract/package.json")
+        .is_file());
+}
+
 fn package(symbol: &str) -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();

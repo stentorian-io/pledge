@@ -76,7 +76,8 @@ using `--exact`, use the full name shown by `cargo test --test <target> -- --lis
 compiler stand-ins on Unix, without network access. Its opt-in `npm_cli` module
 uses real npm and TypeScript with a temporary authenticated loopback registry;
 it needs permission to bind a local TCP port, but does not fetch test packages
-from an external registry. Provide the JavaScript TypeScript compiler on `PATH`
+from an external registry. Its HTTPS configuration regression uses `openssl`
+to generate a temporary certificate. Provide the JavaScript TypeScript compiler on `PATH`
 or populate the managed toolchain cache before running that check.
 
 Use `make check` for formatting, clippy, and all default tests before committing.

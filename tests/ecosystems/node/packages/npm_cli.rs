@@ -4,11 +4,11 @@ use super::{manifest, report, tarball_bytes};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::symlink;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -230,4 +230,130 @@ fn typescript_root() -> PathBuf {
         "Install typescript@5.9.3 on PATH or populate the managed toolchain cache before this test"
     );
     cached
+}
+
+struct HttpsRegistry {
+    process: Child,
+    url: String,
+}
+
+impl HttpsRegistry {
+    fn start(root: &std::path::Path) -> Self {
+        let certificate = Command::new("openssl")
+            .current_dir(root)
+            .args([
+                "req",
+                "-x509",
+                "-newkey",
+                "rsa:2048",
+                "-nodes",
+                "-keyout",
+                "key.pem",
+                "-out",
+                "cert.pem",
+                "-days",
+                "1",
+                "-subj",
+                "/CN=127.0.0.1",
+                "-addext",
+                "subjectAltName=IP:127.0.0.1",
+            ])
+            .output()
+            .expect("openssl must be installed for the local HTTPS registry check");
+        assert!(
+            certificate.status.success(),
+            "{}",
+            String::from_utf8_lossy(&certificate.stderr)
+        );
+        let dependency = json!({"name":"local-runtime","version":"1.0.0"});
+        fs::write(
+            root.join("dependency.tgz"),
+            tarball_bytes(&dependency, "exports.ok=1;"),
+        )
+        .unwrap();
+        fs::write(root.join("registry.cjs"), r#"
+const fs = require('node:fs');
+const https = require('node:https');
+const archive = fs.readFileSync('dependency.tgz');
+const server = https.createServer({key: fs.readFileSync('key.pem'), cert: fs.readFileSync('cert.pem')}, (request, response) => {
+  if (request.url === '/dependency.tgz') return response.end(archive);
+  const version = {name: 'local-runtime', version: '1.0.0', dist: {tarball: `https://127.0.0.1:${server.address().port}/dependency.tgz`}};
+  response.setHeader('Content-Type', 'application/json');
+  response.end(JSON.stringify({name: 'local-runtime', 'dist-tags': {latest: '1.0.0'}, versions: {'1.0.0': version}}));
+});
+server.listen(0, '127.0.0.1', () => console.log(`https://127.0.0.1:${server.address().port}`));
+"#).unwrap();
+        let process = Command::new("node")
+            .arg("registry.cjs")
+            .current_dir(root)
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut registry = Self {
+            process,
+            url: String::new(),
+        };
+        BufReader::new(registry.process.stdout.take().unwrap())
+            .read_line(&mut registry.url)
+            .unwrap();
+        registry.url = registry.url.trim().to_owned();
+        assert!(registry.url.starts_with("https://127.0.0.1:"));
+        registry
+    }
+}
+
+impl Drop for HttpsRegistry {
+    fn drop(&mut self) {
+        let _ = self.process.kill();
+        let _ = self.process.wait();
+    }
+}
+
+#[tokio::test]
+async fn dependency_staging_preserves_relative_certificate_configuration() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path().join("package");
+    fs::create_dir(&root).unwrap();
+    let registry = HttpsRegistry::start(&root);
+    let manifest =
+        json!({"name":"config-probe", "version":"1.0.0", "dependencies":{"local-runtime":"1.0.0"}})
+            .to_string();
+    fs::write(root.join("package.json"), &manifest).unwrap();
+    let config = format!("cafile=./cert.pem\nregistry={}\ncache={}\nfetch-retries=0\nfetch-timeout=5000\nupdate-notifier=false\n", registry.url, directory.path().join("cache").display());
+    fs::write(root.join(".npmrc"), &config).unwrap();
+    let control = Command::new("npm")
+        .current_dir(&root)
+        .args([
+            "install",
+            "--omit=dev",
+            "--ignore-scripts",
+            "--package-lock=false",
+            "--no-audit",
+            "--no-fund",
+            "--workspaces=false",
+            "--cache",
+        ])
+        .arg(directory.path().join("control-cache"))
+        .output()
+        .unwrap();
+    assert!(
+        control.status.success(),
+        "{}",
+        String::from_utf8_lossy(&control.stderr)
+    );
+    fs::remove_dir_all(root.join("node_modules")).unwrap();
+
+    pledge::ecosystems::node::dependencies::prepare_dependencies(&root)
+        .await
+        .unwrap();
+
+    assert!(root
+        .join("node_modules/local-runtime/package.json")
+        .is_file());
+    assert_eq!(
+        fs::read_to_string(root.join("package.json")).unwrap(),
+        manifest
+    );
+    assert_eq!(fs::read_to_string(root.join(".npmrc")).unwrap(), config);
+    assert!(!root.join("package-lock.json").exists());
 }

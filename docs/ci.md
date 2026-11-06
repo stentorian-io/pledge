@@ -59,6 +59,11 @@ dependencies. Unpublished `workspace:` and relative `file:` dependencies must be
 converted to registry-resolvable dependencies by your packaging process.
 Install failures and missing compiler evidence produce incomplete analysis.
 
+Dependency preparation resolves a separate manifest containing runtime,
+optional, and peer requirements. Development dependencies and their peer
+conflicts do not participate. The packed manifest and existing lockfiles remain
+unchanged, and project npm configuration also applies to this installation.
+
 Individual npm operations time out after 120 seconds; compiler evaluation is
 bounded to 30 seconds per snapshot. Configure your CI job's overall timeout as
 well. Cache Cargo build/install artifacts, npm's cache, and the platform's

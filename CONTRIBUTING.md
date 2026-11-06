@@ -34,6 +34,8 @@ and the JavaScript compiler without a language server. The full integration
 suite additionally exercises language-server protocol behavior. The managed fallback downloads a
 complete, pinned language-server 5.1.3 and TypeScript 5.9.3 pair. LSP checks
 include a fresh managed installation and therefore require registry access.
+The local HTTPS registry check also requires `openssl` on `PATH` to generate an
+ephemeral certificate; it binds only to loopback and fetches no external packages.
 Consumer tests use strict TypeScript with NodeNext resolution and modern Node.js
 with synchronous ESM loading (Node 22.12+). Dependency installation disables
 scripts and lockfile generation; installation failure or timeout degrades analysis.
