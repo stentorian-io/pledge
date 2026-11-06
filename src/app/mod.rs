@@ -117,6 +117,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<RunOutcome> {
             previous_root,
             current_root,
         ));
+        findings.extend(
+            package_compare::compare_commonjs_named_imports(previous_root, current_root).await,
+        );
         findings.extend(structure::compare_structural_diff(
             previous_root,
             current_root,

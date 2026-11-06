@@ -1,4 +1,31 @@
-# Synchronous module loading
+# Module loading and CommonJS named imports
+
+## CommonJS named ESM imports
+
+Major `cjs-named-export-removed` reports a named ESM import that Node previously
+exposed from a CommonJS entry point but no longer recognizes. For example,
+changing `exports.api = 1` to `module.exports = create()` can preserve
+`require('package').api` while breaking `import { api } from 'package'`.
+Node discovers these names through static patterns in its bundled parser;
+equivalent JavaScript runtime objects can have different import surfaces.
+
+Pledge asks the installed Node executable to parse package source without
+executing that source. It uses Node's own import resolver and compares both
+versions under the same default and combined declared custom condition contexts.
+Require-only and types-only branches are excluded. Literal CommonJS re-exports
+are followed through Node's require resolver within the prepared package.
+Missing re-exports, cycles, unsupported parser interfaces, and resource limits
+produce `analysis-incomplete`, rather than treating missing evidence as an empty
+namespace. The check bounds entry points, condition contexts, source bytes,
+module count, graph depth, names, subprocess output, and execution time.
+
+The parser integration is tested on Node 22.12.0, 24.0.0, and 26.7.0. Results
+describe the installed runtime; they do not establish named-import support on
+every Node release allowed by `engines.node`. Default imports and Node's
+unconditional `module.exports` namespace marker are excluded from this rule.
+See [Node's CommonJS namespaces](https://nodejs.org/api/esm.html#commonjs-namespaces).
+
+## Synchronous module loading
 
 Major `module-became-async` detects a previously synchronous public module that
 gains top-level `await`, directly or through a local static dependency. Node

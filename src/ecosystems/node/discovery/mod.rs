@@ -1,5 +1,6 @@
 //! Resolve the public surface selected by Node package entry points.
 
+pub(crate) mod commonjs;
 pub mod entry_points;
 pub mod resolver;
 

@@ -47,7 +47,8 @@ expose the same require members as literal objects, including a property named
 `default`, optional reads, and accessor write contracts. Callable, constructed
 class, and nominal results keep their aggregate type. Unknown results make
 analysis incomplete; an explicitly declared `any` identifier keeps its declared
-contract.
+contract. The separate [Node loading checks](module-loading.md#commonjs-named-esm-imports) account for
+synthetic named imports, which can change even when require members are preserved.
 
 An inferred symbol index requires concrete registered keys from the exact
 returned object literal. Dynamic registry keys, broader symbol indexes, and

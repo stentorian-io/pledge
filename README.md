@@ -85,7 +85,7 @@ difference between a compatibility finding and missing evidence.
 | Type contracts | Narrowed inputs, changed return types, and referenced declarations | [Public types](docs/rules/reachable-types.md) |
 | Class contracts | Removed accessors, changed write types, and visibility transitions | [Accessors](docs/rules/accessor-contracts.md), [visibility](docs/rules/class-field-visibility-transition.md) |
 | Package requirements | Narrower dependency ranges and reduced platform support | [Package requirements](docs/rules/package-requirements.md) |
-| Runtime loading | Changes that prevent synchronous consumers from loading a module | [Module loading](docs/rules/module-loading.md) |
+| Runtime loading | Lost CommonJS named imports and changes that prevent synchronous loading | [Module loading](docs/rules/module-loading.md) |
 
 The [rule reference](docs/rules/README.md) covers individual findings and their
 limits. Analysis is static: a clean result means no breaking change was found

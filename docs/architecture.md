@@ -77,7 +77,12 @@ beside their implementation; smaller suites remain inline.
    language-server integrations and their regression tests.
 4. The JavaScript, TypeScript, and Node `compare` modules compare exports,
    structural declarations, types, metadata, module loading, assets, and
-   directives. Related symbol findings are paired and consolidated.
+   directives. The asynchronous Node CommonJS named-import pass obtains
+   bounded source-only evidence from the installed Node parser through
+   `discovery::commonjs`, then compares the resulting names without I/O.
+   It does not execute package code. The synchronous structural comparison
+   remains independent of subprocesses. Related symbol findings are paired and
+   consolidated.
 5. `app` combines the passes, deduplicates and sorts findings, derives the exit
    status, and renders text or versioned JSON through `app::report`. Compiler
    failures remain in the report's warnings alongside discovery failures.

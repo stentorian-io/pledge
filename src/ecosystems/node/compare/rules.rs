@@ -76,3 +76,4 @@ pub const RULE_PEER_DEP_OPTIONAL_REMOVED: &str = "peer-dep-optional-removed";
 
 pub const RULE_BARREL_UNRESOLVABLE: &str = "barrel-unresolvable";
 pub const RULE_NODE_SYNTAX_REQUIREMENT_RAISED: &str = "node-syntax-requirement-raised";
+pub const RULE_CJS_NAMED_EXPORT_REMOVED: &str = "cjs-named-export-removed";

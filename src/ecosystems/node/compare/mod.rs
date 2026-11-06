@@ -1,6 +1,7 @@
 //! Compare Node package contracts independently of syntax-level rules.
 
 pub mod assets;
+mod commonjs;
 mod conditions;
 pub mod exports;
 mod files;
@@ -11,6 +12,19 @@ pub mod rules;
 
 use crate::core::findings::Finding;
 use std::path::Path;
+
+/// Compare the installed Node implementation's synthetic CommonJS named imports.
+/// This parses packed source and resolved re-exports without executing package code.
+pub async fn compare_commonjs_named_imports(old_root: &Path, new_root: &Path) -> Vec<Finding> {
+    let (before, after) = crate::ecosystems::node::discovery::commonjs::discover_named_import_pair(
+        old_root, new_root,
+    )
+    .await;
+    let current_root = new_root
+        .canonicalize()
+        .unwrap_or_else(|_| new_root.to_path_buf());
+    commonjs::compare_named_imports(&before, &after, &current_root)
+}
 
 /// Compare exports, imports, and module loading from both package manifests.
 /// The application combines these findings with syntax and type comparisons.
