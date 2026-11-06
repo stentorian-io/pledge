@@ -72,6 +72,14 @@ Some checks install fixture dependencies. `make check-lsp` runs the complete
 feature-enabled suite serially. Test names include their module paths; when
 using `--exact`, use the full name shown by `cargo test --test <target> -- --list`.
 
+The `compiler::version_support` suite checks syntax, library types, and inferred
+predicates against the compiler selected on `PATH`, with `tsc` consumer results
+as an independent oracle. CI runs it with TypeScript 4.9.5, 5.0.4, 5.2.2, 5.4.5,
+5.7.3, 5.9.3, and 6.0.3 on Node 22.12.0 and 24.0.0. The same matrix reruns the
+returned-contract, overload, and nominal-identity consumer cases. These are
+targeted version boundaries, not exhaustive ECMAScript or TypeScript
+conformance coverage.
+
 `packages::cli` checks real process exit codes and reports using isolated npm and
 compiler stand-ins on Unix, without network access. Its opt-in `npm_cli` module
 uses real npm and TypeScript with a temporary authenticated loopback registry;

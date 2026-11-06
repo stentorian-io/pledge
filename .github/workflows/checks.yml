@@ -33,3 +33,32 @@ jobs:
       - run: bun scripts/releases/check-commits.ts
       - run: bun scripts/releases/check-version.ts
       - run: make check-all
+
+  compiler-versions:
+    name: TypeScript ${{ matrix.typescript }} on Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        typescript: ['4.9.5', '5.0.4', '5.2.2', '5.4.5', '5.7.3', '5.9.3', '6.0.3']
+        node: ['22.12.0', '24.0.0']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Prepare compiler version
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          npm install -g typescript@${{ matrix.typescript }}
+      - run: >-
+          cargo test --locked --release --features lsp-tests --test typescript --
+          compiler::version_support::
+          compiler::contracts::returned_contracts
+          compiler::contracts::overloads
+          compiler::contracts::nominal_identities
+          --test-threads=1
