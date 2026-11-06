@@ -1,6 +1,6 @@
 pub mod extract;
 mod pack;
-pub mod registry;
+mod registry;
 
 use crate::ecosystems::node::npm;
 use anyhow::{ensure, Context};
