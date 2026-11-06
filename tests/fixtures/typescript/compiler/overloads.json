@@ -1,0 +1,59 @@
+[
+  {
+    "name": "overloads nonfirst reorder",
+    "extension": "d.ts",
+    "old": "export declare function api(x:boolean):boolean; export declare function api(x:string):string; export declare function api(x:string|number):number;",
+    "new": "export declare function api(x:boolean):boolean; export declare function api(x:string|number):number; export declare function api(x:string):string;",
+    "consumer": "const a:string=api(\"x\");",
+    "breaking": true,
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "overloads make optional",
+    "extension": "d.ts",
+    "old": "export declare function api(x:string):string; export declare function api(x:number):number;",
+    "new": "export declare function api(x?:string):string; export declare function api(x:number):number;",
+    "consumer": "const a:string=api(\"x\"); const b:number=api(42);",
+    "breaking": false
+  },
+  {
+    "name": "overloads collapse",
+    "extension": "d.ts",
+    "old": "export declare function api(x:string):string; export declare function api(x:number):string;",
+    "new": "export declare function api(x:string|number):string;",
+    "consumer": "const a:string=api(\"x\"); const b:string=api(42);",
+    "breaking": false
+  },
+  {
+    "name": "disjoint overload order is immaterial",
+    "extension": "d.ts",
+    "old": "export declare function api(x:string):string; export declare function api(x:number):number;",
+    "new": "export declare function api(x:number):number; export declare function api(x:string):string;",
+    "consumer": "const a:string=api(\"a\"); const b:number=api(2);",
+    "breaking": false
+  },
+  {
+    "name": "overload added first",
+    "extension": "d.ts",
+    "old": "export declare function api(x:string):string;",
+    "new": "export declare function api(x:string|number):number;\nexport declare function api(x:string):string;",
+    "consumer": "const result: string = api(\"x\");",
+    "breaking": true
+  },
+  {
+    "name": "overload added between",
+    "extension": "d.ts",
+    "old": "export declare function api(x:boolean):boolean;\nexport declare function api(x:string):string;",
+    "new": "export declare function api(x:boolean):boolean;\nexport declare function api(x:string|number):number;\nexport declare function api(x:string):string;",
+    "consumer": "const result: string = api(\"x\");",
+    "breaking": true
+  },
+  {
+    "name": "overload partial overlap",
+    "extension": "d.ts",
+    "old": "export declare function api(x:string|number):string; export declare function api(x:string|boolean):number;",
+    "new": "export declare function api(x:string|boolean):number; export declare function api(x:string|number):string;",
+    "consumer": "const result: string = api(\"x\");",
+    "breaking": true
+  }
+]

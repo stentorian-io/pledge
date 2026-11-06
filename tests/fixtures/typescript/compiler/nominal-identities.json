@@ -1,0 +1,89 @@
+[
+  {
+    "name": "private class return",
+    "extension": "d.ts",
+    "old": "declare class A { private brand; } declare class B { private brand; } export declare function api(): A; export declare function consume(x:A):void;",
+    "new": "declare class A { private brand; } declare class B { private brand; } export declare function api(): B; export declare function consume(x:A):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "unique symbol return",
+    "extension": "d.ts",
+    "old": "declare const A: unique symbol; declare const B: unique symbol; export declare function api(): typeof A; export declare function consume(x:typeof A):void;",
+    "new": "declare const A: unique symbol; declare const B: unique symbol; export declare function api(): typeof B; export declare function consume(x:typeof A):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "private class consistent private rename",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} export declare function api():A; export declare function consume(x:A):void;",
+    "new": "declare class Renamed {private brand;} export declare function api():Renamed; export declare function consume(x:Renamed):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": false
+  },
+  {
+    "name": "unique symbol consistent private rename",
+    "extension": "d.ts",
+    "old": "declare const A:unique symbol; export declare function api():typeof A; export declare function consume(x:typeof A):void;",
+    "new": "declare const Renamed:unique symbol; export declare function api():typeof Renamed; export declare function consume(x:typeof Renamed):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": false
+  },
+  {
+    "name": "derived class retains its inherited brand",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} declare class B extends A {private other;} export declare function api():A; export declare function consume(x:A):void;",
+    "new": "declare class A {private brand;} declare class B extends A {private other;} export declare function api():B; export declare function consume(x:A):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": false
+  },
+  {
+    "name": "input adds a derived private brand",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} declare class B extends A {private other;} export declare function api():A; export declare function consume(x:A):void;",
+    "new": "declare class A {private brand;} declare class B extends A {private other;} export declare function api():A; export declare function consume(x:B):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "unchanged overloaded private brands stay distinct",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} declare class B {private brand;} export declare function api():A; export declare function other():B; export declare function consume(x:A):void; export declare function consume(x:B):void;",
+    "new": "declare class A {private brand;} declare class B {private brand;} export declare function api():A; export declare function other():B; export declare function consume(x:A):void; export declare function consume(x:B):void;",
+    "consumer": "import {consume, other} from \"./index.js\"; consume(api()); consume(other());",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "protected override",
+    "extension": "d.ts",
+    "old": "declare class Base {protected secret:string; value:string;}\nexport declare function api():Base;\nexport declare function consume(x:Base):void;",
+    "new": "declare class Base {protected secret:string; value:string;}\ndeclare class Derived extends Base {protected secret:string;}\nexport declare function api():Derived;\nexport declare function consume(x:Base):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "union order",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} declare class B {private brand;} export declare function api():A;export declare function consume(x:A|B):void;",
+    "new": "declare class A {private brand;} declare class B {private brand;} export declare function api():A;export declare function consume(x:B|A):void;",
+    "consumer": "import {consume} from \"./index.js\"; consume(api());",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "internal consumer",
+    "extension": "d.ts",
+    "old": "declare class A {private brand;} declare class B {private brand;} export declare function api():A;\n/** @internal */ export declare function consume(x:A):void;",
+    "new": "declare class A {private brand;} declare class B {private brand;} export declare function api():A;\n/** @internal */ export declare function consume(x:B):void;",
+    "consumer": "const result = api();",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  }
+]

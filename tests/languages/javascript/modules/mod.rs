@@ -13,3 +13,6 @@ mod forwarding;
 mod nested_destructuring;
 mod object_destructuring;
 mod reexports;
+
+mod object_helpers;
+mod standard_exports;

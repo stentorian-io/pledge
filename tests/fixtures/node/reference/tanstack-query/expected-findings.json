@@ -28,6 +28,14 @@
   "findings": [
     {
       "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify module loading of `.`: cannot resolve `./focusManager` from <old>/src/index.ts"
+    },
+    {
+      "severity": "Warning",
       "rule": "export-deprecated",
       "file": "src/retryer.ts",
       "line": 72,
@@ -525,5 +533,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged."
+  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged. Reviewed native module-loading evidence for the unchanged @tanstack/custom-condition target src/index.ts: its extensionless ./focusManager re-export fails native Node ESM resolution in both pinned versions, while the ordinary import condition loads and exposes the same 35 names. The added analysis-incomplete Warning records this custom source-loader requirement, not a package regression. Existing findings, surfaces, discovery warnings, nonbreaking status and structural-only exit 3 are unchanged."
 }

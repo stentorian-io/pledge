@@ -26,7 +26,10 @@ pub fn discover_exports(
         entry_points::resolve_entry_points_with_warnings(pkg_root)?;
     let package: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(pkg_root.join("package.json"))?)?;
-    if package.get("exports").is_none() {
+    if package
+        .get("exports")
+        .is_none_or(serde_json::Value::is_null)
+    {
         let explicit: HashSet<_> = entry_points.iter().map(|e| e.path.clone()).collect();
         for path in entry_points::package_source_files(pkg_root) {
             let canonical = path.canonicalize()?;

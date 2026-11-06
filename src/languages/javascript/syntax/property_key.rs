@@ -270,7 +270,7 @@ fn imports_name(node: Node<'_>, name: &str, source: &[u8]) -> bool {
 
 /// Decode JS string escapes using UTF-16 so paired Unicode escapes compare with
 /// literal Unicode. Unpaired surrogates remain unknown rather than being changed.
-fn decode_string(raw: &str) -> Option<String> {
+pub(crate) fn decode_string(raw: &str) -> Option<String> {
     let mut chars = raw.get(1..raw.len().checked_sub(1)?)?.chars().peekable();
     let mut units = Vec::new();
     while let Some(character) = chars.next() {
@@ -320,4 +320,16 @@ fn decode_string(raw: &str) -> Option<String> {
         units.extend(decoded.encode_utf16(&mut [0; 2]).iter().copied());
     }
     String::from_utf16(&units).ok()
+}
+
+/// Decode a source name once, preserving the identity of quoted strings and escaped identifiers.
+pub(crate) fn source_name(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let raw = node.utf8_text(source).ok()?;
+    if node.kind() == "string" {
+        decode_string(raw)
+    } else if raw.contains('\\') {
+        decode_string(&format!("\"{raw}\""))
+    } else {
+        Some(raw.to_owned())
+    }
 }

@@ -807,3 +807,69 @@ fn iterator_next_inputs_are_contravariant_while_outputs_are_covariant() {
         assert!(!sub(&yields_both, &accepts_string));
     }
 }
+
+#[test]
+fn concrete_tuple_rest_and_ordinary_parameters_accept_the_same_calls() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    let tuple = parse_type_string("(...args: [x: string, ...ys: number[]]) => void");
+    let ordinary = parse_type_string("(x: string, ...ys: number[]) => void");
+    assert!(sub(&tuple, &ordinary));
+    assert!(sub(&ordinary, &tuple));
+    let TypeShape::Function { params: before, .. } = tuple else {
+        panic!()
+    };
+    let TypeShape::Function { params: after, .. } = ordinary else {
+        panic!()
+    };
+    assert!(accepts_calls(&before, &after, 0));
+    assert!(accepts_calls(&after, &before, 0));
+}
+
+#[test]
+fn callback_assignability_and_direct_call_arity_have_distinct_contracts() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    let fewer = parse_type_string("(x: string) => void");
+    let more = parse_type_string("(x: string, y?: number) => void");
+    assert!(sub(&fewer, &more));
+    let TypeShape::Function { params: fewer, .. } = fewer else {
+        panic!()
+    };
+    let TypeShape::Function { params: more, .. } = more else {
+        panic!()
+    };
+    assert!(!accepts_calls(&fewer, &more, 0));
+    assert!(accepts_calls(&more, &fewer, 0));
+}
+
+#[test]
+fn void_callbacks_discard_results_without_making_void_a_value_supertype() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    assert!(sub(
+        &parse_type_string("() => string"),
+        &parse_type_string("() => void")
+    ));
+    assert!(!sub(
+        &parse_type_string("() => void"),
+        &parse_type_string("() => string")
+    ));
+    assert!(!sub(&string(), &p(PrimitiveKind::Void)));
+}
+
+#[test]
+fn builtin_mutable_implementations_satisfy_readonly_contracts() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for (concrete, contract) in [
+        ("Map<string, number>", "ReadonlyMap<string, number>"),
+        ("Set<string>", "ReadonlySet<string>"),
+        ("Promise<string>", "PromiseLike<string>"),
+    ] {
+        assert!(sub(
+            &parse_type_string(concrete),
+            &parse_type_string(contract)
+        ));
+        assert!(!sub(
+            &parse_type_string(contract),
+            &parse_type_string(concrete)
+        ));
+    }
+}

@@ -8,7 +8,7 @@
 use crate::languages::javascript::syntax::grammar::{get_language, SourceLanguage};
 use crate::languages::typescript::model::ReleaseTag;
 use std::collections::BTreeMap;
-use tree_sitter::{Node, Query, QueryCursor, StreamingIterator, Tree};
+use tree_sitter::{Query, QueryCursor, StreamingIterator, Tree};
 
 const COMMENT_QUERY: &str = r#"(comment) @c"#;
 
@@ -103,7 +103,7 @@ impl<'a> CommentIndex<'a> {
         let point = tree_sitter::Point { row, column };
         let root = self.tree.root_node();
         let anchor = root.descendant_for_point_range(point, point)?;
-        let statement = walk_to_statement_ancestor(anchor);
+        let statement = super::annotations::find_statement_ancestor(anchor);
         let prev = statement.prev_named_sibling()?;
         if prev.kind() != "comment" {
             return None;
@@ -267,26 +267,6 @@ fn parse_directive_body(body: &str, start_byte: usize) -> Option<DirectiveRecord
     })
 }
 
-/// Walk up the tree to the nearest `export_statement` / `ambient_declaration`
-/// ancestor. Mirrors `syntax::annotations::find_statement_ancestor` (which is
-/// private to that module — duplicated here rather than extending its API).
-fn walk_to_statement_ancestor(mut node: Node<'_>) -> Node<'_> {
-    loop {
-        let parent = match node.parent() {
-            Some(p) => p,
-            None => return node,
-        };
-        let parent_kind = parent.kind();
-        if parent_kind == "program" {
-            return node;
-        }
-        if parent_kind == "export_statement" || parent_kind == "ambient_declaration" {
-            return parent;
-        }
-        node = parent;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::languages::typescript::syntax::comments::*;
@@ -326,6 +306,25 @@ mod tests {
             idx.release_tag_for_export_at(2, 1),
             Some(ReleaseTag::Internal)
         );
+    }
+
+    #[test]
+    fn ambient_export_wrappers_retain_their_preceding_release_tag() {
+        for declaration in [
+            "function api(): void;",
+            "const api: number;",
+            "class api {}",
+        ] {
+            let source = format!("/** @internal */ export declare {declaration}");
+            let tree = parse_ts(source.as_bytes());
+            let index = make_index(source.as_bytes(), &tree);
+            let column = source.find("api").unwrap() as u32 + 1;
+            assert_eq!(
+                index.release_tag_for_export_at(1, column),
+                Some(ReleaseTag::Internal),
+                "{source}"
+            );
+        }
     }
 
     #[test]

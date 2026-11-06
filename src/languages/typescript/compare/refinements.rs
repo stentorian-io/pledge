@@ -17,7 +17,9 @@ use crate::languages::typescript::types::parser::{
     PatternDirection,
 };
 use crate::languages::typescript::types::shape::TypeShape;
-use crate::languages::typescript::types::subtype::{accepts_receiver, is_subtype_of};
+use crate::languages::typescript::types::subtype::{
+    accepts_calls, accepts_receiver, argument_parameters, argument_type, is_subtype_of,
+};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -47,60 +49,14 @@ pub fn compare_ref_changes(
     // to avoid double-reporting the same conceptual change at two different rule levels.
     let mut ref_08_fired = false;
 
-    // REF-01: overload-removed
-    // SEM-07: Shape-aware overload matching with consumed tracking.
-    // Each new overload can match at most one old overload. Unmatched old overloads
-    // fire overload-removed Major. This prevents a single new overload from
-    // "absorbing" multiple old overloads of the same arity (the prior FN).
-    if old_sym.overloads.len() > 1 {
-        // Only check overloads when old had multiple signatures
-        let mut consumed = vec![false; new_sym.overloads.len()];
-        for old_overload in &old_sym.overloads {
-            let old_arity = count_required_arity(old_overload);
-            let mut matched = false;
-
-            for (i, new_overload) in new_sym.overloads.iter().enumerate() {
-                if consumed[i] {
-                    continue; // already matched to another old overload
-                }
-                if count_required_arity(new_overload) != old_arity {
-                    continue; // arity bucket mismatch
-                }
-                // A replacement must accept every old call and preserve its result.
-                let compatible = old_overload == new_overload
-                    || (is_subtype_of(new_overload, old_overload, 0)
-                        && super::types::diff_types(
-                            old_overload,
-                            new_overload,
-                            name,
-                            file,
-                            line,
-                            col,
-                        )
-                        .iter()
-                        .all(|finding| finding.severity != Severity::Major));
-                if compatible {
-                    consumed[i] = true;
-                    matched = true;
-                    break;
-                }
-            }
-
-            if !matched {
-                findings.push(Finding {
-                    severity: Severity::Major,
-                    rule: RULE_OVERLOAD_REMOVED,
-                    file: file.to_path_buf(),
-                    line,
-                    col,
-                    message: format!(
-                        "overload signature with arity {} was removed from `{}`",
-                        old_arity, name
-                    ),
-                });
-            }
-        }
-    }
+    findings.extend(compare_overload_contracts(
+        &old_sym.overloads,
+        &new_sym.overloads,
+        name,
+        file,
+        line,
+        col,
+    ));
 
     // REF-02: rest-param-narrowed
     // Check if old had a rest param and new does not, or rest param type changed.
@@ -407,12 +363,244 @@ pub(crate) fn diff_template_literal_key_pairs<'a>(
     (matched_old, matched_new, findings)
 }
 
+/// Preserve accepted overload calls and the order of overlapping results.
+pub(crate) fn compare_overload_contracts(
+    before: &[TypeShape],
+    after: &[TypeShape],
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
+    if before.len() <= 1 && after.len() <= 1 {
+        return Vec::new();
+    }
+    let mut findings = Vec::new();
+    let mut replacements = Vec::new();
+    for old in before {
+        let matched = after.iter().position(|new| {
+            if old == new {
+                return true;
+            }
+            let differences = super::types::diff_types(old, new, name, file, line, col);
+            is_subtype_of(new, old, 0)
+                && differences
+                    .iter()
+                    .all(|finding| !matches!(finding.severity, Severity::Major | Severity::Warning))
+        });
+        replacements.push(matched);
+        if matched.is_none() {
+            let incomplete = before
+                .iter()
+                .chain(after)
+                .any(|shape| super::types::exceeds_comparison_depth(shape, 0));
+            findings.push(Finding {
+                severity: if incomplete {
+                    Severity::Warning
+                } else {
+                    Severity::Major
+                },
+                rule: if incomplete {
+                    "analysis-incomplete"
+                } else {
+                    RULE_OVERLOAD_REMOVED
+                },
+                file: file.to_path_buf(),
+                line,
+                col,
+                message: if incomplete {
+                    format!("overload comparison exceeded its depth limit in `{name}`")
+                } else {
+                    format!(
+                        "overload signature with arity {} was removed from `{name}`",
+                        count_required_arity(old)
+                    )
+                },
+            });
+        }
+    }
+    for (index, old) in before.iter().enumerate() {
+        let Some(replacement) = replacements[index] else {
+            continue;
+        };
+        let TypeShape::Function {
+            params: old_params,
+            return_type: old_result,
+            ..
+        } = old.without_type_parameters()
+        else {
+            continue;
+        };
+        for (candidate_index, candidate) in after.iter().enumerate() {
+            let TypeShape::Function {
+                params: candidate_params,
+                return_type: candidate_result,
+                ..
+            } = candidate.without_type_parameters()
+            else {
+                continue;
+            };
+            if (candidate_index >= replacement && !specialized(candidate_params))
+                || is_subtype_of(candidate_result, old_result, 0)
+                || specialized(old_params) && !specialized(candidate_params)
+            {
+                continue;
+            }
+            let (witnesses, truncated) = overlapping_calls(old_params, candidate_params);
+            let changed_selection = witnesses.iter().any(|call| {
+                let Some((old_index, old_result)) = selected_result(before, call) else {
+                    return false;
+                };
+                let Some((_, new_result)) = selected_result(after, call) else {
+                    return false;
+                };
+                old_index == index && !is_subtype_of(new_result, old_result, 0)
+            });
+            if truncated && !changed_selection {
+                findings.push(Finding {
+                    severity: Severity::Warning,
+                    rule: "analysis-incomplete",
+                    file: file.to_path_buf(),
+                    line,
+                    col,
+                    message: format!(
+                        "overload intersection comparison budget exhausted in `{name}`"
+                    ),
+                });
+            }
+            if changed_selection {
+                findings.push(Finding {
+                    severity: Severity::Major, rule: RULE_OVERLOAD_REMOVED,
+                    file: file.to_path_buf(), line, col,
+                    message: format!("overload order in `{name}` now selects an incompatible result for previously accepted calls"),
+                });
+                break;
+            }
+        }
+    }
+    findings
+}
+
+fn specialized(params: &[crate::languages::typescript::types::shape::ParamShape]) -> bool {
+    params
+        .iter()
+        .any(|parameter| matches!(parameter.shape, TypeShape::Literal(_)))
+}
+
+fn selected_result<'a>(
+    signatures: &'a [TypeShape],
+    call: &[crate::languages::typescript::types::shape::ParamShape],
+) -> Option<(usize, &'a TypeShape)> {
+    let mut accepted = signatures
+        .iter()
+        .enumerate()
+        .filter_map(
+            |(index, signature)| match signature.without_type_parameters() {
+                TypeShape::Function {
+                    params,
+                    return_type,
+                    ..
+                } if accepts_calls(params, call, 0) => {
+                    Some((specialized(params), index, return_type.as_ref()))
+                }
+                _ => None,
+            },
+        )
+        .collect::<Vec<_>>();
+    accepted.sort_by_key(|(specialized, index, _)| (!specialized, *index));
+    accepted.first().map(|(_, index, result)| (*index, *result))
+}
+
+/// Construct actual argument-type witnesses, splitting unions so previously
+/// shadowed portions of an overload's domain are not mistaken for new breaks.
+fn overlapping_calls(
+    first: &[crate::languages::typescript::types::shape::ParamShape],
+    second: &[crate::languages::typescript::types::shape::ParamShape],
+) -> (
+    Vec<Vec<crate::languages::typescript::types::shape::ParamShape>>,
+    bool,
+) {
+    use crate::languages::typescript::types::shape::ParamShape;
+    fn atoms(first: &TypeShape, second: &TypeShape) -> Vec<TypeShape> {
+        match (first, second) {
+            (TypeShape::Union(members), _) => members
+                .iter()
+                .flat_map(|member| atoms(member, second))
+                .collect(),
+            (_, TypeShape::Union(members)) => members
+                .iter()
+                .flat_map(|member| atoms(first, member))
+                .collect(),
+            _ if is_subtype_of(first, second, 0) => vec![first.clone()],
+            _ if is_subtype_of(second, first, 0) => vec![second.clone()],
+            _ => Vec::new(),
+        }
+    }
+    let first = argument_parameters(first);
+    let second = argument_parameters(second);
+    let minimum = |params: &[ParamShape]| {
+        params
+            .iter()
+            .filter(|parameter| !parameter.optional && !parameter.rest)
+            .count()
+    };
+    let minimum = minimum(&first).max(minimum(&second));
+    let maximum = |params: &[ParamShape]| {
+        if params.last().is_some_and(|parameter| parameter.rest) {
+            usize::MAX
+        } else {
+            params.len()
+        }
+    };
+    let maximum = maximum(&first)
+        .min(maximum(&second))
+        .min(first.len().max(second.len()).saturating_add(1));
+    let mut calls = Vec::new();
+    let mut truncated = false;
+    for count in minimum..=maximum {
+        let mut candidates = vec![Vec::new()];
+        for index in 0..count {
+            let (Some(first), Some(second)) =
+                (argument_type(&first, index), argument_type(&second, index))
+            else {
+                candidates.clear();
+                break;
+            };
+            let choices = atoms(first, second);
+            truncated |= candidates.len().saturating_mul(choices.len()) > 256;
+            candidates = candidates
+                .into_iter()
+                .flat_map(|call: Vec<ParamShape>| {
+                    choices.iter().map(move |shape| {
+                        let mut call = call.clone();
+                        call.push(ParamShape {
+                            name: format!("argument{index}"),
+                            optional: false,
+                            rest: false,
+                            shape: shape.clone(),
+                        });
+                        call
+                    })
+                })
+                .take(256)
+                .collect();
+        }
+        calls.extend(candidates);
+        if calls.len() >= 256 {
+            truncated |= count < maximum;
+            break;
+        }
+    }
+    (calls, truncated)
+}
+
 /// Count the number of required (non-optional) parameters in a TypeShape::Function.
 fn count_required_arity(shape: &TypeShape) -> usize {
     match shape.without_type_parameters() {
-        TypeShape::Function { params, .. } => {
-            params.iter().filter(|p| !p.optional && !p.rest).count()
-        }
+        TypeShape::Function { params, .. } => argument_parameters(params)
+            .iter()
+            .filter(|p| !p.optional && !p.rest)
+            .count(),
         _ => 0,
     }
 }
@@ -432,8 +620,8 @@ fn check_rest_param_narrowed(
     findings: &mut Vec<Finding>,
 ) {
     // Use first overload (primary signature) for rest param check
-    let old_rest = old_overloads.first().and_then(|s| find_rest_param(s));
-    let new_rest = new_overloads.first().and_then(|s| find_rest_param(s));
+    let old_rest = old_overloads.first().and_then(find_rest_param);
+    let new_rest = new_overloads.first().and_then(find_rest_param);
 
     match (old_rest, new_rest) {
         (Some(_), None) => {
@@ -449,7 +637,7 @@ fn check_rest_param_narrowed(
         }
         // A widened rest parameter accepts every previously valid argument.
         (Some(old_shape), Some(new_shape))
-            if old_shape != new_shape && !is_subtype_of(old_shape, new_shape, 0) =>
+            if old_shape != new_shape && !is_subtype_of(&old_shape, &new_shape, 0) =>
         {
             findings.push(Finding {
                 severity: Severity::Major,
@@ -465,9 +653,12 @@ fn check_rest_param_narrowed(
 }
 
 /// Find the rest parameter's type shape in a function signature.
-fn find_rest_param(shape: &TypeShape) -> Option<&TypeShape> {
+fn find_rest_param(shape: &TypeShape) -> Option<TypeShape> {
     match shape.without_type_parameters() {
-        TypeShape::Function { params, .. } => params.iter().find(|p| p.rest).map(|p| &p.shape),
+        TypeShape::Function { params, .. } => argument_parameters(params)
+            .iter()
+            .find(|p| p.rest)
+            .map(|p| p.shape.clone()),
         _ => None,
     }
 }

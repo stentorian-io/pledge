@@ -1623,17 +1623,27 @@ fn test_cjs_exports_property_function() {
 }
 
 #[test]
-fn test_using_declaration_graceful() {
-    // export using handle = getResource should not panic
-    // Either detect it or silently skip it — no panics allowed.
+fn exported_using_declarations_are_explicitly_incomplete() {
+    // TypeScript rejects this with TS1491, and Node rejects the export token.
+    // Recovering a binding would invent a public interface for invalid syntax.
     let source = b"export using handle = getResource();";
-    let result = parse_exports(source, grammar::SourceLanguage::TypeScript);
-    assert!(
-        result.is_ok(),
-        "parse_exports should not error on 'export using' syntax; got: {:?}",
-        result.err()
-    );
-    // The parse completing without panic/error is sufficient — detection is best-effort.
+    for language in [
+        grammar::SourceLanguage::TypeScript,
+        grammar::SourceLanguage::JavaScript,
+    ] {
+        let error =
+            parse_exports(source, language).expect_err("using declarations cannot be exported");
+        assert!(
+            error.to_string().contains("public surface is incomplete"),
+            "{error:#}"
+        );
+        let valid = parse_exports(
+            b"using handle = getResource(); export const value = 1;",
+            language,
+        )
+        .unwrap();
+        assert!(valid.iter().any(|export| export.name == "value"));
+    }
 }
 
 // ── Const type parameter modifier ──────────────────────────────

@@ -23,11 +23,29 @@ target for each condition set, skipping unmatched conditions and null entries;
 a missing target file does not activate a later array element. Array discovery
 checks up to 128 condition combinations; larger maps produce incomplete analysis.
 
+Public modules remain contracts even when they export no names. Deleting a
+wildcard-selected polyfill emits Major `subpath-removed`; restricting an entry
+from a bare target to an import-only condition emits Major
+`condition-priority-changed` when `require()` loses access. Removing an already
+null subpath does not remove an API. A top-level `"exports":null` has a different
+meaning: Node uses legacy `main` and deep-import resolution. Removing `exports`
+also preserves any root or subpath still reachable through that legacy fallback.
+Runtime access is checked separately from declaration resolution: a remaining
+`.d.ts` file cannot replace a removed JavaScript module. Deep ESM imports require
+an exact file path even when CommonJS can still find an extensionless subpath.
+
+Export targets are resolved as URLs, including percent-encoded filenames.
+Mixed subpath/condition objects and integer condition keys are invalid Node
+configurations and produce incomplete analysis rather than a clean verdict.
+
 JavaScript entry points also discover adjacent TypeScript source or declaration
 files using extension substitution, including `.d.mts` and `.d.cts`. Packages
 without an `exports` field expose source files through legacy deep imports.
 Hashed chunk names remain physical paths for reading and type requests;
 normalization is restricted to directive comparison identity.
+`typesVersions` declarations retain their version-range and public-subpath
+identity, so a later version branch or another mapped subpath cannot replace
+the declaration being compared.
 
 Changing a non-null target path emits Minor `condition-target-changed`; the
 resolved public API determines whether that move is breaking. Removing a target
@@ -74,3 +92,26 @@ recognized on default exports, named and star re-exports, destructured pairs,
 compound-assignment members, and bundler CommonJS output. Deprecation produces
 an `export-deprecated` warning. Internal, alpha, and beta exports are excluded
 from public API comparison.
+
+Direct `var` declarations (including destructuring), ordinary and async generator
+declarations, and string-named aliases and namespaces participate in the same
+export identity checks. Export names use their decoded JavaScript identity:
+`value` and `\u0076alue` name the same binding, while a string export containing a
+literal backslash retains that character. The local declaration name is retained
+separately from a public alias for structural checks.
+
+Valid re-exports with import attributes preserve their source specifier and public
+names. The bundled grammars' missing re-export attribute production is validated
+through the corresponding import production before extraction. Other parser
+recovery errors produce incomplete discovery instead of silently assuming an
+empty interface. This includes invalid exported `using` declarations. Following
+an attributed re-export into a source type the resolver cannot model, such as a
+JSON module, still reports explicit incomplete evidence; supporting its syntax
+does not imply that every target format is supported.
+
+Known grammar gaps for TypeScript variance modifiers, anonymous default function
+signatures in declaration files, and reserved-word JavaScript export aliases are
+normalized without changing public names or source positions. Variance direction,
+parameter constraints, defaults, and declaration signature types remain available
+to their existing comparisons. Malformed nearby syntax still makes analysis
+incomplete.

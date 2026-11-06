@@ -45,3 +45,8 @@ pub const RULE_LIMITATION_PROXY_DISPATCHED_EXPORTS: &str = "limitation: proxy-di
 
 pub const RULE_LIMITATION_PRIVATE_BRAND_ACCESS: &str =
     "limitation: private-brand-access-not-checkable";
+
+pub const RULE_FUNCTION_CONSTRUCTOR_REMOVED: &str = "function-constructor-removed";
+
+pub const RULE_EXPORT_WRITABILITY_REMOVED: &str = "export-writability-removed";
+pub const RULE_EXPORT_ENUMERABILITY_REMOVED: &str = "export-enumerability-removed";

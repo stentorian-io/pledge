@@ -106,7 +106,10 @@ fn normalize_bin(pkg: &serde_json::Value) -> HashMap<String, String> {
     match pkg.get("bin") {
         Some(serde_json::Value::String(s)) => {
             let mut map = HashMap::new();
-            map.insert(name.to_string(), s.clone());
+            map.insert(
+                name.rsplit('/').next().unwrap_or(name).to_string(),
+                s.clone(),
+            );
             map
         }
         Some(serde_json::Value::Object(_)) => extract_string_map(pkg, "bin"),
@@ -159,8 +162,9 @@ fn compare_platform_field(
     // Probe every mentioned name plus one unmentioned platform, representing
     // the unrestricted remainder without hard-coding today's Node platforms.
     let accepts = |entries: &[String], platform: &str| {
-        let allowed = !entries.iter().any(|s| !s.starts_with('!'))
-            || entries.iter().any(|s| s == "any" || s == platform);
+        let allowed = entries == ["any"]
+            || !entries.iter().any(|s| !s.starts_with('!'))
+            || entries.iter().any(|s| s == platform);
         allowed
             && !entries
                 .iter()
@@ -197,8 +201,25 @@ fn compare_platform(
 /// Check each boundary and its immediate successors. Interval subtraction alone
 /// loses npm's requirement to explicitly admit prereleases of a particular core.
 pub(crate) fn range_narrowed(old_range: &str, new_range: &str) -> bool {
+    range_narrowed_with_membership(old_range, new_range, RangeMembership::Dependency)
+}
+
+enum RangeMembership {
+    Dependency,
+    Engine,
+}
+
+fn range_narrowed_with_membership(
+    old_range: &str,
+    new_range: &str,
+    membership: RangeMembership,
+) -> bool {
     use node_semver::{Identifier, Range, Version};
-    let (Ok(old), Ok(new)) = (Range::parse(old_range), Range::parse(new_range)) else {
+    let parse = |range: &str| match membership {
+        RangeMembership::Dependency => Range::parse(range).ok(),
+        RangeMembership::Engine => parse_engine_range(range),
+    };
+    let (Some(old), Some(new)) = (parse(old_range), parse(new_range)) else {
         return old_range != new_range;
     };
     let mut witnesses = vec![Version::from((0, 0, 0))];
@@ -224,9 +245,76 @@ pub(crate) fn range_narrowed(old_range: &str, new_range: &str) -> bool {
             }
         }
     }
+    let accepts = |range: &Range, version: &Version| match membership {
+        RangeMembership::Dependency => range.satisfies(version),
+        // npm checks engines with includePrerelease enabled. Interval intersection
+        // applies comparator bounds without dependency-only prerelease exclusion.
+        RangeMembership::Engine => Range::parse(version.to_string())
+            .ok()
+            .is_some_and(|exact| range.intersect(&exact).is_some()),
+    };
     witnesses
         .iter()
-        .any(|version| old.satisfies(version) && !new.satisfies(version))
+        .any(|version| accepts(&old, version) && !accepts(&new, version))
+}
+
+/// Expand npm's shorthand bounds with includePrerelease enabled. The existing
+/// range parser supplies caret/tilde/wildcard arithmetic; generated boundaries
+/// include the first prerelease, while explicitly written full versions retain
+/// their original comparator semantics.
+pub(crate) fn parse_engine_range(source: &str) -> Option<node_semver::Range> {
+    use node_semver::{Range, Version};
+    fn expand(source: &str, hyphen: bool) -> Option<String> {
+        let normalized = Range::parse(source).ok()?.to_string();
+        let version_text = source.trim_start_matches(['<', '>', '=', '~', '^']).trim();
+        let explicit = (!hyphen)
+            .then(|| Version::parse(version_text).ok())
+            .flatten();
+        let shorthand = source.starts_with(['~', '^']);
+        let mut comparators = Vec::new();
+        for comparator in normalized.split_whitespace() {
+            let version_text = comparator.trim_start_matches(['<', '>', '=']);
+            let Ok(mut version) = Version::parse(version_text) else {
+                comparators.push(comparator.to_string());
+                continue;
+            };
+            if version.is_prerelease()
+                || explicit.as_ref().is_some_and(|written| {
+                    !shorthand || (comparator.starts_with(">=") && written == &version)
+                })
+            {
+                comparators.push(comparator.to_string());
+                continue;
+            }
+            let operator = &comparator[..comparator.len() - version_text.len()];
+            if operator == "<=" {
+                version.patch = version.patch.checked_add(1)?;
+                comparators.push(format!("<{version}-0"));
+            } else {
+                comparators.push(format!("{operator}{version}-0"));
+            }
+        }
+        Some(comparators.join(" "))
+    }
+    let mut branches = Vec::new();
+    for branch in source.split("||") {
+        if branch.contains(" - ") {
+            branches.push(expand(branch.trim(), true)?);
+            continue;
+        }
+        let mut tokens = branch.split_whitespace();
+        let mut comparators = Vec::new();
+        while let Some(token) = tokens.next() {
+            let comparator = if matches!(token, "<" | "<=" | ">" | ">=" | "=" | "~" | "^") {
+                format!("{token}{}", tokens.next()?)
+            } else {
+                token.to_string()
+            };
+            comparators.push(expand(&comparator, false)?);
+        }
+        branches.push(comparators.join(" "));
+    }
+    Range::parse(branches.join(" || ")).ok()
 }
 
 /// META-01, META-02, META-03: detect peer dependency changes.
@@ -299,7 +387,13 @@ fn compare_engines(
     // META-04: bumped engine requirements
     for (name, old_range_str) in &old_engines {
         if let Some(new_range_str) = new_engines.get(name.as_str()) {
-            if old_range_str != new_range_str && range_narrowed(old_range_str, new_range_str) {
+            if old_range_str != new_range_str
+                && range_narrowed_with_membership(
+                    old_range_str,
+                    new_range_str,
+                    RangeMembership::Engine,
+                )
+            {
                 findings.push(pkg_json_finding(
                     Severity::Major,
                     RULE_ENGINE_BUMPED,
@@ -404,6 +498,33 @@ fn compare_types_versions(
             // (No finding emitted — adding type version mappings is non-breaking)
         }
         (Some(old), Some(new)) => {
+            let before: Vec<_> = old
+                .keys()
+                .filter(|range| new.contains_key(*range))
+                .collect();
+            let after: Vec<_> = new
+                .keys()
+                .filter(|range| old.contains_key(*range))
+                .collect();
+            for (index, left) in before.iter().enumerate() {
+                for right in &before[index + 1..] {
+                    let reversed = after.iter().position(|range| range == left)
+                        > after.iter().position(|range| range == right);
+                    if !reversed || old[*left] == old[*right] {
+                        continue;
+                    }
+                    let overlap = match (
+                        node_semver::Range::parse(left),
+                        node_semver::Range::parse(right),
+                    ) {
+                        (Ok(left), Ok(right)) => left.intersect(&right).is_some(),
+                        _ => false,
+                    };
+                    if overlap {
+                        findings.push(pkg_json_finding(Severity::Major, RULE_TYPES_VERSIONS_CHANGED, format!("typesVersions priority changed between overlapping ranges `{left}` and `{right}`")));
+                    }
+                }
+            }
             // Compare version ranges
             for (range, old_mappings) in old {
                 match new.get(range) {

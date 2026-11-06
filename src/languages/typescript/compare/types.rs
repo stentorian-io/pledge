@@ -22,12 +22,41 @@ use crate::languages::typescript::compare::rules::{
 use crate::languages::typescript::compare::{generics as generic_diff, rules as type_rules};
 use crate::languages::typescript::types::shape::{FieldShape, ParamShape, TypeShape};
 use crate::languages::typescript::types::subtype::{
-    accepts_receiver, format_type, is_subtype_of, preserves_predicate,
+    accepts_calls, accepts_receiver, argument_parameters, format_type, is_subtype_of,
+    preserves_predicate,
 };
 use crate::languages::typescript::types::{parser as type_parser, shape as type_shapes};
 use std::path::Path;
 
 const MAX_DEPTH: usize = 20;
+
+pub(crate) fn exceeds_comparison_depth(shape: &TypeShape, depth: usize) -> bool {
+    depth >= MAX_DEPTH
+        || shape
+            .children()
+            .iter()
+            .any(|child| exceeds_comparison_depth(child, depth + 1))
+}
+
+fn incomplete_comparison(
+    old: &TypeShape,
+    new: &TypeShape,
+    name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Option<Finding> {
+    (old != new && (exceeds_comparison_depth(old, 0) || exceeds_comparison_depth(new, 0))).then(
+        || Finding {
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!("type comparison truncated at depth {MAX_DEPTH} for `{name}`"),
+        },
+    )
+}
 
 /// SEM-03: Returns true when the shape is `any` (TypeShape::Primitive(PrimitiveKind::Any)).
 ///
@@ -53,6 +82,9 @@ pub fn diff_types(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
+    if let Some(finding) = incomplete_comparison(old, new, symbol_name, file, line, col) {
+        return vec![finding];
+    }
     let mut findings = Vec::new();
 
     // Changed opaque syntax is insufficient evidence for a breaking verdict.
@@ -86,6 +118,9 @@ pub fn diff_values(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
+    if let Some(finding) = incomplete_comparison(old, new, name, file, line, col) {
+        return vec![finding];
+    }
     if old == new {
         return Vec::new();
     }
@@ -213,6 +248,9 @@ fn diff_recursive(
     depth: usize,
     findings: &mut Vec<Finding>,
 ) {
+    let old = old.without_nominal();
+    let new = new.without_nominal();
+
     // stop at max depth with a warning-level finding
     if depth >= MAX_DEPTH {
         findings.push(Finding {
@@ -1030,6 +1068,10 @@ fn diff_functions(
     depth: usize,
     findings: &mut Vec<Finding>,
 ) {
+    let old_arguments = argument_parameters(old_params);
+    let new_arguments = argument_parameters(new_params);
+    let old_params = old_arguments.as_ref();
+    let new_params = new_arguments.as_ref();
     // TypeScript permits assigning a readonly object to a mutable object type,
     // but callers writing directly through a returned property still break.
     let mut property_restrictions = Vec::new();
@@ -1048,6 +1090,8 @@ fn diff_functions(
         col,
         message: if rule == RULE_TYPE_ALIAS_READONLY_CHANGED {
             format!("returned field `{path}` of `{symbol_name}` became readonly")
+        } else if rule == RULE_PARAM_TYPE_NARROWED {
+            format!("returned callable `{path}` of `{symbol_name}` no longer accepts every previous call")
         } else {
             format!("returned field `{path}` of `{symbol_name}` no longer accepts every previous assignment")
         },
@@ -1273,6 +1317,8 @@ fn returned_property_restrictions(
     depth: usize,
     paths: &mut Vec<(String, &'static str)>,
 ) {
+    let old = old.without_nominal();
+    let new = new.without_nominal();
     if depth >= MAX_DEPTH || old == new {
         return;
     }
@@ -1303,22 +1349,34 @@ fn returned_property_restrictions(
             }
         }
         (TypeShape::Array(before), TypeShape::Array(after)) => {
+            if !is_subtype_of(before, after, depth + 1) {
+                paths.push((format!("{path}[]"), RULE_FIELD_TYPE_CHANGED));
+            }
             returned_property_restrictions(before, after, path, depth + 1, paths);
         }
         (TypeShape::Tuple(before), TypeShape::Tuple(after)) => {
-            for (before, after) in before.iter().zip(after) {
+            for (index, (before, after)) in before.iter().zip(after).enumerate() {
+                if !is_subtype_of(&before.shape, &after.shape, depth + 1) {
+                    paths.push((format!("{path}[{index}]"), RULE_FIELD_TYPE_CHANGED));
+                }
                 returned_property_restrictions(&before.shape, &after.shape, path, depth + 1, paths);
             }
         }
         (
             TypeShape::Function {
+                params: before_params,
                 return_type: before,
                 ..
             },
             TypeShape::Function {
-                return_type: after, ..
+                params: after_params,
+                return_type: after,
+                ..
             },
         ) => {
+            if !accepts_calls(after_params, before_params, depth + 1) {
+                paths.push((path.to_string(), RULE_PARAM_TYPE_NARROWED));
+            }
             returned_property_restrictions(before, after, path, depth + 1, paths);
         }
         (
@@ -1331,6 +1389,51 @@ fn returned_property_restrictions(
                 args: after,
             },
         ) if before_name == after_name => {
+            if before_name == "Readonly" {
+                if let (Some(before), Some(after)) = (before.first(), after.first()) {
+                    // Readonly removes writes to the outer container, while its
+                    // elements can still expose nested mutable contracts.
+                    match (before, after) {
+                        (TypeShape::Object(before), TypeShape::Object(after)) => {
+                            for (name, before) in before {
+                                if let Some(after) = after.get(name) {
+                                    returned_property_restrictions(
+                                        &before.shape,
+                                        &after.shape,
+                                        &make_path(path, name),
+                                        depth + 1,
+                                        paths,
+                                    );
+                                }
+                            }
+                        }
+                        _ => {
+                            for (before, after) in
+                                before.children().into_iter().zip(after.children())
+                            {
+                                returned_property_restrictions(
+                                    before,
+                                    after,
+                                    path,
+                                    depth + 1,
+                                    paths,
+                                );
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+            if matches!(
+                before_name.as_str(),
+                "Map" | "Set" | "WeakMap" | "WeakSet" | "Record"
+            ) && before
+                .iter()
+                .zip(after)
+                .any(|(before, after)| !is_subtype_of(before, after, depth + 1))
+            {
+                paths.push((format!("{path}[]"), RULE_FIELD_TYPE_CHANGED));
+            }
             for (before, after) in before.iter().zip(after) {
                 returned_property_restrictions(before, after, path, depth + 1, paths);
             }

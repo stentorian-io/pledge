@@ -38,7 +38,10 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
             // tree-sitter mis-parsed a variance-annotated type parameter.
             let (name, variance) = {
                 let name_is_variance_kw = matches!(raw_name.as_str(), "in" | "out");
-                if name_is_variance_kw {
+                let recovered_name = all_children
+                    .get(i + 1)
+                    .is_some_and(|node| node.kind() == "ERROR");
+                if name_is_variance_kw && recovered_name {
                     // Look for the actual name in the next ERROR sibling
                     let saw_in = raw_name == "in";
                     let mut saw_out = raw_name == "out";
@@ -73,8 +76,16 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
                     };
                     (real_name, variance)
                 } else {
-                    // Standard type parameter (no variance modifier)
-                    (raw_name, None)
+                    let start = all_children[..i]
+                        .iter()
+                        .rev()
+                        .find(|node| matches!(node.kind(), "<" | ","))
+                        .map_or(tp_node.start_byte() + 1, |node| node.end_byte());
+                    let end = child
+                        .child_by_field_name("name")
+                        .map_or(child.start_byte(), |node| node.start_byte());
+                    let prefix = source.get(start..end).unwrap_or_default();
+                    (raw_name, variance_prefix(prefix))
                 }
             };
 
@@ -131,4 +142,82 @@ pub fn parse_type_params(source: &[u8], decl_node: tree_sitter::Node) -> Vec<Typ
     }
 
     params
+}
+
+/// Strict grammar recovery masks only validated modifiers. Read their original
+/// bytes so the normalized tree keeps both correct positions and variance.
+fn variance_prefix(prefix: &[u8]) -> Option<ts_model::Variance> {
+    let mut remaining = std::str::from_utf8(prefix).ok()?.trim_start();
+    let mut modifiers = Vec::new();
+    while !remaining.is_empty() {
+        if let Some(comment) = remaining.strip_prefix("/*") {
+            remaining = comment.get(comment.find("*/")? + 2..)?.trim_start();
+        } else if let Some(comment) = remaining.strip_prefix("//") {
+            remaining = comment.get(comment.find(['\n', '\r'])?..)?.trim_start();
+        } else {
+            let end = remaining
+                .find(|character: char| !character.is_ascii_alphabetic())
+                .unwrap_or(remaining.len());
+            if end == 0 {
+                return None;
+            }
+            let token = &remaining[..end];
+            if token != "const" {
+                modifiers.push(token);
+            }
+            remaining = remaining[end..].trim_start();
+        }
+    }
+    match modifiers.as_slice() {
+        ["in"] => Some(ts_model::Variance::In),
+        ["out"] => Some(ts_model::Variance::Out),
+        ["in", "out"] => Some(ts_model::Variance::InOut),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::languages::javascript::syntax::grammar::{parse_source, SourceLanguage};
+
+    #[test]
+    fn normalized_variance_keeps_const_constraint_default_and_original_names() {
+        let source =
+            b"export class Box<const out T extends string = 'a', in /* marker */ U = never> {}";
+        let tree = parse_source(source, &SourceLanguage::TypeScript).unwrap();
+        let declaration = tree
+            .root_node()
+            .named_child(0)
+            .unwrap()
+            .child_by_field_name("declaration")
+            .unwrap();
+        let parameters = parse_type_params(source, declaration);
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "T");
+        assert!(parameters[0].is_const);
+        assert_eq!(parameters[0].variance, Some(ts_model::Variance::Out));
+        assert_eq!(parameters[0].constraint_text.as_deref(), Some("string"));
+        assert_eq!(parameters[0].default_text.as_deref(), Some("'a'"));
+        assert_eq!(parameters[1].name, "U");
+        assert!(!parameters[1].is_const);
+        assert_eq!(parameters[1].variance, Some(ts_model::Variance::In));
+        assert_eq!(parameters[1].default_text.as_deref(), Some("never"));
+    }
+
+    #[test]
+    fn contextual_out_parameter_name_is_not_removed_as_a_modifier() {
+        let source = b"export type Box<out> = {value: out};";
+        let tree = parse_source(source, &SourceLanguage::TypeScript).unwrap();
+        let declaration = tree
+            .root_node()
+            .named_child(0)
+            .unwrap()
+            .child_by_field_name("declaration")
+            .unwrap();
+        let parameters = parse_type_params(source, declaration);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "out");
+        assert_eq!(parameters[0].variance, None);
+    }
 }

@@ -1670,3 +1670,65 @@ fn predicates_preserve_true_and_false_branch_narrowing() {
         );
     }
 }
+
+#[test]
+fn returned_mutable_containers_preserve_write_domains() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for container in [
+        "(string | number)[]",
+        "[string | number]",
+        "Map<string, string | number>",
+        "Set<string | number>",
+        "Record<string, string | number>",
+        "Promise<(string | number)[]>",
+    ] {
+        let before = format!("() => {container}");
+        let after = before.replace("string | number", "string");
+        let findings = diff(parse_type_string(&before), parse_type_string(&after));
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == RULE_FIELD_TYPE_CHANGED),
+            "{container}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn returned_callables_preserve_optional_and_rest_argument_counts() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for (before, after) in [
+        ("(x: string, y?: number) => void", "(x: string) => void"),
+        ("() => void", "(...args: [x: string]) => void"),
+        ("(...args: string[]) => void", "(x?: string) => void"),
+    ] {
+        let findings = diff(
+            parse_type_string(&format!("() => ({before})")),
+            parse_type_string(&format!("() => ({after})")),
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.severity == Severity::Major),
+            "{before} -> {after}: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn comparison_depth_exhaustion_reports_uncertainty_instead_of_a_break() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    let mut old = "string | number".to_string();
+    let mut new = "string".to_string();
+    for _ in 0..22 {
+        old = format!("{{readonly x: {old}}}");
+        new = format!("{{readonly x: {new}}}");
+    }
+    let findings = diff(
+        parse_type_string(&format!("() => {old}")),
+        parse_type_string(&format!("() => {new}")),
+    );
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert_eq!(findings[0].rule, "analysis-incomplete");
+    assert_eq!(findings[0].severity, Severity::Warning);
+}

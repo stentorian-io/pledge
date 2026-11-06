@@ -73,8 +73,8 @@
   },
   {
     "name": "unicode-source-column",
-    "old": "/* 🧭🧭🧭🧭🧭🧭🧭🧭 café */ export declare function api(): string;",
-    "new": "/* 🧭🧭🧭🧭🧭🧭🧭🧭 café */ export declare function api(): number;",
+    "old": "/* \ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded caf\u00e9 */ export declare function api(): string;",
+    "new": "/* \ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded\ud83e\udded caf\u00e9 */ export declare function api(): number;",
     "consumer": "const text: string = api();",
     "breaking": true,
     "extension": "ts"
@@ -142,5 +142,21 @@
     "consumer": "const n: string | number = api(1);",
     "breaking": false,
     "extension": "ts"
+  },
+  {
+    "name": "parameter readonly map",
+    "extension": "d.ts",
+    "old": "export declare function api(x:Map<string,number>):void;",
+    "new": "export declare function api(x:ReadonlyMap<string,number>):void;",
+    "consumer": "api(new Map<string,number>());",
+    "breaking": false
+  },
+  {
+    "name": "returned thenable",
+    "extension": "d.ts",
+    "old": "export declare function api(): PromiseLike<string>;",
+    "new": "export declare function api(): Promise<string>;",
+    "consumer": "const p:PromiseLike<string>=api();",
+    "breaking": false
   }
 ]

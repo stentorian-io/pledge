@@ -86,5 +86,29 @@
     "consumer": "declare let x: unknown; api(x); const s: string | number = x;",
     "breaking": false,
     "extension": "ts"
+  },
+  {
+    "name": "tuple rest primitive",
+    "extension": "d.ts",
+    "old": "export declare function api(...args: [x: string, ...ys: number[]]): void;",
+    "new": "export declare function api(x: string, ...ys: number[]): void;",
+    "consumer": "api(\"x\", 42, 7);",
+    "breaking": false
+  },
+  {
+    "name": "input callback void widening",
+    "extension": "d.ts",
+    "old": "export declare function api(cb: () => string):void;",
+    "new": "export declare function api(cb: () => void):void;",
+    "consumer": "api(() => \"hello\");",
+    "breaking": false
+  },
+  {
+    "name": "rest tuple required",
+    "extension": "d.ts",
+    "old": "export declare function api(...args: [x: string, y?: number]): void;",
+    "new": "export declare function api(...args: [x: string, y: number]): void;",
+    "consumer": "api(\"x\");",
+    "breaking": true
   }
 ]

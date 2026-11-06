@@ -209,6 +209,103 @@ pub enum TypeShape {
 }
 
 impl TypeShape {
+    /// Compiler-local brands are compared as relations across public uses. The
+    /// structural rules operate on their body and never compare local ID strings.
+    pub(crate) fn without_nominal(&self) -> &Self {
+        match self {
+            Self::Generic { name, args } if name == "<nominal>" => {
+                args.last().map_or(self, Self::without_nominal)
+            }
+            _ => self,
+        }
+    }
+
+    pub(crate) fn nominal_brands(&self) -> Vec<&str> {
+        match self {
+            Self::Generic { name, args } if name == "<nominal>" => args
+                [..args.len().saturating_sub(1)]
+                .iter()
+                .filter_map(|shape| match shape {
+                    Self::Literal(LiteralKind::String(identity)) => Some(identity.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub(crate) fn children(&self) -> Vec<&TypeShape> {
+        let mut children = Vec::new();
+        match self {
+            Self::Array(inner)
+            | Self::NoInferWrap(inner)
+            | Self::InferExtends {
+                constraint: inner, ..
+            } => children.push(inner.as_ref()),
+            Self::Tuple(elements) => children.extend(elements.iter().map(|element| &element.shape)),
+            Self::Object(fields) => {
+                for field in fields.values() {
+                    children.push(&field.shape);
+                    children.extend(field.write_type.as_ref());
+                }
+            }
+            Self::Union(members)
+            | Self::Intersection(members)
+            | Self::Generic { args: members, .. } => children.extend(members),
+            Self::Function {
+                params,
+                return_type,
+                contract,
+            } => {
+                children.extend(params.iter().map(|param| &param.shape));
+                children.push(return_type);
+                children.extend(contract.receiver.as_deref());
+                children.extend(
+                    contract
+                        .predicate
+                        .as_ref()
+                        .and_then(|predicate| predicate.shape.as_deref()),
+                );
+            }
+            Self::GenericDeclaration { params, body } => {
+                for parameter in params {
+                    children.extend(parameter.constraint.as_ref());
+                    children.extend(parameter.default.as_ref());
+                }
+                children.push(body);
+            }
+            Self::Conditional {
+                check,
+                extends,
+                then_type,
+                else_type,
+            } => children.extend([check.as_ref(), extends, then_type, else_type]),
+            Self::Mapped {
+                key_type,
+                name_type,
+                value_type,
+                ..
+            } => {
+                children.extend([key_type.as_ref(), value_type]);
+                children.extend(name_type.as_deref());
+            }
+            Self::Indexed { base, index } => children.extend([base.as_ref(), index]),
+            Self::Satisfies {
+                constraint,
+                narrowed,
+            } => {
+                children.push(constraint);
+                children.extend(narrowed.as_deref());
+            }
+            Self::Template(parts) => children.extend(parts.iter().filter_map(|part| match part {
+                TemplatePart::Placeholder(shape) => Some(shape.as_ref()),
+                TemplatePart::Literal(_) => None,
+            })),
+            Self::Primitive(_) | Self::Literal(_) | Self::TypeParam(_) | Self::Opaque(_) => {}
+        }
+        children
+    }
+
     pub(crate) fn function(mut params: Vec<ParamShape>, return_type: TypeShape) -> Self {
         let receiver = params
             .first()

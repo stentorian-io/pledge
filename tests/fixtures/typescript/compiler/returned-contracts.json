@@ -1,0 +1,107 @@
+[
+  {
+    "name": "array write",
+    "extension": "d.ts",
+    "old": "export declare function api(): (string | number)[];",
+    "new": "export declare function api(): string[];",
+    "consumer": "api().push(42);",
+    "breaking": true
+  },
+  {
+    "name": "tuple write",
+    "extension": "d.ts",
+    "old": "export declare function api(): [string | number];",
+    "new": "export declare function api(): [string];",
+    "consumer": "api()[0] = 42;",
+    "breaking": true
+  },
+  {
+    "name": "map write",
+    "extension": "d.ts",
+    "old": "export declare function api(): Map<string, string | number>;",
+    "new": "export declare function api(): Map<string, string>;",
+    "consumer": "api().set(\"key\", 42);",
+    "breaking": true
+  },
+  {
+    "name": "set write",
+    "extension": "d.ts",
+    "old": "export declare function api(): Set<string | number>;",
+    "new": "export declare function api(): Set<string>;",
+    "consumer": "api().add(42);",
+    "breaking": true
+  },
+  {
+    "name": "index write",
+    "extension": "d.ts",
+    "old": "export declare function api(): { [key: string]: string | number };",
+    "new": "export declare function api(): { [key: string]: string };",
+    "consumer": "api()[\"key\"] = 42;",
+    "breaking": true
+  },
+  {
+    "name": "returned function argument count",
+    "extension": "d.ts",
+    "old": "export declare function api(): (x: string, y?: number) => void;",
+    "new": "export declare function api(): (x: string) => void;",
+    "consumer": "api()(\"x\", 42);",
+    "breaking": true
+  },
+  {
+    "name": "returned rest required",
+    "extension": "d.ts",
+    "old": "export declare function api(): () => void;",
+    "new": "export declare function api(): (...args: [x:string]) => void;",
+    "consumer": "api()();",
+    "breaking": true
+  },
+  {
+    "name": "returned rest array fixed",
+    "extension": "d.ts",
+    "old": "export declare function api(): (...args: string[]) => void;",
+    "new": "export declare function api(): (x?:string) => void;",
+    "consumer": "api()(\"a\",\"b\");",
+    "breaking": true
+  },
+  {
+    "name": "return promise nested write",
+    "extension": "d.ts",
+    "old": "export declare function api(): Promise<(string|number)[]>;",
+    "new": "export declare function api(): Promise<string[]>;",
+    "consumer": "(await api()).push(42);",
+    "breaking": true
+  },
+  {
+    "name": "nested readonly field narrowing",
+    "extension": "d.ts",
+    "old": "export declare function api(): {readonly x:{readonly value:string|number}};",
+    "new": "export declare function api(): {readonly x:{readonly value:string}};",
+    "consumer": "const x:string|number=api().x.value;",
+    "breaking": false
+  },
+  {
+    "name": "return readonly index narrow",
+    "extension": "d.ts",
+    "old": "export declare function api(): { readonly [k:string]: string|number };",
+    "new": "export declare function api(): { readonly [k:string]: string };",
+    "consumer": "const x:string|number=api()[\"key\"];",
+    "breaking": false
+  },
+  {
+    "name": "readonly tuple result narrowing",
+    "extension": "d.ts",
+    "old": "export declare function api(): readonly [string | number];",
+    "new": "export declare function api(): readonly [string];",
+    "consumer": "const value: string | number = api()[0];",
+    "breaking": false
+  },
+  {
+    "name": "deep changed result reports comparison uncertainty",
+    "extension": "d.ts",
+    "old": "export declare function api(): {readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:string|number}}}}}}}}}}}}}}}}}}}}}};",
+    "new": "export declare function api(): {readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:{readonly x:string}}}}}}}}}}}}}}}}}}}}}};",
+    "consumer": "const x:string|number=api().x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x;",
+    "breaking": false,
+    "required_rule": "analysis-incomplete"
+  }
+]

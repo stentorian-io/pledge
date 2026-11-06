@@ -28,6 +28,13 @@ if (configPath) {
 Object.assign(options, { allowJs: true, checkJs: true, noEmit: true, skipLibCheck: true,
   strictNullChecks: true, strictFunctionTypes: true, exactOptionalPropertyTypes: true });
 const program = ts.createProgram([...new Set(input.symbols.map(symbol => symbol.file))], options);
+for (const diagnostic of program.getSyntacticDiagnostics()) {
+  const source = diagnostic.file;
+  const position = source && diagnostic.start !== undefined
+    ? source.getLineAndCharacterOfPosition(diagnostic.start) : null;
+  const location = source ? `${path.relative(input.root, source.fileName)}${position ? `:${position.line + 1}:${position.character + 1}` : ''}: ` : '';
+  issues.add(`${location}TS${diagnostic.code}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`);
+}
 const checker = program.getTypeChecker();
 const printer = ts.createPrinter();
 const formatFlags = ts.NodeBuilderFlags.NoTruncation | ts.NodeBuilderFlags.InTypeAlias;
@@ -46,6 +53,16 @@ let currentIssues;
 let parameterNames;
 let parameterScope;
 let accessorMappers;
+// These IDs have meaning only within one program. Comparison preserves relations
+// between public uses instead of treating private declaration names as API names.
+const nominalDeclarations = new Map();
+function nominalIdentity(declaration) {
+  if (!nominalDeclarations.has(declaration)) nominalDeclarations.set(declaration, String(nominalDeclarations.size));
+  return { Literal: { String: nominalDeclarations.get(declaration) } };
+}
+function nominalShape(identities, body) {
+  return identities.length ? generic('<nominal>', [...identities, body]) : body;
+}
 function mappedParameter(type, mapper, depth = 0) {
   if (!mapper) return type;
   if (depth > 32) { currentIssues.add('accessor type substitution limit reached'); return type; }
@@ -189,6 +206,18 @@ function isPrivate(symbol) {
     declaration.name && ts.isPrivateIdentifier(declaration.name) ||
     declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword));
 }
+function protectedOrigin(type, name, fallback, seen = new Set()) {
+  const target = type.target || type;
+  if (seen.has(target)) return fallback;
+  seen.add(target);
+  for (const base of target.getBaseTypes?.() || []) {
+    const property = checker.getPropertyOfType(base, name);
+    const declaration = property?.declarations?.find(declaration =>
+      declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ProtectedKeyword));
+    if (declaration) return protectedOrigin(base, name, declaration, seen);
+  }
+  return fallback;
+}
 function shape(type, depth = 0, staticClass = null) {
   if (--symbolWork < 0 || --packageWork < 0 || depth > 32) return incomplete('compiler public type expansion limit reached', type);
   const flags = type.flags;
@@ -267,7 +296,7 @@ function shape(type, depth = 0, staticClass = null) {
     }
     if (flags & ts.TypeFlags.IndexedAccess) return { Indexed: { base: shape(type.objectType, depth + 1), index: shape(type.indexType, depth + 1) } };
     if (flags & ts.TypeFlags.Index) return generic('keyof', [shape(type.type, depth + 1)]);
-    if (flags & ts.TypeFlags.UniqueESSymbol) return symbolIdentity(type.symbol?.valueDeclaration?.initializer) || { TypeParam: checker.typeToString(type) };
+    if (flags & ts.TypeFlags.UniqueESSymbol) return symbolIdentity(type.symbol?.valueDeclaration?.initializer) || nominalShape([nominalIdentity(type.symbol?.valueDeclaration || type.symbol)], primitive('Symbol'));
     if (!(flags & ts.TypeFlags.Object)) return incomplete('unevaluated compiler type', type);
 
     const node = checker.typeToTypeNode(type, undefined, formatFlags);
@@ -292,7 +321,16 @@ function shape(type, depth = 0, staticClass = null) {
       }
     }
     const fields = Object.create(null);
+    const brands = [];
     for (const property of checker.getPropertiesOfType(type).sort((a, b) => propertyName(a).localeCompare(propertyName(b)))) {
+      for (const declaration of property.declarations || []) {
+        if (declaration.name && ts.isPrivateIdentifier(declaration.name) ||
+            declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword || modifier.kind === ts.SyntaxKind.ProtectedKeyword)) {
+          const origin = declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ProtectedKeyword)
+            ? protectedOrigin(type, property.getName(), declaration) : declaration;
+          brands.push(nominalIdentity(origin));
+        }
+      }
       if (isPrivate(property) || staticClass && property.getName() === 'prototype') continue;
       const declarations = property.declarations || [];
       const readonly = readonlyProperties.get(propertyName(property)) ?? (
@@ -315,7 +353,7 @@ function shape(type, depth = 0, staticClass = null) {
     }
     for (const signature of checker.getSignaturesOfType(type, ts.SignatureKind.Call)) members.push(signatureShape(signature, depth));
     for (const signature of checker.getSignaturesOfType(type, ts.SignatureKind.Construct)) members.push(generic('<constructor>', [signatureShape(signature, depth, !!staticClass)]));
-    return members.length > 1 ? { Intersection: members } : members[0] || { Object: {} };
+    return nominalShape(brands, members.length > 1 ? { Intersection: members } : members[0] || { Object: {} });
   } finally {
     active.delete(type);
   }

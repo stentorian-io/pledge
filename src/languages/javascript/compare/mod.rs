@@ -137,6 +137,9 @@ pub fn compare_exports(
 ) -> Vec<Finding> {
     // Base diff: ExportKey iteration, augment routing, type-aware compare.
     let mut findings = compare_exports_core(old, new, lsp_was_available);
+    findings.extend(
+        crate::languages::typescript::compare::nominal::compare_nominal_relations(old, new),
+    );
     // IDN-01: transparent rename coalescing (alias-trailer-only, ).
     findings = renames::coalesce_renames(old, new, findings, pkg_root);
     // IDN-02: namespace-move cascade consolidation (exact-subtree, depth 1).
@@ -349,14 +352,25 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                 } else {
                     type_diff::diff_types
                 };
-                let type_findings = compare_type(
-                    old_shape,
-                    new_shape,
-                    name,
-                    &new_sym.file,
-                    new_sym.line,
-                    new_sym.col,
-                );
+                let type_findings = if old_sym.overloads.len() > 1 || new_sym.overloads.len() > 1 {
+                    crate::languages::typescript::compare::refinements::compare_overload_contracts(
+                        &old_sym.overloads,
+                        &new_sym.overloads,
+                        name,
+                        &new_sym.file,
+                        new_sym.line,
+                        new_sym.col,
+                    )
+                } else {
+                    compare_type(
+                        old_shape,
+                        new_shape,
+                        name,
+                        &new_sym.file,
+                        new_sym.line,
+                        new_sym.col,
+                    )
+                };
                 findings.extend(type_findings);
             }
             if !old_sym

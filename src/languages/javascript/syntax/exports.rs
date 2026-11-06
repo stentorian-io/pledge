@@ -11,7 +11,7 @@ use crate::languages::typescript::model::EnumMember;
 use crate::languages::typescript::syntax::annotations;
 use crate::languages::typescript::types::shape as type_shapes;
 use anyhow::Context;
-use tree_sitter::{Parser, QueryCursor, StreamingIterator};
+use tree_sitter::{QueryCursor, StreamingIterator};
 
 /// The kind of export as detected by tree-sitter — before semantic resolution.
 #[allow(dead_code)]
@@ -205,7 +205,9 @@ fn collect_ambient_decls(
 /// Map a tree-sitter node kind string to a DeclarationKind.
 fn decl_kind_from_node_kind(kind: &str) -> DeclarationKind {
     match kind {
-        "function_declaration" | "function_signature" => DeclarationKind::Function,
+        "function_declaration" | "function_signature" | "generator_function_declaration" => {
+            DeclarationKind::Function
+        }
         "class_declaration" | "abstract_class_declaration" => DeclarationKind::Class,
         "interface_declaration" => DeclarationKind::Interface,
         "type_alias_declaration" => DeclarationKind::TypeAlias,
@@ -227,14 +229,7 @@ pub fn parse_exports(
 ) -> anyhow::Result<Vec<RawExport>> {
     let language = grammar::get_language(&lang);
 
-    let mut parser = Parser::new();
-    parser
-        .set_language(&language)
-        .context("failed to set tree-sitter language")?;
-
-    let tree = parser
-        .parse(source, None)
-        .context("tree-sitter returned None — source bytes may be invalid UTF-8 or too large")?;
+    let tree = grammar::parse_source(source, &lang)?;
 
     let root = tree.root_node();
     let mut exports: Vec<RawExport> = Vec::new();
@@ -250,7 +245,7 @@ pub fn parse_exports(
     // --- Named exports (no `from` clause) ------------------------------------
     // We run the named re-export query first to collect (name, source) pairs,
     // then use that set to exclude them from the plain named export results.
-    let reexport_positions = collect_reexport_positions(source, &language)?;
+    let reexport_positions = collect_reexport_positions(root, source, &language)?;
 
     // Tracks (line, col) positions of names captured by type-only re-export queries
     // so the later NAMED_REEXPORT_QUERY section can skip them (avoiding double-emit).
@@ -1463,9 +1458,10 @@ pub fn parse_exports(
     {
         let nested_query_str = r#"
         (export_statement
-          declaration: (lexical_declaration
-            (variable_declarator
-              name: [(object_pattern) (array_pattern)] @pattern)))
+          declaration: [
+            (lexical_declaration (variable_declarator name: [(object_pattern) (array_pattern)] @pattern))
+            (variable_declaration (variable_declarator name: [(object_pattern) (array_pattern)] @pattern))
+          ])
         "#;
         if let Ok(query) = grammar::cached_query(&language, nested_query_str) {
             let mut cursor = QueryCursor::new();
@@ -1496,77 +1492,6 @@ pub fn parse_exports(
                                     local_name: None,
                                     declaration_site: None,
                                 });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // --- TS 5.2 `using`/`await using` export declarations ----------
-    // The tree-sitter-typescript grammar (v0.23.2) may not have native support for
-    // `export using handle = getResource()` or `export await using h = getResource()`.
-    // If parsing produces ERROR nodes, we apply a heuristic: walk top-level children
-    // looking for export_statement nodes containing ERROR children whose text starts
-    // with "using " or "await using ". If found, extract the identifier after the keyword.
-    // If the grammar parses them correctly (future grammar version), the existing
-    // DECL_EXPORT_QUERY_TS will catch them as lexical_declaration/variable_declarator.
-    // This is graceful degradation — if neither heuristic fires, it's a silent no-op.
-    // INF-01: TypeScriptTsx included — `using`/`await using` is TS 5.2
-    // syntax that TSX also accepts.
-    if matches!(
-        lang,
-        grammar::SourceLanguage::TypeScript | grammar::SourceLanguage::TypeScriptTsx
-    ) {
-        let mut walk_cursor = root.walk();
-        for top_child in root.children(&mut walk_cursor) {
-            if top_child.kind() == "export_statement" || top_child.kind() == "ERROR" {
-                let mut ec = top_child.walk();
-                for export_child in top_child.children(&mut ec) {
-                    if export_child.kind() == "ERROR"
-                        || export_child.kind() == "expression_statement"
-                    {
-                        if let Ok(text) = export_child.utf8_text(source) {
-                            let trimmed = text.trim();
-                            let (keyword_len, is_using) = if trimmed.starts_with("await using ") {
-                                (12usize, true)
-                            } else if trimmed.starts_with("using ") {
-                                (6usize, true)
-                            } else {
-                                (0, false)
-                            };
-                            if is_using {
-                                // Extract identifier: take chars until '=' or whitespace after keyword
-                                let rest = &trimmed[keyword_len..];
-                                let ident: String = rest
-                                    .chars()
-                                    .take_while(|c| c.is_alphanumeric() || *c == '_')
-                                    .collect();
-                                if !ident.is_empty() {
-                                    let already = exports.iter().any(|e| e.name == ident);
-                                    if !already {
-                                        let line = export_child.start_position().row as u32 + 1;
-                                        let col = export_child.start_position().column as u32 + 1;
-                                        exports.push(RawExport {
-                                            name: ident,
-                                            kind: RawExportKind::Named,
-                                            line,
-                                            col,
-                                            source: None,
-                                            decl_kind: Some(DeclarationKind::Variable),
-                                            is_type_only: false,
-                                            release_tag: None,
-                                            compound_members: Vec::new(),
-                                            type_signature: None,
-                                            satisfies_type: None,
-                                            typeof_import_refs: Vec::new(),
-                                            is_proxy_dispatched: false,
-                                            local_name: None,
-                                            declaration_site: None,
-                                        });
-                                    }
-                                }
                             }
                         }
                     }
@@ -2281,41 +2206,6 @@ pub fn parse_exports(
     // JS-only gate — can see it.
     let mut umd_default_bindings: Vec<String> = Vec::new();
     if matches!(lang, grammar::SourceLanguage::JavaScript) {
-        // BUN-03: Build alias map: identifier → (Object, defineProperty) before processing
-        // other queries so BUN-06a can resolve __defProp aliases.
-        let mut cjs_aliases: std::collections::HashMap<String, (String, String)> =
-            std::collections::HashMap::new();
-        if let Ok(query) = grammar::cached_query(&language, queries::ESBUILD_DEFPROP_ALIAS_QUERY) {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                let alias_name = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 0)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("")
-                    .to_string();
-                let obj_name = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 1)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("")
-                    .to_string();
-                let prop_name = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 2)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("")
-                    .to_string();
-                if obj_name == "Object" && prop_name == "defineProperty" && !alias_name.is_empty() {
-                    cjs_aliases.insert(alias_name, (obj_name, prop_name));
-                }
-            }
-        }
-
         // BUN-01: esbuild `0 && (module.exports = {... })` tree-shake wrapper
         if let Ok(query) =
             grammar::cached_query(&language, queries::ESBUILD_TREE_SHAKE_WRAPPER_QUERY)
@@ -2644,233 +2534,33 @@ pub fn parse_exports(
             }
         }
 
-        // BUN-06a: Object.defineProperty / defineProperties / assign exports
-        if let Ok(query) = grammar::cached_query(&language, queries::OBJECT_DEFINE_EXPORT_QUERY) {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                let obj_id = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 0)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("");
-                let method = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 1)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("");
-                let args_node = m.captures.iter().find(|c| c.index == 2).map(|c| c.node);
-
-                // Gate: obj_id is "Object" directly OR an alias to Object.defineProperty
-                let is_object_ref = obj_id == "Object"
-                    || cjs_aliases
-                        .get(obj_id)
-                        .map(|(o, _)| o == "Object")
-                        .unwrap_or(false);
-                if !is_object_ref {
-                    continue;
-                }
-
-                let is_define_prop = method == "defineProperty"
-                    || (cjs_aliases
-                        .get(obj_id)
-                        .map(|(_, p)| p == "defineProperty")
-                        .unwrap_or(false)
-                        && obj_id != "Object");
-
-                match method {
-                    _ if is_define_prop && method != "defineProperties" && method != "assign" => {
-                        // defineProperty(exports|module.exports, "name", descriptor)
-                        if let Some(args) = args_node {
-                            // Check first arg is exports or module.exports
-                            let first_arg = args.named_children(&mut args.walk()).next();
-                            let is_exports_target = first_arg
-                                .and_then(|n| n.utf8_text(source).ok())
-                                .map(|t| t == "exports" || t.starts_with("module."))
-                                .unwrap_or(false);
-                            if !is_exports_target {
-                                continue;
-                            }
-                            // Second arg is the property name string
-                            let second_arg = args.named_children(&mut args.walk()).nth(1);
-                            if let Some(name_node) = second_arg {
-                                if let Ok(raw) = name_node.utf8_text(source) {
-                                    let name = strip_quotes(raw);
-                                    if name == "__esModule" || name.is_empty() {
-                                        continue;
-                                    }
-                                    let line = name_node.start_position().row as u32 + 1;
-                                    let col = name_node.start_position().column as u32 + 1;
-                                    let already = exports.iter().any(|e| e.name == name);
-                                    if !already {
-                                        exports.push(RawExport {
-                                            name: name.to_string(),
-                                            kind: RawExportKind::Named,
-                                            line,
-                                            col,
-                                            source: None,
-                                            decl_kind: None,
-                                            is_type_only: false,
-                                            release_tag: None,
-                                            compound_members: Vec::new(),
-                                            type_signature: None,
-                                            satisfies_type: None,
-                                            typeof_import_refs: Vec::new(),
-                                            is_proxy_dispatched: false,
-                                            local_name: None,
-                                            declaration_site: None,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "defineProperties" => {
-                        if let Some(args) = args_node {
-                            let first_arg = args.named_children(&mut args.walk()).next();
-                            let is_exports_target = first_arg
-                                .and_then(|n| n.utf8_text(source).ok())
-                                .map(|t| t == "exports" || t.starts_with("module."))
-                                .unwrap_or(false);
-                            if !is_exports_target {
-                                continue;
-                            }
-                            // Second arg is the object of descriptors
-                            let second_arg = args.named_children(&mut args.walk()).nth(1);
-                            if let Some(obj_node) = second_arg {
-                                let mut obj_cur = obj_node.walk();
-                                for child in obj_node.children(&mut obj_cur) {
-                                    if child.kind() == "pair" {
-                                        if let Some(key_node) = child.child_by_field_name("key") {
-                                            if let Ok(name) = key_node.utf8_text(source) {
-                                                if name == "__esModule" {
-                                                    continue;
-                                                }
-                                                let line = key_node.start_position().row as u32 + 1;
-                                                let col =
-                                                    key_node.start_position().column as u32 + 1;
-                                                let already =
-                                                    exports.iter().any(|e| e.name == name);
-                                                if !already {
-                                                    exports.push(RawExport {
-                                                        name: name.to_string(),
-                                                        kind: RawExportKind::Named,
-                                                        line,
-                                                        col,
-                                                        source: None,
-                                                        decl_kind: None,
-                                                        is_type_only: false,
-                                                        release_tag: None,
-                                                        compound_members: Vec::new(),
-                                                        type_signature: None,
-                                                        satisfies_type: None,
-                                                        typeof_import_refs: Vec::new(),
-                                                        is_proxy_dispatched: false,
-                                                        local_name: None,
-                                                        declaration_site: None,
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    "assign" => {
-                        if let Some(args) = args_node {
-                            // BUN-10: accept any-position `exports`/`module.*` reference.
-                            // This handles all three real shapes uniformly:
-                            // Object.assign(exports, {…}) — path
-                            // Object.assign(module.exports, {…}, …) — path
-                            // Object.assign({}, exports, {…}) forwards the existing surface.
-                            // The arm short-circuits when no arg references `exports`/`module.*`,
-                            // preserving the precision of the gate.
-                            let all_args: Vec<_> = args.named_children(&mut args.walk()).collect();
-                            let any_arg_is_exports = all_args.iter().any(|n| {
-                                n.utf8_text(source)
-                                    .ok()
-                                    .map(|t| t == "exports" || t.starts_with("module."))
-                                    .unwrap_or(false)
-                            });
-                            if !any_arg_is_exports {
-                                continue;
-                            }
-                            // Walk every object-literal arg's pairs. Skip non-object args
-                            // (including the `exports` reference itself, which has kind
-                            // "identifier" or "member_expression" — not "object").
-                            for obj_node in all_args.iter().filter(|n| n.kind() == "object") {
-                                let mut obj_cur = obj_node.walk();
-                                for child in obj_node.children(&mut obj_cur) {
-                                    if child.kind() == "pair" {
-                                        if let Some(key_node) = child.child_by_field_name("key") {
-                                            if let Ok(name) = key_node.utf8_text(source) {
-                                                if name == "__esModule" {
-                                                    continue;
-                                                }
-                                                let line = key_node.start_position().row as u32 + 1;
-                                                let col =
-                                                    key_node.start_position().column as u32 + 1;
-                                                let already =
-                                                    exports.iter().any(|e| e.name == name);
-                                                if !already {
-                                                    exports.push(RawExport {
-                                                        name: name.to_string(),
-                                                        kind: RawExportKind::Named,
-                                                        line,
-                                                        col,
-                                                        source: None,
-                                                        decl_kind: None,
-                                                        is_type_only: false,
-                                                        release_tag: None,
-                                                        compound_members: Vec::new(),
-                                                        type_signature: None,
-                                                        satisfies_type: None,
-                                                        typeof_import_refs: Vec::new(),
-                                                        is_proxy_dispatched: false,
-                                                        local_name: None,
-                                                        declaration_site: None,
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    } else if child.kind() == "shorthand_property_identifier" {
-                                        if let Ok(name) = child.utf8_text(source) {
-                                            if name == "__esModule" {
-                                                continue;
-                                            }
-                                            let line = child.start_position().row as u32 + 1;
-                                            let col = child.start_position().column as u32 + 1;
-                                            let already = exports.iter().any(|e| e.name == name);
-                                            if !already {
-                                                exports.push(RawExport {
-                                                    name: name.to_string(),
-                                                    kind: RawExportKind::Named,
-                                                    line,
-                                                    col,
-                                                    source: None,
-                                                    decl_kind: None,
-                                                    is_type_only: false,
-                                                    release_tag: None,
-                                                    compound_members: Vec::new(),
-                                                    type_signature: None,
-                                                    satisfies_type: None,
-                                                    typeof_import_refs: Vec::new(),
-                                                    is_proxy_dispatched: false,
-                                                    local_name: None,
-                                                    declaration_site: None,
-                                                });
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+        for property in super::object_exports::collect(root, &language, source)? {
+            let name = property.key.export_name();
+            let kind = match property.key {
+                property_key::PropertyKey::String(_) => RawExportKind::Named,
+                _ => RawExportKind::Symbol,
+            };
+            if !exports
+                .iter()
+                .any(|export| export.name == name && export.kind == kind)
+            {
+                exports.push(RawExport {
+                    name,
+                    kind,
+                    line: property.node.start_position().row as u32 + 1,
+                    col: property.node.start_position().column as u32 + 1,
+                    source: None,
+                    decl_kind: None,
+                    is_type_only: false,
+                    release_tag: None,
+                    compound_members: Vec::new(),
+                    type_signature: None,
+                    satisfies_type: None,
+                    typeof_import_refs: Vec::new(),
+                    is_proxy_dispatched: false,
+                    local_name: None,
+                    declaration_site: None,
+                });
             }
         }
 
@@ -3389,7 +3079,36 @@ pub fn parse_exports(
             export.is_proxy_dispatched = dispatched;
         }
     }
+    normalize_export_names(root, source, &mut exports);
     Ok(exports)
+}
+
+fn normalize_export_names(root: tree_sitter::Node, source: &[u8], exports: &mut [RawExport]) {
+    for export in exports {
+        let position = tree_sitter::Point::new(
+            export.line.saturating_sub(1) as usize,
+            export.col.saturating_sub(1) as usize,
+        );
+        let Some(node) = root.named_descendant_for_point_range(position, position) else {
+            continue;
+        };
+        if node.utf8_text(source).ok() == Some(export.name.as_str()) {
+            if let Some(name) = property_key::source_name(node, source) {
+                export.name = name;
+            }
+        }
+        if let Some(local) = &mut export.local_name {
+            if local.starts_with(['\'', '"']) {
+                if let Some(name) = property_key::decode_string(local) {
+                    *local = name;
+                }
+            } else if local.contains('\\') {
+                if let Some(name) = property_key::decode_string(&format!("\"{local}\"")) {
+                    *local = name;
+                }
+            }
+        }
+    }
 }
 
 /// Retain alias source names and point local exports at declarations, not trailers.
@@ -3410,6 +3129,7 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
                     | "interface_declaration"
                     | "type_alias_declaration"
                     | "function_declaration"
+                    | "generator_function_declaration"
                     | "function_signature"
                     | "enum_declaration"
                     | "variable_declarator"
@@ -3486,7 +3206,9 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
             "class_declaration" | "abstract_class_declaration" => DeclarationKind::Class,
             "interface_declaration" => DeclarationKind::Interface,
             "type_alias_declaration" => DeclarationKind::TypeAlias,
-            "function_declaration" | "function_signature" => DeclarationKind::Function,
+            "function_declaration" | "function_signature" | "generator_function_declaration" => {
+                DeclarationKind::Function
+            }
             "enum_declaration" => DeclarationKind::Enum,
             _ => DeclarationKind::Variable,
         });
@@ -3842,19 +3564,11 @@ fn extract_nested_destructuring_names(
 /// For the alias form, the local-name (`foo`) position is collected so the plain
 /// export query doesn't double-count it.
 fn collect_reexport_positions(
+    root: tree_sitter::Node<'_>,
     source: &[u8],
     language: &tree_sitter::Language,
 ) -> anyhow::Result<std::collections::HashSet<(u32, u32)>> {
     let mut positions = std::collections::HashSet::new();
-
-    let mut parser = Parser::new();
-    parser
-        .set_language(language)
-        .context("failed to set language for dedup parser")?;
-    let tree = parser
-        .parse(source, None)
-        .context("parse failed in dedup")?;
-    let root = tree.root_node();
 
     // Collect positions from the plain re-export query (@name = index 0).
     let query = grammar::cached_query(language, queries::NAMED_REEXPORT_QUERY)

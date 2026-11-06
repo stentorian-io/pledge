@@ -41,3 +41,25 @@ construction prototypes require runtime evidence. Unresolved dispatch emits
 
 These checks describe the property surface. They do not prove arbitrary method
 behavior or private-brand checks through a proxy.
+
+## CommonJS Object helpers
+
+`Object.defineProperty`, `Object.defineProperties`, and `Object.assign` use the
+same constant and symbol key identities as computed assignments. Renaming a
+private constant key or changing a quoted key to an identifier stays compatible.
+The helper must refer to the global `Object` and write to `exports` or
+`module.exports`. A discarded copy such as `Object.assign({}, exports, {extra:1})`
+does not export `extra`; assigning that result to `module.exports` does.
+Uncalled function bodies, shadowed built-ins, and unrelated `module` properties
+cannot supply module exports. Recognized UMD factories and immediately invoked
+function expressions are module initialization contexts.
+
+Changing a statically described CommonJS property from writable to nonwritable
+reports Major `export-writability-removed`. Changing it from enumerable to
+nonenumerable reports Major `export-enumerability-removed`: existing writes or
+`Object.keys` consumers can fail even when the property's value type is unchanged.
+For example, removing `writable: true` from a literal `defineProperty` descriptor
+removes write support because omitted flags default to false. Adding either
+capability is compatible. These checks compare literal descriptors on both sides;
+unknown flags, repeated definitions, proxies, and later runtime mutations require
+additional evidence and are not evaluated as descriptor contracts.

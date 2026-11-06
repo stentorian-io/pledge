@@ -33,6 +33,9 @@ consumer_contracts!(iterator_inputs, "iterator-inputs");
 consumer_contracts!(javascript_interop, "javascript-interop");
 consumer_contracts!(public_types, "public-types");
 consumer_contracts!(readonly, "readonly");
+consumer_contracts!(returned_contracts, "returned-contracts");
+consumer_contracts!(overloads, "overloads");
+consumer_contracts!(nominal_identities, "nominal-identities");
 consumer_contracts!(satisfies, "satisfies");
 
 async fn assert_consumer_contracts(specifications: &str) {
@@ -214,4 +217,33 @@ async fn completed_compiler_evaluation_retires_only_source_type_limits() {
             "{warnings:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn syntax_diagnostics_in_reachable_declarations_degrade_compiler_analysis() {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(
+        directory.path().join("package.json"),
+        r#"{"name":"syntax-diagnostics","type":"module","types":"index.d.ts"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.path().join("index.d.ts"),
+        "export declare const present: number; export * from './broken.js';",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.path().join("broken.d.ts"),
+        "export declare function api(x: string:): string;",
+    )
+    .unwrap();
+    let (mut exports, _) = discover_exports(directory.path()).unwrap();
+    assert!(exports.values().any(|symbol| symbol.name == "present"));
+    let result = compiler::enrich_exports(&mut exports, directory.path())
+        .await
+        .unwrap();
+    assert!(
+        matches!(&result, compiler::EnrichResult::Degraded(message) if message.contains("TS1005")),
+        "{result:?}"
+    );
 }

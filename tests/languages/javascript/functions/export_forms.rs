@@ -270,3 +270,41 @@ fn test_anonymous_default_function_async_to_sync() {
         findings.iter().map(|f| (&f.rule, &f.message)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn replacing_a_function_expression_with_an_arrow_removes_construction() {
+    use pledge::ecosystems::node::discovery::discover_exports;
+    use pledge::languages::javascript::compare::structure::compare_structural_diff;
+
+    for (replacement, breaking) in [
+        ("()=>{}", true),
+        ("async function(){}", true),
+        ("function*(){}", true),
+        ("function renamed(){}", false),
+    ] {
+        let old = tempfile::tempdir().unwrap();
+        let new = tempfile::tempdir().unwrap();
+        for (root, expression) in [(&old, "function(){}"), (&new, replacement)] {
+            std::fs::write(
+                root.path().join("package.json"),
+                r#"{"name":"construction","type":"module","exports":"./index.js"}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                root.path().join("index.js"),
+                format!("export const Api={expression};"),
+            )
+            .unwrap();
+        }
+        let (before, _) = discover_exports(old.path()).unwrap();
+        let (after, _) = discover_exports(new.path()).unwrap();
+        let findings = compare_structural_diff(old.path(), new.path(), &before, &after);
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "function-constructor-removed"),
+            breaking,
+            "{replacement}: {findings:?}"
+        );
+    }
+}

@@ -27,7 +27,7 @@ pub(crate) const NAMED_EXPORT_ALIAS_QUERY: &str = r#"
   (export_clause
     (export_specifier
       name: (identifier) @local_name
-      alias: (identifier) @alias_name)))
+      alias: [(identifier) (string)] @alias_name)))
 "#;
 
 /// INF-06: JS grammar's `export { foo as default }` alias form.
@@ -107,7 +107,10 @@ pub(crate) const DECL_EXPORT_QUERY_JS: &str = r#"
   declaration: [
     (lexical_declaration
       (variable_declarator name: (identifier) @name))
+    (variable_declaration
+      (variable_declarator name: (identifier) @name))
     (function_declaration name: (identifier) @name)
+    (generator_function_declaration name: (identifier) @name)
     (class_declaration name: (identifier) @name)
   ])
 "#;
@@ -121,7 +124,10 @@ pub(crate) const DECL_EXPORT_QUERY_TS: &str = r#"
   declaration: [
     (lexical_declaration
       (variable_declarator name: (identifier) @name))
+    (variable_declaration
+      (variable_declarator name: (identifier) @name))
     (function_declaration name: (identifier) @name)
+    (generator_function_declaration name: (identifier) @name)
     (function_signature name: (identifier) @name)
     (class_declaration name: (type_identifier) @name)
     (abstract_class_declaration name: (type_identifier) @name)
@@ -153,7 +159,7 @@ pub(crate) const STAR_EXPORT_QUERY: &str = r#"
 pub(crate) const NAMESPACE_EXPORT_QUERY: &str = r#"
 (export_statement
   (namespace_export
-    (identifier) @ns_name)
+    [(identifier) (string)] @ns_name)
   source: (string) @source)
 "#;
 
@@ -163,7 +169,7 @@ pub(crate) const NAMED_REEXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
     (export_specifier
-      name: (identifier) @name))
+      name: [(identifier) (string)] @name))
   source: (string) @source)
 "#;
 
@@ -177,8 +183,8 @@ pub(crate) const NAMED_REEXPORT_ALIAS_QUERY: &str = r#"
 (export_statement
   (export_clause
     (export_specifier
-      name: (identifier) @local_name
-      alias: (identifier) @alias_name))
+      name: [(identifier) (string)] @local_name
+      alias: [(identifier) (string)] @alias_name))
   source: (string) @source)
 "#;
 
@@ -331,7 +337,7 @@ pub(crate) const DEFAULT_SPECIFIER_ALIAS_QUERY: &str = r#"
   (export_clause
     (export_specifier
       name: "default"
-      alias: (identifier) @alias_name)))
+      alias: [(identifier) (string)] @alias_name)))
 "#;
 
 /// Captures `export { default } from './foo'` — re-export of default.
@@ -351,7 +357,7 @@ pub(crate) const DEFAULT_SPECIFIER_ALIAS_REEXPORT_QUERY: &str = r#"
   (export_clause
     (export_specifier
       name: "default"
-      alias: (identifier) @alias_name))
+      alias: [(identifier) (string)] @alias_name))
   source: (string) @source)
 "#;
 
@@ -534,17 +540,6 @@ pub(crate) const ESBUILD_EXPORT_HELPER_QUERY: &str = r#"
   arguments: (arguments
     (identifier) @target
     (object) @prop_obj))
-"#;
-
-/// BUN-03: `var __defProp = Object.defineProperty;` alias binding.
-/// We capture alias_name → (obj_name, prop_name) to resolve later __defProp calls.
-/// Does NOT emit exports on its own — builds cjs_aliases map. BUN-03.
-pub(crate) const ESBUILD_DEFPROP_ALIAS_QUERY: &str = r#"
-(variable_declarator
-  name: (identifier) @alias_name
-  value: (member_expression
-    object: (identifier) @obj_name
-    property: (property_identifier) @prop_name))
 "#;
 
 /// BUN-04: tsc `exports.foo = void 0;` placeholder.

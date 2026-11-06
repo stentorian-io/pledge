@@ -66,6 +66,7 @@ pub(crate) struct ExtractedDecl {
     // BEH-01/BEH-02:
     is_async: bool,
     is_generator: bool,
+    is_constructible: bool,
     // TLF rules:
     construct_signatures: Vec<ConstructSignature>,
     this_param_type: Option<String>,
@@ -104,17 +105,7 @@ pub(crate) fn parse_source_for_extract(
     source: &[u8],
     lang: &grammar::SourceLanguage,
 ) -> Option<tree_sitter::Tree> {
-    // INF-01: TypeScriptTsx routes to LANGUAGE_TSX — strict superset
-    // of LANGUAGE_TYPESCRIPT so every TS query still parses identically.
-    let ts_lang: tree_sitter::Language = match lang {
-        grammar::SourceLanguage::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        grammar::SourceLanguage::TypeScriptTsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
-        grammar::SourceLanguage::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
-    };
-
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&ts_lang).ok()?;
-    parser.parse(source, None)
+    grammar::parse_source(source, lang).ok()
 }
 
 /// Read + parse a source file with caching keyed by absolute path.
@@ -192,7 +183,7 @@ pub(crate) fn extract_declaration_from_tree(
     let is_arrow_function = kind == "arrow_function";
     let is_anonymous_function = matches!(
         kind,
-        "function_expression" | "generator_function_expression"
+        "function_expression" | "generator_function" | "generator_function_expression"
     );
     let is_anonymous_class = kind == "class";
 
@@ -331,6 +322,9 @@ pub(crate) fn extract_declaration_from_tree(
         overloads,
         is_async: is_async_fn,
         is_generator: is_generator_fn,
+        is_constructible: matches!(kind, "function_expression" | "function_declaration")
+            && !is_async_fn
+            && !is_generator_fn,
         construct_signatures,
         this_param_type,
         assertion_target,
@@ -364,7 +358,11 @@ pub(crate) fn find_decl_in_node<'a>(
                 "internal_module" => {
                     let matches_ns = child
                         .child_by_field_name("name")
-                        .and_then(|n| n.utf8_text(source).ok())
+                        .and_then(|n| {
+                            crate::languages::javascript::syntax::property_key::source_name(
+                                n, source,
+                            )
+                        })
                         .map(|n| n == ns_name)
                         .unwrap_or(false);
                     if matches_ns {
@@ -394,38 +392,52 @@ pub(crate) fn find_decl_in_node<'a>(
         let candidate = match kind {
             "class_declaration" | "abstract_class_declaration" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "function_declaration" | "generator_function_declaration" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "interface_declaration" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "type_alias_declaration" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "enum_declaration" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "function_signature" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "internal_module" => child
                 .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source).ok())
-                .filter(|n| *n == name)
+                .and_then(|n| {
+                    crate::languages::javascript::syntax::property_key::source_name(n, source)
+                })
+                .filter(|n| n == name)
                 .map(|_| child),
             "lexical_declaration" | "variable_declaration" => {
                 // Look for variable_declarator whose name matches,
@@ -437,7 +449,11 @@ pub(crate) fn find_decl_in_node<'a>(
                     if ld_child.kind() == "variable_declarator" {
                         let matches_name = ld_child
                             .child_by_field_name("name")
-                            .and_then(|n| n.utf8_text(source).ok())
+                            .and_then(|n| {
+                                crate::languages::javascript::syntax::property_key::source_name(
+                                    n, source,
+                                )
+                            })
                             .map(|n| n == name)
                             .unwrap_or(false);
                         if matches_name {
@@ -448,6 +464,7 @@ pub(crate) fn find_decl_in_node<'a>(
                                     value_kind,
                                     "arrow_function"
                                         | "function_expression"
+                                        | "generator_function"
                                         | "generator_function_expression"
                                 ) {
                                     let found_row = value.start_position().row;
@@ -467,7 +484,7 @@ pub(crate) fn find_decl_in_node<'a>(
                 }
                 None
             }
-            "function_expression" | "generator_function_expression" => {
+            "function_expression" | "generator_function" | "generator_function_expression" => {
                 // Anonymous function expression — only matches when name == "default"
                 // (export default function() {})
                 // Note: tree-sitter uses "function_expression" (not "function") for anonymous functions.
@@ -489,7 +506,18 @@ pub(crate) fn find_decl_in_node<'a>(
                 None
             }
             "export_statement" | "ambient_declaration" => {
-                // Recurse into wrappers
+                if name == "default"
+                    && child
+                        .children(&mut child.walk())
+                        .any(|token| token.kind() == "default")
+                {
+                    if let Some(signature) = child
+                        .child_by_field_name("declaration")
+                        .filter(|node| node.kind() == "function_signature")
+                    {
+                        return Some(signature);
+                    }
+                }
                 find_decl_in_node(child, source, name, hint_row)
             }
             "expression_statement" => {
@@ -501,14 +529,16 @@ pub(crate) fn find_decl_in_node<'a>(
                         let right = es_child.child_by_field_name("right");
                         if let (Some(left_node), Some(right_node)) = (left, right) {
                             if left_node.kind() == "member_expression" {
-                                let obj = left_node
-                                    .child_by_field_name("object")
-                                    .and_then(|n| n.utf8_text(source).ok());
+                                let obj = left_node.child_by_field_name("object").and_then(|n| {
+                                    crate::languages::javascript::syntax::property_key::source_name(
+                                        n, source,
+                                    )
+                                });
                                 let prop = left_node
                                     .child_by_field_name("property")
-                                    .and_then(|n| n.utf8_text(source).ok());
+                                    .and_then(|n| crate::languages::javascript::syntax::property_key::source_name(n, source));
 
-                                match (obj, prop) {
+                                match (obj.as_deref(), prop.as_deref()) {
                                     (Some("module"), Some("exports")) if name == "default" => {
                                         // module.exports = class/function/arrow
                                         let rhs_kind = right_node.kind();
@@ -594,7 +624,11 @@ pub(crate) fn collect_overload_shapes_from_tree(
                 if export_child.kind() == "function_signature" {
                     let matches_name = export_child
                         .child_by_field_name("name")
-                        .and_then(|n| n.utf8_text(source).ok())
+                        .and_then(|n| {
+                            crate::languages::javascript::syntax::property_key::source_name(
+                                n, source,
+                            )
+                        })
                         .map(|n| n == name)
                         .unwrap_or(false);
                     if matches_name {
@@ -654,7 +688,11 @@ pub(crate) fn collect_interface_members_from_tree(
                 "interface_declaration" => {
                     let matches = child
                         .child_by_field_name("name")
-                        .and_then(|n| n.utf8_text(source).ok())
+                        .and_then(|n| {
+                            crate::languages::javascript::syntax::property_key::source_name(
+                                n, source,
+                            )
+                        })
                         .map(|n| n == name)
                         .unwrap_or(false);
                     if matches {
@@ -726,6 +764,9 @@ pub fn compare_structural_diff(
     let mut new_parse_cache: HashMap<PathBuf, Option<(Vec<u8>, tree_sitter::Tree)>> =
         HashMap::new();
 
+    let mut old_descriptors = HashMap::new();
+    let mut new_descriptors = HashMap::new();
+
     for (key, old_sym) in old_exports {
         let name = key.name.as_str();
         let Some(new_sym) = new_exports.get(key) else {
@@ -761,6 +802,60 @@ pub fn compare_structural_diff(
             continue;
         };
 
+        let descriptors =
+            |tree: &tree_sitter::Tree, source: &[u8], language: &grammar::SourceLanguage| {
+                let mut properties = HashMap::new();
+                for property in crate::languages::javascript::syntax::object_exports::collect(
+                    tree.root_node(),
+                    &grammar::get_language(language),
+                    source,
+                )
+                .unwrap_or_default()
+                {
+                    let name = property.key.export_name();
+                    // Repeated descriptors can inherit flags from earlier definitions.
+                    // Without evaluating that sequence, neither default is certain.
+                    properties
+                        .entry(name)
+                        .and_modify(|descriptor| *descriptor = Default::default())
+                        .or_insert(property.descriptor);
+                }
+                properties
+            };
+        let old_properties = old_descriptors
+            .entry(old_path.clone())
+            .or_insert_with(|| descriptors(old_tree, old_source, &old_lang));
+        let new_properties = new_descriptors
+            .entry(new_path.clone())
+            .or_insert_with(|| descriptors(new_tree, new_source, &new_lang));
+        if let (Some(before), Some(after)) = (old_properties.get(name), new_properties.get(name)) {
+            for (previous, current, rule, capability) in [
+                (
+                    before.writable,
+                    after.writable,
+                    super::rules::RULE_EXPORT_WRITABILITY_REMOVED,
+                    "writable",
+                ),
+                (
+                    before.enumerable,
+                    after.enumerable,
+                    super::rules::RULE_EXPORT_ENUMERABILITY_REMOVED,
+                    "enumerable",
+                ),
+            ] {
+                if previous == Some(true) && current == Some(false) {
+                    findings.push(Finding {
+                        severity: Severity::Major,
+                        rule,
+                        file: new_sym.file.clone(),
+                        line: new_sym.line,
+                        col: new_sym.col,
+                        message: format!("CommonJS export `{name}` is no longer {capability}"),
+                    });
+                }
+            }
+        }
+
         // Extract all shapes from both versions
         let Some(old_decl) = extract_declaration_from_tree(
             old_tree,
@@ -778,6 +873,17 @@ pub fn compare_structural_diff(
         ) else {
             continue;
         };
+
+        if old_decl.is_constructible && new_decl.is_function && !new_decl.is_constructible {
+            findings.push(Finding {
+                severity: Severity::Major,
+                rule: super::rules::RULE_FUNCTION_CONSTRUCTOR_REMOVED,
+                file: new_sym.file.clone(),
+                line: new_sym.line,
+                col: new_sym.col,
+                message: format!("function `{name}` no longer supports construction with new"),
+            });
+        }
 
         // CLS-01..09: class diff
         if old_decl.is_class && new_decl.is_class {

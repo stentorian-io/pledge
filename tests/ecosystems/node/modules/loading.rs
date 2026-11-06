@@ -96,3 +96,57 @@ fn node_consumer_confirms_the_require_regression() {
     assert!(!result.status.success());
     assert!(String::from_utf8_lossy(&result.stderr).contains("ERR_REQUIRE_ASYNC_MODULE"));
 }
+
+#[test]
+fn runtime_directory_loading_uses_javascript_before_typescript_sources() {
+    let manifest = r#"{"type":"module","exports":"./index.cjs"}"#;
+    let old = tempfile::tempdir().unwrap();
+    let new = tempfile::tempdir().unwrap();
+    for (package, runtime_source) in [
+        (&old, "export const helper=1;"),
+        (&new, "await Promise.resolve(); export const helper=1;"),
+    ] {
+        std::fs::create_dir(package.path().join("dep")).unwrap();
+        std::fs::write(package.path().join("package.json"), manifest).unwrap();
+        std::fs::write(
+            package.path().join("index.cjs"),
+            "require('./dep'); exports.ok=1;",
+        )
+        .unwrap();
+        std::fs::write(
+            package.path().join("dep/index.ts"),
+            "export const helper=1;",
+        )
+        .unwrap();
+        std::fs::write(package.path().join("dep/index.js"), runtime_source).unwrap();
+    }
+    let findings = compare_exports_map_diff(old.path(), new.path());
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == "module-became-async"),
+        "{findings:?}"
+    );
+    assert!(compare_exports_map_diff(old.path(), old.path()).is_empty());
+}
+
+#[test]
+fn await_using_makes_the_module_graph_asynchronous() {
+    let old = package(r#""./index.mjs""#, "export const api=1;", "");
+    let asynchronous = package(
+        r#""./index.mjs""#,
+        "await using resource = { [Symbol.asyncDispose]() {} }; export const api=1;",
+        "",
+    );
+    let synchronous = package(
+        r#""./index.mjs""#,
+        "using resource = { [Symbol.dispose]() {} }; export const api=1;",
+        "",
+    );
+    assert!(compare_exports_map_diff(old.path(), asynchronous.path())
+        .iter()
+        .any(|finding| finding.rule == "module-became-async"));
+    assert!(!compare_exports_map_diff(old.path(), synchronous.path())
+        .iter()
+        .any(|finding| finding.rule == "module-became-async"));
+}

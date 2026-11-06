@@ -1,5 +1,5 @@
 use crate::ecosystems::node::compare::exports::{
-    is_valid_export_target, parse_exports_condition_node, select_condition,
+    export_target_path, exports_config_error, parse_exports_condition_node, select_condition,
 };
 use crate::languages::javascript::syntax::grammar;
 use anyhow::Context;
@@ -47,7 +47,10 @@ pub(crate) fn resolve_entry_points_with_warnings(
 
     let mut results: Vec<EntryPoint> = Vec::new();
 
-    if let Some(exports) = pkg.get("exports") {
+    if let Some(exports) = pkg.get("exports").filter(|exports| !exports.is_null()) {
+        if let Some(error) = exports_config_error(exports) {
+            return Ok((Vec::new(), vec![error]));
+        }
         results.extend(resolve_exports_value_with_warnings(
             exports,
             pkg_root,
@@ -96,9 +99,9 @@ pub(crate) fn resolve_entry_points_with_warnings(
     // Non-wildcard paths are treated as direct entry points for type analysis.
     if let Some(tv) = pkg.get("typesVersions") {
         if let Some(tv_obj) = tv.as_object() {
-            for (_version_range, mappings) in tv_obj {
+            for (version_range, mappings) in tv_obj {
                 if let Some(map_obj) = mappings.as_object() {
-                    for (_pattern, targets) in map_obj {
+                    for (pattern, targets) in map_obj {
                         if let Some(arr) = targets.as_array() {
                             for target in arr {
                                 if let Some(path_str) = target.as_str() {
@@ -109,8 +112,14 @@ pub(crate) fn resolve_entry_points_with_warnings(
                                         let abs = pkg_root.join(path_str.trim_start_matches("./"));
                                         results.push(EntryPoint {
                                             path: abs,
-                                            condition: Some("typesVersions".to_string()),
-                                            subpath: ".".to_string(),
+                                            condition: Some(format!(
+                                                "typesVersions/{version_range}"
+                                            )),
+                                            subpath: if pattern == "*" {
+                                                ".".into()
+                                            } else {
+                                                format!("./{pattern}")
+                                            },
                                         });
                                     } else {
                                         // Wildcard path expansion.
@@ -139,12 +148,19 @@ pub(crate) fn resolve_entry_points_with_warnings(
                                                             || file_name.ends_with(".d.mts")
                                                             || file_name.ends_with(".d.cts")
                                                         {
+                                                            let subpath = format!(
+                                                                "./{}",
+                                                                pattern.replace(
+                                                                    '*',
+                                                                    declaration_stem(file_name)
+                                                                )
+                                                            );
                                                             results.push(EntryPoint {
                                                                 path: file_path,
-                                                                condition: Some(
-                                                                    "typesVersions".to_string(),
-                                                                ),
-                                                                subpath: ".".to_string(),
+                                                                condition: Some(format!(
+                                                                    "typesVersions/{version_range}"
+                                                                )),
+                                                                subpath,
                                                             });
                                                         }
                                                     }
@@ -232,12 +248,10 @@ pub(crate) fn resolve_exports_value_with_warnings(
     let mut results = Vec::new();
     match value {
         serde_json::Value::String(rel) => {
-            if !is_valid_export_target(rel) {
+            let Some(path) = export_target_path(base_path, rel) else {
                 warnings.push(format!("invalid `exports` target `{rel}`: expected a ./ path within the package without traversal or node_modules segments"));
                 return results;
-            }
-            // Leaf: a concrete file path relative to the package root.
-            let path = base_path.join(rel.trim_start_matches("./"));
+            };
             results.push(EntryPoint {
                 path,
                 condition: condition.map(|s| s.to_string()),
@@ -338,8 +352,8 @@ pub(crate) fn resolve_exports_value_with_warnings(
                                 && select_condition(&alternatives[index], active)
                                     .flatten()
                                     .is_some_and(|target| {
-                                        base_path.join(target.trim_start_matches("./"))
-                                            == entry.path
+                                        export_target_path(base_path, target).as_ref()
+                                            == Some(&entry.path)
                                     })
                         })
                 }));
@@ -377,6 +391,13 @@ pub(crate) fn resolve_exports_value_with_warnings(
         }
     }
     results
+}
+
+fn declaration_stem(file_name: &str) -> &str {
+    [".d.ts", ".d.mts", ".d.cts", ".ts", ".mts", ".cts"]
+        .iter()
+        .find_map(|extension| file_name.strip_suffix(extension))
+        .unwrap_or(file_name)
 }
 
 /// Enumerate the condition combinations that can select an array alternative.

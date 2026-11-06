@@ -2,8 +2,79 @@ use crate::languages::typescript::types::shape as type_shapes;
 use crate::languages::typescript::types::shape::{
     LiteralKind, ParamShape, TypePredicateShape, TypeShape,
 };
+use std::borrow::Cow;
 
 const MAX_DEPTH: usize = 20;
+
+/// A concrete tuple rest parameter describes ordinary argument positions.
+pub(crate) fn argument_parameters(params: &[ParamShape]) -> Cow<'_, [ParamShape]> {
+    let Some(rest) = params.last().filter(|parameter| parameter.rest) else {
+        return Cow::Borrowed(params);
+    };
+    let TypeShape::Tuple(elements) = &rest.shape else {
+        return Cow::Borrowed(params);
+    };
+    if elements.iter().enumerate().any(|(index, element)| {
+        element.rest
+            && (index + 1 != elements.len() || !matches!(element.shape, TypeShape::Array(_)))
+    }) {
+        return Cow::Borrowed(params);
+    }
+    let mut expanded = params[..params.len() - 1].to_vec();
+    expanded.extend(elements.iter().enumerate().map(|(index, element)| {
+        ParamShape {
+            name: element
+                .label
+                .clone()
+                .unwrap_or_else(|| format!("{}[{index}]", rest.name)),
+            optional: element.optional,
+            rest: element.rest,
+            shape: element.shape.clone(),
+        }
+    }));
+    Cow::Owned(expanded)
+}
+
+pub(crate) fn argument_type(params: &[ParamShape], index: usize) -> Option<&TypeShape> {
+    let parameter = params
+        .get(index)
+        .or_else(|| params.last().filter(|parameter| parameter.rest))?;
+    match (&parameter.shape, parameter.rest) {
+        (TypeShape::Array(element), true) => Some(element),
+        _ => Some(&parameter.shape),
+    }
+}
+
+/// Direct calls retain both the minimum and maximum accepted argument counts.
+/// Callback assignability separately permits callbacks that ignore arguments.
+pub(crate) fn accepts_calls(offered: &[ParamShape], required: &[ParamShape], depth: usize) -> bool {
+    let offered = argument_parameters(offered);
+    let required = argument_parameters(required);
+    let minimum = |params: &[ParamShape]| {
+        params
+            .iter()
+            .filter(|param| !param.optional && !param.rest)
+            .count()
+    };
+    if minimum(&offered) > minimum(&required) {
+        return false;
+    }
+    if !offered.last().is_some_and(|param| param.rest)
+        && (required.last().is_some_and(|param| param.rest) || offered.len() < required.len())
+    {
+        return false;
+    }
+    (0..required.len().max(offered.len())).all(|index| {
+        match (
+            argument_type(&offered, index),
+            argument_type(&required, index),
+        ) {
+            (Some(offered), Some(required)) => is_subtype_of(required, offered, depth + 1),
+            (_, None) => true,
+            (None, Some(_)) => false,
+        }
+    })
+}
 
 /// Determine whether `sub` is a structural subtype of `sup` under TypeScript
 /// variance semantics.
@@ -15,6 +86,9 @@ const MAX_DEPTH: usize = 20;
 pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
     use crate::languages::typescript::types::shape::PrimitiveKind::*;
     use crate::languages::typescript::types::shape::TypeShape::*;
+
+    let sub = sub.without_nominal();
+    let sup = sup.without_nominal();
 
     // Depth cap: assume not a subtype (conservative)
     if depth >= MAX_DEPTH {
@@ -216,6 +290,8 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
                 contract: sup_contract,
             },
         ) => {
+            let sub_params = argument_parameters(sub_params);
+            let sup_params = argument_parameters(sup_params);
             if !accepts_receiver(
                 sub_contract.receiver.as_deref(),
                 sup_contract.receiver.as_deref(),
@@ -238,19 +314,10 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
             // For each position that both share, params are CONTRAVARIANT:
             // sup's param type must be a subtype of sub's param type
             // (the caller passes sup's type; sub must accept anything sup accepts)
-            fn at(params: &[ParamShape], index: usize) -> Option<&TypeShape> {
-                let parameter = params
-                    .get(index)
-                    .or_else(|| params.last().filter(|parameter| parameter.rest))?;
-                if parameter.rest {
-                    if let Array(element) = &parameter.shape {
-                        return Some(element);
-                    }
-                }
-                Some(&parameter.shape)
-            }
             for i in 0..sub_params.len().max(sup_params.len()) {
-                let (Some(offered), Some(required)) = (at(sub_params, i), at(sup_params, i)) else {
+                let (Some(offered), Some(required)) =
+                    (argument_type(&sub_params, i), argument_type(&sup_params, i))
+                else {
                     continue;
                 };
                 // contravariant: sup param must accept what sub param accepts
@@ -260,7 +327,8 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
             }
 
             // Return type is COVARIANT: sub's return must be a subtype of sup's return
-            is_subtype_of(sub_ret, sup_ret, depth + 1)
+            matches!(sup_ret.as_ref(), Primitive(Void))
+                || is_subtype_of(sub_ret, sup_ret, depth + 1)
         }
 
         // Library iterator types accept next inputs and produce yield/return outputs.
@@ -274,7 +342,11 @@ pub fn is_subtype_of(sub: &TypeShape, sup: &TypeShape, depth: usize) -> bool {
                 args: sup_args,
             },
         ) => {
-            sub_name == sup_name
+            (sub_name == sup_name
+                || matches!(
+                    (sub_name.as_str(), sup_name.as_str()),
+                    ("Map", "ReadonlyMap") | ("Set", "ReadonlySet") | ("Promise", "PromiseLike")
+                ))
                 && sub_args.len() == sup_args.len()
                 && sub_args.iter().zip(sup_args.iter()).enumerate().all(
                     |(index, (sub_argument, sup_argument))| {
@@ -407,6 +479,7 @@ fn tuple_is_subtype(
 
 /// Example: `format_type(&Union([String, Number]))` returns `"string | number"`.
 pub fn format_type(shape: &TypeShape) -> String {
+    let shape = shape.without_nominal();
     use crate::languages::typescript::types::shape::PrimitiveKind::*;
     use crate::languages::typescript::types::shape::TypeShape::*;
 

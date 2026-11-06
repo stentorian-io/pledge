@@ -1641,8 +1641,14 @@ pub fn resolve_module_path(from_file: &Path, specifier: &str) -> Vec<PathBuf> {
     candidates.push(append_extension(&joined, "mjs"));
     candidates.push(append_extension(&joined, "cjs"));
 
-    // 5. Directory index files (complete candidate list).
-    // Order: TypeScript source → JavaScript source → Declaration files.
+    // Runtime traversal must prefer the directory's JavaScript over TypeScript
+    // sources shipped beside it. TypeScript callers keep extension substitution.
+    if !typescript {
+        for extension in ["js", "json", "node"] {
+            candidates.push(joined.join(format!("index.{extension}")));
+        }
+    }
+    // TypeScript and remaining source/declaration directory candidates.
     candidates.push(joined.join("index.ts"));
     candidates.push(joined.join("index.tsx"));
     candidates.push(joined.join("index.mts"));

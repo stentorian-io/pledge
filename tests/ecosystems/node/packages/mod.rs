@@ -14,6 +14,7 @@ mod imports;
 mod metadata;
 mod optional_peers;
 mod requirements;
+mod resolution_contracts;
 mod side_effects;
 mod surface_identity;
 mod wildcard_expansion;

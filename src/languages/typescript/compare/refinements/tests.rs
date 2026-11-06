@@ -793,3 +793,102 @@ fn later_overloads_preserve_returns_and_parameter_acceptance() {
         );
     }
 }
+
+#[test]
+fn overload_replacements_can_widen_or_cover_multiple_old_signatures() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for (before, after) in [
+        (
+            vec!["(x: string) => string", "(x: number) => string"],
+            vec!["(x: string | number) => string"],
+        ),
+        (
+            vec!["(x: string) => string", "(x: number) => number"],
+            vec!["(x?: string) => string", "(x: number) => number"],
+        ),
+        (
+            vec!["(x: string) => string", "(x: number) => number"],
+            vec!["(x: number) => number", "(x: string) => string"],
+        ),
+    ] {
+        let before: Vec<_> = before.into_iter().map(parse_type_string).collect();
+        let after: Vec<_> = after.into_iter().map(parse_type_string).collect();
+        let findings =
+            compare_overload_contracts(&before, &after, "api", &PathBuf::from("index.ts"), 1, 1);
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+}
+
+#[test]
+fn reordering_nonfirst_overloads_preserves_selected_results() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    let before: Vec<_> = [
+        "(x: boolean) => boolean",
+        "(x: string) => string",
+        "(x: string | number) => number",
+    ]
+    .into_iter()
+    .map(parse_type_string)
+    .collect();
+    let after = vec![before[0].clone(), before[2].clone(), before[1].clone()];
+    let findings =
+        compare_overload_contracts(&before, &after, "api", &PathBuf::from("index.ts"), 1, 1);
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.rule == RULE_OVERLOAD_REMOVED
+                && finding.severity == Severity::Major),
+        "{findings:?}"
+    );
+}
+
+#[test]
+fn newly_inserted_and_partially_overlapping_overloads_preserve_selected_results() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    for (before, after) in [
+        (
+            vec!["(x: string) => string"],
+            vec!["(x: string | number) => number", "(x: string) => string"],
+        ),
+        (
+            vec![
+                "(x: string | number) => string",
+                "(x: string | boolean) => number",
+            ],
+            vec![
+                "(x: string | boolean) => number",
+                "(x: string | number) => string",
+            ],
+        ),
+    ] {
+        let before: Vec<_> = before.into_iter().map(parse_type_string).collect();
+        let after: Vec<_> = after.into_iter().map(parse_type_string).collect();
+        let findings =
+            compare_overload_contracts(&before, &after, "api", &PathBuf::from("index.ts"), 1, 1);
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == RULE_OVERLOAD_REMOVED
+                    && finding.severity == Severity::Major),
+            "{findings:?}"
+        );
+    }
+}
+
+#[test]
+fn an_already_shadowed_overload_does_not_invent_a_changed_result() {
+    use crate::languages::typescript::types::parser::parse_type_string;
+    let before: Vec<_> = [
+        "(x: string) => string",
+        "(x: number) => string",
+        "(x: string | number) => number",
+    ]
+    .into_iter()
+    .map(parse_type_string)
+    .collect();
+    let after = vec![before[1].clone(), before[0].clone(), before[2].clone()];
+    assert!(
+        compare_overload_contracts(&before, &after, "api", &PathBuf::from("index.ts"), 1, 1)
+            .is_empty()
+    );
+}

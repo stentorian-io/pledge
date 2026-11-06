@@ -164,8 +164,15 @@ pub(crate) fn find_statement_ancestor(mut node: tree_sitter::Node) -> tree_sitte
             return node;
         }
         if parent_kind == "export_statement" || parent_kind == "ambient_declaration" {
-            // The export_statement or ambient_declaration is the relevant statement
-            return parent;
+            // `export declare` nests ambient_declaration inside export_statement.
+            // Its documentation precedes the outer wrapper, including inline docs.
+            let mut statement = parent;
+            while let Some(wrapper) = statement.parent().filter(|parent| {
+                matches!(parent.kind(), "export_statement" | "ambient_declaration")
+            }) {
+                statement = wrapper;
+            }
+            return statement;
         }
         node = parent;
     }

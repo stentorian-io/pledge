@@ -180,7 +180,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./default.js`: cannot resolve `.prisma/client/default` from <old>/default.js"
+      "message": "cannot verify module loading of `./default.js`: cannot resolve `.prisma/client/default` from <old>/default.js"
     },
     {
       "severity": "Warning",
@@ -188,7 +188,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./edge.js`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
+      "message": "cannot verify module loading of `./edge.js`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
     },
     {
       "severity": "Warning",
@@ -196,7 +196,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./edge`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
+      "message": "cannot verify module loading of `./edge`: cannot resolve `.prisma/client/edge` from <old>/edge.js"
     },
     {
       "severity": "Warning",
@@ -204,7 +204,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./generator-build/index.js`: oversized source skipped: <old>/generator-build/index.js"
+      "message": "cannot verify module loading of `./generator-build/index.js`: oversized source skipped: <old>/generator-build/index.js"
     },
     {
       "severity": "Warning",
@@ -212,7 +212,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./generator-build`: oversized source skipped: <old>/generator-build/index.js"
+      "message": "cannot verify module loading of `./generator-build`: oversized source skipped: <old>/generator-build/index.js"
     },
     {
       "severity": "Warning",
@@ -220,7 +220,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./index-browser.js`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+      "message": "cannot verify module loading of `./index-browser.js`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
     },
     {
       "severity": "Warning",
@@ -228,7 +228,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./index-browser`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+      "message": "cannot verify module loading of `./index-browser`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
     },
     {
       "severity": "Warning",
@@ -236,7 +236,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./index.js`: cannot resolve `.prisma/client/default` from <old>/index.js"
+      "message": "cannot verify module loading of `./index.js`: cannot resolve `.prisma/client/default` from <old>/index.js"
     },
     {
       "severity": "Warning",
@@ -244,7 +244,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./index`: cannot resolve `.prisma/client/default` from <old>/index.js"
+      "message": "cannot verify module loading of `./index`: cannot resolve `.prisma/client/default` from <old>/index.js"
     },
     {
       "severity": "Warning",
@@ -252,7 +252,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/client.js`: minified (long line) source skipped: <old>/runtime/client.js"
+      "message": "cannot verify module loading of `./runtime/client.js`: minified (long line) source skipped: <old>/runtime/client.js"
     },
     {
       "severity": "Warning",
@@ -260,7 +260,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/client.mjs`: minified (long line) source skipped: <old>/runtime/client.mjs"
+      "message": "cannot verify module loading of `./runtime/client.mjs`: minified (long line) source skipped: <old>/runtime/client.mjs"
     },
     {
       "severity": "Warning",
@@ -268,7 +268,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.js"
+      "message": "cannot verify module loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.js"
     },
     {
       "severity": "Warning",
@@ -276,7 +276,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.mjs"
+      "message": "cannot verify module loading of `./runtime/client`: minified (long line) source skipped: <old>/runtime/client.mjs"
     },
     {
       "severity": "Warning",
@@ -284,7 +284,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -292,7 +292,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.cockroachdb.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -300,7 +300,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -308,7 +308,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.mysql.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -316,7 +316,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -324,7 +324,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.postgresql.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -332,7 +332,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -340,7 +340,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlite.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -348,7 +348,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -356,7 +356,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_fast_bg.sqlserver.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -364,7 +364,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -372,7 +372,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.cockroachdb.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -380,7 +380,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -388,7 +388,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.mysql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.mysql.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -396,7 +396,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -404,7 +404,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.postgresql.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -412,7 +412,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -420,7 +420,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlite.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -428,7 +428,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.js"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.js`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.js"
     },
     {
       "severity": "Warning",
@@ -436,7 +436,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs"
+      "message": "cannot verify module loading of `./runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs`: oversized source skipped: <old>/runtime/query_compiler_small_bg.sqlserver.wasm-base64.mjs"
     },
     {
       "severity": "Warning",
@@ -444,7 +444,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge.js`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
+      "message": "cannot verify module loading of `./runtime/wasm-compiler-edge.js`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
     },
     {
       "severity": "Warning",
@@ -452,7 +452,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge.mjs`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
+      "message": "cannot verify module loading of `./runtime/wasm-compiler-edge.mjs`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
     },
     {
       "severity": "Warning",
@@ -460,7 +460,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
+      "message": "cannot verify module loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.js"
     },
     {
       "severity": "Warning",
@@ -468,7 +468,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
+      "message": "cannot verify module loading of `./runtime/wasm-compiler-edge`: minified (long line) source skipped: <old>/runtime/wasm-compiler-edge.mjs"
     },
     {
       "severity": "Warning",
@@ -476,7 +476,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./sql.js`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
+      "message": "cannot verify module loading of `./sql.js`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
     },
     {
       "severity": "Warning",
@@ -484,7 +484,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./sql.mjs`: cannot resolve `../../.prisma/client/sql/index.mjs` from <old>/sql.mjs"
+      "message": "cannot verify module loading of `./sql.mjs`: cannot resolve `../../.prisma/client/sql/index.mjs` from <old>/sql.mjs"
     },
     {
       "severity": "Warning",
@@ -492,7 +492,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `./sql`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
+      "message": "cannot verify module loading of `./sql`: cannot resolve `../../.prisma/client/sql/index.mjs` from <old>/sql.mjs"
     },
     {
       "severity": "Warning",
@@ -500,7 +500,7 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `.`: cannot resolve `.prisma/client/default` from <old>/default.js"
+      "message": "cannot verify module loading of `./sql`: cannot resolve `.prisma/client/sql` from <old>/sql.js"
     },
     {
       "severity": "Warning",
@@ -508,7 +508,15 @@
       "file": "package.json",
       "line": 1,
       "col": 1,
-      "message": "cannot verify synchronous loading of `.`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
+      "message": "cannot verify module loading of `.`: cannot resolve `.prisma/client/default` from <old>/default.js"
+    },
+    {
+      "severity": "Warning",
+      "rule": "analysis-incomplete",
+      "file": "package.json",
+      "line": 1,
+      "col": 1,
+      "message": "cannot verify module loading of `.`: cannot resolve `.prisma/client/index-browser` from <old>/index-browser.js"
     },
     {
       "severity": "Warning",
@@ -951,5 +959,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained. CommonJS forwarding now explicitly identifies each missing generated .prisma/client target. Installed generated targets are covered by a separate regression."
+  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained. CommonJS forwarding now explicitly identifies each missing generated .prisma/client target. Installed generated targets are covered by a separate regression. Runtime loading warnings now cover parse requirements as well as synchronous loading. The import-only ./sql entry adds one incomplete finding because sql.mjs forwards to the generated ../../.prisma/client/sql/index.mjs absent from both pinned tarballs; Node imports independently fail with ERR_MODULE_NOT_FOUND. All declaration surface counts, prior type evidence, severity and exit status remain unchanged."
 }

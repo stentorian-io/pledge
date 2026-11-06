@@ -17,6 +17,7 @@ every implemented check.
 | Computed exports and runtime surfaces | [Properties, symbols, and proxies](computed-properties.md) |
 | Triple-slash directives | [Directive changes](directive.md) |
 | Decorators | [Decorator changes](decorator.md) |
+| Construction and inheritance | [Functions and class bases](function-construction.md) |
 | Class visibility | [Public/private transitions](class-field-visibility-transition.md) |
 | Accessors and subclasses | [Read and write contracts](accessor-contracts.md) |
 | Static initialization | [Class static blocks](class-static-block.md) |

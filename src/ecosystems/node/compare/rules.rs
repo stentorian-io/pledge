@@ -75,3 +75,4 @@ pub const RULE_SIDE_EFFECTS_WIDENED: &str = "side-effects-widened";
 pub const RULE_PEER_DEP_OPTIONAL_REMOVED: &str = "peer-dep-optional-removed";
 
 pub const RULE_BARREL_UNRESOLVABLE: &str = "barrel-unresolvable";
+pub const RULE_NODE_SYNTAX_REQUIREMENT_RAISED: &str = "node-syntax-requirement-raised";

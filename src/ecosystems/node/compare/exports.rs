@@ -22,7 +22,7 @@ use crate::ecosystems::node::compare::rules::{
     RULE_TYPES_RUNTIME_MISMATCH,
 };
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ─── Module format detection ──────────────────────────────────────────────────
 
@@ -162,6 +162,66 @@ pub(crate) fn is_valid_export_target(target: &str) -> bool {
         }
         !matches!(decoded.as_slice(), b"." | b".." | b"node_modules")
     })
+}
+
+/// Node resolves export targets as URLs, then converts the URL to a local path.
+pub(crate) fn export_target_path(root: &Path, target: &str) -> Option<PathBuf> {
+    if !is_valid_export_target(target) {
+        return None;
+    }
+    reqwest::Url::from_directory_path(root)
+        .ok()?
+        .join(target)
+        .ok()?
+        .to_file_path()
+        .ok()
+}
+
+pub(crate) fn exports_config_error(exports: &serde_json::Value) -> Option<String> {
+    fn condition_error(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Object(branches) => {
+                for (key, child) in branches {
+                    if key
+                        .parse::<u32>()
+                        .ok()
+                        .is_some_and(|index| index != u32::MAX && index.to_string() == *key)
+                    {
+                        return Some(format!(
+                            "invalid `exports` configuration: numeric condition `{key}`"
+                        ));
+                    }
+                    if let Some(error) = condition_error(child) {
+                        return Some(error);
+                    }
+                }
+                None
+            }
+            serde_json::Value::Array(alternatives) => alternatives.iter().find_map(condition_error),
+            _ => None,
+        }
+    }
+    if let Some(object) = exports.as_object() {
+        let subpaths = object.keys().filter(|key| key.starts_with('.')).count();
+        if subpaths != 0 && subpaths != object.len() {
+            return Some(
+                "invalid `exports` configuration: subpath and condition keys cannot be mixed"
+                    .into(),
+            );
+        }
+        if subpaths != 0 {
+            return object.values().find_map(condition_error);
+        }
+    }
+    condition_error(exports)
+}
+
+fn has_target(node: &ConditionNode) -> bool {
+    match node {
+        ConditionNode::Leaf(target) => target.is_some(),
+        ConditionNode::Branch(branches) => branches.values().any(has_target),
+        ConditionNode::Fallback(alternatives) => alternatives.iter().any(has_target),
+    }
 }
 
 pub(crate) fn parse_exports_condition_node(value: &serde_json::Value) -> ConditionNode {
@@ -364,6 +424,9 @@ fn diff_condition_nodes(
                     // Condition exists in both — recurse
                     diff_condition_nodes(subpath, old_child, new_child, findings);
                 } else {
+                    if !has_target(old_child) {
+                        continue;
+                    }
                     // Condition removed
                     let was_target = format_condition_target(old_child);
                     if cond_key == "types" {
@@ -584,7 +647,10 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
     let mut findings = Vec::new();
 
     // Collect wildcard patterns for semantic matching
-    let old_wildcards: Vec<&String> = old_map.keys().filter(|k| k.contains('*')).collect();
+    let old_wildcards: Vec<&String> = old_map
+        .keys()
+        .filter(|k| k.contains('*') && has_target(&old_map[*k].node))
+        .collect();
     let new_wildcards: Vec<&String> = new_map.keys().filter(|k| k.contains('*')).collect();
     let mut matched_old_wildcards: std::collections::HashSet<&str> =
         std::collections::HashSet::new();
@@ -623,6 +689,9 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
 
     // Removed subpaths (EXP-01, EXP-06)
     for subpath in old_map.keys() {
+        if !has_target(&old_map[subpath].node) {
+            continue;
+        }
         if new_map.contains_key(subpath) {
             continue;
         }
@@ -681,6 +750,41 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
     findings
 }
 
+fn legacy_runtime_access_removed(
+    entry: &crate::ecosystems::node::discovery::entry_points::EntryPoint,
+    new_root: &Path,
+) -> bool {
+    ["require", "import"].iter().any(|mode| {
+        let excluded = if *mode == "require" {
+            "import"
+        } else {
+            "require"
+        };
+        if entry
+            .condition
+            .as_deref()
+            .unwrap_or("")
+            .split('/')
+            .any(|condition| condition == excluded)
+        {
+            return false;
+        }
+        // Package roots use legacy main resolution for both loaders;
+        // ESM deep imports must resolve to an exact file.
+        let resolution = if entry.subpath == "." {
+            "require"
+        } else {
+            mode
+        };
+        package_compare::loading::resolve_runtime_dependency(
+            &new_root.join("__legacy__.cjs"),
+            &entry.subpath,
+            resolution,
+        )
+        .is_none()
+    })
+}
+
 /// Top-level entry point: compare the `exports` field of two package.json values.
 ///
 /// `old_root` and `new_root` are the package root directories used for fallback
@@ -689,7 +793,7 @@ fn compare_exports_maps(old_map: &ExportsMap, new_map: &ExportsMap) -> Vec<Findi
 /// Handles 4 cases:
 /// - Both None: fallback to packed output file diff (EXP-13)
 /// - Old None, New Some: EXP-02 exports-field-added (with file listing from old_root)
-/// - Old Some, New None: EXP-01 for every subpath in old exports
+/// - Old Some, New None: EXP-01 for subpaths no longer reachable through legacy resolution
 /// - Both Some: parse and compare full ExportsMaps
 pub fn compare_exports_diff(
     old_pkg: &serde_json::Value,
@@ -697,8 +801,24 @@ pub fn compare_exports_diff(
     old_root: &Path,
     new_root: &Path,
 ) -> Vec<Finding> {
-    let old_exports = old_pkg.get("exports");
-    let new_exports = new_pkg.get("exports");
+    let old_exports = old_pkg.get("exports").filter(|exports| !exports.is_null());
+    let new_exports = new_pkg.get("exports").filter(|exports| !exports.is_null());
+
+    let invalid: Vec<_> = [("baseline", old_exports), ("current", new_exports)]
+        .into_iter()
+        .filter_map(|(side, exports)| {
+            exports.and_then(exports_config_error).map(|error| {
+                pkg_json_finding(
+                    Severity::Warning,
+                    "analysis-incomplete",
+                    format!("{side}: {error}"),
+                )
+            })
+        })
+        .collect();
+    if !invalid.is_empty() {
+        return invalid;
+    }
 
     match (old_exports, new_exports) {
         (None, None) => {
@@ -744,10 +864,45 @@ pub fn compare_exports_diff(
         }
 
         (Some(old_val), None) => {
-            // Exports field removed — every subpath in old is now gone
             let old_map = parse_exports_map(old_val);
-            old_map
-                .keys()
+            let entries =
+                crate::ecosystems::node::discovery::entry_points::resolve_entry_points(old_root)
+                    .unwrap_or_default();
+            let current =
+                crate::ecosystems::node::discovery::entry_points::resolve_entry_points(new_root)
+                    .unwrap_or_default();
+            let mut subpaths: BTreeSet<_> = old_map
+                .iter()
+                .filter(|(subpath, entry)| !subpath.contains('*') && has_target(&entry.node))
+                .map(|(subpath, _)| subpath.clone())
+                .collect();
+            subpaths.extend(entries.iter().map(|entry| entry.subpath.clone()));
+            subpaths
+                .into_iter()
+                .filter(|subpath| {
+                    let runtime_entries: Vec<_> = entries
+                        .iter()
+                        .filter(|entry| {
+                            entry.subpath == *subpath
+                                && package_compare::loading::runtime_entry(entry)
+                        })
+                        .collect();
+                    if !runtime_entries.is_empty() {
+                        return runtime_entries
+                            .iter()
+                            .any(|entry| legacy_runtime_access_removed(entry, new_root));
+                    }
+                    if subpath == "." {
+                        !current.iter().any(|entry| entry.subpath == ".")
+                    } else {
+                        !crate::ecosystems::node::discovery::resolver::resolve_module_path(
+                            &new_root.join("__legacy__.cjs"),
+                            subpath,
+                        )
+                        .iter()
+                        .any(|path| path.is_file())
+                    }
+                })
                 .map(|subpath| {
                     pkg_json_finding(
                         Severity::Major,
@@ -765,6 +920,37 @@ pub fn compare_exports_diff(
             findings.extend(package_compare::conditions::compare_priority(
                 &old_map, &new_map, old_root, new_root,
             ));
+            if old_map.keys().any(|subpath| subpath.contains('*')) {
+                let old_entries =
+                    crate::ecosystems::node::discovery::entry_points::resolve_entry_points(
+                        old_root,
+                    )
+                    .unwrap_or_default();
+                let new_entries =
+                    crate::ecosystems::node::discovery::entry_points::resolve_entry_points(
+                        new_root,
+                    )
+                    .unwrap_or_default();
+                let new_subpaths: BTreeSet<_> =
+                    new_entries.iter().map(|entry| &entry.subpath).collect();
+                let removed: BTreeSet<_> = old_entries
+                    .iter()
+                    .filter(|entry| {
+                        !old_map.contains_key(&entry.subpath)
+                            && !new_subpaths.contains(&entry.subpath)
+                    })
+                    .map(|entry| &entry.subpath)
+                    .collect();
+                for subpath in removed {
+                    findings.push(pkg_json_finding(
+                        Severity::Major,
+                        RULE_SUBPATH_REMOVED,
+                        format!(
+                            "public module `{subpath}` no longer resolves from the exports pattern"
+                        ),
+                    ));
+                }
+            }
             findings
         }
     }

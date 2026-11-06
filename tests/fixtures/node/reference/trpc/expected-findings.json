@@ -40,9 +40,9 @@
     "./adapters/next | require/default | Value": 1,
     "./adapters/next | require/types | Type": 1,
     "./adapters/next | require/types | Value": 4,
-    "./adapters/next-app-dir | import/default | Value": 61,
+    "./adapters/next-app-dir | import/default | Value": 46,
     "./adapters/next-app-dir | import/types | Value": 4,
-    "./adapters/next-app-dir | require/default | Value": 61,
+    "./adapters/next-app-dir | require/default | Value": 46,
     "./adapters/next-app-dir | require/types | Value": 4,
     "./adapters/node-http | import/default | Value": 4,
     "./adapters/node-http | import/types | Value": 11,
@@ -116,9 +116,9 @@
     "./adapters/next | require/default | Value": 1,
     "./adapters/next | require/types | Type": 1,
     "./adapters/next | require/types | Value": 4,
-    "./adapters/next-app-dir | import/default | Value": 61,
+    "./adapters/next-app-dir | import/default | Value": 46,
     "./adapters/next-app-dir | import/types | Value": 4,
-    "./adapters/next-app-dir | require/default | Value": 61,
+    "./adapters/next-app-dir | require/default | Value": 46,
     "./adapters/next-app-dir | require/types | Value": 4,
     "./adapters/node-http | import/default | Value": 4,
     "./adapters/node-http | import/types | Value": 11,
@@ -450,5 +450,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "No structural findings for this minor release. Public-surface counts are stable. Generated declarations reach explicit expansion bounds; this snapshot does not claim complete TypeScript analysis."
+  "_curation_notes": "No structural findings for this minor release. Public-surface counts are stable. Generated declarations reach explicit expansion bounds; this snapshot does not claim complete TypeScript analysis. The next-app-dir runtime surface counts are 46 after excluding 15 Object.defineProperty properties inside deferred bundled Next.js CommonJS factories; these names are absent from actual ESM and CJS namespaces in both pinned versions. Direct Node execution exposes only four public names (experimental_nextAppDirCaller, experimental_notFound, experimental_redirect, rethrowNextErrors). The remaining 42 structurally inferred names come from preexisting bundled CommonJS assignment handling; these counts are not a claim of runtime namespace completeness."
 }

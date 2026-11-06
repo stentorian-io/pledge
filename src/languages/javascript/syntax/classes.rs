@@ -589,11 +589,8 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
                     if let Some(heritage_child) = child.child(j) {
                         match heritage_child.kind() {
                             "extends_clause" => {
-                                if let Ok(text) = heritage_child.utf8_text(source) {
-                                    // Strip the leading "extends " keyword
-                                    let text = text.trim();
-                                    let text = text.strip_prefix("extends ").unwrap_or(text);
-                                    extends_text = Some(text.to_string());
+                                if let Some(base) = heritage_child.child_by_field_name("value") {
+                                    extends_text = Some(base_identity(base, source));
                                 }
                             }
                             "implements_clause" => {
@@ -607,6 +604,10 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
                                         }
                                     }
                                 }
+                            }
+                            _ if heritage_child.is_named() => {
+                                // The JavaScript grammar places the base expression directly here.
+                                extends_text = Some(base_identity(heritage_child, source));
                             }
                             _ => {}
                         }
@@ -696,5 +697,46 @@ pub fn parse_class_shape(source: &[u8], decl_node: tree_sitter::Node) -> ClassSh
         decorators: class_decorators,
         // CLS-12: propagated from `parse_class_members` tuple return.
         has_dynamic_static_key,
+    }
+}
+
+fn base_identity(mut base: tree_sitter::Node<'_>, source: &[u8]) -> String {
+    let original = base.utf8_text(source).unwrap_or("").to_owned();
+    for _ in 0..32 {
+        if base.kind() != "identifier" {
+            break;
+        }
+        let Some(initializer) = property_key::initializer(base, source) else {
+            break;
+        };
+        if initializer.kind() != "identifier" {
+            break;
+        }
+        base = initializer;
+    }
+    let identity = property_key::source_name(base, source).unwrap_or(original.clone());
+    let mut root = base;
+    while let Some(parent) = root.parent() {
+        root = parent;
+    }
+    fn reassigned(node: tree_sitter::Node<'_>, name: &str, source: &[u8]) -> bool {
+        if matches!(
+            node.kind(),
+            "assignment_expression" | "augmented_assignment_expression" | "update_expression"
+        ) {
+            let target = node
+                .child_by_field_name("left")
+                .or_else(|| node.child_by_field_name("argument"));
+            if target.is_some_and(|target| target.utf8_text(source).ok() == Some(name)) {
+                return true;
+            }
+        }
+        node.named_children(&mut node.walk())
+            .any(|child| reassigned(child, name, source))
+    }
+    if identity != original && reassigned(root, &identity, source) {
+        original
+    } else {
+        identity
     }
 }

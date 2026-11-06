@@ -21,7 +21,6 @@ fn version_requirements_compare_the_entire_accepted_set() {
         (">=18 <20", ">=18 <19 || >=19 <20", false),
         ("^18.0.0", "^18.1.0", true),
         ("*", "^18", true),
-        (">=1.0.0-beta <2", ">=0 <3", true),
         (">=1 <2", ">=1 <2.0.0-0", false),
         (">=1.0.0-beta <2", ">=1.0.0-alpha <3", false),
         ("^1.0.0-beta", "^1.0.0-rc", true),
@@ -66,4 +65,82 @@ fn platform_exclusions_and_unrestricted_support_are_respected() {
             );
         }
     }
+}
+
+#[test]
+fn engine_ranges_include_prereleases_without_dependency_core_opt_in() {
+    for (old, new, narrowed) in [
+        (">=18.0.0 <20.0.0", ">=18.0.0 <20.0.0-0", true),
+        (">=18.0.0 <20.0.0-0", ">=18.0.0 <20.0.0", false),
+        (">=1.0.0-beta <2", ">=0 <3", false),
+    ] {
+        let findings = compare(
+            json!({"engines":{"node":old}}),
+            json!({"engines":{"node":new}}),
+        );
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "engine-version-bumped"),
+            narrowed,
+            "{findings:?}"
+        );
+    }
+    let peer_changes = compare(
+        json!({"peerDependencies":{"host":">=18.0.0 <20.0.0"}}),
+        json!({"peerDependencies":{"host":">=18.0.0 <20.0.0-0"}}),
+    );
+    assert!(peer_changes.is_empty());
+    let dropped_peer_prereleases = compare(
+        json!({"peerDependencies":{"host":">=1.0.0-beta <2"}}),
+        json!({"peerDependencies":{"host":">=0 <3"}}),
+    );
+    assert!(dropped_peer_prereleases
+        .iter()
+        .any(|finding| finding.rule == "peer-dep-version-bumped"));
+}
+
+#[test]
+fn engine_shorthands_preserve_npm_prerelease_boundaries() {
+    for (shorthand, expanded) in [
+        (">=1 <2", ">=1.0.0-0 <2.0.0-0"),
+        ("^18", ">=18.0.0-0 <19.0.0-0"),
+        ("^18.0.0", ">=18.0.0 <19.0.0-0"),
+        ("1.x", ">=1.0.0-0 <2.0.0-0"),
+        ("~1.0", ">=1.0.0-0 <1.1.0-0"),
+        ("1.2.3 - 2.3.4", ">=1.2.3-0 <2.3.5-0"),
+        ("> 1.2", ">=1.3.0-0"),
+        ("^0.0.1", ">=0.0.1 <0.0.2-0"),
+        ("^1.2.3 <2.0.0", ">=1.2.3 <2.0.0-0"),
+    ] {
+        for (old, new) in [(shorthand, expanded), (expanded, shorthand)] {
+            let changes = compare(
+                json!({"engines":{"node":old}}),
+                json!({"engines":{"node":new}}),
+            );
+            assert!(changes.is_empty(), "{old} -> {new}: {changes:?}");
+        }
+    }
+}
+
+#[test]
+fn any_is_unrestricted_only_as_the_entire_platform_list() {
+    for field in ["os", "cpu"] {
+        let changes = compare(json!({field:["darwin"]}), json!({field:["any", "linux"]}));
+        assert!(changes.iter().any(
+            |finding| finding.rule == "platform-narrowed" && finding.message.contains("darwin")
+        ));
+        assert!(compare(json!({field:["darwin"]}), json!({field:["any"]})).is_empty());
+    }
+}
+
+#[test]
+fn scoped_bin_shorthand_and_unscoped_command_object_are_equivalent() {
+    let old = json!({"name":"@audit/tool", "bin":"./cli.js"});
+    let same = json!({"name":"@audit/tool", "bin":{"tool":"./cli.js"}});
+    let removed = json!({"name":"@audit/tool", "bin":{"other":"./cli.js"}});
+    assert!(compare(old.clone(), same).is_empty());
+    assert!(compare(old, removed)
+        .iter()
+        .any(|finding| finding.rule == "bin-entry-changed" && finding.message.contains("tool")));
 }

@@ -63,8 +63,9 @@ pub(super) fn compare_priority(
                 let new_surface = new_cache
                     .entry(after)
                     .or_insert_with(|| surface(new_root, after));
-                let severity = match (old_surface, new_surface) {
-                    (Some(old), Some(new)) => {
+                let severity = match (before, after, old_surface, new_surface) {
+                    (Some(_), None, _, _) => Severity::Major,
+                    (_, _, Some(old), Some(new)) => {
                         let mut changes =
                             javascript_compare::compare_exports(old, new, new_root, false);
                         changes.extend(structure::compare_structural_diff(
@@ -99,6 +100,8 @@ fn selection_changed(old: &ConditionNode, new: &ConditionNode) -> bool {
                 })
         }
         (ConditionNode::Fallback(_), _) | (_, ConditionNode::Fallback(_)) => old != new,
+        (ConditionNode::Leaf(_), ConditionNode::Branch(_))
+        | (ConditionNode::Branch(_), ConditionNode::Leaf(_)) => true,
         _ => false,
     }
 }
@@ -133,7 +136,7 @@ fn surface(root: &Path, target: Option<&str>) -> Option<ExportMap> {
         return Some(exports);
     };
     let root = root.canonicalize().ok()?;
-    let path = root.join(target.strip_prefix("./").unwrap_or(target));
+    let path = package_compare::exports::export_target_path(&root, target)?;
     let mut warnings = Vec::new();
     resolver::collect_exports(
         &path,
