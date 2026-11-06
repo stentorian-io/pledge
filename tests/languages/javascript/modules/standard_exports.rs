@@ -164,10 +164,107 @@ fn invalid_attribute_objects_are_not_masked_as_valid_module_syntax() {
 
 #[test]
 fn reserved_word_aliases_retain_their_exact_public_names() {
-    for alias in ["null", "function", "instanceof", "catch", "void"] {
+    for alias in [
+        "await",
+        "break",
+        "case",
+        "catch",
+        "class",
+        "const",
+        "continue",
+        "debugger",
+        "default",
+        "delete",
+        "do",
+        "else",
+        "enum",
+        "export",
+        "extends",
+        "false",
+        "finally",
+        "for",
+        "function",
+        "if",
+        "import",
+        "in",
+        "instanceof",
+        "let",
+        "new",
+        "null",
+        "return",
+        "super",
+        "switch",
+        "this",
+        "throw",
+        "true",
+        "try",
+        "typeof",
+        "var",
+        "void",
+        "while",
+        "with",
+        "yield",
+        "implements",
+        "interface",
+        "package",
+        "private",
+        "protected",
+        "public",
+        "static",
+        "async",
+        "as",
+        "assert",
+        "asserts",
+        "any",
+        "abstract",
+        "boolean",
+        "constructor",
+        "declare",
+        "from",
+        "get",
+        "global",
+        "infer",
+        "intrinsic",
+        "is",
+        "keyof",
+        "module",
+        "namespace",
+        "never",
+        "number",
+        "object",
+        "of",
+        "out",
+        "override",
+        "readonly",
+        "require",
+        "set",
+        "satisfies",
+        "string",
+        "symbol",
+        "type",
+        "undefined",
+        "unique",
+        "unknown",
+        "using",
+        "accessor",
+    ] {
         let source = format!("const local=1;export{{local as {alias}}};\nexport const next=2;");
         let exports = parse_exports(source.as_bytes(), SourceLanguage::JavaScript).unwrap();
         let export = exports.iter().find(|export| export.name == alias).unwrap();
+        for reexport in [
+            format!("export{{local as {alias}}}from './side.js';"),
+            format!("export * as {alias} from './side.js';"),
+        ] {
+            let exports = parse_exports(reexport.as_bytes(), SourceLanguage::JavaScript).unwrap();
+            assert_eq!(
+                exports
+                    .iter()
+                    .map(|export| export.name.as_str())
+                    .collect::<Vec<_>>(),
+                [alias],
+                "{reexport}: {exports:?}"
+            );
+        }
         assert_eq!(export.local_name.as_deref(), Some("local"));
         assert_eq!(
             exports
@@ -260,5 +357,20 @@ fn anonymous_default_signature_names_do_not_depend_on_whitespace_or_generics() {
         let exports = parse_exports(source.as_bytes(), SourceLanguage::TypeScript).unwrap();
         assert_eq!(exports.len(), 1, "{source}: {exports:?}");
         assert_eq!(exports[0].name, "default");
+    }
+}
+
+#[test]
+fn reserved_alias_recovery_preserves_comments_and_rejects_malformed_specifiers() {
+    for separator in [" ", "/* comment */", "// comment\n"] {
+        let source = format!("const local=1;export{{local as{separator}while}};");
+        let exports = parse_exports(source.as_bytes(), SourceLanguage::JavaScript).unwrap();
+        assert_eq!(exports.len(), 1);
+        assert_eq!(exports[0].name, "while");
+        assert_eq!(exports[0].local_name.as_deref(), Some("local"));
+    }
+    for specifier in ["local as while extra", "local as 1", "local as while + 1"] {
+        let source = format!("const local=1;export{{{specifier}}};");
+        assert!(parse_exports(source.as_bytes(), SourceLanguage::JavaScript).is_err());
     }
 }

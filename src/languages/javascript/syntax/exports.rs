@@ -232,6 +232,17 @@ pub fn parse_exports(
     let tree = grammar::parse_source(source, &lang)?;
 
     let root = tree.root_node();
+    let initializer_bodies = commonjs::initializer_bodies(root, &language, source);
+    let commonjs_analysis = commonjs::analyze(root, source);
+    let is_public_assignment = |node: tree_sitter::Node| {
+        commonjs::is_public_assignment(node, source, &initializer_bodies)
+            && commonjs_analysis.retains_export_at(
+                root,
+                source,
+                node.start_position().row as u32 + 1,
+                node.start_position().column as u32 + 1,
+            )
+    };
     let mut exports: Vec<RawExport> = Vec::new();
 
     // INF-02 Pass 1: collect top-level `declare` statements keyed by
@@ -475,7 +486,7 @@ pub fn parse_exports(
                 }
                 if let (Some(lp), Some((line, col))) = (local_pos, alias_pos) {
                     // Dedup against the existing NAMED_EXPORT_ALIAS_QUERY loop.
-                    if alias_local_positions.contains(&lp) {
+                    if alias_local_positions.contains(&lp) || reexport_positions.contains(&lp) {
                         continue;
                     }
                     alias_local_positions.insert(lp);
@@ -1512,15 +1523,22 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 // Validate: capture 0 (@obj) must be "module", capture 1 (@prop) must be "exports"
-                let obj_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if obj_ok && prop_ok {
                     for capture in m.captures {
                         if capture.index == 2 {
@@ -1562,14 +1580,21 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m
+                if !m
                     .captures
                     .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if obj_ok && prop_ok {
                     for capture in m.captures {
                         if capture.index == 2 {
@@ -1609,6 +1634,13 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 // Validate: capture 0 (@obj) must be "exports" (not "module" or anything else)
                 let obj_text = m
                     .captures
@@ -1658,14 +1690,21 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m
+                if !m
                     .captures
                     .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if obj_ok && prop_ok {
                     if let Some(class_capture) = m.captures.iter().find(|c| c.index == 2) {
                         let node = class_capture.node;
@@ -1703,14 +1742,21 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m
+                if !m
                     .captures
                     .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if obj_ok && prop_ok {
                     if let Some(fn_capture) = m.captures.iter().find(|c| c.index == 2) {
                         let node = fn_capture.node;
@@ -1751,6 +1797,13 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 // @obj must be exactly "exports" (not "module")
                 let obj_text = m
                     .captures
@@ -1799,26 +1852,100 @@ pub fn parse_exports(
             }
         }
 
-        // 4. module.exports = SomeIdentifier — default-like export
+        // Other whole-module assignments require compiler evidence for their value.
         if let Ok(query) =
             grammar::cached_query(&language, queries::CJS_MODULE_EXPORTS_DEFAULT_QUERY)
         {
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m
+                if !m
                     .captures
                     .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if obj_ok && prop_ok {
                     for capture in m.captures {
                         if capture.index == 2 {
-                            // @value — the identifier being assigned as default
+                            // @value — the whole CommonJS export value
                             let node = capture.node;
+                            if commonjs::is_export_annotation(node, source)
+                                || (node.kind() == "object"
+                                    && !node
+                                        .named_children(&mut node.walk())
+                                        .any(|child| child.kind() == "spread_element"))
+                            {
+                                // Literal members already have individual public identities.
+                                continue;
+                            }
+                            if node.kind() == "object" {
+                                // The aggregate request must own this slot until compiler
+                                // expansion restores the object's actual `default` property.
+                                exports.retain(|export| {
+                                    let position = tree_sitter::Point::new(
+                                        export.line.saturating_sub(1) as usize,
+                                        export.col.saturating_sub(1) as usize,
+                                    );
+                                    export.name != "default"
+                                        || position < node.start_position()
+                                        || position >= node.end_position()
+                                });
+                            }
+
+                            if node.kind() == "call_expression" {
+                                let function = node.child_by_field_name("function");
+                                let forwarded_require = function.is_some_and(|function| {
+                                    property_key::source_name(function, source).as_deref()
+                                        == Some("require")
+                                        && property_key::is_unbound(function, "require", source)
+                                });
+                                let known_assign = function.is_some_and(|function| {
+                                    function.kind() == "member_expression"
+                                        && function.child_by_field_name("object").is_some_and(
+                                            |object| {
+                                                property_key::source_name(object, source).as_deref()
+                                                    == Some("Object")
+                                                    && property_key::is_unbound(
+                                                        object, "Object", source,
+                                                    )
+                                            },
+                                        )
+                                        && function.child_by_field_name("property").is_some_and(
+                                            |property| {
+                                                property_key::source_name(property, source)
+                                                    .as_deref()
+                                                    == Some("assign")
+                                            },
+                                        )
+                                });
+                                let returned_literal =
+                                    initializer_bodies.iter().any(|initializer| {
+                                        initializer.returned_calls.contains(&node)
+                                            && initializer
+                                                .body
+                                                .named_children(&mut initializer.body.walk())
+                                                .any(|statement| {
+                                                    statement.kind() == "return_statement"
+                                                        && statement.named_child(0).is_some_and(
+                                                            |returned| returned.kind() == "object",
+                                                        )
+                                                })
+                                    });
+                                if forwarded_require || known_assign || returned_literal {
+                                    continue;
+                                }
+                            }
+
                             let line = node.start_position().row as u32 + 1;
                             let col = node.start_position().column as u32 + 1;
                             let already = exports.iter().any(|e| e.name == "default");
@@ -1853,14 +1980,21 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
-                let obj_ok = m
+                if !m
                     .captures
                     .iter()
-                    .any(|c| c.index == 0 && c.node.utf8_text(source).ok() == Some("module"));
-                let prop_ok = m
-                    .captures
-                    .iter()
-                    .any(|c| c.index == 1 && c.node.utf8_text(source).ok() == Some("exports"));
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
+                let obj_ok = m.captures.iter().any(|c| {
+                    c.index == 0
+                        && property_key::source_name(c.node, source).as_deref() == Some("module")
+                });
+                let prop_ok = m.captures.iter().any(|c| {
+                    c.index == 1
+                        && property_key::source_name(c.node, source).as_deref() == Some("exports")
+                });
                 if !obj_ok || !prop_ok {
                     continue;
                 }
@@ -1939,6 +2073,13 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 1 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 // Verify: @lhs is "exports", @mod_obj is "module", @mod_prop is "exports"
                 let lhs = m
                     .captures
@@ -2213,6 +2354,13 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 let mod_obj = m
                     .captures
                     .iter()
@@ -2564,57 +2712,6 @@ pub fn parse_exports(
             }
         }
 
-        // BUN-06b: `exports["foo"] = bar;` bracket-subscript assignment
-        if let Ok(query) = grammar::cached_query(&language, queries::BRACKET_SUBSCRIPT_EXPORT_QUERY)
-        {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                let exports_id = m
-                    .captures
-                    .iter()
-                    .find(|c| c.index == 0)
-                    .and_then(|c| c.node.utf8_text(source).ok())
-                    .unwrap_or("");
-                let name_str_node = m.captures.iter().find(|c| c.index == 1).map(|c| c.node);
-
-                if exports_id != "exports" {
-                    continue;
-                }
-
-                if let Some(name_n) = name_str_node {
-                    if let Ok(raw) = name_n.utf8_text(source) {
-                        let name = strip_quotes(raw);
-                        if name == "__esModule" || name.is_empty() {
-                            continue;
-                        }
-                        let line = name_n.start_position().row as u32 + 1;
-                        let col = name_n.start_position().column as u32 + 1;
-                        let already = exports.iter().any(|e| e.name == name);
-                        if !already {
-                            exports.push(RawExport {
-                                name: name.to_string(),
-                                kind: RawExportKind::Named,
-                                line,
-                                col,
-                                source: None,
-                                decl_kind: None,
-                                is_type_only: false,
-                                release_tag: None,
-                                compound_members: Vec::new(),
-                                type_signature: None,
-                                satisfies_type: None,
-                                typeof_import_refs: Vec::new(),
-                                is_proxy_dispatched: false,
-                                local_name: None,
-                                declaration_site: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
         // BUN-11-A: UMD wrapper factory-returns-object literal unwrap.
         //
         // ORDERING INVARIANT: this driver MUST run AFTER
@@ -2733,30 +2830,9 @@ pub fn parse_exports(
             }
         };
 
-        // Form 1: `(func)(args)` — capture index 4 = @umd_factory_body.
-        // Capture indices are stable by declaration order in the query string:
-        //  0 = @umd_root_param, 1 = @umd_factory_param, 2 = @umd_global_arg,
-        //  3 = @umd_factory_params, 4 = @umd_factory_body.
-        if let Ok(query) = grammar::cached_query(&language, queries::UMD_FACTORY_WRAPPER_QUERY) {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
-                let Some(body) = factory_body else { continue };
-                process_factory_body(body, &mut exports);
-            }
-        }
-
-        // Form 2: `(func(args))` — capture index 4 = @umd_factory_body.
-        if let Ok(query) =
-            grammar::cached_query(&language, queries::UMD_FACTORY_WRAPPER_QUERY_FORM2)
-        {
-            let mut cursor = QueryCursor::new();
-            let mut matches_iter = cursor.matches(&query, root, source);
-            while let Some(m) = matches_iter.next() {
-                let factory_body = m.captures.iter().find(|c| c.index == 4).map(|c| c.node);
-                let Some(body) = factory_body else { continue };
-                process_factory_body(body, &mut exports);
+        for initializer in &initializer_bodies {
+            if initializer.returns_exports {
+                process_factory_body(initializer.body, &mut exports);
             }
         }
 
@@ -2777,6 +2853,13 @@ pub fn parse_exports(
             let mut cursor = QueryCursor::new();
             let mut matches_iter = cursor.matches(&query, root, source);
             while let Some(m) = matches_iter.next() {
+                if !m
+                    .captures
+                    .iter()
+                    .any(|capture| capture.index == 0 && is_public_assignment(capture.node))
+                {
+                    continue;
+                }
                 // Capture indices: 0=mod_obj, 1=mod_prop, 2=umd_default_binding.
                 let mod_obj = m
                     .captures
@@ -3036,42 +3119,68 @@ pub fn parse_exports(
         }
     }
 
-    for (node, key) in commonjs::computed_exports(root, source) {
-        let Some(key) = key else { continue };
-        let name = key.export_name();
-        let kind = match key {
-            property_key::PropertyKey::String(_) => RawExportKind::Named,
-            property_key::PropertyKey::Symbol(_) | property_key::PropertyKey::Unique(_) => {
-                RawExportKind::Symbol
+    if matches!(lang, grammar::SourceLanguage::JavaScript) {
+        for (node, key) in commonjs::computed_exports(root, source) {
+            if !commonjs_analysis.retains_export_at(
+                root,
+                source,
+                node.start_position().row as u32 + 1,
+                node.start_position().column as u32 + 1,
+            ) {
+                continue;
             }
-        };
-        if exports
-            .iter()
-            .any(|export| export.name == name && export.kind == kind)
-        {
-            continue;
+            let Some(key) = key else { continue };
+            let name = key.export_name();
+            if name == "__esModule" {
+                continue;
+            }
+            let kind = match key {
+                property_key::PropertyKey::String(_) => RawExportKind::Named,
+                property_key::PropertyKey::Symbol(_) | property_key::PropertyKey::Unique(_) => {
+                    RawExportKind::Symbol
+                }
+            };
+            if exports
+                .iter()
+                .any(|export| export.name == name && export.kind == kind)
+            {
+                continue;
+            }
+            exports.push(RawExport {
+                name,
+                kind,
+                line: node.start_position().row as u32 + 1,
+                col: node.start_position().column as u32 + 1,
+                source: None,
+                decl_kind: None,
+                is_type_only: false,
+                release_tag: None,
+                compound_members: Vec::new(),
+                type_signature: None,
+                satisfies_type: None,
+                typeof_import_refs: Vec::new(),
+                is_proxy_dispatched: false,
+                local_name: None,
+                declaration_site: None,
+            });
         }
-        exports.push(RawExport {
-            name,
-            kind,
-            line: node.start_position().row as u32 + 1,
-            col: node.start_position().column as u32 + 1,
-            source: None,
-            decl_kind: None,
-            is_type_only: false,
-            release_tag: None,
-            compound_members: Vec::new(),
-            type_signature: None,
-            satisfies_type: None,
-            typeof_import_refs: Vec::new(),
-            is_proxy_dispatched: false,
-            local_name: None,
-            declaration_site: None,
-        });
     }
 
-    let commonjs = commonjs::analyze(root, source);
-    exports.retain(|export| commonjs.retains_export_at(root, source, export.line, export.col));
+    for export in &exports {
+        let position = tree_sitter::Point::new(
+            export.line.saturating_sub(1) as usize,
+            export.col.saturating_sub(1) as usize,
+        );
+        if root
+            .named_descendant_for_point_range(position, position)
+            .is_some_and(commonjs::has_suspended_export)
+        {
+            anyhow::bail!("CommonJS export availability after async suspension requires runtime timing information; public surface is incomplete");
+        }
+    }
+    exports.retain(|export| {
+        commonjs_analysis.retains_export_at(root, source, export.line, export.col)
+    });
     link_export_declarations(root, source, &mut exports);
     for export in &mut exports {
         let (line, col) = export.declaration_site.unwrap_or((export.line, export.col));
@@ -3595,8 +3704,8 @@ fn collect_reexport_positions(
         let mut matches = cursor.matches(&alias_query, root, source);
         while let Some(m) = matches.next() {
             for capture in m.captures {
-                if capture.index == 0 {
-                    // @local_name
+                if capture.index <= 1 {
+                    // Local and public names both belong to the re-export.
                     let node = capture.node;
                     let line = node.start_position().row as u32 + 1;
                     let col = node.start_position().column as u32 + 1;

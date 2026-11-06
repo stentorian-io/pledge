@@ -3,7 +3,9 @@
 use crate::languages::typescript::model as ts_model;
 use crate::languages::typescript::syntax::comments;
 use crate::languages::typescript::types::shape as type_shapes;
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::path::PathBuf;
 
 #[allow(dead_code)]
@@ -211,6 +213,8 @@ impl ExportKey {
 #[derive(Debug, Clone, Default)]
 pub struct ExportMap {
     inner: HashMap<ExportKey, ExportSymbol>,
+    /// Compiler evidence for properties on the public CommonJS object.
+    property_contracts: HashMap<ExportKey, type_shapes::FieldShape>,
     /// INF-05: per-source-file triple-slash directive records.
     ///
     /// Key: relative path to the source file (same as `ExportSymbol.file`).
@@ -244,6 +248,50 @@ impl ExportMap {
     #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn record_property_contract(
+        &mut self,
+        key: ExportKey,
+        contract: type_shapes::FieldShape,
+    ) {
+        if self.inner.contains_key(&key) {
+            self.property_contracts.insert(key, contract);
+        }
+    }
+
+    pub(crate) fn property_contract(&self, key: &ExportKey) -> Option<&type_shapes::FieldShape> {
+        self.inner
+            .contains_key(key)
+            .then(|| self.property_contracts.get(key))
+            .flatten()
+    }
+
+    pub fn insert(&mut self, key: ExportKey, symbol: ExportSymbol) -> Option<ExportSymbol> {
+        self.typeof_targets.remove(&key);
+        self.property_contracts.remove(&key);
+        self.inner.insert(key, symbol)
+    }
+
+    pub fn remove<Q>(&mut self, key: &Q) -> Option<ExportSymbol>
+    where
+        ExportKey: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        self.typeof_targets.remove(key);
+        self.property_contracts.remove(key);
+        self.inner.remove(key)
+    }
+
+    pub fn retain<F>(&mut self, keep: F)
+    where
+        F: FnMut(&ExportKey, &mut ExportSymbol) -> bool,
+    {
+        self.inner.retain(keep);
+        self.typeof_targets
+            .retain(|key, _| self.inner.contains_key(key));
+        self.property_contracts
+            .retain(|key, _| self.inner.contains_key(key));
     }
 
     ///: runtime guard for the documented invariants.
@@ -316,6 +364,7 @@ impl From<HashMap<ExportKey, ExportSymbol>> for ExportMap {
     fn from(inner: HashMap<ExportKey, ExportSymbol>) -> Self {
         let out = ExportMap {
             inner,
+            property_contracts: HashMap::new(),
             directives: std::collections::BTreeMap::new(),
             typeof_targets: std::collections::HashMap::new(),
         };

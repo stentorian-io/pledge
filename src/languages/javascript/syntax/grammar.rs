@@ -331,19 +331,71 @@ fn normalize_recovered_syntax(
         nodes.extend(node.named_children(&mut node.walk()));
         if matches!(language, SourceLanguage::JavaScript) {
             if node.is_error()
-                && node
-                    .parent()
-                    .is_some_and(|parent| parent.kind() == "export_clause")
+                && node.parent().is_some_and(|parent| {
+                    parent.kind() == "export_clause"
+                        || (parent.kind() == "export_statement"
+                            && parent
+                                .children(&mut parent.walk())
+                                .any(|token| token.kind() == "*"))
+                })
             {
-                let text = node.utf8_text(source).unwrap_or("");
-                let words: Vec<_> = text.split_whitespace().collect();
-                if let ["as", alias] = words.as_slice() {
-                    if matches!(
-                        *alias,
-                        "null" | "function" | "instanceof" | "catch" | "void"
-                    ) {
-                        let start = node.end_byte() - alias.len();
-                        normalized[start..node.end_byte()].fill(b'_');
+                let tokens: Vec<_> = node
+                    .children(&mut node.walk())
+                    .filter(|token| token.kind() != "comment")
+                    .collect();
+                if let [as_token, alias] = tokens.as_slice() {
+                    if as_token.utf8_text(source).ok() == Some("as")
+                        && matches!(
+                            alias.utf8_text(source).unwrap_or(""),
+                            "await"
+                                | "break"
+                                | "case"
+                                | "catch"
+                                | "class"
+                                | "const"
+                                | "continue"
+                                | "debugger"
+                                | "default"
+                                | "delete"
+                                | "do"
+                                | "else"
+                                | "enum"
+                                | "export"
+                                | "extends"
+                                | "false"
+                                | "finally"
+                                | "for"
+                                | "function"
+                                | "if"
+                                | "import"
+                                | "in"
+                                | "instanceof"
+                                | "let"
+                                | "new"
+                                | "null"
+                                | "return"
+                                | "super"
+                                | "switch"
+                                | "this"
+                                | "throw"
+                                | "true"
+                                | "try"
+                                | "typeof"
+                                | "var"
+                                | "void"
+                                | "while"
+                                | "with"
+                                | "yield"
+                                | "implements"
+                                | "interface"
+                                | "package"
+                                | "private"
+                                | "protected"
+                                | "public"
+                                | "static"
+                        )
+                    {
+                        normalized[alias.start_byte()..alias.end_byte()].fill(b'_');
                         changed = true;
                     }
                 }

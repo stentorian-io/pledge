@@ -729,6 +729,11 @@ fn collect_exports_uncached(
     }
 
     for forward in &forwards {
+        let root_aggregate = raw_exports.iter().any(|export| {
+            export.kind == RawExportKind::Default
+                && forward.value_position.row as u32 + 1 == export.line
+                && forward.value_position.column as u32 + 1 == export.col
+        });
         if forward.uncertain {
             warnings.push(ResolveWarning::new(format!(
                 "unsupported CommonJS branch predicate at {}:{}",
@@ -764,7 +769,15 @@ fn collect_exports_uncached(
                 cache,
             )?;
             for (key, mut symbol) in resolved.drain() {
-                if forward.shadowed.contains(&key.name) {
+                if forward.shadowed.contains(&key.name)
+                    || (forward.kind != commonjs::ForwardKind::WholeModule
+                        && symbol.kind == ExportKind::Default)
+                    || (forward.kind == commonjs::ForwardKind::StarProperties
+                        && key.name == "default")
+                    || (forward.kind == commonjs::ForwardKind::Properties
+                        && root_aggregate
+                        && key.name == "default")
+                {
                     continue;
                 }
                 symbol.is_reexport = true;
@@ -780,7 +793,11 @@ fn collect_exports_uncached(
     }
     raw_exports.retain(|export| {
         !(export.kind == RawExportKind::Default
-            && forwards.iter().any(|forward| forward.line == export.line))
+            && forwards.iter().any(|forward| {
+                forward.kind == commonjs::ForwardKind::WholeModule
+                    && forward.value_position.row as u32 + 1 == export.line
+                    && forward.value_position.column as u32 + 1 == export.col
+            }))
     });
 
     // META-05: Accumulate named re-export failures keyed by specifier so we can

@@ -169,6 +169,25 @@ pub(crate) fn is_shadowed_within(
     binding_until(at, name, source, Some(boundary.id())).is_some()
 }
 
+fn pattern_binds(node: Node<'_>, name: &str, source: &[u8]) -> bool {
+    match node.kind() {
+        "identifier" | "shorthand_property_identifier_pattern" => {
+            source_name(node, source).as_deref() == Some(name)
+        }
+        "pair_pattern" => node
+            .child_by_field_name("value")
+            .is_some_and(|value| pattern_binds(value, name, source)),
+        "assignment_pattern" | "object_assignment_pattern" => node
+            .child_by_field_name("left")
+            .is_some_and(|left| pattern_binds(left, name, source)),
+        "object_pattern" | "array_pattern" | "rest_pattern" | "required_parameter"
+        | "optional_parameter" => node
+            .named_children(&mut node.walk())
+            .any(|child| pattern_binds(child, name, source)),
+        _ => false,
+    }
+}
+
 fn binding_until<'tree>(
     at: Node<'tree>,
     name: &str,
@@ -177,8 +196,15 @@ fn binding_until<'tree>(
 ) -> Option<Option<Node<'tree>>> {
     let mut scope = at.parent();
     while let Some(parent) = scope {
-        if boundary == Some(parent.id()) {
-            break;
+        if parent
+            .child_by_field_name("parameter")
+            .is_some_and(|parameter| pattern_binds(parameter, name, source))
+            || (matches!(parent.kind(), "function_expression" | "class")
+                && parent
+                    .child_by_field_name("name")
+                    .is_some_and(|binding| pattern_binds(binding, name, source)))
+        {
+            return Some(None);
         }
         for child in parent.named_children(&mut parent.walk()) {
             if child.kind() == "import_statement" && imports_name(child, name, source) {
@@ -200,7 +226,10 @@ fn binding_until<'tree>(
                     let Some(identifier) = variable.child_by_field_name("name") else {
                         continue;
                     };
-                    if text(identifier, source) == name {
+                    if pattern_binds(identifier, name, source) {
+                        if identifier.kind() != "identifier" {
+                            return Some(None);
+                        }
                         let is_const = text(declaration, source).trim_start().starts_with("const ");
                         if is_const
                             && variable
@@ -244,10 +273,13 @@ fn binding_until<'tree>(
                 let identifier = parameter
                     .child_by_field_name("pattern")
                     .unwrap_or(parameter);
-                if text(identifier, source) == name {
+                if pattern_binds(identifier, name, source) {
                     return Some(None);
                 }
             }
+        }
+        if boundary == Some(parent.id()) {
+            break;
         }
         scope = parent.parent();
     }

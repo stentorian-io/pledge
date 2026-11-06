@@ -5,6 +5,8 @@ declarations are private. The type pass follows local and imported aliases,
 generic arguments, merged interfaces, and inherited public members. Existing
 parameter, return, and field compatibility rules compare the expanded shapes.
 Renaming a private alias with an unchanged shape is compatible.
+Namespace reexports retain the source member's compiler type, including default
+values and default functions.
 
 Iterator and generator contracts include the values accepted by `.next()`.
 Narrowing those inputs on a returned iterator is breaking; widening them is
@@ -43,6 +45,9 @@ an optional argument or replacing an unbounded rest parameter with a fixed
 parameter can emit Major `param-type-narrowed`. Callback assignability still
 allows ignored arguments and discarded results for `void` callbacks.
 Concrete tuple rest parameters are compared as ordinary argument positions.
+Unbounded rest parameters retain their accepted type after optional leading
+parameters are introduced or removed; each call position still preserves its
+argument type and required argument count.
 Builtin relationships include `Map` to `ReadonlyMap`, `Set` to `ReadonlySet`, and
 `Promise` to `PromiseLike`; the reverse direction can require missing members.
 
@@ -52,8 +57,12 @@ result becomes incompatible emits Major `overload-removed`. Widening accepted
 inputs or narrowing a readable result remains compatible. A single replacement
 may cover multiple old overloads. Reordering overlapping overloads is breaking
 when it selects an incompatible result for an old call; disjoint overload
-reordering stays compatible. Overlap comparison checks at most 256 argument-type
-witnesses; exhausting that budget produces `analysis-incomplete`.
+reordering stays compatible. Object arguments can overlap through variables
+containing both sets of required properties; conflicting required discriminants
+do not establish an overlap. Independent generic arguments retain their
+constraints when finding overlapping calls. Overlap comparison checks at most
+256 argument-type witnesses; exhausting that budget or requiring dependent
+generic inference produces `analysis-incomplete`.
 
 Callable shapes retain explicit `this` receivers and type predicates, including
 returned callbacks and object methods. Adding or narrowing a receiver requirement
@@ -71,15 +80,22 @@ Packages without a tsconfig receive strict NodeNext
 resolution, including dependencies that publish types only through `exports`.
 It does not execute package code. Unevaluated symbolic
 types (including uninstantiated mapped types), missing declarations, compiler
-failures, or exhausted budgets produce incomplete analysis. The compiler pass
-has a 30-second timeout, a 512 MiB heap limit, and a 16 MiB output limit in
-addition to the type expansion limits above. Compiler syntax diagnostics, including
+failures, or exhausted budgets produce incomplete analysis. A CommonJS export
+assignment also retains incomplete evidence when its result resolves only
+to `any` or `unknown`; direct explicit `any` declarations retain their declared
+contract. Compiler evaluation has a 30-second timeout, a 512 MiB heap limit, and
+a 16 MiB output limit in addition to the type expansion limits above. Compiler syntax diagnostics, including
 syntax unsupported by the selected compiler version, also make analysis incomplete.
 Private class members are excluded from the public structural shape, while their
 declaration identities and protected member identities are retained as nominal
 brands. Unique-symbol declarations retain identity in the same way. Public input
 and output relationships are compared across the package: if `consume(api())`
 used to share a brand and no longer does, Major `type-incompatible` is emitted.
+The same rule reports newly required private brands or unique-symbol identities
+where consumers could previously supply structural objects or ordinary symbols.
+It follows callback returns and writable containers, including tuple elements;
+adding a brand only to a readonly result remains compatible. Concrete tuple-rest
+parameters preserve the same nominal relationships as ordinary parameters.
 Consistent private declaration renames and inherited brands preserve these
 relationships. Input unions retain each accepted brand regardless of member order;
 protected overrides retain their inherited origin. Non-public release tags do not

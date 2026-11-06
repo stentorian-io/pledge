@@ -132,3 +132,20 @@ fn unresolved_helper_keys_are_explicitly_incomplete() {
         );
     }
 }
+
+#[test]
+fn descriptor_method_setters_preserve_writability_until_removed() {
+    let old = package(
+        "Object.defineProperty(exports,'value',{get(){return 1;},set(v){},enumerable:true});",
+    );
+    let (before, _) = discover_exports(old.path()).unwrap();
+    for (source, removed) in [
+        ("Object.defineProperty(exports,'value',{get(){return 1;},enumerable:true});", true),
+        ("Object.defineProperty(exports,'value',{get:function(){return 1;},set:function(v){},enumerable:true});", false),
+    ] {
+        let new = package(source);
+        let (after, _) = discover_exports(new.path()).unwrap();
+        let findings = compare_structural_diff(old.path(), new.path(), &before, &after);
+        assert_eq!(findings.iter().any(|finding| finding.rule == "export-writability-removed"), removed, "{source}: {findings:?}");
+    }
+}

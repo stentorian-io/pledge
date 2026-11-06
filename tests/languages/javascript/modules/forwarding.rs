@@ -54,6 +54,7 @@ fn conditional_commonjs_exports_preserve_each_environment() {
 fn direct_bound_and_spread_requires_forward_the_public_surface() {
     for wrapper in [
         "module.exports = require('./production.cjs');",
+        r"module.exports = re\u0071uire('./production.cjs');",
         "const implementation = require('./production.cjs'); module.exports = implementation;",
         "module.exports = { ...require('./production.cjs') };",
     ] {
@@ -68,10 +69,15 @@ fn direct_bound_and_spread_requires_forward_the_public_surface() {
             .values()
             .filter(|symbol| symbol.name == "api")
             .all(|symbol| symbol.file.ends_with("production.cjs")));
+        let default_file = if wrapper.contains("...") {
+            "index.cjs"
+        } else {
+            "production.cjs"
+        };
         assert!(
             exports
                 .values()
-                .any(|symbol| symbol.name == "default" && symbol.file.ends_with("production.cjs")),
+                .any(|symbol| symbol.name == "default" && symbol.file.ends_with(default_file)),
             "{wrapper}: {exports:?}"
         );
     }
@@ -305,9 +311,8 @@ async fn node_consumers_confirm_commonjs_replacement_removes_the_api() {
 }
 
 #[test]
-fn unresolved_mutations_do_not_erase_the_known_surface() {
+fn conditional_mutations_do_not_erase_the_known_surface() {
     for wrapper in [
-        "module.exports = require('./production.cjs'); module.exports = factory();",
         "module.exports = require('./production.cjs'); while (condition) { module.exports = {}; }",
         "let api = require('./production.cjs'); if (condition) { api = {}; } module.exports = api;",
     ] {
@@ -327,6 +332,80 @@ fn unresolved_mutations_do_not_erase_the_known_surface() {
     let (exports, warnings) = discover_exports(directory.path()).unwrap();
     assert!(exports.keys().any(|key| key.name == "api"));
     assert!(warnings.is_empty(), "{warnings:?}");
+}
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn unknown_replacements_require_evidence_for_the_assigned_result() {
+    use pledge::languages::typescript::compiler;
+
+    for (returned, succeeds) in [("{api:()=>1}", true), ("{}", false)] {
+        let wrapper = format!("/** @returns {{any}} */ function factory(){{return {returned}}} module.exports=require('./production.cjs'); module.exports=factory();");
+        let directory = package(&wrapper, "exports.api=()=>1;", "");
+        let output = std::process::Command::new("node")
+            .current_dir(directory.path())
+            .args(["--eval", "require('./index.cjs').api();"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.success(),
+            succeeds,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let (mut exports, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(exports.keys().any(|key| key.name == "default"));
+        assert!(!exports.keys().any(|key| key.name == "api"));
+        let result = compiler::enrich_exports(&mut exports, directory.path())
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, compiler::EnrichResult::Degraded(ref reason) if reason.contains("export result requires runtime evidence")),
+            "{result:?}"
+        );
+    }
+}
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn property_spreads_of_unknown_results_keep_missing_evidence() {
+    use pledge::languages::typescript::compiler;
+
+    for (returned, succeeds) in [("{api:1}", true), ("{}", false)] {
+        let dependency =
+            format!("/** @type {{any}} */ const create=()=>({returned}); module.exports=create();");
+        let directory = package(
+            "module.exports={...require('./production.cjs')};",
+            &dependency,
+            "",
+        );
+        let output = std::process::Command::new("node")
+            .current_dir(directory.path())
+            .args([
+                "--eval",
+                "if(require('forwarding-test').api!==1)throw Error('missing api');",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.success(),
+            succeeds,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let (mut exports, warnings) = discover_exports(directory.path()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(exports.keys().any(|key| key.name == "default"));
+        let result = compiler::enrich_exports(&mut exports, directory.path())
+            .await
+            .unwrap();
+        assert!(
+            matches!(result, compiler::EnrichResult::Degraded(ref reason) if reason.contains("export result requires runtime evidence")),
+            "{result:?}"
+        );
+    }
 }
 
 #[test]
@@ -451,4 +530,66 @@ fn known_environment_alias_rebinding_preserves_branch_identity() {
             && key.condition.as_deref() == Some("cjs:NODE_ENV=development")),
         "{exports:?}"
     );
+}
+
+#[cfg(feature = "lsp-tests")]
+#[tokio::test]
+async fn property_spreads_copy_members_without_forwarding_the_module_value() {
+    use pledge::languages::typescript::compiler;
+    let cases = [
+        ("property-forward-default", "module.exports={...require(\"./production.cjs\"),api:Number(1)};\n", "module.exports={...require(\"./production.cjs\"),api:Number(1)};\n", "function create(){return ()=>Number(1)}module.exports=create();\n", "function create(){return ()=>String(1)}module.exports=create();\n", "const assert=require(\"node:assert/strict\");const pkg=require(\"forwarding-test\");assert.deepEqual(Object.keys(pkg),[\"api\"]);assert.equal(pkg.api,1);assert.equal(pkg.default,undefined);\n", false),
+        ("spread-factory-default", "module.exports={...require(\"./production.cjs\")};", "module.exports={...require(\"./production.cjs\")};", "function create(){return {default:Number(1)}}module.exports=create();", "function create(){return {default:String(1)}}module.exports=create();", "require(\"forwarding-test\").default.toFixed();", true),
+        ("spread-factory-fields", "module.exports={...require(\"./production.cjs\")};", "module.exports={...require(\"./production.cjs\")};", "function create(){return {api:Number(1)}}module.exports=create();", "function create(){return {}}module.exports=create();", "require(\"forwarding-test\").api.toFixed();", true),
+        ("spread-real-default", "module.exports={...require(\"./production.cjs\")};", "module.exports={...require(\"./production.cjs\")};", "module.exports={default:Number(1)};", "module.exports={default:String(1)};", "require(\"forwarding-test\").default.toFixed();", true),
+        ("spread-root-default", "module.exports={...require(\"./production.cjs\"),default:Number(2)};", "module.exports={...require(\"./production.cjs\"),default:Number(2)};", "function create(){return {api:Number(1)}}module.exports=create();", "function create(){return {}}module.exports=create();", "const pkg=require(\"forwarding-test\");pkg.api.toFixed();if(pkg.default!==2)throw Error(\"default\");", true),
+        ("whole-function", "module.exports=require(\"./production.cjs\");", "module.exports=require(\"./production.cjs\");", "function create(){return ()=>Number(1)}module.exports=create();", "function create(){return ()=>String(1)}module.exports=create();", "require(\"forwarding-test\")().toFixed();", true),
+        ("spread copies getters as writable values", "module.exports={...require('./production.cjs')};", "module.exports={...require('./production.cjs')};", "exports.api=Number(1);", "module.exports={get api(){return Number(1)}};", "'use strict';const api=require('forwarding-test');api.api=2;if(api.api!==2)throw Error('write lost');", false),
+        ("whole module to property spread", "module.exports=require(\"./production.cjs\");", "module.exports={...require(\"./production.cjs\")};", "function create(){return {api:Number(1)}}module.exports=create();", "function create(){return {api:Number(1)}}module.exports=create();", "require(\"forwarding-test\").api.toFixed();", false),
+        ("property spread to whole module", "module.exports={...require(\"./production.cjs\")};", "module.exports=require(\"./production.cjs\");", "function create(){return {api:Number(1)}}module.exports=create();", "function create(){return {api:Number(1)}}module.exports=create();", "require(\"forwarding-test\").api.toFixed();", false),
+        ("esbuild-excludes-default", "var __copyProps=(to,from,except)=>{for(let key of Object.getOwnPropertyNames(from))if(!Object.prototype.hasOwnProperty.call(to,key)&&key!==except)Object.defineProperty(to,key,{get:()=>from[key],enumerable:true});return to};var __reExport=(target,mod,secondTarget)=>(__copyProps(target,mod,\"default\"),secondTarget&&__copyProps(secondTarget,mod,\"default\"));const index_exports={};module.exports=index_exports;__reExport(index_exports,require(\"./production.cjs\"),module.exports);0&&(module.exports={...require(\"./production.cjs\")});", "var __copyProps=(to,from,except)=>{for(let key of Object.getOwnPropertyNames(from))if(!Object.prototype.hasOwnProperty.call(to,key)&&key!==except)Object.defineProperty(to,key,{get:()=>from[key],enumerable:true});return to};var __reExport=(target,mod,secondTarget)=>(__copyProps(target,mod,\"default\"),secondTarget&&__copyProps(secondTarget,mod,\"default\"));const index_exports={};module.exports=index_exports;__reExport(index_exports,require(\"./production.cjs\"),module.exports);0&&(module.exports={...require(\"./production.cjs\")});", "module.exports={api:Number(1),default:Number(2)};", "module.exports={api:Number(1),default:String(2)};", "const pkg=require(\"forwarding-test\");if(pkg.api!==1||pkg.default!==undefined)throw Error(\"surface\");", false),
+        ("object-assign-callable", "Object.assign(module.exports,require(\"./production.cjs\"),{api:Number(1)});", "Object.assign(module.exports,require(\"./production.cjs\"),{api:Number(1)});", "function create(){return ()=>Number(1)}module.exports=create();", "function create(){return ()=>String(1)}module.exports=create();", "const pkg=require(\"forwarding-test\");if(pkg.api!==1||pkg.default!==undefined)throw Error(\"surface\");", false),
+    ];
+    for (name, old_wrapper, new_wrapper, old, new, consumer, breaking) in cases {
+        let mut maps = Vec::new();
+        let mut directories = Vec::new();
+        for (wrapper, dependency, succeeds) in
+            [(old_wrapper, old, true), (new_wrapper, new, !breaking)]
+        {
+            let directory = package(wrapper, dependency, "");
+            let output = std::process::Command::new("node")
+                .current_dir(directory.path())
+                .args(["--eval", consumer])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                succeeds,
+                "{name}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let (mut exports, warnings) = discover_exports(directory.path()).unwrap();
+            assert!(warnings.is_empty(), "{name}: {warnings:?}");
+            let result = compiler::enrich_exports(&mut exports, directory.path())
+                .await
+                .unwrap();
+            assert!(
+                matches!(result, compiler::EnrichResult::Enriched),
+                "{name}: {result:?}"
+            );
+            maps.push(exports);
+            directories.push(directory);
+        }
+        let findings = compare::compare_exports(&maps[0], &maps[1], directories[1].path(), true);
+        assert_eq!(
+            pledge::core::findings::has_breaking_changes(&findings),
+            breaking,
+            "{name}: {findings:?}"
+        );
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.rule == "analysis-incomplete"),
+            "{name}: {findings:?}"
+        );
+    }
 }

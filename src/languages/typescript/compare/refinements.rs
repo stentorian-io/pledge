@@ -16,10 +16,11 @@ use crate::languages::typescript::types::parser::{
     compare_template_literal_patterns, parse_template_literal_type, parse_type_string,
     PatternDirection,
 };
-use crate::languages::typescript::types::shape::TypeShape;
+use crate::languages::typescript::types::shape::{ParamShape, PrimitiveKind, TypeShape};
 use crate::languages::typescript::types::subtype::{
     accepts_calls, accepts_receiver, argument_parameters, argument_type, is_subtype_of,
 };
+use std::borrow::Cow;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -372,7 +373,7 @@ pub(crate) fn compare_overload_contracts(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
-    if before.len() <= 1 && after.len() <= 1 {
+    if before == after || before.len() <= 1 && after.len() <= 1 {
         return Vec::new();
     }
     let mut findings = Vec::new();
@@ -419,34 +420,27 @@ pub(crate) fn compare_overload_contracts(
             });
         }
     }
+    let mut unknown_domain = false;
     for (index, old) in before.iter().enumerate() {
         let Some(replacement) = replacements[index] else {
             continue;
         };
-        let TypeShape::Function {
-            params: old_params,
-            return_type: old_result,
-            ..
-        } = old.without_type_parameters()
-        else {
+        let Some((old_params, old_result)) = overload_domain(old) else {
+            unknown_domain = true;
             continue;
         };
         for (candidate_index, candidate) in after.iter().enumerate() {
-            let TypeShape::Function {
-                params: candidate_params,
-                return_type: candidate_result,
-                ..
-            } = candidate.without_type_parameters()
-            else {
+            let Some((candidate_params, candidate_result)) = overload_domain(candidate) else {
+                unknown_domain = true;
                 continue;
             };
-            if (candidate_index >= replacement && !specialized(candidate_params))
+            if (candidate_index >= replacement && !specialized_signature(candidate))
                 || is_subtype_of(candidate_result, old_result, 0)
-                || specialized(old_params) && !specialized(candidate_params)
+                || specialized_signature(old) && !specialized_signature(candidate)
             {
                 continue;
             }
-            let (witnesses, truncated) = overlapping_calls(old_params, candidate_params);
+            let (witnesses, truncated) = overlapping_calls(&old_params, &candidate_params);
             let changed_selection = witnesses.iter().any(|call| {
                 let Some((old_index, old_result)) = selected_result(before, call) else {
                     return false;
@@ -478,7 +472,62 @@ pub(crate) fn compare_overload_contracts(
             }
         }
     }
+    if unknown_domain {
+        findings.push(Finding {
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!("generic overload inference in `{name}` could not be compared"),
+        });
+    }
     findings
+}
+
+/// A single independent generic argument can be witnessed by its constraint.
+/// Dependent arguments and results require inference, not constraint erasure.
+fn overload_domain(signature: &TypeShape) -> Option<(Cow<'_, [ParamShape]>, &TypeShape)> {
+    fn has_parameter(shape: &TypeShape) -> bool {
+        matches!(shape, TypeShape::TypeParam(_)) || shape.children().into_iter().any(has_parameter)
+    }
+    let TypeShape::Function {
+        params,
+        return_type,
+        ..
+    } = signature.without_type_parameters()
+    else {
+        return None;
+    };
+    let TypeShape::GenericDeclaration {
+        params: generics,
+        body,
+    } = signature
+    else {
+        return Some((Cow::Borrowed(params), return_type));
+    };
+    if !matches!(body.as_ref(), TypeShape::Function { .. }) || has_parameter(return_type) {
+        return None;
+    }
+    let mut used = HashSet::new();
+    let mut arguments = params.clone();
+    for argument in &mut arguments {
+        if let TypeShape::TypeParam(name) = &argument.shape {
+            let index: usize = name.strip_prefix("T0_")?.parse().ok()?;
+            if !used.insert(index) {
+                return None;
+            }
+            argument.shape = generics
+                .get(index)?
+                .constraint
+                .clone()
+                .unwrap_or(TypeShape::Primitive(PrimitiveKind::Unknown));
+        }
+        if has_parameter(&argument.shape) {
+            return None;
+        }
+    }
+    Some((Cow::Owned(arguments), return_type))
 }
 
 fn specialized(params: &[crate::languages::typescript::types::shape::ParamShape]) -> bool {
@@ -487,25 +536,33 @@ fn specialized(params: &[crate::languages::typescript::types::shape::ParamShape]
         .any(|parameter| matches!(parameter.shape, TypeShape::Literal(_)))
 }
 
+fn specialized_signature(signature: &TypeShape) -> bool {
+    match signature.without_type_parameters() {
+        TypeShape::Function { params, .. } => specialized(params),
+        _ => false,
+    }
+}
+
 fn selected_result<'a>(
     signatures: &'a [TypeShape],
     call: &[crate::languages::typescript::types::shape::ParamShape],
 ) -> Option<(usize, &'a TypeShape)> {
-    let mut accepted = signatures
+    let domains = signatures
         .iter()
+        .map(overload_domain)
+        .collect::<Option<Vec<_>>>()?;
+    let mut accepted = domains
+        .into_iter()
         .enumerate()
-        .filter_map(
-            |(index, signature)| match signature.without_type_parameters() {
-                TypeShape::Function {
-                    params,
+        .filter_map(|(index, (params, return_type))| {
+            accepts_calls(&params, call, 0).then(|| {
+                (
+                    specialized_signature(&signatures[index]),
+                    index,
                     return_type,
-                    ..
-                } if accepts_calls(params, call, 0) => {
-                    Some((specialized(params), index, return_type.as_ref()))
-                }
-                _ => None,
-            },
-        )
+                )
+            })
+        })
         .collect::<Vec<_>>();
     accepted.sort_by_key(|(specialized, index, _)| (!specialized, *index));
     accepted.first().map(|(_, index, result)| (*index, *result))
@@ -521,18 +578,70 @@ fn overlapping_calls(
     bool,
 ) {
     use crate::languages::typescript::types::shape::ParamShape;
-    fn atoms(first: &TypeShape, second: &TypeShape) -> Vec<TypeShape> {
+    fn atoms(
+        first: &TypeShape,
+        second: &TypeShape,
+        depth: usize,
+        truncated: &mut bool,
+    ) -> Vec<TypeShape> {
+        if depth >= 20 {
+            *truncated = true;
+            return Vec::new();
+        }
         match (first, second) {
             (TypeShape::Union(members), _) => members
                 .iter()
-                .flat_map(|member| atoms(member, second))
+                .flat_map(|member| atoms(member, second, depth + 1, truncated))
                 .collect(),
             (_, TypeShape::Union(members)) => members
                 .iter()
-                .flat_map(|member| atoms(first, member))
+                .flat_map(|member| atoms(first, member, depth + 1, truncated))
                 .collect(),
             _ if is_subtype_of(first, second, 0) => vec![first.clone()],
             _ if is_subtype_of(second, first, 0) => vec![second.clone()],
+            (TypeShape::Object(first), TypeShape::Object(second)) => {
+                // A variable may contain both overloads' required properties,
+                // even when neither object type is a subtype of the other.
+                // Build an inhabited common shape; a raw intersection would
+                // also admit impossible conflicting discriminants.
+                let mut candidates = vec![first.clone()];
+                for (name, right) in second {
+                    let Some(left) = first.get(name) else {
+                        for fields in &mut candidates {
+                            fields.insert(name.clone(), right.clone());
+                        }
+                        continue;
+                    };
+                    let choices = atoms(&left.shape, &right.shape, depth + 1, truncated);
+                    if choices.is_empty() && left.optional && right.optional {
+                        for fields in &mut candidates {
+                            fields.remove(name);
+                        }
+                        continue;
+                    }
+                    *truncated |= candidates.len().saturating_mul(choices.len()) > 256;
+                    candidates = candidates
+                        .into_iter()
+                        .flat_map(|fields| {
+                            choices.iter().map(move |shape| {
+                                let mut fields = fields.clone();
+                                fields.insert(
+                                    name.clone(),
+                                    crate::languages::typescript::types::shape::FieldShape {
+                                        optional: left.optional && right.optional,
+                                        readonly: left.readonly && right.readonly,
+                                        shape: shape.clone(),
+                                        write_type: None,
+                                    },
+                                );
+                                fields
+                            })
+                        })
+                        .take(256)
+                        .collect();
+                }
+                candidates.into_iter().map(TypeShape::Object).collect()
+            }
             _ => Vec::new(),
         }
     }
@@ -566,7 +675,7 @@ fn overlapping_calls(
                 candidates.clear();
                 break;
             };
-            let choices = atoms(first, second);
+            let choices = atoms(first, second, 0, &mut truncated);
             truncated |= candidates.len().saturating_mul(choices.len()) > 256;
             candidates = candidates
                 .into_iter()

@@ -45,6 +45,7 @@ async fn assert_consumer_contracts(specifications: &str) {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let breaking = case["breaking"].as_bool().unwrap();
+        let incomplete = case["incomplete"].as_bool().unwrap_or(false);
         let old = tempfile::tempdir().unwrap();
         let new = tempfile::tempdir().unwrap();
         let extension = case["extension"].as_str().unwrap();
@@ -121,10 +122,17 @@ async fn assert_consumer_contracts(specifications: &str) {
                 &exports[1],
             ),
         );
-        if pledge::core::findings::has_breaking_changes(&findings) != breaking {
+        if pledge::core::findings::has_breaking_changes(&findings) != (breaking && !incomplete) {
             failures.push(format!(
-                "{name}: expected breaking={breaking}, got {findings:?}"
+                "{name}: expected breaking={breaking}, incomplete={incomplete}, got {findings:?}"
             ));
+        }
+        if incomplete
+            && !findings
+                .iter()
+                .any(|finding| finding.rule == "analysis-incomplete")
+        {
+            failures.push(format!("{name}: missing incomplete evidence: {findings:?}"));
         }
         if let Some(rule) = case["forbidden_rule"].as_str() {
             if findings.iter().any(|finding| finding.rule == rule) {

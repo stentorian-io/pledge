@@ -85,5 +85,140 @@
     "consumer": "const result = api();",
     "breaking": false,
     "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "added private input",
+    "old": "declare class A {x:string;} export declare function api(x:A):void;",
+    "new": "declare class A {private brand; x:string;} export declare function api(x:A):void;",
+    "consumer": "api({x:\"ok\"});",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "added private callback return",
+    "old": "declare class A {x:string;} export declare function api(cb:()=>A):void;",
+    "new": "declare class A {private brand; x:string;} export declare function api(cb:()=>A):void;",
+    "consumer": "api(()=>({x:\"ok\"}));",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "added private output",
+    "old": "declare class A {x:string;} export declare function api():A;",
+    "new": "declare class A {private brand; x:string;} export declare function api():A;",
+    "consumer": "const x:string=api().x;",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "added private tuple",
+    "old": "declare class A {x:string;} export declare function api():[A];",
+    "new": "declare class A {private brand;x:string;} export declare function api():[A];",
+    "consumer": "api()[0]={x:\"ok\"};",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "added private readonly tuple",
+    "old": "declare class A {x:string;} export declare function api():readonly [A];",
+    "new": "declare class A {private brand;x:string;} export declare function api():readonly [A];",
+    "consumer": "const x:string=api()[0].x;",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "added private readonly array",
+    "old": "declare class A {x:string;} export declare function api():readonly A[];",
+    "new": "declare class A {private brand;x:string;} export declare function api():readonly A[];",
+    "consumer": "const x:string=api()[0].x;",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "added private union control",
+    "old": "declare class A {x:string;} export declare function api(x:A):void;",
+    "new": "declare class A {private brand;x:string;} export declare function api(x:A|{x:string}):void;",
+    "consumer": "api({x:\"ok\"});",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "added private symbol input",
+    "old": "export declare function api(x:symbol):void;",
+    "new": "declare const A:unique symbol; export declare function api(x:typeof A):void;",
+    "consumer": "api(Symbol());",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "structural input preserved by wider overload",
+    "old": "export declare function api(x:{x:string}):void;",
+    "new": "declare class A {private brand;x:string;} export declare function api(x:A):void; export declare function api(x:{x?:string}):void;",
+    "consumer": "api({x:\"ok\"});",
+    "breaking": false,
+    "extension": "d.ts",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "rest tuple nominal preserved",
+    "old": "declare class A {private brand;} export declare function api():A;export declare function take(...args:[A]):void;",
+    "new": "declare class A {private brand;} export declare function api():A;export declare function take(x:A):void;",
+    "consumer": "import {take} from \"./index.js\"; take(api());",
+    "breaking": false,
+    "extension": "d.ts",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "rest tuple nominal split",
+    "old": "declare class A {private brand;}declare class B {private brand;} export declare function api():A;export declare function take(...args:[A]):void;",
+    "new": "declare class A {private brand;}declare class B {private brand;} export declare function api():A;export declare function take(x:B):void;",
+    "consumer": "import {take} from \"./index.js\"; take(api());",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "unbounded nominal tail after 1 optional heads stays structural",
+    "extension": "d.ts",
+    "old": "export declare function api(...xs:{x:number}[]):void;",
+    "new": "export declare function api(x0?:{x:number},...tail:{x:number}[]):void;",
+    "consumer": "api(); api({x:1}); api({x:1},{x:2});",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "unbounded nominal tail after 1 optional heads narrows",
+    "extension": "d.ts",
+    "old": "export declare function api(...xs:{x:number}[]):void;",
+    "new": "declare class Brand {private tag;x:number;} export declare function api(x0?:{x:number},...tail:Brand[]):void;",
+    "consumer": "api(); api({x:1}); api({x:1},{x:2});",
+    "breaking": true,
+    "required_rule": "type-incompatible"
+  },
+  {
+    "name": "unbounded nominal tail after 2 optional heads stays structural",
+    "extension": "d.ts",
+    "old": "export declare function api(...xs:{x:number}[]):void;",
+    "new": "export declare function api(x0?:{x:number},x1?:{x:number},...tail:{x:number}[]):void;",
+    "consumer": "api(); api({x:1}); api({x:1},{x:2}); api({x:1},{x:2},{x:3});",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "unbounded nominal tail after 2 optional heads narrows",
+    "extension": "d.ts",
+    "old": "export declare function api(...xs:{x:number}[]):void;",
+    "new": "declare class Brand {private tag;x:number;} export declare function api(x0?:{x:number},x1?:{x:number},...tail:Brand[]):void;",
+    "consumer": "api(); api({x:1}); api({x:1},{x:2}); api({x:1},{x:2},{x:3});",
+    "breaking": true,
+    "required_rule": "type-incompatible"
   }
 ]

@@ -10,6 +10,8 @@ concatenation, and disposal protocols. Registered symbols use their constant
 Major `export-removed`; class members use `class-method-removed`. Symbol exports
 occupy a separate symbol space from string exports, so a string such as
 `"@@iterator"` cannot conceal removal of `Symbol.iterator`.
+Literal and inferred factory objects keep that separation even when a string
+property is named `"[Symbol.iterator]"` or resembles a registered symbol key.
 
 The identity of a registered symbol follows the
 [ECMAScript Symbol.for algorithm](https://tc39.es/ecma262/multipage/fundamental-objects.html#sec-symbol.for).
@@ -25,7 +27,39 @@ Unknown keys, mutable bindings, or shadowed built-ins are not guessed. An
 unresolved computed CommonJS key is an incomplete discovery warning; unresolved
 class keys produce `analysis-incomplete` and the contextual
 `limitation: dynamic-static-member-key` finding. Deferred function bodies and
-writes on unrelated local objects are excluded from module export enumeration.
+writes on unrelated local objects are excluded from module export enumeration. This includes parameter, catch, destructuring, and
+named function/class bindings that shadow `exports` or `module`. Direct
+`exports.key`, `module.exports.key`, constant bracket keys, and object-literal
+keys share that check. Immediately invoked functions (including `.call` and
+`.apply`), static class initialization, and computed class keys are evaluated
+at module initialization. An immediate wrapper may receive the public `exports`
+object as its parameter, including through `.call` or a literal `.apply` argument
+array. Writes after an async wrapper suspends with `await` produce incomplete
+analysis because their availability depends on when the consumer reads them.
+UMD factory recognition verifies eager invocation and
+the public export argument; returned objects must flow to `module.exports`.
+Escaped identifiers use their decoded names for these binding checks, including
+public wrapper parameters and `Object` helper methods.
+
+Whole-module assignments such as `module.exports = create()` retain compiler
+evidence for their result without executing the call. Inferred plain objects
+expose the same require members as literal objects, including a property named
+`default`, optional reads, and accessor write contracts. Callable, constructed
+class, and nominal results keep their aggregate type. Unknown results make
+analysis incomplete; an explicitly declared `any` identifier keeps its declared
+contract.
+
+An inferred symbol index requires concrete registered keys from the exact
+returned object literal. Dynamic registry keys, broader symbol indexes, and
+symbol indexes introduced by spreads or accessors remain incomplete instead of
+becoming an empty property list.
+
+Object spreads forward properties, including a real property named `default`;
+they do not forward the source module's callable or constructable value. Compiler
+evidence describes the receiving object, so spreading a getter produces a
+writable data property. Whole-module `require()` assignments retain the original
+value contract. Bundler star-export annotations exclude `default`, matching their
+re-export helpers.
 
 The constant evaluator is deliberately bounded. Evaluating arbitrary calls,
 proxies, and runtime inputs requires information beyond literal key folding;

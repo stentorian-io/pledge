@@ -30,5 +30,83 @@
     "new": "exports.api='goodbye';",
     "consumer": "const value: 'hello' = api;",
     "breaking": true
+  },
+  {
+    "name": "escaped CommonJS exports binding retains public types",
+    "extension": "cjs",
+    "old": "\\u0065xports.api='hello';",
+    "new": "\\u0065xports.api=1;",
+    "consumer": "const value:string=api;",
+    "breaking": true
+  },
+  {
+    "name": "escaped CommonJS module binding retains public types",
+    "extension": "cjs",
+    "old": "m\\u006fdule.exports.api='hello';",
+    "new": "m\\u006fdule.exports.api=1;",
+    "consumer": "const value:string=api;",
+    "breaking": true
+  },
+  {
+    "name": "escaped CommonJS exports property retains public types",
+    "extension": "cjs",
+    "old": "module.\\u0065xports.api='hello';",
+    "new": "module.\\u0065xports.api=1;",
+    "consumer": "const value:string=api;",
+    "breaking": true
+  },
+  {
+    "name": "escaped CommonJS exports binding preserves equivalent annotated types",
+    "extension": "cjs",
+    "old": "/** @type {string} */ exports.api='hello';",
+    "new": "/** @type {string} */ \\u0065xports.api='goodbye';",
+    "consumer": "const value:string=api;",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "escaped CommonJS exports property preserves equivalent annotated types",
+    "extension": "cjs",
+    "old": "/** @type {string} */ exports.api='hello';",
+    "new": "/** @type {string} */ module.\\u0065xports.api='goodbye';",
+    "consumer": "const value:string=api;",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "literal writable property to readonly factory property",
+    "old": "module.exports={api:Number(1)};",
+    "new": "function create(){return {get api(){return Number(1)}};} module.exports=create();",
+    "consumer": "import pkg from \"./index.cjs\"; pkg.api=2;",
+    "breaking": true,
+    "extension": "cjs",
+    "required_rule": "export-writability-removed"
+  },
+  {
+    "name": "factory writable property to readonly literal property",
+    "old": "function create(){return {api:Number(1)};} module.exports=create();",
+    "new": "module.exports={get api(){return Number(1)}};",
+    "consumer": "import pkg from \"./index.cjs\"; pkg.api=2;",
+    "breaking": true,
+    "extension": "cjs",
+    "required_rule": "export-writability-removed"
+  },
+  {
+    "name": "readonly factory and literal properties stay equivalent",
+    "old": "function create(){return {get api(){return Number(1)}};} module.exports=create();",
+    "new": "module.exports={get api(){return Number(1)}};",
+    "consumer": "import pkg from \"./index.cjs\"; const value:number=pkg.api;",
+    "breaking": false,
+    "extension": "cjs",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "CommonJS factory setter preserves recognized JSDoc write types",
+    "extension": "cjs",
+    "old": "function create(){let state=1;return {get api(){return state},\n/** @param {number|string} value */\nset api(value){state=Number(value)}}}module.exports=create();",
+    "new": "function create(){let state=1;return {get api(){return state},\n/** @param {number} value */\nset api(value){if(typeof value!=='number')throw Error('number required');state=value}}}module.exports=create();",
+    "consumer": "import pkg from \"./index.cjs\"; pkg.api=\"2\";",
+    "breaking": true,
+    "required_rule": "field-type-changed"
   }
 ]

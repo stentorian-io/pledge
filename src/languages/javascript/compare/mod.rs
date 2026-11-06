@@ -338,6 +338,33 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
         }
         let name = key.name.as_str();
         if let Some(new_sym) = new.get(key).filter(|s| is_public(s)) {
+            if let (Some(before), Some(after)) =
+                (old.property_contract(key), new.property_contract(key))
+            {
+                if !before.readonly && after.readonly {
+                    findings.push(Finding {
+                        severity: Severity::Major,
+                        rule: rules::RULE_EXPORT_WRITABILITY_REMOVED,
+                        file: new_sym.file.clone(),
+                        line: new_sym.line,
+                        col: new_sym.col,
+                        message: format!("CommonJS export `{name}` is no longer writable"),
+                    });
+                } else if !before.readonly && !after.readonly {
+                    let old_write = before.write_type.as_ref().unwrap_or(&before.shape);
+                    let new_write = after.write_type.as_ref().unwrap_or(&after.shape);
+                    if !crate::languages::typescript::types::subtype::is_subtype_of(
+                        old_write, new_write, 0,
+                    ) {
+                        findings.push(Finding {
+                            severity: Severity::Major,
+                            rule: crate::languages::typescript::compare::rules::RULE_FIELD_TYPE_CHANGED,
+                            file: new_sym.file.clone(), line: new_sym.line, col: new_sym.col,
+                            message: format!("CommonJS export `{name}` no longer accepts every previous assignment"),
+                        });
+                    }
+                }
+            }
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {

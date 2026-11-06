@@ -13,6 +13,197 @@ use pledge::languages::javascript::compare;
 use pledge::languages::typescript::compiler;
 use std::process::Command;
 
+#[tokio::test]
+async fn unresolved_commonjs_symbol_keys_retain_missing_runtime_evidence() {
+    for source in [
+        "const key=String('key'); function create(){return {[Symbol.for(key)]:1}} module.exports=create();",
+        "/** @returns {{[key:symbol]:number}} */ function create(){return {[Symbol.for('key')]:1}} module.exports=create();",
+        "const source={[Symbol.for('key')]:1}; function create(){return {...source}} module.exports=create();",
+        "function create(){return {get [Symbol.for('key')](){return 1}}} module.exports=create();",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"symbol-key-evidence","exports":"./index.cjs"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("index.cjs"), source).unwrap();
+        let consumer = Command::new("node")
+            .current_dir(root)
+            .args([
+                "-e",
+                "if(require('./index.cjs')[Symbol.for('key')]!==1)throw Error('missing symbol');",
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            consumer.status.success(),
+            "{source}: {}",
+            String::from_utf8_lossy(&consumer.stderr)
+        );
+
+        let (mut exports, warnings) = discover::discover_exports(root).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let enrichment = compiler::enrich_exports(&mut exports, root).await.unwrap();
+
+        assert!(
+            matches!(enrichment, compiler::EnrichResult::Degraded(ref reason) if reason.contains("symbol")),
+            "{source}: {enrichment:?}"
+        );
+        assert!(exports.keys().any(|key| key.name == "default"));
+    }
+}
+
+#[tokio::test]
+async fn unresolved_commonjs_factory_results_retain_missing_runtime_evidence() {
+    for annotation in ["any", "unknown"] {
+        for has_api in [true, false] {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path();
+            std::fs::write(
+                root.join("package.json"),
+                r#"{"name":"factory-types","exports":"./index.cjs"}"#,
+            )
+            .unwrap();
+            let result = if has_api { "{api:1}" } else { "{}" };
+            std::fs::write(root.join("index.cjs"), format!("/** @returns {{{annotation}}} */ function create() {{ return {result}; }} module.exports = create();")).unwrap();
+            let consumer = Command::new("node")
+                .current_dir(root)
+                .args([
+                    "-e",
+                    "if (require('./index.cjs').api !== 1) throw Error('missing api');",
+                ])
+                .output()
+                .unwrap();
+            assert_eq!(
+                consumer.status.success(),
+                has_api,
+                "{}",
+                String::from_utf8_lossy(&consumer.stderr)
+            );
+            let (mut exports, warnings) = discover::discover_exports(root).unwrap();
+            assert!(warnings.is_empty(), "{warnings:?}");
+            assert!(!exports.is_empty());
+            let enrichment = compiler::enrich_exports(&mut exports, root).await.unwrap();
+            assert!(
+                matches!(enrichment, compiler::EnrichResult::Degraded(ref reason) if reason.contains("export result requires runtime evidence")),
+                "{annotation}/{has_api}: {enrichment:?}"
+            );
+        }
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"name":"explicit-any","exports":"./index.cjs"}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("index.cjs"),
+        "/** @type {any} */ const result = 1; module.exports = result;",
+    )
+    .unwrap();
+    let (mut exports, warnings) = discover::discover_exports(root).unwrap();
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(!exports.is_empty());
+    let enrichment = compiler::enrich_exports(&mut exports, root).await.unwrap();
+    assert!(
+        matches!(enrichment, compiler::EnrichResult::Enriched),
+        "{enrichment:?}"
+    );
+}
+
+#[tokio::test]
+async fn namespace_default_members_retain_compiler_types() {
+    for namespace in ["ns", "default"] {
+        for callable in [false, true] {
+            let mut snapshots = Vec::new();
+            let mut directories = Vec::new();
+            for constructor in ["Number", "String"] {
+                let directory = tempfile::tempdir().unwrap();
+                let root = directory.path();
+                std::fs::write(
+                    root.join("package.json"),
+                    r#"{"name":"namespace-types","type":"module","exports":"./index.js"}"#,
+                )
+                .unwrap();
+                std::fs::write(
+                    root.join("index.js"),
+                    format!("export * as {namespace} from './source.js';"),
+                )
+                .unwrap();
+                let source = if callable {
+                    format!("export default function api() {{ return {constructor}(1); }}")
+                } else {
+                    format!("const value = {constructor}(1); export default value;")
+                };
+                std::fs::write(root.join("source.js"), source).unwrap();
+                let import = if namespace == "default" {
+                    "import ns from './index.js';"
+                } else {
+                    "import {ns} from './index.js';"
+                };
+                let call = if callable { "()" } else { "" };
+                std::fs::write(
+                    root.join("consumer.ts"),
+                    format!("{import} const value: number = ns.default{call};"),
+                )
+                .unwrap();
+                let output = Command::new("tsc")
+                    .current_dir(root)
+                    .args([
+                        "--noEmit",
+                        "--strict",
+                        "--allowJs",
+                        "--checkJs",
+                        "--skipLibCheck",
+                        "--target",
+                        "ES2022",
+                        "--module",
+                        "NodeNext",
+                        "--moduleResolution",
+                        "NodeNext",
+                        "consumer.ts",
+                    ])
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    output.status.success(),
+                    constructor == "Number",
+                    "{namespace}/{callable}/{constructor}: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let (mut exports, warnings) = discover::discover_exports(root).unwrap();
+                assert!(warnings.is_empty(), "{warnings:?}");
+                let enrichment = compiler::enrich_exports(&mut exports, root).await.unwrap();
+                assert!(
+                    matches!(enrichment, compiler::EnrichResult::Enriched),
+                    "{namespace}/{callable}: {enrichment:?}"
+                );
+                assert!(exports
+                    .values()
+                    .any(|symbol| symbol.name == format!("{namespace}.default")
+                        && !symbol.overloads.is_empty()));
+                snapshots.push(exports);
+                directories.push(directory);
+            }
+            let findings = compare::compare_exports(
+                &snapshots[0],
+                &snapshots[1],
+                directories[1].path(),
+                false,
+            );
+            assert!(
+                pledge::core::findings::has_breaking_changes(&findings),
+                "{namespace}/{callable}: {findings:?}"
+            );
+        }
+    }
+}
+
 /// Run the full pipeline: discover -> enrich -> compare
 async fn run_pipeline(old_dir: &str, new_dir: &str) -> (Vec<Finding>, bool) {
     let old_root = fixture_path(old_dir);

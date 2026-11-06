@@ -6,7 +6,7 @@ use crate::core::findings::{Finding, Severity};
 use crate::languages::javascript::model::{ExportMap, ExportSymbol, SymbolSpace};
 use crate::languages::typescript::compare::rules::RULE_TYPE_INCOMPATIBLE;
 use crate::languages::typescript::model::ReleaseTag;
-use crate::languages::typescript::types::shape::TypeShape;
+use crate::languages::typescript::types::shape::{ParamShape, PrimitiveKind, TypeShape};
 use crate::languages::typescript::types::subtype::is_subtype_of;
 use std::collections::{HashMap, HashSet};
 
@@ -94,7 +94,26 @@ pub(crate) fn compare_nominal_relations(old: &ExportMap, new: &ExportMap) -> Vec
                 });
                 continue;
             }
+            let structural_replacement = (!contains_nominal(old_shape))
+                .then(|| {
+                    candidates.iter().copied().find(|candidate| {
+                        let mut candidate_uses = Vec::new();
+                        let mut uncertain = false;
+                        collect(
+                            old_shape,
+                            candidate,
+                            after,
+                            &key.condition,
+                            uses,
+                            &mut candidate_uses,
+                            &mut uncertain,
+                        );
+                        !candidate_uses.iter().any(requires_structural_identity)
+                    })
+                })
+                .flatten();
             let new_shape = exact
+                .or(structural_replacement)
                 .or_else(|| candidates.first().copied())
                 .or_else(|| after.overloads.get(index));
             if let Some(new_shape) = new_shape {
@@ -141,6 +160,27 @@ pub(crate) fn compare_nominal_relations(old: &ExportMap, new: &ExportMap) -> Vec
         .filter(|occurrence| occurrence.uses.target)
     {
         let Some(brand) = target.old_brands.first() else {
+            // Structural objects and ordinary symbols can be supplied without
+            // obtaining a package-owned identity from another export.
+            if requires_structural_identity(target)
+                && reported.insert((
+                    target.symbol.file.clone(),
+                    target.symbol.line,
+                    target.symbol.col,
+                ))
+            {
+                findings.push(Finding {
+                    severity: Severity::Major,
+                    rule: RULE_TYPE_INCOMPATIBLE,
+                    file: target.symbol.file.clone(),
+                    line: target.symbol.line,
+                    col: target.symbol.col,
+                    message: format!(
+                        "`{}` now requires a nominal identity where structural values were accepted",
+                        target.symbol.name
+                    ),
+                });
+            }
             continue;
         };
         for source in sources
@@ -220,6 +260,55 @@ fn contains_nominal(shape: &TypeShape) -> bool {
     !shape.nominal_brands().is_empty() || shape.children().into_iter().any(contains_nominal)
 }
 
+fn requires_structural_identity(occurrence: &Occurrence<'_>) -> bool {
+    occurrence.uses.target
+        && nominal_options(occurrence.old).iter().any(|(old, brands)| {
+            brands.is_empty()
+                && matches!(
+                    old,
+                    TypeShape::Object(_) | TypeShape::Primitive(PrimitiveKind::Symbol)
+                )
+                && !occurrence
+                    .new_options
+                    .iter()
+                    .any(|(new, brands)| brands.is_empty() && is_subtype_of(old, new, 0))
+        })
+}
+
+/// Retain references into the snapshots while aligning tuple-rest positions.
+fn argument_shapes(params: &[ParamShape]) -> (Vec<&TypeShape>, Option<&TypeShape>) {
+    let shapes: Vec<_> = params
+        .iter()
+        .flat_map(|param| match (&param.shape, param.rest) {
+            (TypeShape::Tuple(elements), true) => elements
+                .iter()
+                .map(|element| match (&element.shape, element.rest) {
+                    (TypeShape::Array(shape), true) => shape.as_ref(),
+                    _ => &element.shape,
+                })
+                .collect(),
+            (TypeShape::Array(shape), true) => vec![shape.as_ref()],
+            _ => vec![&param.shape],
+        })
+        .collect();
+    let tail =
+        params
+            .last()
+            .filter(|param| param.rest)
+            .and_then(|param| match &param.shape {
+                TypeShape::Array(shape) => Some(shape.as_ref()),
+                TypeShape::Tuple(elements) => elements
+                    .last()
+                    .filter(|element| element.rest)
+                    .and_then(|element| match &element.shape {
+                        TypeShape::Array(shape) => Some(shape.as_ref()),
+                        _ => None,
+                    }),
+                _ => None,
+            });
+    (shapes, tail)
+}
+
 fn nominal_options(shape: &TypeShape) -> Vec<(&TypeShape, Vec<&str>)> {
     match shape {
         TypeShape::Union(members) => members.iter().flat_map(nominal_options).collect(),
@@ -241,12 +330,13 @@ fn collect<'a>(
     uncertain: &mut bool,
 ) {
     let old_brands = old.nominal_brands();
-    if !old_brands.is_empty() {
+    let new_options = nominal_options(new);
+    if !old_brands.is_empty() || new_options.iter().any(|(_, brands)| !brands.is_empty()) {
         occurrences.push(Occurrence {
             old,
             new,
             old_brands,
-            new_options: nominal_options(new),
+            new_options,
             symbol,
             condition,
             uses,
@@ -279,10 +369,17 @@ fn collect<'a>(
                 contract: new_contract,
             },
         ) => {
-            for (old, new) in before.iter().zip(after) {
+            let (before, old_tail) = argument_shapes(before);
+            let (after, new_tail) = argument_shapes(after);
+            for index in 0..before.len().max(after.len()) {
+                let old = before.get(index).copied().or(old_tail);
+                let new = after.get(index).copied().or(new_tail);
+                let (Some(old), Some(new)) = (old, new) else {
+                    continue;
+                };
                 collect(
-                    &old.shape,
-                    &new.shape,
+                    old,
+                    new,
                     symbol,
                     condition,
                     uses.reverse(),
@@ -347,6 +444,34 @@ fn collect<'a>(
             occurrences,
             uncertain,
         ),
+        (TypeShape::Tuple(before), TypeShape::Tuple(after)) => {
+            for (old, new) in before.iter().zip(after) {
+                collect(
+                    &old.shape,
+                    &new.shape,
+                    symbol,
+                    condition,
+                    Uses::BOTH,
+                    occurrences,
+                    uncertain,
+                );
+            }
+        }
+        (
+            TypeShape::Generic { name, args: before },
+            TypeShape::Generic {
+                name: after_name,
+                args: after,
+            },
+        ) if name == "Readonly" && after_name == name => {
+            if let (Some(old), Some(new)) = (before.first(), after.first()) {
+                // The outer array/tuple cannot be written, but objects reached
+                // through its elements can still expose mutable contracts.
+                for (old, new) in old.children().into_iter().zip(new.children()) {
+                    collect(old, new, symbol, condition, uses, occurrences, uncertain);
+                }
+            }
+        }
         (TypeShape::Generic { name, args: before }, TypeShape::Generic { args: after, .. }) => {
             let uses = if matches!(
                 name.as_str(),

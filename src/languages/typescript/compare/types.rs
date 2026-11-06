@@ -22,8 +22,8 @@ use crate::languages::typescript::compare::rules::{
 use crate::languages::typescript::compare::{generics as generic_diff, rules as type_rules};
 use crate::languages::typescript::types::shape::{FieldShape, ParamShape, TypeShape};
 use crate::languages::typescript::types::subtype::{
-    accepts_calls, accepts_receiver, argument_parameters, format_type, is_subtype_of,
-    preserves_predicate,
+    accepts_calls, accepts_receiver, argument_parameters, argument_type, format_type,
+    is_subtype_of, preserves_predicate,
 };
 use crate::languages::typescript::types::{parser as type_parser, shape as type_shapes};
 use std::path::Path;
@@ -1141,7 +1141,9 @@ fn diff_functions(
 
     // SIG-01/SIG-04: Param count changes.
     // New params beyond old.len() are truly added params.
-    if new_params.len() > old_params.len() {
+    let old_has_rest = old_params.last().is_some_and(|parameter| parameter.rest);
+    let new_has_rest = new_params.last().is_some_and(|parameter| parameter.rest);
+    if new_params.len() > old_params.len() && !old_has_rest {
         for (i, new_param) in new_params.iter().enumerate().skip(old_params.len()) {
             let requires_argument = !new_param.optional
                 && (!new_param.rest
@@ -1183,7 +1185,7 @@ fn diff_functions(
     }
 
     // SIG-01: Removed params (old has more than new).
-    if old_params.len() > new_params.len() {
+    if old_params.len() > new_params.len() && !new_has_rest {
         for old_param in old_params.iter().skip(new_params.len()) {
             findings.push(Finding {
                 severity: Severity::Major,
@@ -1199,38 +1201,50 @@ fn diff_functions(
         }
     }
 
-    // Optional parameter becoming required at same position.
-    // ParamShape has `optional: bool` (shape.rs:60). When old_param.optional=true
-    // and new_param.optional=false at the same position, this is a breaking change:
-    // callers that omitted the argument will now get a type error.
-    for (i, (old_param, new_param)) in old_params.iter().zip(new_params.iter()).enumerate() {
-        if old_param.optional && !new_param.optional {
+    if old_has_rest && !new_has_rest && old_params.len() <= new_params.len() {
+        findings.push(Finding {
+            severity: Severity::Major,
+            rule: RULE_PARAM_REMOVED,
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!("rest arguments are no longer accepted by `{symbol_name}`"),
+        });
+    }
+
+    // Align call positions: a homogeneous rest parameter supplies every later
+    // argument, including positions introduced by splitting out a fixed prefix.
+    for i in 0..old_params.len().max(new_params.len()) {
+        let old_param = old_params
+            .get(i)
+            .or_else(|| old_params.last().filter(|parameter| parameter.rest));
+        let new_param = new_params
+            .get(i)
+            .or_else(|| new_params.last().filter(|parameter| parameter.rest));
+        let (Some(old_param), Some(new_param), Some(old_shape), Some(new_shape)) = (
+            old_param,
+            new_param,
+            argument_type(old_params, i),
+            argument_type(new_params, i),
+        ) else {
+            continue;
+        };
+        if (old_param.optional || old_param.rest) && !new_param.optional && !new_param.rest {
             findings.push(Finding {
                 severity: Severity::Major,
                 rule: RULE_PARAM_MADE_REQUIRED,
                 file: file.to_path_buf(),
                 line,
                 col,
-                message: format!(
-                    "parameter `{}` changed from optional to required in `{}` (position {})",
-                    new_param.name, symbol_name, i
-                ),
+                message: format!("parameter `{}` changed from optional to required in `{symbol_name}` (position {i})", new_param.name),
             });
         }
-    }
-
-    // SIG-02: Param type narrowing (for params that exist at same position in both).
-    // Params are contravariant: new param type must accept everything old param type did.
-    // Check: is new_param a supertype of old_param? i.e., is_subtype_of(old_param, new_param)?
-    // If NOT, the new param type is narrower — breaking.
-    for (i, (old_param, new_param)) in old_params.iter().zip(new_params.iter()).enumerate() {
-        if old_param.shape != new_param.shape {
+        if old_shape != new_shape {
             // SEM-03: Treat any → T (where T is not any) as tightening regardless of subtype
             // direction. Reason: is_subtype_of returns true for (any, X) in BOTH directions
             // (any is both top and bottom in TypeScript's escape-hatch semantics), which
             // incorrectly suppresses the narrowing finding when old param is `any`.
-            let is_any_to_concrete =
-                is_any_shape(&old_param.shape) && !is_any_shape(&new_param.shape);
+            let is_any_to_concrete = is_any_shape(old_shape) && !is_any_shape(new_shape);
             if is_any_to_concrete {
                 findings.push(Finding {
                     severity: Severity::Major,
@@ -1241,7 +1255,7 @@ fn diff_functions(
                     message: format!(
                         "parameter `{}` narrowed from `any` to `{}` in `{symbol_name}` (position {i})",
                         new_param.name,
-                        format_type(&new_param.shape)
+                        format_type(new_shape)
                     ),
                 });
                 continue;
@@ -1249,7 +1263,7 @@ fn diff_functions(
             // Contravariant check: new param must accept what old param accepted.
             // new_param is "safe" if old_param <: new_param (old is subtype of new)
             // meaning new accepts at least everything old accepted.
-            if !is_subtype_of(&old_param.shape, &new_param.shape, depth + 1) {
+            if !is_subtype_of(old_shape, new_shape, depth + 1) {
                 findings.push(Finding {
                     severity: Severity::Major,
                     rule: RULE_PARAM_TYPE_NARROWED,
@@ -1259,8 +1273,8 @@ fn diff_functions(
                     message: format!(
                         "parameter `{}` type narrowed from `{}` to `{}` in `{symbol_name}` (position {i})",
                         new_param.name,
-                        format_type(&old_param.shape),
-                        format_type(&new_param.shape)
+                        format_type(old_shape),
+                        format_type(new_shape)
                     ),
                 });
             }

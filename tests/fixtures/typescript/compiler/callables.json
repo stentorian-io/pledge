@@ -110,5 +110,65 @@
     "new": "export declare function api(...args: [x: string, y: number]): void;",
     "consumer": "api(\"x\");",
     "breaking": true
+  },
+  {
+    "name": "splitting a rest array preserves zero one and multiple arguments",
+    "old": "export declare function api(...xs:{x:number}[]):void;",
+    "new": "export declare function api(first?:{x:number},...tail:{x:number}[]):void;",
+    "consumer": "api();api({x:1});api({x:1},{x:2},{x:3});",
+    "breaking": false,
+    "extension": "d.ts"
+  },
+  {
+    "name": "splitting a rest array after a fixed prefix preserves calls",
+    "old": "export declare function api(prefix:number,...xs:string[]):void;",
+    "new": "export declare function api(prefix:number,first?:string,...tail:string[]):void;",
+    "consumer": "api(1);api(1,\"a\");api(1,\"a\",\"b\",\"c\");",
+    "breaking": false,
+    "extension": "d.ts"
+  },
+  {
+    "name": "collapsing a fixed prefix into an equal rest element accepts previous calls",
+    "old": "export declare function api(first:number,...tail:number[]):void;",
+    "new": "export declare function api(...xs:number[]):void;",
+    "consumer": "api(1);api(1,2,3);",
+    "breaking": false,
+    "extension": "d.ts"
+  },
+  {
+    "name": "narrowing a split rest tail rejects later arguments",
+    "old": "export declare function api(...xs:(string|number)[]):void;",
+    "new": "export declare function api(first?:string|number,...tail:string[]):void;",
+    "consumer": "api(\"a\",2);",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "param-type-narrowed"
+  },
+  {
+    "name": "required prefix introduced before rest rejects omitted arguments",
+    "old": "export declare function api(...xs:number[]):void;",
+    "new": "export declare function api(first:number,...tail:number[]):void;",
+    "consumer": "api();",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "param-made-required"
+  },
+  {
+    "name": "replacing rest with an optional fixed argument limits arity",
+    "old": "export declare function api(...xs:number[]):void;",
+    "new": "export declare function api(first?:number):void;",
+    "consumer": "api(1,2);",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "param-removed"
+  },
+  {
+    "name": "narrowing an any rest element rejects previous values",
+    "old": "export declare function api(...xs:any[]):void;",
+    "new": "export declare function api(...xs:string[]):void;",
+    "consumer": "api(1);",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "param-type-narrowed"
   }
 ]

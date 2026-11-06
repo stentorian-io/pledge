@@ -159,7 +159,7 @@ pub(crate) const STAR_EXPORT_QUERY: &str = r#"
 pub(crate) const NAMESPACE_EXPORT_QUERY: &str = r#"
 (export_statement
   (namespace_export
-    [(identifier) (string)] @ns_name)
+    [(identifier) (string) "default"] @ns_name)
   source: (string) @source)
 "#;
 
@@ -184,7 +184,7 @@ pub(crate) const NAMED_REEXPORT_ALIAS_QUERY: &str = r#"
   (export_clause
     (export_specifier
       name: [(identifier) (string)] @local_name
-      alias: [(identifier) (string)] @alias_name))
+      alias: [(identifier) (string) "default"] @alias_name))
   source: (string) @source)
 "#;
 
@@ -419,7 +419,7 @@ pub(crate) const CJS_EXPORTS_PROPERTY_QUERY: &str = r#"
       property: (property_identifier) @name)))
 "#;
 
-/// Captures `module.exports = SomeIdentifier` — CJS single default-like export.
+/// Captures the value assigned to `module.exports` for compiler enrichment.
 ///.
 pub(crate) const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
 (expression_statement
@@ -427,7 +427,7 @@ pub(crate) const CJS_MODULE_EXPORTS_DEFAULT_QUERY: &str = r#"
     left: (member_expression
       object: (identifier) @obj
       property: (property_identifier) @prop)
-    right: (identifier) @value))
+    right: (_) @value))
 "#;
 
 /// Captures `module.exports = class {... }` — CJS inline class export.
@@ -579,16 +579,6 @@ pub(crate) const OBJECT_DEFINE_EXPORT_QUERY: &str = r#"
     object: (identifier) @obj_id
     property: (property_identifier) @method)
   arguments: (arguments) @args)
-"#;
-
-/// BUN-06b: `exports["foo"] = bar;` bracket-subscript assignment.
-/// BUN-06.
-pub(crate) const BRACKET_SUBSCRIPT_EXPORT_QUERY: &str = r#"
-(assignment_expression
-  left: (subscript_expression
-    object: (identifier) @exports_id
-    index: (string) @name_str)
-  right: (_))
 "#;
 
 /// BUN-11-A: UMD wrapper IIFE shape — Form 1: `(func)(args)`.

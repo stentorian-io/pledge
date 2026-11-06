@@ -1732,3 +1732,30 @@ fn comparison_depth_exhaustion_reports_uncertainty_instead_of_a_break() {
     assert_eq!(findings[0].rule, "analysis-incomplete");
     assert_eq!(findings[0].severity, Severity::Warning);
 }
+
+#[test]
+fn splitting_rest_parameters_compares_argument_positions_and_arity() {
+    let before = type_parser::parse_type_string("(...xs: number[]) => void");
+    let equivalent = type_parser::parse_type_string("(first?: number, ...tail: number[]) => void");
+    assert!(diff(before.clone(), equivalent).is_empty());
+
+    for (after, rule) in [
+        (
+            "(first?: number, ...tail: string[]) => void",
+            "param-type-narrowed",
+        ),
+        (
+            "(first: number, ...tail: number[]) => void",
+            "param-made-required",
+        ),
+        ("(first?: number) => void", "param-removed"),
+    ] {
+        let findings = diff(before.clone(), type_parser::parse_type_string(after));
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == rule && finding.severity == Severity::Major),
+            "{after}: {findings:?}"
+        );
+    }
+}

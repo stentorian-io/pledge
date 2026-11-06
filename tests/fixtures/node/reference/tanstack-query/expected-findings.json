@@ -11,7 +11,7 @@
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
     ". | import/types | Value": 35,
-    ". | require/default | Value": 35,
+    ". | require/default | Value": 36,
     ". | require/types | Type": 107,
     ". | require/types | Value": 35
   },
@@ -21,7 +21,7 @@
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
     ". | import/types | Value": 35,
-    ". | require/default | Value": 35,
+    ". | require/default | Value": 36,
     ". | require/types | Type": 107,
     ". | require/types | Value": 35
   },
@@ -533,5 +533,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged. Reviewed native module-loading evidence for the unchanged @tanstack/custom-condition target src/index.ts: its extensionless ./focusManager re-export fails native Node ESM resolution in both pinned versions, while the ordinary import condition loads and exposes the same 35 names. The added analysis-incomplete Warning records this custom source-loader requirement, not a package regression. Existing findings, surfaces, discovery warnings, nonbreaking status and structural-only exit 3 are unchanged."
+  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged. Reviewed native module-loading evidence for the unchanged @tanstack/custom-condition target src/index.ts: its extensionless ./focusManager re-export fails native Node ESM resolution in both pinned versions, while the ordinary import condition loads and exposes the same 35 names. The added analysis-incomplete Warning records this custom source-loader requirement, not a package regression. Existing findings, surfaces, discovery warnings, nonbreaking status and structural-only exit 3 are unchanged. Reviewed the retained whole-module CommonJS assignment in build/modern/index.cjs:57, module.exports = __toCommonJS(index_exports). Both pinned index.cjs and types.cjs files are byte-identical across versions. The structural-only require/default count is now 36 in each version: 35 named properties plus the root assignment anchor awaiting compiler enrichment. The anchor belongs to index.cjs, not the property-forwarded types.cjs value. Node 22.12, 24.0 and 26.7 each expose the same 35 enumerable require properties in both versions, with no literal default property, and QueryClient setQueryData/getQueryData preserves a numeric value. All findings, warnings, other surface counts, nonbreaking status and structural-only exit 3 are unchanged."
 }

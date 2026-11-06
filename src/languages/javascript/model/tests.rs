@@ -511,6 +511,38 @@ fn overwrite_inner_is_safe() {
     map.debug_assert_invariants();
 }
 
+#[test]
+fn replacing_or_removing_exports_discards_property_evidence() {
+    let key = ExportKey::new_root_value("x");
+    let contract = type_shapes::FieldShape {
+        optional: false,
+        readonly: true,
+        shape: type_shapes::TypeShape::Primitive(type_shapes::PrimitiveKind::Number),
+        write_type: None,
+    };
+    let mut map = ExportMap::new();
+    map.record_property_contract(key.clone(), contract.clone());
+    assert!(map.property_contract(&key).is_none());
+
+    for mutation in ["replace", "remove", "retain"] {
+        map.insert(key.clone(), make_sym("index.cjs"));
+        map.record_property_contract(key.clone(), contract.clone());
+        map.record_typeof_target(&key, 0, None);
+        assert_eq!(map.property_contract(&key), Some(&contract));
+        match mutation {
+            "replace" => {
+                map.insert(key.clone(), make_sym("replacement.cjs"));
+            }
+            "remove" => {
+                map.remove::<ExportKey>(&key);
+            }
+            _ => map.retain::<fn(&ExportKey, &mut ExportSymbol) -> bool>(|_, _| false),
+        }
+        assert!(map.property_contract(&key).is_none());
+        assert!(map.typeof_target(&key, 0).is_none());
+    }
+}
+
 /// record_typeof_target called with a key that IS present in inner
 /// must NOT panic.
 #[test]

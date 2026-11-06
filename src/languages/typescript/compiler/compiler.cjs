@@ -89,6 +89,16 @@ function accessorWriteShape(property, setter, depth) {
   try { return shape(property.links?.writeType || checker.getTypeAtLocation(setter.parameters[0]), depth); }
   finally { if (mapper) accessorMappers.pop(); }
 }
+function propertyShape(property, depth, readonlyOverride) {
+  const declarations = property.declarations || [];
+  const readonly = readonlyOverride ?? (
+    declarations.some(declaration => declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) ||
+    declarations.some(ts.isGetAccessorDeclaration) && !declarations.some(ts.isSetAccessorDeclaration));
+  return { optional: !!(property.flags & ts.SymbolFlags.Optional), readonly,
+    write_type: accessorWriteShape(property, declarations.find(ts.isSetAccessorDeclaration), depth),
+    // Declaration locations retain explicit undefined without the absent-property marker.
+    shape: shape(checker.getTypeOfSymbolAtLocation(property, declarations[0] || program.getSourceFiles()[0]), depth) };
+}
 function bindParameters(parameters) {
   const unbound = (parameters || []).filter(parameter => !parameterNames.has(parameter));
   if (!unbound.length) return;
@@ -180,9 +190,9 @@ function symbolIdentity(expression, depth = 0) {
   if (ts.isParenthesizedExpression(expression) || ts.isAsExpression(expression) || ts.isSatisfiesExpression(expression)) return symbolIdentity(expression.expression, depth + 1);
   if (ts.isIdentifier(expression)) return symbolIdentity(constantInitializer(expression), depth + 1);
   const member = ts.isCallExpression(expression) ? expression.expression : expression;
-  if (!ts.isPropertyAccessExpression(member) || member.expression.getText() !== 'Symbol') return undefined;
+  if (!ts.isPropertyAccessExpression(member) || !ts.isIdentifier(member.expression) || member.expression.text !== 'Symbol') return undefined;
   const owner = checker.getSymbolAtLocation(member.expression);
-  if (!owner?.declarations?.every(declaration => declaration.getSourceFile().hasNoDefaultLib)) return undefined;
+  if (!owner?.declarations?.every(declaration => program.isSourceFileDefaultLibrary(declaration.getSourceFile()))) return undefined;
   if (!ts.isCallExpression(expression)) return generic('Symbol', [{ Literal: { String: member.name.text } }]);
   if (member.name.text !== 'for') return undefined;
   const key = constantScalar(expression.arguments[0]);
@@ -200,6 +210,89 @@ function propertyName(symbol) {
     ? `[Symbol.for(${JSON.stringify(identity.args[0].Literal.String)})]`
     : `[Symbol.${identity.args[0].Literal.String}]`;
   return declaration.name.getText();
+}
+function commonjsSymbolName(identity) {
+  const symbol = identity?.Generic;
+  if (!symbol) return undefined;
+  return symbol.name === 'Symbol.for'
+    ? `@@for(${JSON.stringify(symbol.args[0].Literal.String)})`
+    : `@@${symbol.args[0].Literal.String}`;
+}
+function commonjsMembers(type, serialized) {
+  if (!(type.flags & ts.TypeFlags.Object) || type.symbol?.flags & ts.SymbolFlags.Class ||
+      checker.getSignaturesOfType(type, ts.SignatureKind.Call).length ||
+      checker.getSignaturesOfType(type, ts.SignatureKind.Construct).length) return null;
+  const indexes = checker.getIndexInfosOfType(type);
+  if (!serialized.Object && !indexes.length) return null;
+  if (indexes.some(index => !(index.keyType.flags & ts.TypeFlags.ESSymbol))) return null;
+
+  const properties = checker.getPropertiesOfType(type);
+  if (properties.length > 4096 || symbolWork < 0) {
+    currentIssues.add('compiler public type expansion limit reached');
+    return null;
+  }
+  const typeNode = checker.typeToTypeNode(type, undefined, formatFlags);
+  const members = new Map();
+  function add(property, computedName) {
+    const declaration = property.valueDeclaration || property.declarations?.[0];
+    const name = computedName || declaration?.name;
+    const symbolKey = name && ts.isComputedPropertyName(name) &&
+      checker.getTypeAtLocation(name.expression).flags & (ts.TypeFlags.ESSymbol | ts.TypeFlags.UniqueESSymbol);
+    const key = symbolKey ? commonjsSymbolName(symbolIdentity(name.expression)) : property.getName();
+    if (key === undefined) {
+      currentIssues.add('CommonJS symbol property identity requires runtime evidence');
+      return false;
+    }
+    let readonly;
+    if (typeNode && ts.isTypeLiteralNode(typeNode)) {
+      const declarationName = propertyName(property);
+      const matching = typeNode.members.filter(member => member.name &&
+        ts.isComputedPropertyName(member.name) === !!symbolKey &&
+        (member.name.text ?? printer.printNode(ts.EmitHint.Unspecified, member.name, program.getSourceFiles()[0])) === declarationName);
+      if (matching.length) readonly = matching.some(member =>
+        member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) ||
+        matching.some(ts.isGetAccessorDeclaration) && !matching.some(ts.isSetAccessorDeclaration);
+    }
+    const field = propertyShape(property, 1, readonly);
+    members.set(JSON.stringify([!!symbolKey, key]), { name: key, symbol: !!symbolKey, field });
+    return true;
+  }
+  for (const property of properties) {
+    if (!add(property)) return null;
+  }
+  if (indexes.length) {
+    // The checker widens Symbol.for keys to a symbol index. Recover only keys
+    // from the exact inferred object literal; an arbitrary index has no finite
+    // public-key inventory and must remain missing evidence.
+    const declarations = type.symbol?.declarations || [];
+    if (declarations.length !== 1 || !ts.isObjectLiteralExpression(declarations[0]) ||
+        declarations[0].properties.length > 4096) {
+      currentIssues.add('CommonJS symbol index requires concrete property identities');
+      return null;
+    }
+    let recovered = false;
+    for (const member of declarations[0].properties) {
+      if (ts.isSpreadAssignment(member)) {
+        currentIssues.add('CommonJS spread symbol index requires concrete property identities');
+        return null;
+      }
+      if (!member.name || !ts.isComputedPropertyName(member.name)) continue;
+      const keyType = checker.getTypeAtLocation(member.name.expression);
+      if (!(keyType.flags & (ts.TypeFlags.ESSymbol | ts.TypeFlags.UniqueESSymbol))) continue;
+      const property = checker.getSymbolAtLocation(member.name);
+      if (!property || ts.isGetAccessorDeclaration(member) || ts.isSetAccessorDeclaration(member)) {
+        currentIssues.add('CommonJS computed symbol member requires concrete property evidence');
+        return null;
+      }
+      if (!add(property, member.name)) return null;
+      recovered = true;
+    }
+    if (!recovered) {
+      currentIssues.add('CommonJS symbol index requires concrete property identities');
+      return null;
+    }
+  }
+  return [...members.values()];
 }
 function isPrivate(symbol) {
   return symbol?.declarations?.some(declaration =>
@@ -332,15 +425,7 @@ function shape(type, depth = 0, staticClass = null) {
         }
       }
       if (isPrivate(property) || staticClass && property.getName() === 'prototype') continue;
-      const declarations = property.declarations || [];
-      const readonly = readonlyProperties.get(propertyName(property)) ?? (
-        declarations.some(declaration => declaration.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ReadonlyKeyword)) ||
-        declarations.some(ts.isGetAccessorDeclaration) && !declarations.some(ts.isSetAccessorDeclaration));
-      const setter = declarations.find(ts.isSetAccessorDeclaration);
-      fields[propertyName(property)] = { optional: !!(property.flags & ts.SymbolFlags.Optional), readonly,
-        write_type: accessorWriteShape(property, setter, depth + 1),
-        // Declaration locations remove the compiler's absent-property marker while retaining explicit undefined.
-        shape: shape(checker.getTypeOfSymbolAtLocation(property, declarations[0] || program.getSourceFiles()[0]), depth + 1) };
+      fields[propertyName(property)] = propertyShape(property, depth + 1, readonlyProperties.get(propertyName(property)));
     }
     const classDeclaration = staticClass || (type.objectFlags & ts.ObjectFlags.Anonymous && type.symbol?.flags & ts.SymbolFlags.Class
       ? type.symbol.declarations?.find(ts.isClassLike) : null);
@@ -440,17 +525,44 @@ function commonjsValue(request) {
   const position = sourcePosition(source, request);
   let expression;
   let initializer;
+  let moduleExport = false;
+  let explicitAny = false;
+  let property;
   const contains = node => node.getStart() <= position && position < node.getEnd();
+  const propertyName = node => ts.isPropertyAccessExpression(node) ? node.name.text
+    : ts.isElementAccessExpression(node) && node.argumentExpression && ts.isStringLiteralLike(node.argumentExpression) ? node.argumentExpression.text : undefined;
+  const isModuleExports = node => (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node))
+    && ts.isIdentifier(node.expression) && node.expression.text === 'module' && propertyName(node) === 'exports';
+  const isExportsObject = node => ts.isIdentifier(node) && node.text === 'exports' || isModuleExports(node);
+  function isExportProperty(node) {
+    while (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      if (isExportsObject(node.expression)) return true;
+      node = node.expression;
+    }
+    return false;
+  }
   function visit(node) {
     if (!contains(node)) return;
     if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
-      const target = node.left.getText().replace(/\s/g, '');
-      if (target === 'module.exports' && request.name === 'default') expression = node.right;
-      else if (/^(exports|module\.exports)[.[]/.test(target) && contains(node.left)) {
+      if (isModuleExports(node.left) && request.export_kind === 'default') {
+        expression = node.right;
+        let result = node.right;
+        while (ts.isParenthesizedExpression(result)) result = result.expression;
+        moduleExport = true;
+        if (ts.isIdentifier(result)) {
+          const declaration = checker.getSymbolAtLocation(result)?.valueDeclaration;
+          const annotation = declaration && (declaration.type || ts.getJSDocType(declaration));
+          explicitAny = !!annotation && !!(checker.getTypeFromTypeNode(annotation).flags & ts.TypeFlags.Any);
+        }
+      } else if (isExportProperty(node.left) && contains(node.left)) {
         // A public property annotation can widen the fresh RHS literal. Keep
         // the RHS only when the checker cannot resolve the key.
         const type = checker.getTypeAtLocation(node.left);
         expression = type.flags & ts.TypeFlags.Any ? node.right : node.left;
+        property = checker.getSymbolAtLocation(node.left);
+      } else if (isModuleExports(node.left) && request.export_kind === 'named' && ts.isObjectLiteralExpression(node.right)) {
+        const member = node.right.properties.find(member => member.name && contains(member.name));
+        if (member) property = checker.getSymbolAtLocation(member.name);
       }
       if (expression) initializer = node.right;
     }
@@ -458,7 +570,9 @@ function commonjsValue(request) {
     ts.forEachChild(node, visit);
   }
   visit(source);
-  return expression && { type: checker.getTypeAtLocation(expression), identity: symbolIdentity(initializer || expression) };
+  if (!expression && !property) return undefined;
+  return { type: expression ? checker.getTypeAtLocation(expression) : checker.getTypeOfSymbol(property),
+    identity: symbolIdentity(initializer || expression), moduleExport, explicitAny, property };
 }
 
 function declarationSymbol(request) {
@@ -484,7 +598,11 @@ function declarationSymbol(request) {
   let symbol = nearest.length ? checker.getSymbolAtLocation(nearest[0]) : undefined;
   if (!symbol) {
     const module = checker.getSymbolAtLocation(source);
-    symbol = module && checker.getExportsOfModule(module).find(candidate => candidate.getName() === request.name);
+    const exports = module ? checker.getExportsOfModule(module) : [];
+    // Namespace reexports carry a synthetic public name such as ns.default;
+    // its source module still exports the member under the local name.
+    symbol = exports.find(candidate => candidate.getName() === (request.local_name || request.name))
+      || exports.find(candidate => candidate.getName() === request.name);
   }
   if (!symbol && request.name === 'default') {
     // Discovery represents TypeScript's `export =` as a default export, while
@@ -518,13 +636,20 @@ for (const request of input.symbols) {
   const symbol = declarationSymbol(request);
   let overloads = [];
   let signature = null;
+  let commonjsMemberList = null;
+  let commonjsProperty = null;
   const expressionValue = commonjsValue(request);
   if (symbol || expressionValue) {
-    for (const declaration of symbol?.declarations || []) {
-      bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
+    if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
+      for (const declaration of symbol.declarations || []) {
+        bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
+      }
     }
     const type = expressionValue?.type || (symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
       ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol));
+    if (expressionValue?.moduleExport && !expressionValue.explicitAny && type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
+      currentIssues.add('CommonJS export result requires runtime evidence');
+    }
     signature = checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
     if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
@@ -539,9 +664,13 @@ for (const request of input.symbols) {
       const parameters = declaration?.typeParameters.map(parameter => checker.getTypeAtLocation(parameter));
       overloads = overloads.map(body => genericDeclaration(parameters, body, 0));
     }
+    if (expressionValue?.moduleExport && overloads.length === 1) {
+      commonjsMemberList = commonjsMembers(type, overloads[0]);
+    }
+    if (expressionValue?.property) commonjsProperty = propertyShape(expressionValue.property, 0);
   } else currentIssues.add('compiler could not locate public declaration');
   const typeof_targets = (request.refs || []).map(reference => definitionLocation({ ...reference, file: request.file }));
-  results.push({ id: request.id, overloads, signature, typeof_targets, issues: [...currentIssues] });
+  results.push({ id: request.id, overloads, signature, commonjs_members: commonjsMemberList, commonjs_property: commonjsProperty, typeof_targets, issues: [...currentIssues] });
   if (packageWork < 0) {
     issues.add('compiler package expansion budget exhausted');
     break;

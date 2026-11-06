@@ -55,5 +55,113 @@
     "new": "export declare function api(x:string|boolean):number; export declare function api(x:string|number):string;",
     "consumer": "const result: string = api(\"x\");",
     "breaking": true
+  },
+  {
+    "name": "overload object overlap",
+    "old": "export declare function api(x:{a:string}):string; export declare function api(x:{b:string}):number;",
+    "new": "export declare function api(x:{b:string}):number; export declare function api(x:{a:string}):string;",
+    "consumer": "const x={a:\"a\",b:\"b\"}; const s:string=api(x);",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "overload object disjoint",
+    "old": "export declare function api(x:{a:\"a\"}):string; export declare function api(x:{a:\"b\"}):number;",
+    "new": "export declare function api(x:{a:\"b\"}):number; export declare function api(x:{a:\"a\"}):string;",
+    "consumer": "const s:string=api({a:\"a\"});",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "overload nested object",
+    "old": "export declare function api(x:{inner:{a:string}}):string; export declare function api(x:{inner:{b:string}}):number;",
+    "new": "export declare function api(x:{inner:{b:string}}):number; export declare function api(x:{inner:{a:string}}):string;",
+    "consumer": "const x={inner:{a:\"a\",b:\"b\"}};const s:string=api(x);",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "overload optional conflict",
+    "old": "export declare function api(x:{a:string;k?:\"a\"}):string; export declare function api(x:{b:string;k?:\"b\"}):number;",
+    "new": "export declare function api(x:{b:string;k?:\"b\"}):number; export declare function api(x:{a:string;k?:\"a\"}):string;",
+    "consumer": "const x={a:\"a\",b:\"b\"};const s:string=api(x);",
+    "extension": "d.ts",
+    "breaking": true,
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "overload required conflict",
+    "old": "export declare function api(x:{a:string;k:\"a\"}):string; export declare function api(x:{b:string;k:\"b\"}):number;",
+    "new": "export declare function api(x:{b:string;k:\"b\"}):number; export declare function api(x:{a:string;k:\"a\"}):string;",
+    "consumer": "const x={a:\"a\",b:\"b\",k:\"a\" as const};const s:string=api(x);",
+    "extension": "d.ts",
+    "breaking": false,
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "generic disjoint overload",
+    "old": "export declare function api<T extends {kind:\"a\"}>(x:T):string; export declare function api<T extends {kind:\"b\"}>(x:T):number;",
+    "new": "export declare function api<T extends {kind:\"b\"}>(x:T):number; export declare function api<T extends {kind:\"a\"}>(x:T):string;",
+    "consumer": "const s:string=api({kind:\"a\"});",
+    "breaking": false,
+    "extension": "d.ts",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "generic builtin disjoint overload",
+    "old": "export declare function api<T extends string>(x:T):string; export declare function api<T extends number>(x:T):number;",
+    "new": "export declare function api<T extends number>(x:T):number; export declare function api<T extends string>(x:T):string;",
+    "consumer": "const s:string=api(\"x\");",
+    "breaking": false,
+    "extension": "d.ts",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "generic free overlap",
+    "old": "export declare function api<T>(x:T):string; export declare function api(x:{kind:\"a\"}):number;",
+    "new": "export declare function api(x:{kind:\"a\"}):number; export declare function api<T>(x:T):string;",
+    "consumer": "const s:string=api({kind:\"a\"});",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "generic literal constraint priority",
+    "old": "export declare function api(x:string):string;export declare function api<T extends \"x\">(x:T):number;",
+    "new": "export declare function api<T extends \"x\">(x:T):number;export declare function api(x:string):string;",
+    "consumer": "const s:string=api(\"x\");",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "overload-removed"
+  },
+  {
+    "name": "generic dependent result",
+    "old": "export declare function api<T>(x:T):T;export declare function api(x:{kind:\"a\"}):number;",
+    "new": "export declare function api(x:{kind:\"a\"}):number;export declare function api<T>(x:T):T;",
+    "consumer": "const x:{kind:\"a\"}=api({kind:\"a\"} as const);",
+    "breaking": true,
+    "extension": "d.ts",
+    "incomplete": true
+  },
+  {
+    "name": "generic dependent unchanged",
+    "old": "export declare function api<T>(x:T):T;export declare function api(x:{kind:\"a\"}):number;",
+    "new": "export declare function api<T>(x:T):T;export declare function api(x:{kind:\"a\"}):number;",
+    "consumer": "const x:{kind:\"a\"}=api({kind:\"a\"} as const);",
+    "breaking": false,
+    "extension": "d.ts",
+    "forbidden_rule": "analysis-incomplete"
+  },
+  {
+    "name": "generic two independent params",
+    "old": "export declare function api<T extends {a:string},U extends {b:string}>(x:T,y:U):string;export declare function api<T extends {b:string},U extends {a:string}>(x:T,y:U):number;",
+    "new": "export declare function api<T extends {b:string},U extends {a:string}>(x:T,y:U):number;export declare function api<T extends {a:string},U extends {b:string}>(x:T,y:U):string;",
+    "consumer": "const x={a:\"a\",b:\"b\"};const s:string=api(x,x);",
+    "breaking": true,
+    "extension": "d.ts",
+    "required_rule": "overload-removed"
   }
 ]
