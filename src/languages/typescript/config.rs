@@ -79,27 +79,32 @@ pub(crate) fn strip_jsonc(input: &str) -> String {
         out.push(c);
     }
 
-    // Second pass: strip trailing commas before `}` or `]`.
-    // Work on chars (not bytes) so multi-byte sequences remain intact.
+    // Trailing commas are syntax only outside strings, including escaped quotes.
     let mut result = String::with_capacity(out.len());
-    let chars: Vec<char> = out.chars().collect();
-    let mut j = 0;
-    while j < chars.len() {
-        let c = chars[j];
-        if c == ',' {
-            // Lookahead past whitespace for } or ]
-            let mut k = j + 1;
-            while k < chars.len() && chars[k].is_whitespace() {
-                k += 1;
+    let mut chars = out.chars().peekable();
+    let mut in_string = false;
+    while let Some(c) = chars.next() {
+        if in_string {
+            result.push(c);
+            if c == '\\' {
+                if let Some(escaped) = chars.next() {
+                    result.push(escaped);
+                }
+            } else if c == '"' {
+                in_string = false;
             }
-            if k < chars.len() && (chars[k] == '}' || chars[k] == ']') {
-                // Skip this trailing comma
-                j += 1;
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+        }
+        if c == ',' {
+            let next_token = chars.clone().find(|next| !next.is_whitespace());
+            if matches!(next_token, Some('}' | ']')) {
                 continue;
             }
         }
         result.push(c);
-        j += 1;
     }
 
     result
@@ -203,4 +208,26 @@ pub fn resolve_tsconfig_alias(
     }
 
     candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_jsonc;
+
+    #[test]
+    fn comments_and_trailing_commas_do_not_change_string_contents() {
+        let source = r#"{
+            // Comments and actual trailing commas are removed.
+            "paths": ["leaf,].ts", "a,}b", "quote\",]", "雪,].ts",],
+            "url": "https://example.invalid/a,]", /* block */
+        }"#;
+
+        let parsed: serde_json::Value = serde_json::from_str(&strip_jsonc(source)).unwrap();
+
+        assert_eq!(
+            parsed["paths"],
+            serde_json::json!(["leaf,].ts", "a,}b", "quote\",]", "雪,].ts"])
+        );
+        assert_eq!(parsed["url"], "https://example.invalid/a,]");
+    }
 }
