@@ -12,6 +12,7 @@ mod exports;
 mod fallback_arrays;
 mod imports;
 mod metadata;
+mod npm_coverage;
 mod optional_peers;
 mod requirements;
 mod resolution_contracts;

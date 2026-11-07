@@ -7,6 +7,7 @@ pub mod functions;
 pub mod grammar;
 pub(crate) mod object_exports;
 pub(crate) mod property_key;
+pub(crate) mod public_mutations;
 pub(crate) mod queries;
 pub(crate) mod runtime_surface;
 pub(crate) mod static_initialization;

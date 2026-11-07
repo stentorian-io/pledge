@@ -1607,6 +1607,11 @@ pub fn parse_exports(
                     for capture in m.captures {
                         if capture.index == 2 {
                             let node = capture.node;
+                            if node.parent().is_some_and(|member| {
+                                property_key::is_prototype_setter(member, source)
+                            }) {
+                                continue;
+                            }
                             if let Ok(name) = node.utf8_text(source) {
                                 let line = node.start_position().row as u32 + 1;
                                 let col = node.start_position().column as u32 + 1;
@@ -2114,6 +2119,9 @@ pub fn parse_exports(
                         // Extract properties from the object literal
                         let mut obj_cursor = obj.walk();
                         for child in obj.children(&mut obj_cursor) {
+                            if property_key::is_prototype_setter(child, source) {
+                                continue;
+                            }
                             match child.kind() {
                                 "shorthand_property_identifier" => {
                                     if let Ok(name) = child.utf8_text(source) {
@@ -2385,6 +2393,9 @@ pub fn parse_exports(
                     if let Some(obj) = exports_obj {
                         let mut obj_cursor = obj.walk();
                         for child in obj.children(&mut obj_cursor) {
+                            if property_key::is_prototype_setter(child, source) {
+                                continue;
+                            }
                             if child.kind() == "pair" {
                                 if let Some(key_node) = child.child_by_field_name("key") {
                                     if let Ok(name) = key_node.utf8_text(source) {
@@ -2477,6 +2488,9 @@ pub fn parse_exports(
                     if let Some(obj) = prop_obj {
                         let mut obj_cursor = obj.walk();
                         for child in obj.children(&mut obj_cursor) {
+                            if property_key::is_prototype_setter(child, source) {
+                                continue;
+                            }
                             if child.kind() == "pair" {
                                 // Only emit if value is an arrow_function (getter)
                                 if let Some(val_node) = child.child_by_field_name("value") {
@@ -2775,6 +2789,9 @@ pub fn parse_exports(
                 // the BUN-06a `assign` arm walker.
                 let mut obj_cur = arg_node.walk();
                 for child in arg_node.children(&mut obj_cur) {
+                    if property_key::is_prototype_setter(child, source) {
+                        continue;
+                    }
                     if child.kind() == "pair" {
                         if let Some(key_node) = child.child_by_field_name("key") {
                             if let Ok(name) = key_node.utf8_text(source) {
@@ -3189,7 +3206,7 @@ pub fn parse_exports(
     exports.retain(|export| {
         commonjs_analysis.retains_export_at(root, source, export.line, export.col)
     });
-    link_export_declarations(root, source, &mut exports);
+    link_export_declarations(root, source, &lang, &mut exports)?;
     for export in &mut exports {
         let (line, col) = export.declaration_site.unwrap_or((export.line, export.col));
         if let Some(dispatched) = runtime_surface::dispatch_at(root, source, line, col) {
@@ -3356,7 +3373,12 @@ fn normalize_export_names(root: tree_sitter::Node, source: &[u8], exports: &mut 
 }
 
 /// Retain alias source names and point local exports at declarations, not trailers.
-fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mut [RawExport]) {
+fn link_export_declarations(
+    root: tree_sitter::Node,
+    source: &[u8],
+    lang: &grammar::SourceLanguage,
+    exports: &mut [RawExport],
+) -> anyhow::Result<()> {
     fn declaration<'a>(
         node: tree_sitter::Node<'a>,
         source: &[u8],
@@ -3399,13 +3421,42 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
         }
         None
     }
+    let callable_bindings = matches!(lang, grammar::SourceLanguage::JavaScript)
+        .then(|| commonjs::CallableBindings::collect(root, source));
     for export in exports {
         let point = tree_sitter::Point::new(
             export.line.saturating_sub(1) as usize,
             export.col.saturating_sub(1) as usize,
         );
         let mut node = root.named_descendant_for_point_range(point, point);
+        let mut linked_callable = false;
         while let Some(current) = node {
+            if matches!(lang, grammar::SourceLanguage::JavaScript)
+                && current.kind() == "assignment_expression"
+            {
+                if let Some(reference) = current.child_by_field_name("right") {
+                    let alias = callable_bindings
+                        .as_ref()
+                        .and_then(|bindings| bindings.resolve(reference, source));
+                    match alias {
+                        Some(commonjs::CallableAlias::Known(declaration)) => {
+                            export.local_name = property_key::source_name(reference, source);
+                            export.decl_kind = Some(DeclarationKind::Function);
+                            if let Some(identifier) = declaration.child_by_field_name("name") {
+                                let position = identifier.start_position();
+                                export.declaration_site =
+                                    Some((position.row as u32 + 1, position.column as u32 + 1));
+                            }
+                            linked_callable = true;
+                        }
+                        Some(commonjs::CallableAlias::Unresolved) => {
+                            anyhow::bail!("CommonJS callable alias requires scope or reassignment evidence; public surface is incomplete");
+                        }
+                        None => {}
+                    }
+                }
+                break;
+            }
             export.is_type_only |= current.kind() == "type_alias_declaration";
             if current.kind() == "export_specifier" {
                 export.local_name = current
@@ -3433,7 +3484,7 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
             }
             node = current.parent();
         }
-        if export.source.is_some() {
+        if linked_callable || export.source.is_some() {
             continue;
         }
         if export.local_name.is_none() && export.decl_kind.is_some() {
@@ -3461,6 +3512,7 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
             _ => DeclarationKind::Variable,
         });
     }
+    Ok(())
 }
 
 /// ARCH-02: second-pass attachment of compound-component members.

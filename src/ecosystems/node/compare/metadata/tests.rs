@@ -310,7 +310,13 @@ fn test_bin_entry_path_changed() {
     let old = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
     let new = make_pkg(r#"{"bin": {"cli": "./new-cli.js"}}"#);
     let mut findings = Vec::new();
-    compare_bin_entries(&old, &new, &mut findings);
+    compare_bin_entries(
+        &old,
+        &new,
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
     assert_eq!(findings[0].severity, Severity::Major);
@@ -323,7 +329,13 @@ fn test_bin_entry_removed() {
     let old = make_pkg(r#"{"bin": {"cli": "./cli.js", "helper": "./helper.js"}}"#);
     let new = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
     let mut findings = Vec::new();
-    compare_bin_entries(&old, &new, &mut findings);
+    compare_bin_entries(
+        &old,
+        &new,
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
     assert!(findings[0].message.contains("helper"));
@@ -335,7 +347,13 @@ fn test_bin_string_to_object_same_path_no_finding() {
     let old = make_pkg(r#"{"name": "my-pkg", "bin": "./cli.js"}"#);
     let new = make_pkg(r#"{"name": "my-pkg", "bin": {"my-pkg": "./cli.js"}}"#);
     let mut findings = Vec::new();
-    compare_bin_entries(&old, &new, &mut findings);
+    compare_bin_entries(
+        &old,
+        &new,
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        &mut findings,
+    );
     assert_eq!(
         findings.len(),
         0,
@@ -349,7 +367,13 @@ fn test_bin_string_to_string_changed_path() {
     let old = make_pkg(r#"{"name": "my-pkg", "bin": "./cli.js"}"#);
     let new = make_pkg(r#"{"name": "my-pkg", "bin": "./new-cli.js"}"#);
     let mut findings = Vec::new();
-    compare_bin_entries(&old, &new, &mut findings);
+    compare_bin_entries(
+        &old,
+        &new,
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 1);
     assert_eq!(findings[0].rule, RULE_BIN_ENTRY_CHANGED);
 }
@@ -360,7 +384,13 @@ fn test_bin_added_is_non_breaking() {
     let old = make_pkg(r#"{"bin": {"cli": "./cli.js"}}"#);
     let new = make_pkg(r#"{"bin": {"cli": "./cli.js", "extra": "./extra.js"}}"#);
     let mut findings = Vec::new();
-    compare_bin_entries(&old, &new, &mut findings);
+    compare_bin_entries(
+        &old,
+        &new,
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        &mut findings,
+    );
     assert_eq!(findings.len(), 0, "added bin entry is non-breaking");
 }
 

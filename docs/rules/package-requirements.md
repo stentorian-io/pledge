@@ -26,3 +26,12 @@ the field restores support for those hosts.
 String `bin` entries use the unscoped package name as their command. For example,
 `@scope/tool` with `"bin":"./cli.js"` is equivalent to
 `"bin":{"tool":"./cli.js"}` and does not remove a command.
+
+`directories.bin` also contributes installed command names. Pledge expands the
+packed directory using npm's nested, non-dot command candidates and compares it
+with explicit `bin` entries. Equivalent target spelling such as `./cli.js` and
+`cli.js` preserves a command. Duplicate basenames, unsafe or unreadable scans,
+and unpacked symbolic links produce `analysis-incomplete` evidence instead of a
+command-removal verdict. Build and pack source packages before using the library
+comparison directly. See [npm coverage](../npm-coverage.md) for tested forms and
+installation limits.

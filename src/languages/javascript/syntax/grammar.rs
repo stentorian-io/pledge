@@ -101,6 +101,22 @@ pub(crate) fn parse_source(
         .root_node()
         .named_children(&mut tree.root_node().walk())
     {
+        // The bundled lexer can treat `export` before a line terminator as a
+        // bare identifier without a recovery node. Such an expression is never
+        // valid ECMAScript, so it cannot establish an empty public surface.
+        if !tree.root_node().has_error()
+            && statement.kind() == "expression_statement"
+            && statement.named_child(0).is_some_and(|expression| {
+                expression.kind() == "identifier"
+                    && expression.utf8_text(source).ok() == Some("export")
+            })
+        {
+            anyhow::bail!(
+                "export keyword parsed as an identifier by the bundled grammar at {}:{}; public surface is incomplete",
+                statement.start_position().row + 1,
+                statement.start_position().column + 1
+            );
+        }
         if statement.kind() == "export_statement"
             && statement
                 .child_by_field_name("declaration")
@@ -529,6 +545,37 @@ mod recovery_tests {
     use super::*;
     use crate::languages::typescript::model::Variance;
     use crate::languages::typescript::syntax::generics::parse_type_params;
+
+    #[test]
+    fn line_terminators_cannot_hide_export_declarations() {
+        for separator in ["\n", "\r\n", "\u{2028}", "\u{2029}"] {
+            let source = format!("export{separator}const api=1;");
+            let error = parse_source(source.as_bytes(), &SourceLanguage::JavaScript).unwrap_err();
+            assert!(error.to_string().contains("public surface is incomplete"));
+        }
+        for source in [
+            "export const api='\u{2028}\u{2029}';",
+            "export const api=`\u{2028}\u{2029}`;",
+            "const api={export:1};export {api};",
+        ] {
+            let tree = parse_source(source.as_bytes(), &SourceLanguage::JavaScript).unwrap();
+            assert!(!tree.root_node().has_error(), "{source}");
+        }
+    }
+
+    #[test]
+    fn anonymous_default_recovery_preserves_multiline_import_context() {
+        let source = b"import type * as errors from '../core/errors.js';\nexport default function (): {localeError: errors.$ZodErrorMap;};";
+        let tree = parse_source(source, &SourceLanguage::TypeScript).unwrap();
+        assert!(!tree.root_node().has_error());
+        assert!(tree
+            .root_node()
+            .named_children(&mut tree.root_node().walk())
+            .any(|statement| {
+                statement.kind() == "export_statement"
+                    && statement.child_by_field_name("declaration").is_some()
+            }));
+    }
 
     #[test]
     fn variance_recovery_preserves_parameter_identity_constraints_defaults_and_positions() {

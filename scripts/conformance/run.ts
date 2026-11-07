@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const selected: string[] = [];
 let output: string | undefined;
 type Result = { target: string; name: string; evidence: string[]; status: "pending" | "passed" | "failed"; log?: string };
-const report = { schema: 1, status: "running", commit: "", dirty: false, inventorySha256: "", profiles: selected, node: "", typescript: "", results: [] as Result[], error: "" };
+const report = { schema: 1, status: "running", commit: "", dirty: false, inventorySha256: "", profiles: selected, node: "", typescript: "", npm: "", results: [] as Result[], error: "" };
 function save() {
   if (output) { mkdirSync(dirname(output), { recursive: true }); writeFileSync(output, JSON.stringify(report, null, 2) + "\n"); }
 }
@@ -41,9 +41,11 @@ try {
     return profile;
   });
   if (profiles.some(profile => profile.typescript.length)) report.typescript = command("tsc", ["--version"], 30_000).trim().replace(/^Version /, "");
+  if (profiles.some(profile => profile.npm?.length)) report.npm = command("npm", ["--version"], 30_000).trim();
   for (const profile of profiles) {
     if (!profile.node.includes(report.node)) throw new Error(`${profile.id}: Node ${report.node} is outside the declared exact versions`);
     if (profile.typescript.length && !profile.typescript.includes(report.typescript)) throw new Error(`${profile.id}: TypeScript ${report.typescript} is outside the declared exact versions`);
+    if (profile.npm?.length && !profile.npm.includes(report.npm)) throw new Error(`${profile.id}: npm ${report.npm} is outside the declared exact versions`);
   }
   const evidence = inventory.evidence.filter(evidence => evidence.profiles.some(id => selected.includes(id)));
   if (!evidence.length) throw new Error("selected profiles have no evidence tests");

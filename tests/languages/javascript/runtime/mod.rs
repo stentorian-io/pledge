@@ -6,3 +6,5 @@ mod resource_management;
 
 #[cfg(feature = "lsp-tests")]
 mod consumer_contracts;
+
+mod test262_coverage;

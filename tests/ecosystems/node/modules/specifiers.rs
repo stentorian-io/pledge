@@ -1,6 +1,6 @@
 //! RES-01 / RES-02 integration tests: `node:`-prefixed and URL-scheme
 //! specifiers must NOT pollute the ExportMap as synthetic external re-exports
-//! AND must NOT emit any ResolveWarning.
+//! while preserving explicit incomplete evidence for unmodeled host surfaces.
 
 use pledge::ecosystems::node::discovery::discover_exports;
 use std::path::{Path, PathBuf};
@@ -14,10 +14,8 @@ fn fixture_dir(case: &str) -> PathBuf {
         .join("new")
 }
 
-/// Generic negative-assertion helper.
-///
-/// Asserts no `*<{prefix}` key in ExportMap and no warning containing `prefix`.
-fn assert_silent_skip(case: &str, prefix: &str) {
+/// Unmodeled host interfaces stay incomplete without inventing external names.
+fn assert_host_evidence_limit(case: &str, prefix: &str) {
     let dir = fixture_dir(case);
     let (exports, warnings) = discover_exports(&dir).expect("discover_exports should not error");
 
@@ -39,8 +37,8 @@ fn assert_silent_skip(case: &str, prefix: &str) {
         .filter(|w| w.message.contains(prefix))
         .collect();
     assert!(
-        warns.is_empty(),
-        "[{}] specifier `{}` emitted ResolveWarning(s): {:?}",
+        warns.iter().any(|warning| warning.incomplete),
+        "[{}] specifier `{}` did not retain incomplete evidence: {:?}",
         case,
         prefix,
         warns.iter().map(|w| &w.message).collect::<Vec<_>>()
@@ -48,38 +46,38 @@ fn assert_silent_skip(case: &str, prefix: &str) {
 }
 
 #[test]
-fn node_fs_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/node-fs", "node:");
+fn node_fs_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/node-fs", "node:");
 }
 
 #[test]
-fn node_path_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/node-path", "node:");
+fn node_path_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/node-path", "node:");
 }
 
 #[test]
-fn node_test_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/node-test", "node:");
+fn node_test_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/node-test", "node:");
 }
 
 #[test]
-fn data_url_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/data-url", "data:");
+fn data_url_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/data-url", "data:");
 }
 
 #[test]
-fn https_url_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/https-url", "https:");
+fn https_url_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/https-url", "https:");
 }
 
 #[test]
-fn http_url_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/http-url", "http:");
+fn http_url_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/http-url", "http:");
 }
 
 #[test]
-fn file_url_silent_skip() {
-    assert_silent_skip("node/modules/specifiers/file-url", "file:");
+fn file_url_retains_missing_evidence() {
+    assert_host_evidence_limit("node/modules/specifiers/file-url", "file:");
 }
 
 /// Negative-control: `./src/node-utils.js` is a relative path whose name

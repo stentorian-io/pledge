@@ -105,12 +105,10 @@ pub async fn prepare_dependencies(root_dir: &Path) -> Result<bool, DependencyErr
 fn runtime_manifest(mut manifest: Value, root: &Path) -> Value {
     if let Some(package) = manifest.as_object_mut() {
         package.remove("devDependencies");
-        for field in [
-            "dependencies",
-            "optionalDependencies",
-            "peerDependencies",
-            "overrides",
-        ] {
+        // Published dependency overrides are ignored by npm; retaining them here
+        // would incorrectly apply them as policy of the temporary install root.
+        package.remove("overrides");
+        for field in ["dependencies", "optionalDependencies", "peerDependencies"] {
             if let Some(requirements) = package.get_mut(field) {
                 resolve_local_requirements(requirements, root);
             }
@@ -171,7 +169,7 @@ mod manifest_tests {
     use std::path::Path;
 
     #[test]
-    fn runtime_installation_omits_development_requirements_and_preserves_local_paths() {
+    fn runtime_installation_omits_development_and_root_policies_preserving_local_paths() {
         let manifest = json!({
             "name":"example", "version":"1.0.0",
             "devDependencies":{"unrelated-tool":"1.0.0"},
@@ -189,10 +187,7 @@ mod manifest_tests {
             "file:/package/./dependency"
         );
         assert_eq!(installation["dependencies"]["registry"], "^2");
-        assert_eq!(
-            installation["overrides"]["local"],
-            installation["dependencies"]["local"]
-        );
+        assert!(installation.get("overrides").is_none());
         assert_eq!(
             installation["peerDependenciesMeta"],
             manifest["peerDependenciesMeta"]

@@ -93,6 +93,17 @@ test("consumer fixture profiles and upstream references cannot drift from eviden
   expect(() => validate(root, loaded)).toThrow("unknown upstream reference");
 });
 
+test("npm evidence requires an exact package-manager profile", () => {
+  const { root, loaded } = fixture();
+  loaded.inventory.evidence[0].oracles = ["npm", "pledge"];
+  expect(() => validate(root, loaded)).toThrow("npm evidence requires exact npm versions");
+  loaded.inventory.profiles[0].npm = ["11"];
+  expect(() => validate(root, loaded)).toThrow("profile version must be exact");
+  loaded.inventory.profiles[0].npm = ["11.19.0"];
+  expect(() => validate(root, loaded)).not.toThrow();
+  expect(render(loaded)).toContain("| 11.19.0 |");
+});
+
 test("pinned indexes and imported tables cannot be silently altered or omitted", () => {
   const { root, loaded } = fixture();
   writeFileSync(join(root, loaded.sources[0].index), "[]\n");
@@ -193,4 +204,22 @@ test("consumer runner rejects unregistered tests and undeclared runtime versions
   expect(run().stderr).toContain("not registered");
   writeFileSync(join(root, "bin/node"), "#!/bin/sh\necho v99.0.0\n", { mode: 0o755 });
   expect(run().stderr).toContain("outside the declared exact versions");
+});
+
+test("consumer runner records npm and rejects a different installed version", () => {
+  const { root, loaded, save, run } = runnerFixture();
+  loaded.inventory.profiles[0].npm = ["11.19.0"];
+  loaded.inventory.evidence[0].oracles = ["npm", "pledge"];
+  save();
+  writeFileSync(join(root, "bin/npm"), "#!/bin/sh\necho 11.19.0\n", { mode: 0o755 });
+  const passed = run();
+  expect(passed.exit).toBe(0);
+  expect(passed.report.npm).toBe("11.19.0");
+  expect(passed.report.results[0].status).toBe("passed");
+  writeFileSync(join(root, "bin/npm"), "#!/bin/sh\necho 10.9.0\n", { mode: 0o755 });
+  const rejected = run();
+  expect(rejected.exit).toBe(1);
+  expect(rejected.report.npm).toBe("10.9.0");
+  expect(rejected.stderr).toContain("npm 10.9.0 is outside the declared exact versions");
+  expect(rejected.report.results).toEqual([]);
 });

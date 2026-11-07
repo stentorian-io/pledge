@@ -46,7 +46,7 @@ pub fn compare_metadata(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     compare_engines(&old_pkg, &new_pkg, &mut findings);
     compare_entry_points(&old_pkg, &new_pkg, &mut findings);
     compare_module_type(&old_pkg, &new_pkg, &mut findings);
-    compare_bin_entries(&old_pkg, &new_pkg, &mut findings);
+    compare_bin_entries(&old_pkg, &new_pkg, old_root, new_root, &mut findings);
     compare_platform(&old_pkg, &new_pkg, &mut findings);
     compare_types_versions(&old_pkg, &new_pkg, &mut findings);
     compare_side_effects(&old_pkg, &new_pkg, &mut findings); // META-01
@@ -100,13 +100,17 @@ fn platform_requirements(pkg: &serde_json::Value, field: &str) -> Vec<String> {
 /// Normalize the `bin` field to a `{command: path}` map.
 ///
 /// Per npm docs: `"bin": "./cli.js"` is shorthand for `{"<name>": "./cli.js"}`.
-fn normalize_bin(pkg: &serde_json::Value) -> HashMap<String, String> {
+fn normalize_bin(
+    pkg: &serde_json::Value,
+    root: &Path,
+    findings: &mut Vec<Finding>,
+) -> HashMap<String, String> {
     let name = pkg
         .get("name")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    match pkg.get("bin") {
-        Some(serde_json::Value::String(s)) => {
+    let entries = match pkg.get("bin") {
+        Some(serde_json::Value::String(s)) if !s.is_empty() => {
             let mut map = HashMap::new();
             map.insert(
                 name.rsplit('/').next().unwrap_or(name).to_string(),
@@ -115,18 +119,129 @@ fn normalize_bin(pkg: &serde_json::Value) -> HashMap<String, String> {
             map
         }
         Some(serde_json::Value::Object(_)) => extract_string_map(pkg, "bin"),
-        _ => HashMap::new(),
+        _ => directory_bin_entries(pkg, root, findings),
+    };
+    entries
+        .into_iter()
+        .filter(|(_, path)| !path.is_empty())
+        .collect()
+}
+
+fn normalize_bin_path(path: &str) -> String {
+    let normalized = path.replace(['\\', ':'], "/");
+    let mut components = Vec::new();
+    for component in normalized.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                components.pop();
+            }
+            _ => components.push(component),
+        }
     }
+    if components.is_empty() && !path.is_empty() {
+        ".".to_string()
+    } else {
+        components.join("/")
+    }
+}
+
+fn directory_bin_entries(
+    pkg: &serde_json::Value,
+    root: &Path,
+    findings: &mut Vec<Finding>,
+) -> HashMap<String, String> {
+    let Some(directory) = pkg
+        .get("directories")
+        .and_then(|dirs| dirs.get("bin"))
+        .and_then(|bin| bin.as_str())
+        .filter(|directory| !directory.is_empty())
+    else {
+        return HashMap::new();
+    };
+    let directory = normalize_bin_path(directory);
+    let path = root.join(&directory);
+    // npm's directory glob yields no commands for a missing directory.
+    if !path.exists() {
+        return HashMap::new();
+    }
+    let incomplete = |reason: &str| {
+        pkg_json_finding(
+            Severity::Warning,
+            "analysis-incomplete",
+            format!("cannot establish directories.bin commands: {reason}"),
+        )
+    };
+    let contained = root
+        .canonicalize()
+        .ok()
+        .zip(path.canonicalize().ok())
+        .is_some_and(|(root, path)| path.starts_with(root));
+    if !contained || !path.is_dir() {
+        findings.push(incomplete(
+            "command directory is outside the package or is not a directory",
+        ));
+        return HashMap::new();
+    }
+    let scanned = super::files::scan_package_files(&path, |relative| {
+        !relative.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(|name| name.starts_with('.'))
+        })
+    });
+    findings.extend(scanned.findings);
+    if scanned
+        .paths
+        .iter()
+        .chain(&scanned.directories)
+        .any(|relative| {
+            std::fs::symlink_metadata(path.join(relative))
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+        })
+    {
+        findings.push(incomplete(
+            "symbolic links require npm packing before command comparison",
+        ));
+        return HashMap::new();
+    }
+    let mut commands = HashMap::new();
+    let mut ambiguous = std::collections::HashSet::new();
+    for relative in scanned.paths.into_iter().chain(scanned.directories) {
+        let Some(command) = relative.rsplit('/').next() else {
+            continue;
+        };
+        if commands
+            .insert(command.to_string(), format!("{directory}/{relative}"))
+            .is_some()
+        {
+            ambiguous.insert(command.to_string());
+        }
+    }
+    for command in ambiguous {
+        commands.remove(&command);
+        findings.push(incomplete(&format!(
+            "multiple files define command `{command}`"
+        )));
+    }
+    commands
 }
 
 /// EXP-11: detect bin entry changes (removed or path-changed commands).
 fn compare_bin_entries(
     old_pkg: &serde_json::Value,
     new_pkg: &serde_json::Value,
+    old_root: &Path,
+    new_root: &Path,
     findings: &mut Vec<Finding>,
 ) {
-    let old_bin = normalize_bin(old_pkg);
-    let new_bin = normalize_bin(new_pkg);
+    let prior_findings = findings.len();
+    let old_bin = normalize_bin(old_pkg, old_root, findings);
+    let new_bin = normalize_bin(new_pkg, new_root, findings);
+    if findings.len() != prior_findings {
+        return;
+    }
 
     for (cmd, old_path) in &old_bin {
         match new_bin.get(cmd.as_str()) {
@@ -137,7 +252,7 @@ fn compare_bin_entries(
                     format!("bin entry `{cmd}` removed (was `{old_path}`)"),
                 ));
             }
-            Some(new_path) if new_path != old_path => {
+            Some(new_path) if normalize_bin_path(new_path) != normalize_bin_path(old_path) => {
                 findings.push(pkg_json_finding(
                     Severity::Major,
                     RULE_BIN_ENTRY_CHANGED,

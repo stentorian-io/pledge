@@ -141,6 +141,12 @@ export identity checks. Export names use their decoded JavaScript identity:
 `value` and `\u0076alue` name the same binding, while a string export containing a
 literal backslash retains that character. The local declaration name is retained
 separately from a public alias for structural checks.
+CommonJS references to unambiguous top-level function declarations or initialized
+callable variables retain that callable identity. Moving the function inline
+does not change its declaration kind; replacing a constructible function with
+an arrow removes construction support. Conditional, block, labelled, legacy
+for-in, conflicting, or reassigned callable bindings retain incomplete discovery
+evidence when their exported identity cannot be established safely.
 Destructured declarations include bindings with default initializers and nested
 rest patterns. Names referenced only by an initializer are not public exports.
 
@@ -159,3 +165,8 @@ normalized without changing public names or source positions. Variance direction
 parameter constraints, defaults, and declaration signature types remain available
 to their existing comparisons. Malformed nearby syntax still makes analysis
 incomplete.
+
+The bundled JavaScript grammar can misparse `export` followed by LF, CRLF,
+U+2028 or U+2029 as an identifier expression. Pledge rejects that tree and retains
+incomplete discovery evidence instead of assuming that the module exports no
+names. A standalone CR after `export` is covered as an accepted control.

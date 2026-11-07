@@ -11,6 +11,7 @@ const MAX_DIRECTORY_ENTRIES: usize = 100_000;
 #[derive(Default)]
 pub(super) struct PackageFiles {
     pub paths: BTreeSet<String>,
+    pub directories: BTreeSet<String>,
     pub findings: Vec<Finding>,
 }
 
@@ -145,6 +146,13 @@ fn collect(
             }
         }
         return;
+    }
+    if !relative.as_os_str().is_empty() && accepts(relative) {
+        if let Some(relative) = relative.to_str() {
+            result.directories.insert(relative.replace('\\', "/"));
+        } else {
+            result.incomplete(relative, "directory name is not UTF-8");
+        }
     }
     if ancestors.len() >= MAX_DIRECTORY_DEPTH {
         result.incomplete(relative, "directory depth limit reached");

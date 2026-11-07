@@ -65,7 +65,7 @@ fn test_cls01_constructor_param_added() {
     );
     new_ctor.param_count = 2;
 
-    let old = make_class(vec![old_ctor]);
+    let mut old = make_class(vec![old_ctor]);
     let new = make_class(vec![new_ctor]);
     let findings = run(&old, &new);
 
@@ -78,6 +78,11 @@ fn test_cls01_constructor_param_added() {
         findings[0].message.contains("was 1, now 2"),
         "Message should include old and new param counts"
     );
+
+    old.has_dynamic_static_key = true;
+    let incomplete_members = run(&old, &new);
+    assert!(rules(&incomplete_members).contains(&"analysis-incomplete"));
+    assert!(rules(&incomplete_members).contains(&"class-constructor-param-added"));
 }
 
 #[test]

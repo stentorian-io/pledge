@@ -1,7 +1,7 @@
 //! CommonJS initialization, property identity, and literal forwarding.
 
 use crate::languages::javascript::syntax::{grammar, property_key, queries};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Point, QueryCursor, StreamingIterator};
 
 #[derive(Debug, Clone)]
@@ -78,6 +78,9 @@ impl CommonJsAnalysis {
 pub(crate) fn analyze(root: Node<'_>, source: &[u8]) -> CommonJsAnalysis {
     let mut analysis = CommonJsAnalysis::default();
     walk(root, source, &mut HashMap::new(), &[], false, &mut analysis);
+    analysis
+        .mutation_lines
+        .extend(super::public_mutations::unresolved_lines(root, source));
     for (specifier, line) in &analysis.mutated_targets {
         if analysis
             .forwards
@@ -87,9 +90,42 @@ pub(crate) fn analyze(root: Node<'_>, source: &[u8]) -> CommonJsAnalysis {
             analysis.mutation_lines.push(*line);
         }
     }
+    let language = root.language();
+    for initializer in initializer_bodies(root, &language, source)
+        .into_iter()
+        .filter(|initializer| initializer.returns_exports)
+    {
+        for statement in initializer
+            .body
+            .named_children(&mut initializer.body.walk())
+        {
+            if statement.kind() == "return_statement"
+                && statement
+                    .named_child(0)
+                    .is_some_and(|returned| has_unresolved_prototype(returned, source))
+            {
+                analysis
+                    .mutation_lines
+                    .push(statement.start_position().row as u32 + 1);
+            }
+        }
+    }
     analysis.mutation_lines.sort_unstable();
     analysis.mutation_lines.dedup();
     analysis
+}
+
+fn has_unresolved_prototype(object: Node<'_>, source: &[u8]) -> bool {
+    object.kind() == "object"
+        && object.named_children(&mut object.walk()).any(|member| {
+            property_key::is_prototype_setter(member, source)
+                && member.child_by_field_name("value").is_some_and(|value| {
+                    !matches!(
+                        value.kind(),
+                        "null" | "number" | "string" | "true" | "false"
+                    )
+                })
+        })
 }
 
 fn text<'a>(node: Node<'_>, source: &'a [u8]) -> &'a str {
@@ -611,7 +647,7 @@ fn assign_require_binding(
     }
 }
 
-fn environment_test(node: Node<'_>, source: &[u8]) -> Option<(String, String)> {
+pub(crate) fn environment_test(node: Node<'_>, source: &[u8]) -> Option<(String, String)> {
     let node = unwrap(node);
     if node.kind() != "binary_expression" {
         return None;
@@ -812,6 +848,11 @@ fn walk(
                 }
             }
             if target == "module.exports" && is_export_target(left, source) {
+                if !annotation && has_unresolved_prototype(right, source) {
+                    analysis
+                        .mutation_lines
+                        .push(node.start_position().row as u32 + 1);
+                }
                 let context = (!conditions.is_empty()).then(|| conditions.join("&"));
                 if !annotation
                     && node.kind() == "assignment_expression"
@@ -864,7 +905,9 @@ fn walk(
                             let shadowed = children[index + 1..]
                                 .iter()
                                 .filter_map(|node| {
-                                    if node.kind() == "pair" {
+                                    if property_key::is_prototype_setter(*node, source) {
+                                        None
+                                    } else if node.kind() == "pair" {
                                         node.child_by_field_name("key")
                                     } else if node.kind() == "shorthand_property_identifier" {
                                         Some(*node)
@@ -961,6 +1004,9 @@ pub(crate) fn computed_exports<'tree>(
                     .filter(|node| node.kind() == "object")
                 {
                     for member in object.named_children(&mut object.walk()) {
+                        if property_key::is_prototype_setter(member, source) {
+                            continue;
+                        }
                         let key = if member.kind() == "shorthand_property_identifier" {
                             Some(member)
                         } else {
@@ -984,4 +1030,151 @@ pub(crate) fn computed_exports<'tree>(
     let mut result = Vec::new();
     visit(root, source, &bodies, &mut result);
     result
+}
+
+pub(crate) enum CallableAlias<'tree> {
+    Known(Node<'tree>),
+    Unresolved,
+}
+
+pub(crate) struct CallableBindings<'tree> {
+    declarations: HashMap<String, Vec<Node<'tree>>>,
+    reassigned: HashSet<String>,
+}
+
+impl<'tree> CallableBindings<'tree> {
+    pub(crate) fn collect(root: Node<'tree>, source: &[u8]) -> Self {
+        fn visit<'tree>(node: Node<'tree>, source: &[u8], bindings: &mut CallableBindings<'tree>) {
+            let mut ancestor = node.parent();
+            let mut function_scope = None;
+            while let Some(parent) = ancestor {
+                if matches!(
+                    parent.kind(),
+                    "function_declaration"
+                        | "generator_function_declaration"
+                        | "function_expression"
+                        | "generator_function"
+                        | "arrow_function"
+                        | "method_definition"
+                ) {
+                    function_scope = Some(parent);
+                    break;
+                }
+                ancestor = parent.parent();
+            }
+            if function_scope.is_none()
+                && matches!(
+                    node.kind(),
+                    "function_declaration"
+                        | "generator_function_declaration"
+                        | "variable_declarator"
+                        | "for_in_statement"
+                )
+            {
+                if let Some(name) = node
+                    .child_by_field_name("name")
+                    .or_else(|| node.child_by_field_name("left"))
+                    .filter(|name| name.kind() == "identifier")
+                    .and_then(|name| property_key::source_name(name, source))
+                {
+                    bindings.declarations.entry(name).or_default().push(node);
+                }
+            }
+            if matches!(
+                node.kind(),
+                "assignment_expression" | "augmented_assignment_expression" | "update_expression"
+            ) {
+                if let Some(name) = node
+                    .child_by_field_name("left")
+                    .or_else(|| node.child_by_field_name("argument"))
+                    .filter(|target| target.kind() == "identifier")
+                    .and_then(|target| property_key::source_name(target, source))
+                {
+                    let locally_bound = function_scope.is_some_and(|scope| {
+                        property_key::is_shadowed_within(node, &name, scope, source)
+                    });
+                    if !locally_bound {
+                        bindings.reassigned.insert(name);
+                    }
+                }
+            }
+            for child in node.named_children(&mut node.walk()) {
+                visit(child, source, bindings);
+            }
+        }
+        let mut bindings = Self {
+            declarations: HashMap::new(),
+            reassigned: HashSet::new(),
+        };
+        visit(root, source, &mut bindings);
+        bindings
+    }
+
+    /// Only direct, unambiguous callable declarations supply constructor evidence.
+    /// Annex B bindings and possible reassignment retain explicit missing evidence.
+    pub(crate) fn resolve(
+        &self,
+        reference: Node<'tree>,
+        source: &[u8],
+    ) -> Option<CallableAlias<'tree>> {
+        if reference.kind() != "identifier" {
+            return None;
+        }
+        let name = property_key::source_name(reference, source)?;
+        let declarations = self.declarations.get(&name)?;
+        let callable = |node: Node<'_>| {
+            matches!(
+                node.kind(),
+                "function_declaration"
+                    | "generator_function_declaration"
+                    | "function_expression"
+                    | "generator_function"
+                    | "arrow_function"
+            )
+        };
+        if !declarations.iter().any(|declaration| {
+            callable(*declaration)
+                || declaration
+                    .child_by_field_name("value")
+                    .is_some_and(callable)
+        }) {
+            return None;
+        }
+        let mut ancestor = reference.parent();
+        while let Some(parent) = ancestor {
+            if matches!(
+                parent.kind(),
+                "function_declaration"
+                    | "function_expression"
+                    | "arrow_function"
+                    | "method_definition"
+                    | "class"
+                    | "class_declaration"
+            ) {
+                return Some(CallableAlias::Unresolved);
+            }
+            ancestor = parent.parent();
+        }
+        if self.reassigned.contains(&name) || declarations.len() != 1 {
+            return Some(CallableAlias::Unresolved);
+        }
+        let declaration = declarations[0];
+        let top_level = declaration.kind() != "for_in_statement"
+            && declaration.parent().is_some_and(|parent| {
+                parent.kind() == "program"
+                    || (matches!(
+                        parent.kind(),
+                        "lexical_declaration" | "variable_declaration"
+                    ) && parent
+                        .parent()
+                        .is_some_and(|scope| scope.kind() == "program"))
+            });
+        let initialized = declaration.kind() != "variable_declarator"
+            || declaration.end_byte() <= reference.start_byte();
+        Some(if top_level && initialized {
+            CallableAlias::Known(declaration)
+        } else {
+            CallableAlias::Unresolved
+        })
+    }
 }

@@ -117,6 +117,24 @@ pub(crate) fn collect<'tree>(
         let Some(first) = args.first().copied() else {
             continue;
         };
+        if matches!(
+            property_key::source_name(method, source).as_deref(),
+            Some("assign" | "defineProperty" | "defineProperties")
+        ) && !commonjs::is_export_object(first, source, boundary)
+        {
+            let mut target = first;
+            for _ in 0..32 {
+                let Some(initializer) = property_key::initializer(target, source) else {
+                    break;
+                };
+                if commonjs::is_export_object(initializer, source, boundary) {
+                    anyhow::bail!(
+                        "aliased CommonJS Object helper target requires object identity evidence; public surface is incomplete"
+                    );
+                }
+                target = initializer;
+            }
+        }
         let mut emit = |node, key, descriptor| {
             if key != PropertyKey::String("__esModule".into()) {
                 exports.push(ObjectExport {
@@ -141,6 +159,9 @@ pub(crate) fn collect<'tree>(
             "defineProperties" if commonjs::is_export_object(first, source, boundary) => {
                 if let Some(descriptions) = args.get(1).filter(|node| node.kind() == "object") {
                     for member in descriptions.named_children(&mut descriptions.walk()) {
+                        if property_key::is_prototype_setter(member, source) {
+                            continue;
+                        }
                         if let (Some(key_node), Some(description)) = (
                             member.child_by_field_name("key"),
                             member.child_by_field_name("value"),
@@ -173,6 +194,9 @@ pub(crate) fn collect<'tree>(
                 }
                 for object in args.iter().filter(|node| node.kind() == "object") {
                     for member in object.named_children(&mut object.walk()) {
+                        if property_key::is_prototype_setter(member, source) {
+                            continue;
+                        }
                         let key_node = member
                             .child_by_field_name("key")
                             .or_else(|| member.child_by_field_name("name"))

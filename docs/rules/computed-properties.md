@@ -4,6 +4,13 @@ CommonJS computed exports and computed class members resolve string literals,
 local `const` aliases, template strings, and standard symbol expressions without
 running package code. CommonJS object literals with computed keys are included.
 
+In object literals, a noncomputed `__proto__: value` pair sets the prototype;
+it does not declare an own export. Quoted and escaped spellings follow the same
+rule. Computed `['__proto__']` properties, methods, getters, and shorthands remain
+ordinary own properties. Public CommonJS objects with a non-null prototype
+retain incomplete evidence for inherited members that static enumeration cannot
+establish.
+
 All standard well-known symbols are tracked, including the matching, replacement,
 concatenation, and disposal protocols. Registered symbols use their constant
 `Symbol.for(key)` registry key. A registered key change or removed protocol is
@@ -26,7 +33,20 @@ registry key that cannot be resolved makes compiler enrichment incomplete.
 Unknown keys, mutable bindings, or shadowed built-ins are not guessed. An
 unresolved computed CommonJS key is an incomplete discovery warning; unresolved
 class keys produce `analysis-incomplete` and the contextual
-`limitation: dynamic-static-member-key` finding. Deferred function bodies and
+`limitation: dynamic-static-member-key` finding. Unresolved expressions are not
+treated as literal member names. When a class has unknown keys, member absence
+and member shape changes cannot be established; explicit constructor and
+class-level inheritance checks remain available. Reachable source types retain
+opaque object evidence instead of inventing fields from those expressions.
+
+Decimal integer keys within Number's safe-integer range accept numeric
+separators and non-octal CommonJS spellings such as `08` and `078`. Non-decimal,
+exponent, negative, BigInt and legacy octal keys retain incomplete evidence in
+the tested public-key paths. In particular, legacy `020` is not mistaken for
+decimal `20`; Node interprets it as octal `16`. Legacy numeric string escapes
+also retain incomplete key evidence.
+
+Deferred function bodies and
 writes on unrelated local objects are excluded from module export enumeration. This includes parameter, catch, destructuring, and
 named function/class bindings that shadow `exports` or `module`. Direct
 `exports.key`, `module.exports.key`, constant bracket keys, and object-literal
@@ -88,6 +108,45 @@ does not export `extra`; assigning that result to `module.exports` does.
 Uncalled function bodies, shadowed built-ins, and unrelated `module` properties
 cannot supply module exports. Recognized UMD factories and immediately invoked
 function expressions are module initialization contexts.
+
+An immutable alias of the helper's CommonJS target retains incomplete discovery
+evidence. Its original object can become detached after `module.exports` is
+replaced; the alias alone does not establish which object is public at the call.
+
+## Reflective mutations and dynamic code
+
+Sealing or preventing extensions on the public CommonJS object can remove a
+JavaScript consumer's ability to delete or add properties. Prototype changes and
+legacy getter/setter helpers can also alter properties that consumers observe.
+These effects are not represented completely by the inferred TypeScript shape.
+
+Recognized direct public `Object` and `Reflect` mutations therefore retain
+incomplete runtime evidence. Direct assignments of `Object.create` or
+`Object.fromEntries` results, bound function expressions and dynamic `Function`
+results also retain that evidence. Existing known exports remain available for
+other comparisons. `Object.freeze` on a fresh returned object and transparent
+revocable proxy results have separate compiler-backed shape coverage; mutating
+the existing export object in place still requires runtime evidence.
+
+The checks distinguish unshadowed built-ins, module initialization, direct public
+targets and direct public result assignments. Discarded results, unrelated local
+objects and deferred function bodies do not trigger this limitation. Arbitrary
+aliases, nested return paths and custom reflective implementations are not
+certified by these direct patterns.
+
+An eager direct `eval` call with a literal source that assigns a public CommonJS
+binding retains incomplete evidence. Pledge parses that source once to identify
+the actual assignment and its scope; comments, unrelated strings and shadowed
+bindings do not establish a public write. It does not execute the source or
+recursively expand nested `eval` calls. Other dynamic code remains outside this
+bounded recognition.
+
+Direct CommonJS assignments or literal `Object` helper writes inside unmodeled
+loops, switch/labelled/with statements and ordinary conditionals also retain
+runtime mutation evidence. An apparently declared property may never be created,
+or `with` can redirect its receiver. Known environment-condition branches keep
+their existing condition identities; unrelated local and deferred writes remain
+complete controls. This does not implement general control-flow evaluation.
 
 Changing a statically described CommonJS property from writable to nonwritable
 reports Major `export-writability-removed`. Changing it from enumerable to

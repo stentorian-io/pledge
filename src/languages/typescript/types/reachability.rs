@@ -523,24 +523,28 @@ fn object_shape(body: Node, source: &[u8]) -> TypeShape {
         let Some(name) = member.child_by_field_name("name") else {
             continue;
         };
-        let name = if name.kind() == "computed_property_name" {
-            property_key::resolve(name, source)
-                .map(|key| key.member_name())
-                .unwrap_or_else(|| text(name, source).to_string())
-        } else {
-            text(name, source).trim_matches(['\'', '"']).to_string()
-        };
         let mut cursor = member.walk();
         let modifiers: Vec<_> = member
             .children(&mut cursor)
             .map(|n| text(n, source))
             .collect();
-        if name.starts_with('#')
-            || name == "constructor"
-            || modifiers
-                .iter()
-                .any(|s| matches!(*s, "private" | "protected" | "static"))
+        if modifiers
+            .iter()
+            .any(|s| matches!(*s, "private" | "protected" | "static"))
         {
+            continue;
+        }
+        let name = if name.kind() == "computed_property_name" {
+            let Some(key) = property_key::resolve(name, source) else {
+                // Unknown public keys can overlap other fields. An object map
+                // containing their source expressions would invent identities.
+                return TypeShape::Opaque("unresolved computed public property key".into());
+            };
+            key.member_name()
+        } else {
+            text(name, source).trim_matches(['\'', '"']).to_string()
+        };
+        if name.starts_with('#') || name == "constructor" {
             continue;
         }
         let shape = if matches!(

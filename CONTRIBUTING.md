@@ -22,12 +22,15 @@ by the full local checks:
 ```sh
 rustup component add rustfmt clippy llvm-tools-preview
 cargo install cargo-llvm-cov --locked
+npm install -g npm@11.19.0
 npm install -g typescript@5.9.3 typescript-language-server@5.1.3
 make setup
 ```
 
 On other platforms, install the same tools with your preferred package manager.
 Keep `bun`, `cargo`, `node`, `npm`, and `typescript-language-server` on `PATH`.
+The npm consumer profile pins npm 11.19.0 so packing and installation evidence
+records a reproducible package-manager version.
 Public type evaluation uses the JavaScript TypeScript compiler API; a native
 `tsc` executable alone does not provide it. Normal analysis can run with Node.js
 and the JavaScript compiler without a language server. The full integration

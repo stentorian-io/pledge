@@ -134,6 +134,32 @@ fn unresolved_helper_keys_are_explicitly_incomplete() {
 }
 
 #[test]
+fn reflective_mutations_preserve_known_exports_and_warning_locations() {
+    for mutation in [
+        "Reflect.set(exports,'dynamic',2);",
+        "eval('exports.dynamic=2');",
+        "exports.dynamic=new Function('return 2');",
+        "exports.dynamic=(function(){return 2}).bind(null);",
+    ] {
+        let source = format!("exports.stable=1;\n\n{mutation}");
+        let root = package(&source);
+        let (exports, warnings) = discover_exports(root.path()).unwrap();
+        assert!(exports.contains_key(&ExportKey::new_root_value("stable")));
+        assert!(
+            warnings.iter().any(|warning| {
+                warning.incomplete
+                    && !warning.type_expansion_only
+                    && warning
+                        .message
+                        .contains("export mutation requires runtime information")
+                    && warning.message.ends_with("index.cjs:3")
+            }),
+            "{mutation}: {warnings:?}"
+        );
+    }
+}
+
+#[test]
 fn descriptor_method_setters_preserve_writability_until_removed() {
     let old = package(
         "Object.defineProperty(exports,'value',{get(){return 1;},set(v){},enumerable:true});",

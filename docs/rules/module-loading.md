@@ -40,6 +40,10 @@ entry points, rather than substituting adjacent TypeScript source files.
 Import-only entry points and declaration-only files are excluded. Cycles are
 bounded; unreadable or unresolved local modules emit `analysis-incomplete`.
 
+Static non-builtin URL imports retain incomplete loading evidence because their
+module graphs are not modeled. Public URL and builtin re-exports also retain
+incomplete discovery evidence; see [Node module coverage](../node-coverage.md).
+
 Execution inside external packages, dynamically constructed imports, and
 runtime calls to deferred functions are outside this packed-file graph check.
 See [Node module loading](https://nodejs.org/api/packages.html#module-resolution-and-loading).

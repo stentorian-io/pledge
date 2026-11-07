@@ -20,6 +20,7 @@ export type Profile = {
   description: string;
   node: string[];
   typescript: string[];
+  npm?: string[];
   options: Record<string, string | boolean>;
   limitations: string;
 };
@@ -114,7 +115,8 @@ export function validate(root: string, loaded: Loaded) {
   for (const profile of inventory.profiles) {
     text(profile.description, "profile description"); text(profile.limitations, "profile limitations");
     strings(profile.node, "Node versions"); strings(profile.typescript, "TypeScript versions", false);
-    for (const version of [...profile.node, ...profile.typescript]) if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`profile version must be exact: ${version}`);
+    if (profile.npm !== undefined) strings(profile.npm, "npm versions");
+    for (const version of [...profile.node, ...profile.typescript, ...(profile.npm ?? [])]) if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`profile version must be exact: ${version}`);
     if (!profile.options || typeof profile.options !== "object" || Array.isArray(profile.options)) throw new Error(`missing compiler options: ${profile.id}`);
   }
   for (const evidence of inventory.evidence) {
@@ -126,6 +128,7 @@ export function validate(root: string, loaded: Loaded) {
     strings(evidence.profiles, "evidence profiles"); strings(evidence.oracles, "evidence oracles"); strings(evidence.outcomes, "evidence outcomes");
     for (const oracle of evidence.oracles) if (!["node", "tsc", "pledge", "npm"].includes(oracle)) throw new Error(`unknown evidence oracle: ${oracle}`);
     for (const id of evidence.profiles) if (!profileById.has(id)) throw new Error(`unknown evidence profile: ${id}`);
+    if (evidence.oracles.includes("npm") && evidence.profiles.some(id => !profileById.get(id)!.npm?.length)) throw new Error(`npm evidence requires exact npm versions in every profile: ${evidence.id}`);
     for (const outcome of evidence.outcomes) if (!["breaking", "compatible", "incomplete", "version-boundary"].includes(outcome)) throw new Error(`invalid evidence outcome: ${outcome}`);
     if (evidence.fixture) {
       const cases = JSON.parse(readFileSync(repositoryFile(root, evidence.fixture), "utf8"));

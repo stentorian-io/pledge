@@ -64,6 +64,16 @@ pub(crate) fn is_unbound(node: Node<'_>, name: &str, source: &[u8]) -> bool {
     binding(node, name, source).is_none()
 }
 
+// Only noncomputed colon pairs change the prototype. Methods, accessors,
+// shorthands, and computed '__proto__' keys define ordinary own properties.
+pub(crate) fn is_prototype_setter(member: Node<'_>, source: &[u8]) -> bool {
+    member.kind() == "pair"
+        && member.child_by_field_name("key").is_some_and(|key| {
+            key.kind() != "computed_property_name"
+                && source_name(key, source).as_deref() == Some("__proto__")
+        })
+}
+
 fn evaluate(node: Node<'_>, source: &[u8], depth: usize) -> Option<PropertyKey> {
     if depth >= 32 {
         return None;
@@ -80,6 +90,14 @@ fn evaluate(node: Node<'_>, source: &[u8], depth: usize) -> Option<PropertyKey> 
         "string" => decode_string(text(node, source)).map(PropertyKey::String),
         "number" => {
             let raw = text(node, source).replace('_', "");
+            // Sloppy CommonJS permits legacy octal; parsing it as a decimal
+            // integer would silently assign the wrong public property name.
+            if raw.len() > 1
+                && raw.starts_with('0')
+                && raw.bytes().all(|digit| (b'0'..=b'7').contains(&digit))
+            {
+                return None;
+            }
             // Decimal integer keys are exact up to Number's safe-integer limit.
             let value: u64 = raw.parse().ok()?;
             (value <= 9_007_199_254_740_991).then(|| PropertyKey::String(value.to_string()))

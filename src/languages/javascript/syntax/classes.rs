@@ -87,7 +87,11 @@ pub fn parse_class_members(
                 .children(&mut member.walk())
                 .any(|child| child.kind() == "static")
         })
-        .filter_map(|member| member.child_by_field_name("name"))
+        .filter_map(|member| {
+            member
+                .child_by_field_name("name")
+                .or_else(|| member.child_by_field_name("property"))
+        })
         .map(|name| {
             if name.kind() == "computed_property_name" {
                 if let Some(key) = property_key::resolve(name, source) {
@@ -268,8 +272,10 @@ pub fn parse_class_members(
                     is_private,
                 });
             }
-            "public_field_definition" => {
-                let name_node = child.child_by_field_name("name");
+            "public_field_definition" | "field_definition" => {
+                let name_node = child
+                    .child_by_field_name("name")
+                    .or_else(|| child.child_by_field_name("property"));
                 let name = name_node
                     .map(|node| {
                         if node.kind() == "computed_property_name" {

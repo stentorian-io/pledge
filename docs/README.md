@@ -13,6 +13,7 @@ compare a package with its published version. The executable is `pledge`.
 | Consume a report in another tool | [JSON reports](results.md#json-reports) |
 | Understand a specific compatibility rule | [Rule reference](rules/README.md) |
 | Check language support and known coverage gaps | [JavaScript and TypeScript coverage](language-coverage.md) |
+| Review the non-TypeScript coverage boundaries | [ECMAScript](ecmascript-coverage.md), [Test262](test262-coverage.md), [Node](node-coverage.md), [npm](npm-coverage.md) |
 | Understand construction or inheritance changes | [Functions and class bases](rules/function-construction.md) |
 | Check shipped JSON, schemas, and stylesheets | [Distributed assets](rules/distributed-assets.md) |
 

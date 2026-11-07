@@ -221,6 +221,12 @@ impl<'a> ModuleGraph<'a> {
             resources: contains_resource_management(tree.root_node()).then(|| path.to_path_buf()),
         };
         for (specifier, mode) in dependencies {
+            if resolver::classify_specifier(&specifier) == resolver::SpecifierKind::UrlScheme {
+                return Err(format!(
+                    "cannot model URL module `{specifier}` from {}",
+                    path.display()
+                ));
+            }
             let target = if specifier.starts_with('#') {
                 resolver::parse_imports_map_for_pkg(self.root).and_then(|map| {
                     resolver::resolve_imports_subpath(&map, &specifier, self.root, Some(mode))

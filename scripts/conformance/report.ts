@@ -40,10 +40,10 @@ export function render(loaded: Loaded) {
   lines.push("", "### Declared execution profiles", "",
     "These are the exact environments selected by the coverage runner. A profile",
     "does not imply support for every language feature or every option combination.", "",
-    "| Profile | Node versions | TypeScript versions | Options | Limits |",
-    "| --- | --- | --- | --- | --- |");
+    "| Profile | Node versions | TypeScript versions | npm versions | Options | Limits |",
+    "| --- | --- | --- | --- | --- | --- |");
   for (const profile of inventory.profiles) {
-    lines.push(`| ${profile.id} | ${profile.node.join(", ")} | ${profile.typescript.join(", ") || "none required"} | ${cell(JSON.stringify(profile.options))} | ${cell(profile.limitations)} |`);
+    lines.push(`| ${profile.id} | ${profile.node.join(", ")} | ${profile.typescript.join(", ") || "none required"} | ${profile.npm?.join(", ") || "none required"} | ${cell(JSON.stringify(profile.options))} | ${cell(profile.limitations)} |`);
   }
   lines.push("", "The [machine-readable inventory](coverage/inventory.json) includes exact test names,",
     "fixture cases, upstream provenance, and the complete reference assignments.",

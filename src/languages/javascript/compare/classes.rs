@@ -215,6 +215,32 @@ pub fn compare_class_shapes(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
+    if old.has_dynamic_static_key || new.has_dynamic_static_key {
+        // An unresolved key can supply or overwrite any ordinary member. Its
+        // source spelling is not a public name, and an absent literal member
+        // does not prove removal. Explicit constructors and class-level
+        // contracts remain independent of computed property identities.
+        let mut old_known = old.clone();
+        let mut new_known = new.clone();
+        old_known
+            .members
+            .retain(|member| member.kind == ClassMemberKind::Constructor);
+        new_known
+            .members
+            .retain(|member| member.kind == ClassMemberKind::Constructor);
+        return compare_class_contracts(&old_known, &new_known, symbol_name, file, line, col);
+    }
+    compare_class_contracts(old, new, symbol_name, file, line, col)
+}
+
+fn compare_class_contracts(
+    old: &ClassShape,
+    new: &ClassShape,
+    symbol_name: &str,
+    file: &Path,
+    line: u32,
+    col: u32,
+) -> Vec<Finding> {
     let mut findings: Vec<Finding> = Vec::new();
 
     // ── CLS-04: Concrete class made abstract ─────────────────────────────────

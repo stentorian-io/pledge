@@ -76,10 +76,8 @@ fields, so a private-space rename is not an API change.
 ## Scope
 
 - TypeScript `.ts` / `.tsx` source files (the dominant consumer shape).
-- JavaScript `.js` files are NOT covered; the underlying
-  `tree-sitter-javascript` 0.25.0 grammar uses `field_definition` (vs.
-  TypeScript's `public_field_definition`) and is not currently wired
-  into `parse_class_members`. This is a known limitation.
+- JavaScript `.js`, `.mjs`, and `.cjs` class declarations use the same
+  public/private matching, including static fields and private methods.
 - Class-level ambient `.d.ts` `property_signature` declarations ARE
   covered — private fields in ambient class declarations are tracked
   symmetrically with source-level class fields.

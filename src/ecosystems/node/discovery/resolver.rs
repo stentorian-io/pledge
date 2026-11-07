@@ -1157,9 +1157,10 @@ fn collect_exports_uncached(
                 if let Some(specifier) = &export.source {
                     match classify_specifier(specifier) {
                         SpecifierKind::NodeBuiltin | SpecifierKind::UrlScheme => {
-                            // RES-01 / RES-02: silently skip — these are not paths and
-                            // must not be inserted as synthetic external re-exports nor
-                            // emit ResolveWarnings.
+                            warnings.push(ResolveWarning::new(format!(
+                                "cannot model public re-export from host module `{specifier}` in {}",
+                                file.display()
+                            )));
                             continue;
                         }
                         SpecifierKind::ImportsField => {
@@ -1276,9 +1277,10 @@ fn collect_exports_uncached(
                 if let Some(specifier) = &export.source {
                     match classify_specifier(specifier) {
                         SpecifierKind::NodeBuiltin | SpecifierKind::UrlScheme => {
-                            // RES-01 / RES-02: silently skip — these are not paths and
-                            // must not be inserted as synthetic external re-exports nor
-                            // emit ResolveWarnings.
+                            warnings.push(ResolveWarning::new(format!(
+                                "cannot model public re-export from host module `{specifier}` in {}",
+                                file.display()
+                            )));
                             continue;
                         }
                         SpecifierKind::ImportsField => {
