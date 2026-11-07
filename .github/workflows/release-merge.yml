@@ -11,7 +11,10 @@ on:
         default: true
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  checks: read
+  actions: write
 
 concurrency:
   group: release-main
@@ -23,26 +26,15 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
-        id: app
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-checks: read
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: main
           fetch-depth: 0
-          token: ${{ steps.app.outputs.token }}
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         env:
-          RELEASE_APP_SLUG: ${{ steps.app.outputs.app-slug }}
           RELEASE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
         with:
-          github-token: ${{ steps.app.outputs.token }}
           script: |
             const mergeRelease = require('./scripts/releases/merge-release.cjs');
-            await mergeRelease({ github, context, core, appSlug: process.env.RELEASE_APP_SLUG,
+            await mergeRelease({ github, context, core,
               dryRun: process.env.RELEASE_DRY_RUN === 'true' });

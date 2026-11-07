@@ -26,9 +26,10 @@ pledge --version
 ```
 
 Cargo installs `pledge` into `~/.cargo/bin`; keep that directory on `PATH`.
-Source installation is the current distribution method. An npm wrapper and
-prebuilt binaries are not published yet. Run `pledge --help` for the available
-options.
+Source installation works before the first automated artifact release. The
+[release workflow](docs/releases.md) publishes a Linux x86-64 container and binary
+archive to GitHub; other platforms still build from source. An npm wrapper is
+not published yet. Run `pledge --help` for the available options.
 
 ### Check your package
 

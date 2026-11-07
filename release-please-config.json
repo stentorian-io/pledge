@@ -8,7 +8,7 @@
   "bump-patch-for-minor-pre-major": false,
   "pull-request-title-pattern": "chore: release ${version}",
   "pull-request-header": "Review the version, compatibility impact, and user-facing release notes before merging.",
-  "pull-request-footer": "Routine releases may merge after 24 quiet hours with passing checks. Breaking releases require manual merge. Add `release: hold` to pause scheduled merging.",
+  "pull-request-footer": "Releases may merge after 24 quiet hours with passing checks, including breaking minor releases before 1.0. Major transitions and stable breaking releases require manual merge. Add `release: hold` to pause scheduled merging.",
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },

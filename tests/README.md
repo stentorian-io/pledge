@@ -146,5 +146,11 @@ semantics, release timing, holds, and version consistency. Run `make test-tools`
 when changing hooks or release tooling; these checks do not require external
 services or product tests.
 
+Release dispatch and publication tests also live in `scripts/releases/`. The
+`Release image` CI job builds the Linux x86-64 Docker image and runs
+`scripts/releases/smoke-image.cjs` inside it with real Node consumers, npm, the
+bundled compiler, and a loopback registry. It fetches base images and build
+dependencies, but its package comparisons use only the temporary registry.
+
 `scripts/conformance/conformance.test.ts` checks extraction, missing classifications,
 evidence paths, report generation, and runner failures in isolated repositories.

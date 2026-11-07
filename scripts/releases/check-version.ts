@@ -8,7 +8,7 @@ export function checkVersion(root = ".", tag?: string) {
   const manifest = JSON.parse(read(".release-please-manifest.json"));
   const version = cargo.package.version;
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
-    throw new Error("release versions must be stable major.minor.patch versions");
+    throw new Error("release versions must use major.minor.patch without a prerelease suffix");
   }
   const locked = lock.package.filter(entry => entry.name === cargo.package.name && !entry.source);
   if (locked.length !== 1 || locked[0].version !== version || manifest["."] !== version) {

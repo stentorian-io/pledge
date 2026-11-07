@@ -15,14 +15,13 @@ afterEach(() => {
 
 function candidate() {
   return {
-    appSlug: "pledge-release",
     now: Date.parse("2026-11-03T12:00:00Z"),
     previousVersion: "0.3.0", nextVersion: "0.3.1",
     messages: ["fix: avoid duplicate findings"],
     headDate: "2026-11-02T11:00:00Z",
-    checks: [{ name: "Release checks", app: { slug: "github-actions" }, status: "completed", conclusion: "success" }],
+    checks: ["Release checks", "Release image"].map(name => ({ name, app: { slug: "github-actions" }, status: "completed", conclusion: "success" })),
     pull: {
-      user: { login: "pledge-release[bot]", type: "Bot" },
+      user: { login: "github-actions[bot]", type: "Bot" },
       state: "open", draft: false,
       base: { ref: "main", repo: { full_name: "stentorian-io/pledge" } },
       head: { ref: "release-please--branches--main", repo: { full_name: "stentorian-io/pledge" } },
@@ -43,9 +42,11 @@ test.each([
   "fix: change exit status\n\nBREAKING CHANGE: handle status 3",
   "refactor(core)!: change a public contract",
   "build: change support\n\nBREAKING-CHANGE: upgrade your runtime",
-])("breaking commits require manual merge even before 1.0: %s", (message) => {
+])("breaking commits can release automatically before 1.0: %s", (message) => {
   expect(isBreaking(message)).toBe(true);
-  expect(mergeBlocker({ ...candidate(), messages: [message], nextVersion: "0.4.0" })).toContain("manual merge");
+  expect(mergeBlocker({ ...candidate(), messages: [message], nextVersion: "0.4.0" })).toBeNull();
+  expect(mergeBlocker({ ...candidate(), messages: [message] })).toContain("minor version");
+  expect(mergeBlocker({ ...candidate(), messages: [message], previousVersion: "1.3.0", nextVersion: "1.4.0" })).toContain("manual merge");
 });
 
 test("major transitions require manual merge without a breaking marker", () => {
@@ -88,6 +89,7 @@ test("unknown authors, forks, drafts, and unready branches cannot auto-merge", (
 test("missing, failed, spoofed, or pending checks block merging", () => {
   for (const checks of [
     [],
+    [candidate().checks[0]],
     [{ ...candidate().checks[0], conclusion: "failure" }],
     [{ ...candidate().checks[0], app: { slug: "someone-else" } }],
     [...candidate().checks, { name: "Security", status: "in_progress", conclusion: null }],
@@ -120,7 +122,7 @@ test("version checks reject manifest, lockfile, and tag drift", () => {
   expect(() => checkVersion(root)).toThrow("same version");
 });
 
-test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaking-history"])(
+test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaking-history", "dispatch-failed"])(
   "the scheduler checks the actual release history and exact head: %s", async (scenario) => {
     const originalDirectory = process.cwd();
     const root = mkdtempSync(join(tmpdir(), "pledge-release-git-"));
@@ -149,20 +151,22 @@ test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaki
       git("commit", "-qm", scenario === "breaking-history" ? "feat!: remove a command" : "fix: correct comparison");
       const baseSha = git("rev-parse", "HEAD");
       git("checkout", "-qb", "release-please--branches--main");
-      write(".release-please-manifest.json", '{".":"0.3.1"}');
+      const nextVersion = scenario === "breaking-history" ? "0.4.0" : "0.3.1";
+      write(".release-please-manifest.json", JSON.stringify({ ".": nextVersion }));
       git("add", ".");
-      git("commit", "-qm", "chore: release 0.3.1");
+      git("commit", "-qm", `chore: release ${nextVersion}`);
       const headSha = git("rev-parse", "HEAD");
       git("checkout", "-q", "main");
       process.chdir(root);
 
       const pull = {
-        ...candidate().pull, number: 1, title: "chore: release 0.3.1",
+        ...candidate().pull, number: 1, title: `chore: release ${nextVersion}`,
         updated_at: "2000-01-01T00:00:00Z",
         base: { ...candidate().pull.base, sha: baseSha },
         head: { ...candidate().pull.head, sha: headSha },
       };
       const merges: Record<string, unknown>[] = [];
+      const dispatches: Record<string, unknown>[] = [];
       const logs: string[] = [];
       let reads = 0;
       const listPulls = () => {};
@@ -191,16 +195,25 @@ test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaki
             },
           },
           checks: { listForRef: listChecks },
+          actions: { createWorkflowDispatch: async (parameters: Record<string, unknown>) => {
+            dispatches.push(parameters);
+            if (scenario === "dispatch-failed") throw new Error("dispatch unavailable");
+          } },
         },
       };
-      await mergeRelease({ github, context: { repo: { owner: "stentorian-io", repo: "pledge" } },
-        core: { info: (message: string) => logs.push(message) }, appSlug: "pledge-release", dryRun: scenario === "dry-run" });
-      if (scenario === "eligible") {
+      const run = mergeRelease({ github, context: { repo: { owner: "stentorian-io", repo: "pledge" } },
+        core: { info: (message: string) => logs.push(message) }, dryRun: scenario === "dry-run" });
+      if (scenario === "dispatch-failed") await expect(run).rejects.toThrow("dispatch unavailable");
+      else await run;
+      if (["eligible", "breaking-history", "dispatch-failed"].includes(scenario)) {
         expect(merges).toEqual([{ owner: "stentorian-io", repo: "pledge", pull_number: 1,
-          sha: headSha, merge_method: "squash", commit_title: "chore: release 0.3.1", commit_message: "" }]);
-      } else expect(merges).toHaveLength(0);
+          sha: headSha, merge_method: "squash", commit_title: `chore: release ${nextVersion}`, commit_message: "" }]);
+        expect(dispatches).toEqual([{ owner: "stentorian-io", repo: "pledge", workflow_id: "release.yml", ref: "main" }]);
+      } else {
+        expect(merges).toHaveLength(0);
+        expect(dispatches).toHaveLength(0);
+      }
       if (scenario === "dry-run") expect(logs.join("\n")).toContain("Would merge");
-      if (scenario === "breaking-history") expect(logs.join("\n")).toContain("manual merge");
     } finally {
       process.chdir(originalDirectory);
       for (const name of localVariables) {

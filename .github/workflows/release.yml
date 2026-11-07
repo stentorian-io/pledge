@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: release-main
@@ -19,15 +20,18 @@ jobs:
     needs: checks
     runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main'
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
     steps:
-      - uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349
-        id: app
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-          permission-issues: write
+          persist-credentials: false
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         id: revision
         with:
@@ -38,7 +42,22 @@ jobs:
         id: release
         if: steps.revision.outputs.current == 'true'
         with:
-          token: ${{ steps.app.outputs.token }}
           target-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+      - name: Request release PR checks
+        if: steps.revision.outputs.current == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        with:
+          script: |
+            const dispatchChecks = require('./scripts/releases/dispatch-checks.cjs');
+            await dispatchChecks({ github, context, core });
+  publish:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: ./.github/workflows/publish.yml
+    permissions:
+      contents: write
+      packages: write
+    with:
+      tag: ${{ needs.release.outputs.tag }}

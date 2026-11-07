@@ -1,0 +1,8 @@
+**
+!Dockerfile
+!Cargo.toml
+!Cargo.lock
+!LICENSE-MIT
+!LICENSE-APACHE
+!src
+!src/**

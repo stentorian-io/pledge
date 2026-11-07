@@ -1,8 +1,8 @@
 const { execFileSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
-const { mergeBlocker } = require("./merge-policy.cjs");
+const { mergeBlocker, hasOnlyReleaseFiles } = require("./merge-policy.cjs");
 
-module.exports = async function mergeRelease({ github, context, core, appSlug, dryRun = false }) {
+module.exports = async function mergeRelease({ github, context, core, dryRun = false }) {
   const repository = context.repo;
   const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
   const mainSha = git("rev-parse", "HEAD");
@@ -11,15 +11,14 @@ module.exports = async function mergeRelease({ github, context, core, appSlug, d
   const baseline = previousVersion === "0.3.0" ? config["bootstrap-sha"] : `v${previousVersion}`;
   const candidates = await github.paginate(github.rest.pulls.list, { ...repository, state: "open", base: "main", per_page: 100 });
   for (const candidate of candidates) {
-    if (candidate.user.login !== `${appSlug}[bot]` || candidate.head.ref !== "release-please--branches--main") continue;
+    if (candidate.user.login !== "github-actions[bot]" || candidate.head.ref !== "release-please--branches--main") continue;
     const parameters = { ...repository, pull_number: candidate.number };
     let { data: pull } = await github.rest.pulls.get(parameters);
     if (pull.base.sha !== mainSha || pull.head.repo?.full_name !== pull.base.repo.full_name) continue;
     const head = pull.head.sha;
     git("fetch", "origin", head);
     const files = await github.paginate(github.rest.pulls.listFiles, { ...parameters, per_page: 100 });
-    const allowedFiles = new Set(["Cargo.toml", "Cargo.lock", "CHANGELOG.md", ".release-please-manifest.json"]);
-    if (files.length === 0 || files.some(file => !allowedFiles.has(file.filename) || file.status !== "modified")) {
+    if (!hasOnlyReleaseFiles(files)) {
       core.info(`PR #${pull.number}: unexpected release files; manual review required`);
       continue;
     }
@@ -32,7 +31,7 @@ module.exports = async function mergeRelease({ github, context, core, appSlug, d
     const { data: refreshed } = await github.rest.pulls.get(parameters);
     if (refreshed.head.sha !== head || refreshed.base.sha !== mainSha) continue;
     pull = refreshed;
-    const reason = mergeBlocker({ pull, appSlug, messages, previousVersion, nextVersion, headDate, checks });
+    const reason = mergeBlocker({ pull, messages, previousVersion, nextVersion, headDate, checks });
     if (reason) {
       core.info(`PR #${pull.number}: ${reason}`);
       continue;
@@ -47,5 +46,7 @@ module.exports = async function mergeRelease({ github, context, core, appSlug, d
     });
     if (!result.data.merged) throw new Error(`Release merge failed: ${result.data.message}`);
     core.info(`Merged release PR #${pull.number} at ${head}`);
+    // A merge performed with GITHUB_TOKEN does not trigger the push workflow.
+    await github.rest.actions.createWorkflowDispatch({ ...repository, workflow_id: "release.yml", ref: "main" });
   }
 };
