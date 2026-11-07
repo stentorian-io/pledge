@@ -52,10 +52,12 @@ Linked worktrees use the hooks from their own checkout.
 
 | Command | Purpose |
 | --- | --- |
-| `make check` | rustfmt, clippy across all targets, and the default release test suite |
+| `make check` | Language coverage inventory, rustfmt, clippy across all targets, and the default release test suite |
 | `make check-lsp` | Release tests with the real language server, serialized to avoid workspace races |
 | `make coverage` | Default-suite line coverage checked against `.coverage-baseline` |
-| `make test-tools` | Development hook checks in temporary Git repositories, without building Rust |
+| `make test-tools` | Hook, release, and language-coverage tooling checks in temporary repositories, without building Rust |
+| `make language-coverage` | Offline reference accounting, evidence links, and public-report freshness |
+| `make language-coverage-update` | Regenerate the public report after reviewing inventory changes |
 | `make check-all` | Tooling checks, default checks, LSP tests, and coverage |
 | `make reference-suite` | Only the pinned published-package comparisons |
 
@@ -63,6 +65,10 @@ Linked worktrees use the hooks from their own checkout.
 not run those same cases twice. Cargo checks use `--locked` so validation does
 not silently update the lockfile. LSP tests are opt-in because they require
 external processes and may install fixture dependencies through npm.
+
+See [language coverage](docs/language-coverage.md#reproduce-and-maintain-coverage)
+for upstream baseline audits, version profiles, and consumer-result artifacts.
+Documented limitations and unverified cases do not count as passing conformance.
 
 The hooks use these same checks:
 

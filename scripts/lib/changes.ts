@@ -19,8 +19,14 @@ export function isRustInput(path: string) {
 
 export function isToolingInput(path: string) {
   return path.startsWith("scripts/") || path.startsWith(".github/")
+    || isLanguageCoverageInput(path)
     || path === "Makefile" || path === "release-please-config.json"
     || path === ".release-please-manifest.json";
+}
+
+export function isLanguageCoverageInput(path: string) {
+  return path.startsWith("scripts/conformance/") || path.startsWith("docs/coverage/")
+    || path === "docs/language-coverage.md";
 }
 
 export function classifyChanges(paths: string[]) {

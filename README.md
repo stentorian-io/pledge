@@ -93,6 +93,10 @@ within the supported checks. It does not prove every consumer or runtime
 behavior remains compatible. Missing inputs or exhausted analysis limits
 produce an incomplete result.
 
+The [language coverage inventory](docs/language-coverage.md) maps pinned language
+and host references to empirical tests, partial support, and documented coverage
+gaps. It reports tested runtime/compiler profiles separately from line coverage.
+
 ## Use it in CI
 
 Select one package, choose a baseline, and keep the command's exit status:

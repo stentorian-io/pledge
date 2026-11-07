@@ -1,0 +1,101 @@
+[
+  {
+    "id": "ecma262",
+    "name": "ECMAScript 2026",
+    "repository": "tc39/ecma262",
+    "revision": "0248456c758431e4bb8e5d26333ff1865123c9cd",
+    "inputs": [
+      {
+        "path": "spec.html",
+        "sha256": "ce7bc30174061fd8d212270b81cf6511661180c1e174f6911d10ced0581527b0"
+      },
+      {
+        "path": "table-nonbinary-unicode-properties.html",
+        "sha256": "08da59f7725ab8c8c932c965d22de931bbf38b1ea9430f67a2cd0163984074f2"
+      },
+      {
+        "path": "table-binary-unicode-properties.html",
+        "sha256": "bb09794cb0cf887f011f5d1a133b2a29734e432ba0cf87db9281afbd151b8ea0"
+      },
+      {
+        "path": "table-binary-unicode-properties-of-strings.html",
+        "sha256": "9c4e35660c28217fb8dd7786de72010c30f901e534a57e3c16eef4831d6bf0e1"
+      }
+    ],
+    "index": "docs/coverage/ecma262.json",
+    "sha256": "43d8cd2a6cf77a8f10a078c5ea6d3351ea95e3a74ba87a8071da476b75319c75",
+    "license": "https://github.com/tc39/ecma262/blob/0248456c758431e4bb8e5d26333ff1865123c9cd/LICENSE.md"
+  },
+  {
+    "id": "test262",
+    "name": "Test262 feature taxonomy",
+    "repository": "tc39/test262",
+    "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+    "inputs": [
+      {
+        "path": "features.txt",
+        "sha256": "2f8dfa3d3ba98ae4618692c30f7c365069fb55d5899add707f50749f648ba039"
+      }
+    ],
+    "index": "docs/coverage/test262.json",
+    "sha256": "bc1b48d56c76c49c75ed8f2c0928976c1e3d4960c63c2a61b6a741413ec7e2a4",
+    "license": "https://github.com/tc39/test262/blob/e4fbf57745c6aae3d1f12f181ecef78b1665d812/LICENSE"
+  },
+  {
+    "id": "typescript",
+    "name": "TypeScript 6.0.3",
+    "repository": "microsoft/TypeScript",
+    "revision": "050880ce59e30b356b686bd3144efe24f875ebc8",
+    "inputs": [
+      {
+        "path": "src/compiler/types.ts",
+        "sha256": "a7324b3c17fe5eae0e84bd537a9822bdf8351854a81231c82a4fa59e7bfb7a11"
+      },
+      {
+        "path": "src/compiler/commandLineParser.ts",
+        "sha256": "e48e42605eef2b1880947b658187cf455b3c91aa4bcf32007ab7296b088009ab"
+      }
+    ],
+    "tree": {
+      "directory": "tests/cases",
+      "sha256": "1085536435f9a33a5029fb18e699685743aff6da23c61e38c07b80c08c185881"
+    },
+    "index": "docs/coverage/typescript.json",
+    "sha256": "14d2c6a0ab50105fc475d98380eb0a8239dc6913420a36e9d6416ad15150538b",
+    "license": "https://github.com/microsoft/TypeScript/blob/050880ce59e30b356b686bd3144efe24f875ebc8/LICENSE.txt"
+  },
+  {
+    "id": "node",
+    "repository": "nodejs/node",
+    "revision": "b4f23d3619c98bed09af93a21192f6080197a8c6",
+    "inputs": [
+      {
+        "path": "doc/api/esm.md",
+        "sha256": "9cbd6a57714d8c0234387d7851e4a630b1adacf72fe30d69b5a2762dce625a18"
+      },
+      {
+        "path": "doc/api/packages.md",
+        "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+      }
+    ],
+    "name": "Node 26.7.0 module documentation",
+    "index": "docs/coverage/node.json",
+    "sha256": "eef2b953f703f78967b1ce207438490a2b53c83db77f8f301c5c3050b41f47fc",
+    "license": "https://github.com/nodejs/node/blob/b4f23d3619c98bed09af93a21192f6080197a8c6/LICENSE"
+  },
+  {
+    "id": "npm",
+    "repository": "npm/cli",
+    "revision": "bfacd33ccbcd908480610703b60455d2da5b57a9",
+    "inputs": [
+      {
+        "path": "docs/lib/content/configuring-npm/package-json.md",
+        "sha256": "3644b6951ffe70f98f02456ce7fb5b8888906e474705d979fa0bbb2eddfb42c1"
+      }
+    ],
+    "name": "npm 11.19.0 manifest documentation",
+    "index": "docs/coverage/npm.json",
+    "sha256": "1c39461b19777d3bf283da5660c22b8bf88291af59fe6ba04b8c2ca37dd7de26",
+    "license": "https://github.com/npm/cli/blob/bfacd33ccbcd908480610703b60455d2da5b57a9/LICENSE"
+  }
+]

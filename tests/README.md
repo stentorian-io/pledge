@@ -82,6 +82,20 @@ and symbol-key evidence, and path-alias consumer cases. These are
 targeted version boundaries, not exhaustive ECMAScript or TypeScript
 conformance coverage.
 
+The [language coverage inventory](../docs/language-coverage.md) records exact
+evidence tests, source revisions, compiler options, and unverified upstream cases.
+`compiler::conformance` adapts pinned TypeScript cases to package consumers under
+NodeNext, Node16, and CommonJS resolution. TypeScript 6's legacy Node-resolution
+deprecation is explicitly acknowledged in the CommonJS profile. JavaScript
+consumer tests include Test262-derived namespace-name and symbol-registry cases.
+These adaptations exercise Pledge; running an upstream suite solely against an
+engine or compiler would not verify Pledge's comparison behavior.
+
+Keep inventory metadata under `docs/coverage/`, tooling under
+`scripts/conformance/`, and executable cases in their existing language or
+ecosystem suite. Each upstream case attribution includes an immutable revision
+and source checksum. Normal test runs do not download upstream replacements.
+
 The `modules::commonjs_names` Node suite compares the installed loader's named
 imports with real ESM and `require()` consumers. CI runs it on Node 22.12.0,
 24.0.0, and 26.7.0 because these releases use different bundled CommonJS parsers.
@@ -128,3 +142,6 @@ command-recording executables. `scripts/releases/releases.test.ts` covers commit
 semantics, release timing, holds, and version consistency. Run `make test-tools`
 when changing hooks or release tooling; these checks do not require external
 services or product tests.
+
+`scripts/conformance/conformance.test.ts` checks extraction, missing classifications,
+evidence paths, report generation, and runner failures in isolated repositories.

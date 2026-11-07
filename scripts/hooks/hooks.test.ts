@@ -156,6 +156,18 @@ test("package fixture changes trigger checks without changing Rust files", () =>
   expect(repo.commands()).toContain("cargo test --locked --release");
 });
 
+test("public language coverage edits validate the inventory before tooling checks", () => {
+  const repo = repository();
+  writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
+  repo.stage("docs/coverage/inventory.json", "{}\n");
+
+  expect(repo.hook("pre-commit").exitCode).toBe(0);
+  const commands = repo.commands().trim().split("\n");
+  expect(commands[0]).toBe("bun scripts/conformance/check.ts");
+  expect(commands[1]).toContain("./scripts/conformance/conformance.test.ts");
+  expect(commands.some(command => command.startsWith("cargo "))).toBe(false);
+});
+
 test.each(["modified", "deleted"])("%s embedded compiler source runs product checks and allows fix commits", (change) => {
   const repo = repository();
   expect(repo.hook("install").exitCode).toBe(0);
