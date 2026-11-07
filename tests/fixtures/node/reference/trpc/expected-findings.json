@@ -7,9 +7,11 @@
   "breaking": false,
   "old_surfaces": {
     ". | import/default | Value": 17,
-    ". | import/types | Value": 78,
+    ". | import/types | Type": 60,
+    ". | import/types | Value": 18,
     ". | require/default | Value": 17,
-    ". | require/types | Value": 78,
+    ". | require/types | Type": 60,
+    ". | require/types | Value": 18,
     "./adapters/aws-lambda | import/default | Value": 2,
     "./adapters/aws-lambda | import/types | Type": 3,
     "./adapters/aws-lambda | import/types | Value": 2,
@@ -45,9 +47,11 @@
     "./adapters/next-app-dir | require/default | Value": 4,
     "./adapters/next-app-dir | require/types | Value": 4,
     "./adapters/node-http | import/default | Value": 4,
-    "./adapters/node-http | import/types | Value": 11,
+    "./adapters/node-http | import/types | Type": 7,
+    "./adapters/node-http | import/types | Value": 4,
     "./adapters/node-http | require/default | Value": 4,
-    "./adapters/node-http | require/types | Value": 11,
+    "./adapters/node-http | require/types | Type": 7,
+    "./adapters/node-http | require/types | Value": 4,
     "./adapters/standalone | import/default | Value": 3,
     "./adapters/standalone | import/types | Type": 4,
     "./adapters/standalone | import/types | Value": 3,
@@ -61,31 +65,43 @@
     "./adapters/ws | require/types | Type": 5,
     "./adapters/ws | require/types | Value": 4,
     "./http | import/default | Value": 6,
-    "./http | import/types | Value": 17,
+    "./http | import/types | Type": 11,
+    "./http | import/types | Value": 6,
     "./http | require/default | Value": 6,
-    "./http | require/types | Value": 17,
+    "./http | require/types | Type": 11,
+    "./http | require/types | Value": 6,
     "./observable | import/default | Value": 10,
-    "./observable | import/types | Value": 18,
+    "./observable | import/types | Type": 8,
+    "./observable | import/types | Value": 10,
     "./observable | require/default | Value": 10,
-    "./observable | require/types | Value": 18,
+    "./observable | require/types | Type": 8,
+    "./observable | require/types | Value": 10,
     "./rpc | import/default | Value": 3,
-    "./rpc | import/types | Value": 22,
+    "./rpc | import/types | Type": 18,
+    "./rpc | import/types | Value": 4,
     "./rpc | require/default | Value": 3,
-    "./rpc | require/types | Value": 22,
+    "./rpc | require/types | Type": 18,
+    "./rpc | require/types | Value": 4,
     "./shared | import/default | Value": 2,
-    "./shared | import/types | Value": 6,
+    "./shared | import/types | Type": 4,
+    "./shared | import/types | Value": 2,
     "./shared | require/default | Value": 2,
-    "./shared | require/types | Value": 6,
+    "./shared | require/types | Type": 4,
+    "./shared | require/types | Value": 2,
     "./unstable-core-do-not-import | import/default | Value": 73,
-    "./unstable-core-do-not-import | import/types | Value": 230,
+    "./unstable-core-do-not-import | import/types | Type": 154,
+    "./unstable-core-do-not-import | import/types | Value": 76,
     "./unstable-core-do-not-import | require/default | Value": 73,
-    "./unstable-core-do-not-import | require/types | Value": 230
+    "./unstable-core-do-not-import | require/types | Type": 154,
+    "./unstable-core-do-not-import | require/types | Value": 76
   },
   "new_surfaces": {
     ". | import/default | Value": 17,
-    ". | import/types | Value": 78,
+    ". | import/types | Type": 60,
+    ". | import/types | Value": 18,
     ". | require/default | Value": 17,
-    ". | require/types | Value": 78,
+    ". | require/types | Type": 60,
+    ". | require/types | Value": 18,
     "./adapters/aws-lambda | import/default | Value": 2,
     "./adapters/aws-lambda | import/types | Type": 3,
     "./adapters/aws-lambda | import/types | Value": 2,
@@ -121,9 +137,11 @@
     "./adapters/next-app-dir | require/default | Value": 4,
     "./adapters/next-app-dir | require/types | Value": 4,
     "./adapters/node-http | import/default | Value": 4,
-    "./adapters/node-http | import/types | Value": 11,
+    "./adapters/node-http | import/types | Type": 7,
+    "./adapters/node-http | import/types | Value": 4,
     "./adapters/node-http | require/default | Value": 4,
-    "./adapters/node-http | require/types | Value": 11,
+    "./adapters/node-http | require/types | Type": 7,
+    "./adapters/node-http | require/types | Value": 4,
     "./adapters/standalone | import/default | Value": 3,
     "./adapters/standalone | import/types | Type": 4,
     "./adapters/standalone | import/types | Value": 3,
@@ -137,37 +155,42 @@
     "./adapters/ws | require/types | Type": 5,
     "./adapters/ws | require/types | Value": 4,
     "./http | import/default | Value": 6,
-    "./http | import/types | Value": 17,
+    "./http | import/types | Type": 11,
+    "./http | import/types | Value": 6,
     "./http | require/default | Value": 6,
-    "./http | require/types | Value": 17,
+    "./http | require/types | Type": 11,
+    "./http | require/types | Value": 6,
     "./observable | import/default | Value": 10,
-    "./observable | import/types | Value": 18,
+    "./observable | import/types | Type": 8,
+    "./observable | import/types | Value": 10,
     "./observable | require/default | Value": 10,
-    "./observable | require/types | Value": 18,
+    "./observable | require/types | Type": 8,
+    "./observable | require/types | Value": 10,
     "./rpc | import/default | Value": 3,
-    "./rpc | import/types | Value": 22,
+    "./rpc | import/types | Type": 18,
+    "./rpc | import/types | Value": 4,
     "./rpc | require/default | Value": 3,
-    "./rpc | require/types | Value": 22,
+    "./rpc | require/types | Type": 18,
+    "./rpc | require/types | Value": 4,
     "./shared | import/default | Value": 2,
-    "./shared | import/types | Value": 6,
+    "./shared | import/types | Type": 4,
+    "./shared | import/types | Value": 2,
     "./shared | require/default | Value": 2,
-    "./shared | require/types | Value": 6,
+    "./shared | require/types | Type": 4,
+    "./shared | require/types | Value": 2,
     "./unstable-core-do-not-import | import/default | Value": 73,
-    "./unstable-core-do-not-import | import/types | Value": 230,
+    "./unstable-core-do-not-import | import/types | Type": 154,
+    "./unstable-core-do-not-import | import/types | Value": 76,
     "./unstable-core-do-not-import | require/default | Value": 73,
-    "./unstable-core-do-not-import | require/types | Value": 230
+    "./unstable-core-do-not-import | require/types | Type": 154,
+    "./unstable-core-do-not-import | require/types | Value": 76
   },
   "findings": [],
   "warnings": [
     {
       "version": "new",
       "incomplete": true,
-      "message": "public type expansion limit reached for `AnyProcedureBuilder`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `DecorateCreateRouterOptions`"
+      "message": "barrel 'next' unresolvable: 3 named re-exports could not be resolved (NextApiHandler, NextApiRequest, NextApiResponse)"
     },
     {
       "version": "new",
@@ -197,27 +220,7 @@
     {
       "version": "new",
       "incomplete": true,
-      "message": "public type expansion limit reached for `MergeRouters`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `NodeHTTPCreateContextOption`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
       "message": "public type expansion limit reached for `TRPCBuilder`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `TRPCDecorateCreateRouterOptions`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `TRPCMergeRouters`"
     },
     {
       "version": "new",
@@ -238,16 +241,6 @@
       "version": "new",
       "incomplete": true,
       "message": "public type expansion limit reached for `awsLambdaStreamingRequestHandler`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `callProcedure`"
-    },
-    {
-      "version": "new",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `callTRPCProcedure`"
     },
     {
       "version": "new",
@@ -307,12 +300,7 @@
     {
       "version": "old",
       "incomplete": true,
-      "message": "public type expansion limit reached for `AnyProcedureBuilder`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `DecorateCreateRouterOptions`"
+      "message": "barrel 'next' unresolvable: 3 named re-exports could not be resolved (NextApiHandler, NextApiRequest, NextApiResponse)"
     },
     {
       "version": "old",
@@ -342,27 +330,7 @@
     {
       "version": "old",
       "incomplete": true,
-      "message": "public type expansion limit reached for `MergeRouters`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `NodeHTTPCreateContextOption`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
       "message": "public type expansion limit reached for `TRPCBuilder`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `TRPCDecorateCreateRouterOptions`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `TRPCMergeRouters`"
     },
     {
       "version": "old",
@@ -383,16 +351,6 @@
       "version": "old",
       "incomplete": true,
       "message": "public type expansion limit reached for `awsLambdaStreamingRequestHandler`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `callProcedure`"
-    },
-    {
-      "version": "old",
-      "incomplete": true,
-      "message": "public type expansion limit reached for `callTRPCProcedure`"
     },
     {
       "version": "old",
@@ -450,5 +408,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "No structural findings for this minor release. Public-surface counts are stable. Generated declarations reach explicit expansion bounds; this snapshot does not claim complete TypeScript analysis. The next-app-dir runtime surfaces contain four names in both pinned versions and both ESM and CJS: experimental_nextAppDirCaller, experimental_notFound, experimental_redirect, rethrowNextErrors. Direct Node execution independently confirms this namespace. CommonJS assignments and Object helpers inside deferred or shadowed bundled Next.js factories do not contribute public exports."
+  "_curation_notes": "No structural findings for this minor release. Import-then-export bindings now retain their source declarations: 524 public records in each pinned version move from placeholder Value identities to their actual Type identities, with no public names lost. Independent TypeScript checker inspection validates all 524 records in each version against type aliases, interfaces, and merged interface/namespace declarations. The eleven names exposed by the earlier evidence-loss regression retain all thirty declaration contracts per version, including class metadata. Eight per-symbol expansion warnings per version no longer occur after direct declaration linking; seven affected names retain exactly the original structural shapes, while AnyProcedureBuilder resolves additional generic details. Opaque shapes and the remaining expansion limits remain explicit limitations. The absent external next package now produces an incomplete warning for NextApiHandler, NextApiRequest, and NextApiResponse, retaining unresolved placeholders without treating the sibling adapter file as the dependency or reporting a false source cycle. TypeScript independently cannot resolve next in either pinned archive. Discovery warnings total 44; structural-only exit 3 remains unchanged and does not establish complete TypeScript compatibility. Native Node execution independently confirms the unchanged four-name next-app-dir surface in ESM and CJS: experimental_nextAppDirCaller, experimental_notFound, experimental_redirect, and rethrowNextErrors. Deferred or shadowed bundled Next.js factories do not contribute public exports."
 }

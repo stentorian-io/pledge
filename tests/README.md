@@ -116,6 +116,9 @@ The push hook runs LSP and coverage checks for code or fixture changes. See
 
 - Mirror the owning language or ecosystem and behavior under `fixtures/`.
   Use small `old/` and `new/` package pairs for compatibility changes.
+- Give language-rule fixtures an explicit root `exports` entry when they test a
+  single public surface. A legacy `main` also exposes deep imports; exercise
+  those distinct identities in the Node resolution suites.
 - Name tests as behavior sentences. Keep arrange, act, and assert separate.
 - Assert exact rule IDs and severities, covering false positives as well as
   positive detections. Assert message text only when wording is the contract.

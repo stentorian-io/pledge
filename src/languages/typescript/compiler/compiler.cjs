@@ -640,26 +640,31 @@ for (const request of input.symbols) {
   let commonjsProperty = null;
   const expressionValue = commonjsValue(request);
   if (symbol || expressionValue) {
-    if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
+    const declaredType = symbol && (!!(symbol.flags & ts.SymbolFlags.Class) ||
+      request.space === 'type' && !!(symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface)));
+    if (declaredType) {
       for (const declaration of symbol.declarations || []) {
         bindParameters(declaration.typeParameters?.map(parameter => checker.getTypeAtLocation(parameter)));
       }
     }
-    const type = expressionValue?.type || (symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)
+    const type = expressionValue?.type || (declaredType
       ? checker.getDeclaredTypeOfSymbol(symbol) : checker.getTypeOfSymbol(symbol));
     if (expressionValue?.moduleExport && !expressionValue.explicitAny && type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) {
       currentIssues.add('CommonJS export result requires runtime evidence');
     }
     signature = checker.typeToString(type, undefined, ts.TypeFormatFlags.NoTruncation);
     const signatures = checker.getSignaturesOfType(type, ts.SignatureKind.Call);
-    if (signatures.length && !checker.getPropertiesOfType(type).length) overloads = signatures.map(signature => signatureShape(signature, 0));
+    // Callable objects can also be constructors; preserve both contracts in
+    // the structural shape instead of discarding construction capabilities.
+    if (signatures.length && !checker.getPropertiesOfType(type).length &&
+        !checker.getSignaturesOfType(type, ts.SignatureKind.Construct).length) overloads = signatures.map(signature => signatureShape(signature, 0));
     else overloads = [expressionValue?.identity || symbolIdentity(symbol?.valueDeclaration?.initializer) || shape(type)];
     if (symbol?.flags & ts.SymbolFlags.Class) {
       const declaration = symbol.declarations?.find(ts.isClassLike);
       if (declaration) overloads = overloads.map(instance => ({ Intersection: [instance,
         generic('<class-static>', [shape(checker.getTypeOfSymbol(symbol), 0, declaration)])] }));
     }
-    if (symbol?.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
+    if (declaredType) {
       const declaration = symbol.declarations?.find(declaration => declaration.typeParameters?.length);
       const parameters = declaration?.typeParameters.map(parameter => checker.getTypeAtLocation(parameter));
       overloads = overloads.map(body => genericDeclaration(parameters, body, 0));

@@ -53,6 +53,12 @@ pub(crate) fn assert_consumer_contracts(specifications: &str) {
             breaking,
             "{name}: {findings:?}"
         );
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.rule == "analysis-incomplete"),
+            "{name}: {findings:?}"
+        );
         for (version, root, succeeds) in [("old", old.path(), true), ("new", new.path(), !breaking)]
         {
             let consumer = case["consumer"].as_str().unwrap();

@@ -368,18 +368,33 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
             if let (Some(old_shape), Some(new_shape)) =
                 (old_sym.overloads.first(), new_sym.overloads.first())
             {
-                let compare_type = if old_sym
+                let compound_value = old_sym
                     .decl_kinds
                     .contains(&js_model::DeclarationKind::Variable)
-                    && !matches!(
-                        old_shape.without_type_parameters(),
-                        type_shapes::TypeShape::Function { .. }
-                    ) {
-                    type_diff::diff_values
-                } else {
-                    type_diff::diff_types
-                };
-                let type_findings = if old_sym.overloads.len() > 1 || new_sym.overloads.len() > 1 {
+                    && old_sym
+                        .overloads
+                        .iter()
+                        .chain(&new_sym.overloads)
+                        .any(|shape| {
+                            !matches!(
+                                shape.without_type_parameters(),
+                                type_shapes::TypeShape::Function { .. }
+                            )
+                        });
+                let type_findings = if compound_value {
+                    let old_value = (old_sym.overloads.len() > 1)
+                        .then(|| type_shapes::TypeShape::Intersection(old_sym.overloads.clone()));
+                    let new_value = (new_sym.overloads.len() > 1)
+                        .then(|| type_shapes::TypeShape::Intersection(new_sym.overloads.clone()));
+                    type_diff::diff_values(
+                        old_value.as_ref().unwrap_or(old_shape),
+                        new_value.as_ref().unwrap_or(new_shape),
+                        name,
+                        &new_sym.file,
+                        new_sym.line,
+                        new_sym.col,
+                    )
+                } else if old_sym.overloads.len() > 1 || new_sym.overloads.len() > 1 {
                     crate::languages::typescript::compare::refinements::compare_overload_contracts(
                         &old_sym.overloads,
                         &new_sym.overloads,
@@ -389,7 +404,7 @@ fn compare_exports_core(old: &ExportMap, new: &ExportMap, lsp_was_available: boo
                         new_sym.col,
                     )
                 } else {
-                    compare_type(
+                    type_diff::diff_types(
                         old_shape,
                         new_shape,
                         name,

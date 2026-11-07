@@ -77,6 +77,7 @@ pub(super) async fn evaluate_public_types(
             })).collect();
             serde_json::json!({"id":id, "file":root.join(&symbol.file), "name":symbol.name,
             "local_name":symbol.local_name, "line":symbol.line, "col":symbol.col, "refs":refs,
+            "space": if key.space == SymbolSpace::Type { "type" } else { "value" },
             "export_kind":match symbol.kind { ExportKind::Default => "default", ExportKind::Named => "named" }})
         })
         .collect();

@@ -143,6 +143,14 @@ fn packages_without_exports_include_deep_imports() {
     assert!(exports
         .keys()
         .any(|k| k.subpath == "./lib/extra.js" && k.name == "api"));
+    for subpath in [".", "./index.js"] {
+        assert!(
+            exports
+                .keys()
+                .any(|key| key.subpath == subpath && key.name == "root"),
+            "missing {subpath}: {exports:?}"
+        );
+    }
 }
 
 #[test]

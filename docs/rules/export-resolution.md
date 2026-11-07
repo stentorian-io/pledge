@@ -10,6 +10,9 @@ its package-imports target. Targets use the same source, declaration, and
 directory probing as other TypeScript imports. This follows the
 [TypeScript path-mapping rules](https://www.typescriptlang.org/docs/handbook/modules/reference.html#paths)
 and keeps discovery from selecting a different public barrel across runs.
+Unmapped package names do not fall back to sibling files. An unresolved external
+re-export retains an incomplete-analysis warning instead of borrowing evidence
+from a similarly named local module.
 
 For Rust callers, `TsconfigPaths.paths` is an insertion-ordered `IndexMap`, and
 `resolve_tsconfig_alias` returns mapped targets without extension probing. Node
@@ -19,6 +22,11 @@ Export identity includes the public subpath and the complete condition path.
 Two subpaths can expose the same file without losing either public API. A
 re-export cycle stops the current traversal; it does not prevent another entry
 point from using the same module.
+Type and value exports with the same name retain separate declarations and type
+evidence. Removing a type alias does not remove a surviving value of that name;
+reordering those declarations preserves both contracts.
+Type-only forwarding also preserves a same-named value's `typeof` contract
+without making that value available to runtime imports.
 
 Named aliases retain both their public name and the original declaration name
 and position. Reserved-word aliases have the same identity as their quoted
@@ -27,6 +35,14 @@ spelling, including named and namespace re-exports. Explicit aliases to
 and defer to explicit exports. Conflicting star exports of different bindings
 are ambiguous and do not create a public named export. Namespace re-exports
 retain their namespace prefix, including its `default` member.
+Renaming a dependency's default export exposes only the chosen alias unless
+`default` is also explicitly forwarded.
+Importing a namespace and then exporting it through a local alias or default
+export preserves the same member identities as a direct namespace re-export.
+Type-only namespace imports and exports retain their type-only boundary.
+Named and default imports re-exported through local bindings resolve to their
+source declarations, retaining type/value spaces, class members, and callable
+contracts. Type-only import and export modifiers restrict that forwarded surface.
 
 Conditional objects retain JSON order. A `default` branch hides later siblings.
 `condition-priority-changed` is Major when added or reordered conditions select an
@@ -61,6 +77,9 @@ configurations and produce incomplete analysis rather than a clean verdict.
 JavaScript entry points also discover adjacent TypeScript source or declaration
 files using extension substitution, including `.d.mts` and `.d.cts`. Packages
 without an `exports` field expose source files through legacy deep imports.
+An entry file retains its deep-import path as well as its root entry identity.
+Rerouting `main` between compatible files does not remove either unchanged
+deep-import surface.
 Their root entry follows Node's extension and directory-index resolution for
 `main`, including the root `index.js` fallback when `main` is absent or missing.
 Declaring a separate types entry does not hide that runtime root.
@@ -122,6 +141,8 @@ export identity checks. Export names use their decoded JavaScript identity:
 `value` and `\u0076alue` name the same binding, while a string export containing a
 literal backslash retains that character. The local declaration name is retained
 separately from a public alias for structural checks.
+Destructured declarations include bindings with default initializers and nested
+rest patterns. Names referenced only by an initializer are not public exports.
 
 Valid re-exports with import attributes preserve their source specifier and public
 names. The bundled grammars' missing re-export attribute production is validated

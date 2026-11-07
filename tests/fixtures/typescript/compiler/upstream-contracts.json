@@ -52,5 +52,230 @@
     "consumer": "api('FooChanged'); api('BarChanged');",
     "breaking": false,
     "upstream": "typescript:conformance/types/literal/templateLiteralTypes1.ts"
+  },
+  {
+    "name": "intersection-input-adds-required-member",
+    "profile": "compiler-nodenext",
+    "old": "interface A { a: string } interface B { b: string } export declare function api(input: A): void;",
+    "new": "interface A { a: string } interface B { b: string } export declare function api(input: A & B): void;",
+    "consumer": "api({a:'text'});",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/intersection/intersectionAndUnionTypes.ts"
+  },
+  {
+    "name": "intersection-input-reorders-equivalent-members",
+    "profile": "compiler-nodenext",
+    "old": "interface A { a: string } interface B { b: string } export declare function api(input: A & B): void;",
+    "new": "interface A { a: string } interface B { b: string } export declare function api(input: B & A): void;",
+    "consumer": "api({a:'text',b:'other'});",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/intersection/intersectionAndUnionTypes.ts"
+  },
+  {
+    "name": "discriminated-result-adds-unhandled-variant",
+    "profile": "compiler-nodenext",
+    "old": "type Shape = {kind:'square';size:number} | {kind:'circle';radius:number}; export declare function api():Shape;",
+    "new": "type Shape = {kind:'square';size:number} | {kind:'circle';radius:number} | {kind:'rectangle';width:number;height:number}; export declare function api():Shape;",
+    "consumer": "const shape = api(); switch(shape.kind) { case 'square': shape.size; break; case 'circle': shape.radius; break; default: const exhaustive:never = shape; }",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/union/discriminatedUnionTypes1.ts"
+  },
+  {
+    "name": "discriminated-result-reorders-equivalent-variants",
+    "profile": "compiler-nodenext",
+    "old": "type Shape = {kind:'square';size:number} | {kind:'circle';radius:number}; export declare function api():Shape;",
+    "new": "type Shape = {kind:'circle';radius:number} | {kind:'square';size:number}; export declare function api():Shape;",
+    "consumer": "const shape = api(); switch(shape.kind) { case 'square': shape.size; break; case 'circle': shape.radius; break; default: const exhaustive:never = shape; }",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/union/discriminatedUnionTypes1.ts"
+  },
+  {
+    "name": "merged-interface-result-loses-second-declaration",
+    "profile": "compiler-nodenext",
+    "old": "interface Result {foo:string} interface Result {bar:number} export declare function api():Result;",
+    "new": "interface Result {foo:string} export declare function api():Result;",
+    "consumer": "const number:number = api().bar;",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts"
+  },
+  {
+    "name": "merged-interface-result-flattens-equivalent-declarations",
+    "profile": "compiler-nodenext",
+    "old": "interface Result {foo:string} interface Result {bar:number} export declare function api():Result;",
+    "new": "interface Result {foo:string;bar:number} export declare function api():Result;",
+    "consumer": "const number:number = api().bar; const text:string=api().foo;",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts"
+  },
+  {
+    "name": "callable-constructable-value-loses-construction",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(): number; new (): {value:string}} export declare const api: Factory;",
+    "new": "interface Factory {(): number} export declare const api: Factory;",
+    "consumer": "const text:string = new api().value;",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "callable-constructable-value-reorders-signatures",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(): number; new (): {value:string}} export declare const api: Factory;",
+    "new": "interface Factory {new (): {value:string}; (): number} export declare const api: Factory;",
+    "consumer": "const number:number = api(); const text:string = new api().value;",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "callable-constructable-value-narrows-constructor-input",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(): number; new (value:string|number): {value:string}} export declare const api:Factory;",
+    "new": "interface Factory {(): number; new (value:string): {value:string}} export declare const api:Factory;",
+    "consumer": "new api(42);",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "callable-constructable-value-changes-constructed-result",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(): number; new (): {value:string}} export declare const api:Factory;",
+    "new": "interface Factory {(): number; new (): {value:number}} export declare const api:Factory;",
+    "consumer": "const text:string = new api().value;",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "callable-value-gains-construction",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {():number} export declare const api:Factory;",
+    "new": "interface Factory {():number; new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number = api();",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "indexed-result-changes-selected-property-type",
+    "profile": "compiler-nodenext",
+    "old": "interface Item {name:string;price:number} export declare function api():Item[\"name\"];",
+    "new": "interface Item {name:number;price:number} export declare function api():Item[\"name\"];",
+    "consumer": "const text:string = api();",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/keyof/keyofAndIndexedAccess.ts"
+  },
+  {
+    "name": "indexed-result-expands-to-property-type",
+    "profile": "compiler-nodenext",
+    "old": "interface Item {name:string;price:number} export declare function api():Item[\"name\"];",
+    "new": "export declare function api():string;",
+    "consumer": "const text:string = api();",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/keyof/keyofAndIndexedAccess.ts"
+  },
+  {
+    "name": "construction-addition-removes-optional-call-position",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x?:number):number} export declare const api:Factory;",
+    "new": "interface Factory {():number; new():{value:string}} export declare const api:Factory;",
+    "consumer": "api(42);",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "construction-addition-preserves-optional-call-position",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x?:number):number} export declare const api:Factory;",
+    "new": "interface Factory {(x?:number):number; new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(42); api();",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-construction-addition-removes-call-position",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x?:number):number} export declare const api:Factory;",
+    "new": "interface Factory {():number; (x:boolean):number; new():{value:string}} export declare const api:Factory;",
+    "consumer": "api(42);",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-construction-addition-preserves-call-position",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x?:number):number} export declare const api:Factory;",
+    "new": "interface Factory {(x:boolean):number; (x?:number):number; new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(42); api();",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-callable-gains-construction",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number):number;(x:string):string} export declare const api:Factory;",
+    "new": "interface Factory {(x:number):number;(x:string):string;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(42);const text:string=api(\"x\");",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-callable-gains-construction-and-unifies-calls",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number):number;(x:string):number} export declare const api:Factory;",
+    "new": "interface Factory {(x:number|string):number;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(42);const other:number=api(\"x\");",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-callable-gains-construction-and-loses-call",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number):number;(x:string):string} export declare const api:Factory;",
+    "new": "interface Factory {(x:number):number;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const text:string=api(\"x\");",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-callable-gains-construction-and-narrows-call",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number):number;(x:string|boolean):string} export declare const api:Factory;",
+    "new": "interface Factory {(x:number):number;(x:string):string;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const text:string=api(true);",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overlapping-callable-gains-construction-with-same-selection",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number|string):number;(x:string):string} export declare const api:Factory;",
+    "new": "interface Factory {(x:number|string):number;(x:string):string;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(\"x\");",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overlapping-callable-gains-construction-with-changed-selection",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:number|string):number;(x:string):string} export declare const api:Factory;",
+    "new": "interface Factory {(x:string):string;(x:number|string):number;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const number:number=api(\"x\");",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "constructable-value-loses-optional-call-position",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x?:number):number;new():{value:string}} export declare const api:Factory;",
+    "new": "interface Factory {():number;new():{value:string}} export declare const api:Factory;",
+    "consumer": "api(42);",
+    "breaking": true,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
+  },
+  {
+    "name": "overloaded-callable-gains-property-and-construction",
+    "profile": "compiler-nodenext",
+    "old": "interface Factory {(x:string):string;(x:number|string):number} export declare const api:Factory;",
+    "new": "interface Factory {tag:string;(x:string):string;(x:number|string):number;new():{value:string}} export declare const api:Factory;",
+    "consumer": "const text:string=api(\"x\");const number:number=api(42);",
+    "breaking": false,
+    "upstream": "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts"
   }
 ]

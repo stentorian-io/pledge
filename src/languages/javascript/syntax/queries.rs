@@ -334,6 +334,7 @@ pub(crate) const DECLARE_GLOBAL_AUGMENTATION_QUERY_TS: &str = r#"
 ///.
 pub(crate) const DEFAULT_SPECIFIER_ALIAS_QUERY: &str = r#"
 (export_statement
+  !source
   (export_clause
     (export_specifier
       name: "default"
@@ -346,7 +347,8 @@ pub(crate) const DEFAULT_SPECIFIER_REEXPORT_QUERY: &str = r#"
 (export_statement
   (export_clause
     (export_specifier
-      name: "default"))
+      name: "default"
+      !alias))
   source: (string) @source)
 "#;
 

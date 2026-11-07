@@ -191,7 +191,7 @@ export namespace A {
     write_pkg(
         old_dir.path(),
         serde_json::json!({
-            "name": "ns-pkg", "version": "1.0.0", "main": "./ns.ts"
+            "name": "ns-pkg", "version": "1.0.0", "exports": "./ns.ts"
         }),
     );
 
@@ -209,7 +209,7 @@ export namespace D {
     write_pkg(
         new_dir.path(),
         serde_json::json!({
-            "name": "ns-pkg", "version": "1.0.0", "main": "./ns.ts"
+            "name": "ns-pkg", "version": "1.0.0", "exports": "./ns.ts"
         }),
     );
 

@@ -133,6 +133,57 @@ fn namespace_stars_expose_members_under_the_namespace() {
 }
 
 #[test]
+fn named_namespace_forwarding_preserves_member_spaces_and_type_only_boundaries() {
+    for type_only in [false, true] {
+        let directory = package(
+            if type_only {
+                "export type {default as ns} from './barrel.js';"
+            } else {
+                "import local from './barrel.js';export {local as ns};"
+            },
+            "export const api=1;export interface Input {value:string}",
+        );
+        std::fs::write(
+            directory.path().join("barrel.ts"),
+            "export * as default from './impl.js';",
+        )
+        .unwrap();
+
+        let (exports, warnings) = discover_exports(directory.path()).unwrap();
+
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(exports.len(), 2, "{exports:?}");
+        for (key, symbol) in &exports {
+            assert!(matches!(key.name.as_str(), "ns.api" | "ns.Input"));
+            let expected_space = if type_only || key.name == "ns.Input" {
+                SymbolSpace::Type
+            } else {
+                SymbolSpace::Value
+            };
+            assert_eq!(key.space, expected_space);
+            if type_only {
+                assert!(symbol.is_type_only);
+            }
+        }
+    }
+}
+
+#[test]
+fn dotted_export_names_do_not_invent_a_namespace_binding() {
+    let directory = package(
+        "import namespace from './impl.js';export default namespace;",
+        "const value=1;export {value as 'default.member'};",
+    );
+
+    let (exports, warnings) = discover_exports(directory.path()).unwrap();
+
+    assert!(exports.is_empty(), "{exports:?}");
+    assert!(warnings
+        .iter()
+        .any(|warning| warning.incomplete && warning.message.contains("default")));
+}
+
+#[test]
 fn shared_diamond_graphs_finish_without_losing_either_public_entry() {
     let (send, receive) = std::sync::mpsc::channel();
     std::thread::spawn(move || {

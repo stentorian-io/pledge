@@ -24,39 +24,39 @@
     "./extension | import | Value": 3,
     "./extension | require | Value": 3,
     "./extension | types | Namespace": 1,
-    "./extension | types | Type": 6,
+    "./extension | types | Type": 8,
     "./extension | types | Value": 7,
     "./extension.d.ts | default | Namespace": 1,
-    "./extension.d.ts | default | Type": 6,
+    "./extension.d.ts | default | Type": 8,
     "./extension.d.ts | default | Value": 7,
     "./extension.js | default | Value": 3,
     "./extension.js | types | Namespace": 1,
-    "./extension.js | types | Type": 6,
+    "./extension.js | types | Type": 8,
     "./extension.js | types | Value": 7,
     "./index | default | Value": 1,
     "./index | import | Value": 1,
     "./index | require | Value": 1,
     "./index.js | default | Value": 1,
     "./runtime/client | default/types | Namespace": 1,
-    "./runtime/client | default/types | Type": 175,
+    "./runtime/client | default/types | Type": 176,
     "./runtime/client | default/types | Value": 55,
     "./runtime/client | import/types | Namespace": 1,
-    "./runtime/client | import/types | Type": 175,
+    "./runtime/client | import/types | Type": 176,
     "./runtime/client | import/types | Value": 55,
     "./runtime/client | types | Namespace": 1,
-    "./runtime/client | types | Type": 175,
+    "./runtime/client | types | Type": 176,
     "./runtime/client | types | Value": 55,
     "./runtime/client.d.mts | default | Namespace": 1,
-    "./runtime/client.d.mts | default | Type": 175,
+    "./runtime/client.d.mts | default | Type": 176,
     "./runtime/client.d.mts | default | Value": 55,
     "./runtime/client.d.ts | default | Namespace": 1,
-    "./runtime/client.d.ts | default | Type": 175,
+    "./runtime/client.d.ts | default | Type": 176,
     "./runtime/client.d.ts | default | Value": 55,
     "./runtime/client.js | types | Namespace": 1,
-    "./runtime/client.js | types | Type": 175,
+    "./runtime/client.js | types | Type": 176,
     "./runtime/client.js | types | Value": 55,
     "./runtime/client.mjs | types | Namespace": 1,
-    "./runtime/client.mjs | types | Type": 175,
+    "./runtime/client.mjs | types | Type": 176,
     "./runtime/client.mjs | types | Value": 55,
     "./runtime/index-browser | default | Value": 12,
     "./runtime/index-browser | default/types | Value": 13,
@@ -91,21 +91,21 @@
     "./runtime/query_compiler_small_bg.sqlserver.js | default | Value": 40,
     "./runtime/query_compiler_small_bg.sqlserver.mjs | default | Value": 39,
     "./runtime/wasm-compiler-edge | types | Namespace": 1,
-    "./runtime/wasm-compiler-edge | types | Type": 175,
+    "./runtime/wasm-compiler-edge | types | Type": 176,
     "./runtime/wasm-compiler-edge | types | Value": 55,
     "./runtime/wasm-compiler-edge.d.ts | default | Namespace": 1,
-    "./runtime/wasm-compiler-edge.d.ts | default | Type": 175,
+    "./runtime/wasm-compiler-edge.d.ts | default | Type": 176,
     "./runtime/wasm-compiler-edge.d.ts | default | Value": 55,
     "./runtime/wasm-compiler-edge.js | types | Namespace": 1,
-    "./runtime/wasm-compiler-edge.js | types | Type": 175,
+    "./runtime/wasm-compiler-edge.js | types | Type": 176,
     "./runtime/wasm-compiler-edge.js | types | Value": 55,
     "./scripts/colors.js | default | Value": 2,
     "./scripts/default-index.d.ts | default | Namespace": 1,
-    "./scripts/default-index.d.ts | default | Type": 6,
+    "./scripts/default-index.d.ts | default | Type": 8,
     "./scripts/default-index.d.ts | default | Value": 7,
     "./scripts/default-index.js | default | Value": 3,
     "./scripts/default-index.js | types | Namespace": 1,
-    "./scripts/default-index.js | types | Type": 6,
+    "./scripts/default-index.js | types | Type": 8,
     "./scripts/default-index.js | types | Value": 7,
     "./sql | default | Value": 1,
     "./sql | require/default | Value": 1,
@@ -131,39 +131,39 @@
     "./extension | import | Value": 3,
     "./extension | require | Value": 3,
     "./extension | types | Namespace": 1,
-    "./extension | types | Type": 6,
+    "./extension | types | Type": 8,
     "./extension | types | Value": 7,
     "./extension.d.ts | default | Namespace": 1,
-    "./extension.d.ts | default | Type": 6,
+    "./extension.d.ts | default | Type": 8,
     "./extension.d.ts | default | Value": 7,
     "./extension.js | default | Value": 3,
     "./extension.js | types | Namespace": 1,
-    "./extension.js | types | Type": 6,
+    "./extension.js | types | Type": 8,
     "./extension.js | types | Value": 7,
     "./index | default | Value": 1,
     "./index | import | Value": 1,
     "./index | require | Value": 1,
     "./index.js | default | Value": 1,
     "./runtime/client | default/types | Namespace": 1,
-    "./runtime/client | default/types | Type": 175,
+    "./runtime/client | default/types | Type": 176,
     "./runtime/client | default/types | Value": 55,
     "./runtime/client | import/types | Namespace": 1,
-    "./runtime/client | import/types | Type": 175,
+    "./runtime/client | import/types | Type": 176,
     "./runtime/client | import/types | Value": 55,
     "./runtime/client | types | Namespace": 1,
-    "./runtime/client | types | Type": 175,
+    "./runtime/client | types | Type": 176,
     "./runtime/client | types | Value": 55,
     "./runtime/client.d.mts | default | Namespace": 1,
-    "./runtime/client.d.mts | default | Type": 175,
+    "./runtime/client.d.mts | default | Type": 176,
     "./runtime/client.d.mts | default | Value": 55,
     "./runtime/client.d.ts | default | Namespace": 1,
-    "./runtime/client.d.ts | default | Type": 175,
+    "./runtime/client.d.ts | default | Type": 176,
     "./runtime/client.d.ts | default | Value": 55,
     "./runtime/client.js | types | Namespace": 1,
-    "./runtime/client.js | types | Type": 175,
+    "./runtime/client.js | types | Type": 176,
     "./runtime/client.js | types | Value": 55,
     "./runtime/client.mjs | types | Namespace": 1,
-    "./runtime/client.mjs | types | Type": 175,
+    "./runtime/client.mjs | types | Type": 176,
     "./runtime/client.mjs | types | Value": 55,
     "./runtime/index-browser | default | Value": 12,
     "./runtime/index-browser | default/types | Value": 13,
@@ -198,21 +198,21 @@
     "./runtime/query_compiler_small_bg.sqlserver.js | default | Value": 40,
     "./runtime/query_compiler_small_bg.sqlserver.mjs | default | Value": 39,
     "./runtime/wasm-compiler-edge | types | Namespace": 1,
-    "./runtime/wasm-compiler-edge | types | Type": 175,
+    "./runtime/wasm-compiler-edge | types | Type": 176,
     "./runtime/wasm-compiler-edge | types | Value": 55,
     "./runtime/wasm-compiler-edge.d.ts | default | Namespace": 1,
-    "./runtime/wasm-compiler-edge.d.ts | default | Type": 175,
+    "./runtime/wasm-compiler-edge.d.ts | default | Type": 176,
     "./runtime/wasm-compiler-edge.d.ts | default | Value": 55,
     "./runtime/wasm-compiler-edge.js | types | Namespace": 1,
-    "./runtime/wasm-compiler-edge.js | types | Type": 175,
+    "./runtime/wasm-compiler-edge.js | types | Type": 176,
     "./runtime/wasm-compiler-edge.js | types | Value": 55,
     "./scripts/colors.js | default | Value": 2,
     "./scripts/default-index.d.ts | default | Namespace": 1,
-    "./scripts/default-index.d.ts | default | Type": 6,
+    "./scripts/default-index.d.ts | default | Type": 8,
     "./scripts/default-index.d.ts | default | Value": 7,
     "./scripts/default-index.js | default | Value": 3,
     "./scripts/default-index.js | types | Namespace": 1,
-    "./scripts/default-index.js | types | Type": 6,
+    "./scripts/default-index.js | types | Type": 8,
     "./scripts/default-index.js | types | Value": 7,
     "./sql | default | Value": 1,
     "./sql | require/default | Value": 1,
@@ -742,6 +742,16 @@
     {
       "version": "new",
       "incomplete": true,
+      "message": "barrel '@prisma/client-runtime-utils' unresolvable: 25 named re-exports could not be resolved (AnyNull, AnyNullClass, DbNull, DbNullClass, Decimal, JsonNull, JsonNullClass, NullTypes, ObjectEnumValue, PrismaClientInitializationError, PrismaClientKnownRequestError, PrismaClientRustPanicError, PrismaClientUnknownRequestError, PrismaClientValidationError, RawValue, Sql, Value, empty, isAnyNull, isDbNull, isJsonNull, isObjectEnumValue, join, raw, sqltag)"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "barrel '@prisma/client-runtime-utils' unresolvable: 9 named re-exports could not be resolved (AnyNull, DbNull, Decimal, JsonNull, NullTypes, isAnyNull, isDbNull, isJsonNull, isObjectEnumValue)"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
       "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <new>/default.js"
     },
     {
@@ -763,6 +773,131 @@
       "version": "new",
       "incomplete": true,
       "message": "cannot resolve CommonJS forwarding target `.prisma/client/sql` from <new>/sql.js"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'AnyNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'AnyNullClass' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'DbNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'DbNullClass' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Decimal' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'JsonNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'JsonNullClass' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'NullTypes' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'ObjectEnumValue' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientInitializationError' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientKnownRequestError' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientRustPanicError' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientUnknownRequestError' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientValidationError' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'RawValue' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Sql' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Value' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'empty' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isAnyNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isDbNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isJsonNull' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isObjectEnumValue' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'join' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'raw' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "new",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'sqltag' from <new>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
     },
     {
       "version": "new",
@@ -937,6 +1072,16 @@
     {
       "version": "old",
       "incomplete": true,
+      "message": "barrel '@prisma/client-runtime-utils' unresolvable: 25 named re-exports could not be resolved (AnyNull, AnyNullClass, DbNull, DbNullClass, Decimal, JsonNull, JsonNullClass, NullTypes, ObjectEnumValue, PrismaClientInitializationError, PrismaClientKnownRequestError, PrismaClientRustPanicError, PrismaClientUnknownRequestError, PrismaClientValidationError, RawValue, Sql, Value, empty, isAnyNull, isDbNull, isJsonNull, isObjectEnumValue, join, raw, sqltag)"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "barrel '@prisma/client-runtime-utils' unresolvable: 9 named re-exports could not be resolved (AnyNull, DbNull, Decimal, JsonNull, NullTypes, isAnyNull, isDbNull, isJsonNull, isObjectEnumValue)"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
       "message": "cannot resolve CommonJS forwarding target `.prisma/client/default` from <old>/default.js"
     },
     {
@@ -958,6 +1103,131 @@
       "version": "old",
       "incomplete": true,
       "message": "cannot resolve CommonJS forwarding target `.prisma/client/sql` from <old>/sql.js"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'AnyNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'AnyNullClass' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'DbNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'DbNullClass' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Decimal' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'JsonNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'JsonNullClass' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'NullTypes' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'ObjectEnumValue' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientInitializationError' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientKnownRequestError' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientRustPanicError' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientUnknownRequestError' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'PrismaClientValidationError' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'RawValue' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Sql' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'Value' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'empty' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isAnyNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isDbNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isJsonNull' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'isObjectEnumValue' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'join' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'raw' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
+    },
+    {
+      "version": "old",
+      "incomplete": true,
+      "message": "could not resolve named re-export 'sqltag' from <old>/runtime/client.d.ts (specifier '@prisma/client-runtime-utils')"
     },
     {
       "version": "old",
@@ -1005,5 +1275,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed runtime/client.d.ts and .d.mts changes: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Complex opaque type comparisons remain incomplete, not proven breaking. Generated .prisma targets and filtered runtime/engine bundles also prevent complete analysis; all such evidence is retained. CommonJS forwarding now explicitly identifies each missing generated .prisma/client target. Installed generated targets are covered by a separate regression. Runtime loading warnings now cover parse requirements as well as synchronous loading. The import-only ./sql entry adds one incomplete finding because sql.mjs forwards to the generated ../../.prisma/client/sql/index.mjs absent from both pinned tarballs; Node imports independently fail with ERR_MODULE_NOT_FOUND. All declaration surface counts, prior type evidence, severity and exit status remain unchanged. Factory-result discovery now retains the whole CommonJS assignment as a compiler-enrichment anchor, alongside statically named members. Reviewed the pinned helper calls in runtime/index-browser.js, the byte-identical query-compiler variants, and scripts/default-index.js. Node 22 require/default-import probes confirm the self-contained query compiler, default-index, extension forwarding, and colors surfaces; colors also explicitly attaches create. The index-browser dependency remains unresolved evidence in this structural-only snapshot. Updated only those runtime counts; existing findings, warnings, declaration counts and tarballs are unchanged. Property-spread entries default.js, edge.js, index.js and sql.js also retain their own assignment anchor while awaiting generated dependency evidence. Both pinned versions fail Node 22 loading with MODULE_NOT_FOUND for the same .prisma targets. Their existing warnings remain intact; these anchors are analysis requests, not verified runtime property names."
+  "_curation_notes": "Reviewed pinned runtime/client.d.ts and .d.mts: transaction maxWait/timeout and queryPlanCacheMaxSize are optional additions. Same-name type and value declarations now retain both spaces: Param gains its Type record in ten public contexts, while PrismaClient and dmmf each gain Type records in five contexts, identically in both versions. Their exact declarations were checked with the TypeScript AST, and all existing Value records remain. Findings are unchanged. The 54 additional incomplete discovery warnings name re-exports of the absent @prisma/client-runtime-utils dependency: each individual name and both aggregated name sets match the pinned declaration imports/exports, and TypeScript resolution fails for that dependency in both archives. Generated .prisma targets, opaque type comparisons, and filtered runtime/engine bundles still prevent complete analysis. Native Node loading independently fails for missing generated targets. Whole-module CommonJS assignment anchors request compiler evidence; they are not verified runtime property names. Independent runtime checks cover the self-contained query compiler, default-index, extension forwarding, and colors surfaces. No Major is emitted, and structural-only exit 3 remains unchanged."
 }

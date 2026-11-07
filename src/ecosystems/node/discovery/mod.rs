@@ -31,12 +31,8 @@ pub fn discover_exports(
         .get("exports")
         .is_none_or(serde_json::Value::is_null)
     {
-        let explicit: HashSet<_> = entry_points.iter().map(|e| e.path.clone()).collect();
         for path in entry_points::package_source_files(pkg_root) {
             let canonical = path.canonicalize()?;
-            if explicit.contains(&canonical) {
-                continue;
-            }
             let subpath = format!("./{}", path.strip_prefix(pkg_root)?.to_string_lossy());
             entry_points.push(entry_points::EntryPoint {
                 path: canonical,

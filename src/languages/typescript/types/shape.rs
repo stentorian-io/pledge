@@ -138,7 +138,7 @@ pub enum TypeShape {
     Tuple(Vec<TupleElement>),
     /// Union types: `string | number` — normalized (sorted) by canonical string
     Union(Vec<TypeShape>),
-    /// Intersection types: `A & B` — normalized (sorted) by canonical string
+    /// Intersection types: `A & B`; callable member order preserves overload selection.
     Intersection(Vec<TypeShape>),
     /// Generic types: `Map<string, number>`, `Promise<void>`
     Generic {
@@ -437,9 +437,9 @@ impl TypeShape {
         }
     }
 
-    /// Normalize a TypeShape by sorting Union and Intersection members
-    /// into a canonical order (by Debug representation). Recurses into
-    /// nested shapes. BTreeMap-based Object is already sorted.
+    /// Normalize union and non-callable intersection members into a canonical
+    /// order. Callable intersections retain overload selection order. Recurses
+    /// into nested shapes. BTreeMap-based Object is already sorted.
     pub fn normalize(self) -> Self {
         match self {
             TypeShape::Union(mut members) => {
@@ -451,7 +451,12 @@ impl TypeShape {
             TypeShape::Intersection(mut members) => {
                 let members: Vec<TypeShape> = members.drain(..).map(|m| m.normalize()).collect();
                 let mut sorted = members;
-                sorted.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+                if !sorted.iter().any(|member| {
+                    member.function_contract().is_some()
+                        || matches!(member, TypeShape::Generic { name, .. } if name == "<constructor>")
+                }) {
+                    sorted.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+                }
                 TypeShape::Intersection(sorted)
             }
             TypeShape::Object(fields) => {

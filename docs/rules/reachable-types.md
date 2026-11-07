@@ -72,8 +72,17 @@ true and false branches, while an assertion must preserve the type guaranteed
 after it returns. Top-level changes emit `type-guard-widened` or
 `assertion-widened`; nested changes use the enclosing signature's type rules.
 
-Compiler evaluation loads the package's tsconfig and retains strict nullability
-and exact optional properties for public contracts. An omitted optional property
+An exported value can support both calls and construction, such as a factory
+with `(): number` and `new (): { value: string }` signatures. Compiler enrichment
+retains both capabilities. Removing construction, narrowing constructor inputs,
+or changing the constructed result can break existing `new api()` consumers;
+adding construction while preserving calls remains compatible.
+
+Compiler evaluation loads the package's tsconfig and retains strict nullability,
+function variance, and exact optional properties for public contracts, even when
+the author disables those checks. A loose consumer can accept a change that
+breaks a strict consumer; that does not suppress the strict-contract finding.
+An omitted optional property
 is distinct from a present property whose value is `undefined`; removing an
 explicit `| undefined` can break consumers using `exactOptionalPropertyTypes`.
 Packages without a tsconfig receive strict NodeNext

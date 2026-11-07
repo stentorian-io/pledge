@@ -14,12 +14,20 @@ fn test_compare_detects_removed_export() {
         .iter()
         .filter(|f| f.rule == "export-removed")
         .collect();
-    assert_eq!(removed.len(), 1, "should detect 1 removed export");
-    assert_eq!(removed[0].severity, Severity::Major);
+    assert_eq!(removed.len(), 2, "root and ./index.js both lose farewell");
     assert!(
-        removed[0].message.contains("farewell"),
-        "message should mention 'farewell', got: {}",
-        removed[0].message
+        removed
+            .iter()
+            .all(|finding| finding.severity == Severity::Major
+                && finding.message.contains("farewell")),
+        "{removed:?}"
+    );
+    assert_eq!(
+        removed
+            .iter()
+            .filter(|finding| finding.message.contains("./index.js"))
+            .count(),
+        1
     );
 }
 
@@ -32,12 +40,20 @@ fn test_compare_detects_added_export() {
         .iter()
         .filter(|f| f.rule == "export-added")
         .collect();
-    assert_eq!(added.len(), 1, "should detect 1 added export");
-    assert_eq!(added[0].severity, Severity::Minor);
+    assert_eq!(added.len(), 2, "root and ./index.js both gain newFunc");
     assert!(
-        added[0].message.contains("newFunc"),
-        "message should mention 'newFunc', got: {}",
-        added[0].message
+        added
+            .iter()
+            .all(|finding| finding.severity == Severity::Minor
+                && finding.message.contains("newFunc")),
+        "{added:?}"
+    );
+    assert_eq!(
+        added
+            .iter()
+            .filter(|finding| finding.message.contains("./index.js"))
+            .count(),
+        1
     );
 }
 

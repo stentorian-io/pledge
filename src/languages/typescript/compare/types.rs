@@ -141,6 +141,18 @@ pub fn diff_values(
         0,
         &mut findings,
     );
+    // Adding properties or construction can wrap a callable value in an
+    // intersection. Keep direct-call argument counts, which ordinary callback
+    // assignability deliberately permits a replacement to ignore.
+    let old_calls = super::refinements::call_signatures(std::slice::from_ref(old));
+    let new_calls = super::refinements::call_signatures(std::slice::from_ref(new));
+    if let ([before], [after]) = (old_calls.as_slice(), new_calls.as_slice()) {
+        findings.extend(diff_types(before, after, name, file, line, col));
+    } else if old_calls.len() > 1 || new_calls.len() > 1 {
+        findings.extend(super::refinements::compare_overload_contracts(
+            &old_calls, &new_calls, name, file, line, col,
+        ));
+    }
     for finding in &mut findings {
         if finding.rule == RULE_RETURN_TYPE_WIDENED {
             finding.rule = RULE_TYPE_INCOMPATIBLE;
@@ -1452,10 +1464,33 @@ fn returned_property_restrictions(
                 returned_property_restrictions(before, after, path, depth + 1, paths);
             }
         }
-        (TypeShape::Union(before), TypeShape::Union(after))
-        | (TypeShape::Intersection(before), TypeShape::Intersection(after)) => {
+        (TypeShape::Union(before), TypeShape::Union(after)) => {
             for (before, after) in before.iter().zip(after) {
                 returned_property_restrictions(before, after, path, depth + 1, paths);
+            }
+        }
+        (TypeShape::Intersection(before), TypeShape::Intersection(after)) => {
+            // Adding an object or constructor moves other intersection members.
+            // Match their contracts instead of pairing unrelated positions.
+            for before in before {
+                let replacement = after
+                    .iter()
+                    .filter(|after| is_subtype_of(after, before, depth + 1))
+                    .min_by_key(|after| {
+                        match (
+                            before.without_type_parameters(),
+                            after.without_type_parameters(),
+                        ) {
+                            (
+                                TypeShape::Function { params: before, .. },
+                                TypeShape::Function { params: after, .. },
+                            ) => !accepts_calls(after, before, depth + 1),
+                            _ => false,
+                        }
+                    });
+                if let Some(after) = replacement {
+                    returned_property_restrictions(before, after, path, depth + 1, paths);
+                }
             }
         }
         _ => {}

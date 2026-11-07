@@ -11,6 +11,7 @@ use crate::languages::typescript::model::EnumMember;
 use crate::languages::typescript::syntax::annotations;
 use crate::languages::typescript::types::shape as type_shapes;
 use anyhow::Context;
+use std::collections::HashMap;
 use tree_sitter::{QueryCursor, StreamingIterator};
 
 /// The kind of export as detected by tree-sitter — before semantic resolution.
@@ -213,7 +214,9 @@ fn decl_kind_from_node_kind(kind: &str) -> DeclarationKind {
         "type_alias_declaration" => DeclarationKind::TypeAlias,
         "enum_declaration" => DeclarationKind::Enum,
         "internal_module" => DeclarationKind::Namespace,
-        "lexical_declaration" | "variable_declaration" => DeclarationKind::Variable,
+        "lexical_declaration" | "variable_declaration" | "variable_declarator" => {
+            DeclarationKind::Variable
+        }
         _ => DeclarationKind::Unknown,
     }
 }
@@ -853,7 +856,7 @@ pub fn parse_exports(
                         line,
                         col,
                         source: None,
-                        decl_kind: None,
+                        decl_kind: Some(decl_kind_from_node_kind(node.kind())),
                         is_type_only: false,
                         release_tag: None,
                         compound_members: Vec::new(),
@@ -861,7 +864,9 @@ pub fn parse_exports(
                         satisfies_type: None,
                         typeof_import_refs: Vec::new(),
                         is_proxy_dispatched: false,
-                        local_name: None,
+                        local_name: node
+                            .child_by_field_name("name")
+                            .and_then(|name| property_key::source_name(name, source)),
                         declaration_site: None,
                     });
                 }
@@ -1018,9 +1023,12 @@ pub fn parse_exports(
                             Err(_) => continue,
                         };
 
-                        // Skip if already captured (ambient + non-ambient declarations
-                        // on the same symbol would be redundant).
-                        let already = exports.iter().any(|e| e.name == name);
+                        // Distinct declarations can share a name in the type and value spaces.
+                        let already = exports.iter().any(|export| {
+                            export.name == name
+                                && export.line == node.start_position().row as u32 + 1
+                                && export.col == node.start_position().column as u32 + 1
+                        });
                         if already {
                             continue;
                         }
@@ -3189,7 +3197,134 @@ pub fn parse_exports(
         }
     }
     normalize_export_names(root, source, &mut exports);
+    link_import_reexports(root, source, &mut exports);
     Ok(exports)
+}
+
+enum ImportedName {
+    Namespace,
+    Named(String),
+}
+
+struct ImportedBinding {
+    source: String,
+    name: ImportedName,
+    is_type_only: bool,
+}
+
+fn link_import_reexports(root: tree_sitter::Node, source: &[u8], exports: &mut [RawExport]) {
+    let mut imports = HashMap::new();
+    for statement in root.named_children(&mut root.walk()) {
+        if statement.kind() != "import_statement" {
+            continue;
+        }
+        let Some(specifier) = statement
+            .child_by_field_name("source")
+            .and_then(|node| property_key::source_name(node, source))
+        else {
+            continue;
+        };
+        let Some(clause) = statement
+            .named_children(&mut statement.walk())
+            .find(|node| node.kind() == "import_clause")
+        else {
+            continue;
+        };
+        let statement_type_only = statement
+            .children(&mut statement.walk())
+            .any(|node| node.kind() == "type");
+        let mut record = |local, name, is_type_only| {
+            if let Some(local) = property_key::source_name(local, source) {
+                imports.insert(
+                    local,
+                    ImportedBinding {
+                        source: specifier.clone(),
+                        name,
+                        is_type_only,
+                    },
+                );
+            }
+        };
+        for binding in clause.named_children(&mut clause.walk()) {
+            match binding.kind() {
+                "identifier" => record(
+                    binding,
+                    ImportedName::Named("default".to_string()),
+                    statement_type_only,
+                ),
+                "namespace_import" => {
+                    if let Some(local) = binding.named_child(0) {
+                        record(local, ImportedName::Namespace, statement_type_only);
+                    }
+                }
+                "named_imports" => {
+                    for imported in binding.named_children(&mut binding.walk()) {
+                        let Some(name_node) = imported.child_by_field_name("name") else {
+                            continue;
+                        };
+                        let Some(name) = property_key::source_name(name_node, source) else {
+                            continue;
+                        };
+                        let local = imported.child_by_field_name("alias").unwrap_or(name_node);
+                        let type_only = statement_type_only
+                            || imported
+                                .children(&mut imported.walk())
+                                .any(|node| node.kind() == "type");
+                        record(local, ImportedName::Named(name), type_only);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if imports.is_empty() {
+        return;
+    }
+    for export in exports {
+        if export.source.is_some() {
+            continue;
+        }
+        let name = match export.kind {
+            RawExportKind::Named => Some(
+                export
+                    .local_name
+                    .as_deref()
+                    .unwrap_or(&export.name)
+                    .to_string(),
+            ),
+            RawExportKind::Default if export.local_name.is_some() => export.local_name.clone(),
+            RawExportKind::Default => {
+                let position = tree_sitter::Point::new(
+                    export.line.saturating_sub(1) as usize,
+                    export.col.saturating_sub(1) as usize,
+                );
+                root.named_descendant_for_point_range(position, position)
+                    .filter(|node| {
+                        node.kind() == "identifier"
+                            && node.parent().is_some_and(|parent| {
+                                parent.kind() == "export_statement"
+                                    && parent.child_by_field_name("value") == Some(*node)
+                            })
+                    })
+                    .and_then(|node| property_key::source_name(node, source))
+            }
+            _ => None,
+        };
+        if let Some(binding) = name.and_then(|name| imports.get(&name)) {
+            match &binding.name {
+                ImportedName::Namespace => {
+                    export.kind = RawExportKind::StarReexport;
+                    export.local_name = None;
+                }
+                ImportedName::Named(name) => {
+                    export.kind = RawExportKind::NamedReexport;
+                    export.local_name = Some(name.clone());
+                }
+            }
+            export.source = Some(binding.source.clone());
+            export.is_type_only |= binding.is_type_only;
+        }
+    }
 }
 
 fn normalize_export_names(root: tree_sitter::Node, source: &[u8], exports: &mut [RawExport]) {
@@ -3271,14 +3406,15 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
         );
         let mut node = root.named_descendant_for_point_range(point, point);
         while let Some(current) = node {
+            export.is_type_only |= current.kind() == "type_alias_declaration";
             if current.kind() == "export_specifier" {
                 export.local_name = current
                     .child_by_field_name("name")
                     .and_then(|n| n.utf8_text(source).ok())
                     .map(str::to_string);
                 export.is_type_only |= current
-                    .utf8_text(source)
-                    .is_ok_and(|text| text.trim_start().starts_with("type "));
+                    .children(&mut current.walk())
+                    .any(|node| node.kind() == "type");
             }
             if current.kind() == "export_statement" {
                 if export.local_name.is_some() {
@@ -3291,13 +3427,16 @@ fn link_export_declarations(root: tree_sitter::Node, source: &[u8], exports: &mu
                     }
                 }
                 export.is_type_only |= current
-                    .utf8_text(source)
-                    .is_ok_and(|text| text.trim_start().starts_with("export type "));
+                    .children(&mut current.walk())
+                    .any(|node| node.kind() == "type");
                 break;
             }
             node = current.parent();
         }
         if export.source.is_some() {
+            continue;
+        }
+        if export.local_name.is_none() && export.decl_kind.is_some() {
             continue;
         }
         let name = export.local_name.as_deref().unwrap_or(&export.name);
@@ -3599,70 +3738,38 @@ fn emit_augmentation_members(
     }
 }
 
-/// Recursively extract exported names from nested destructuring patterns.
-/// Handles `{ a: { b } }`, `[a, [b, c]]`, `{ a: [b, c] }`, etc.
-///.
+/// Follow binding positions only; initializer expressions do not introduce exports.
 fn extract_nested_destructuring_names(
-    pattern_node: tree_sitter::Node,
+    pattern: tree_sitter::Node,
     source: &[u8],
     names: &mut Vec<(String, u32, u32)>,
 ) {
-    let mut cursor = pattern_node.walk();
-    for child in pattern_node.children(&mut cursor) {
-        match child.kind() {
-            "shorthand_property_identifier_pattern" => {
-                // `{ foo }` — foo is both key and value
-                if let Ok(name) = child.utf8_text(source) {
-                    let line = child.start_position().row as u32 + 1;
-                    let col = child.start_position().column as u32 + 1;
-                    names.push((name.to_string(), line, col));
-                }
+    match pattern.kind() {
+        "identifier" | "shorthand_property_identifier_pattern" => {
+            if let Ok(name) = pattern.utf8_text(source) {
+                names.push((
+                    name.to_string(),
+                    pattern.start_position().row as u32 + 1,
+                    pattern.start_position().column as u32 + 1,
+                ));
             }
-            "pair_pattern" => {
-                // `{ key: value }` — value is what we export
-                if let Some(value_node) = child.child_by_field_name("value") {
-                    match value_node.kind() {
-                        "identifier" => {
-                            if let Ok(name) = value_node.utf8_text(source) {
-                                let line = value_node.start_position().row as u32 + 1;
-                                let col = value_node.start_position().column as u32 + 1;
-                                names.push((name.to_string(), line, col));
-                            }
-                        }
-                        "object_pattern" | "array_pattern" => {
-                            // Nested: `{ a: { b } }` or `{ a: [b, c] }`
-                            extract_nested_destructuring_names(value_node, source, names);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            "identifier" => {
-                // Direct identifier in array pattern: `[a, b]`
-                if let Ok(name) = child.utf8_text(source) {
-                    let line = child.start_position().row as u32 + 1;
-                    let col = child.start_position().column as u32 + 1;
-                    names.push((name.to_string(), line, col));
-                }
-            }
-            "rest_pattern" => {
-                // `...rest` in array pattern
-                if let Some(inner) = child.child(1) {
-                    if inner.kind() == "identifier" {
-                        if let Ok(name) = inner.utf8_text(source) {
-                            let line = inner.start_position().row as u32 + 1;
-                            let col = inner.start_position().column as u32 + 1;
-                            names.push((name.to_string(), line, col));
-                        }
-                    }
-                }
-            }
-            "object_pattern" | "array_pattern" => {
-                // Nested pattern: `[a, [b, c]]`
-                extract_nested_destructuring_names(child, source, names);
-            }
-            _ => {}
         }
+        "pair_pattern" => {
+            if let Some(binding) = pattern.child_by_field_name("value") {
+                extract_nested_destructuring_names(binding, source, names);
+            }
+        }
+        "assignment_pattern" | "object_assignment_pattern" => {
+            if let Some(binding) = pattern.child_by_field_name("left") {
+                extract_nested_destructuring_names(binding, source, names);
+            }
+        }
+        "object_pattern" | "array_pattern" | "rest_pattern" => {
+            for binding in pattern.named_children(&mut pattern.walk()) {
+                extract_nested_destructuring_names(binding, source, names);
+            }
+        }
+        _ => {}
     }
 }
 

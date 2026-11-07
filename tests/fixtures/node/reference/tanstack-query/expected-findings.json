@@ -6,7 +6,7 @@
   "exit_code": 3,
   "breaking": false,
   "old_surfaces": {
-    ". | @tanstack/custom-condition | Type": 107,
+    ". | @tanstack/custom-condition | Type": 109,
     ". | @tanstack/custom-condition | Value": 35,
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
@@ -16,7 +16,7 @@
     ". | require/types | Value": 35
   },
   "new_surfaces": {
-    ". | @tanstack/custom-condition | Type": 107,
+    ". | @tanstack/custom-condition | Type": 109,
     ". | @tanstack/custom-condition | Value": 35,
     ". | import/default | Value": 35,
     ". | import/types | Type": 107,
@@ -533,5 +533,5 @@
       "message": "unsupported file extension: <old>/package.json"
     }
   ],
-  "_curation_notes": "Reviewed source @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts. Both warnings persist without new breaking findings. Public-surface counts are stable. Expansion warnings and the package-wide bound remain explicit. Runtime extensionless resolution preserves three additional CommonJS exports in both versions; findings are unchanged. Reviewed native module-loading evidence for the unchanged @tanstack/custom-condition target src/index.ts: its extensionless ./focusManager re-export fails native Node ESM resolution in both pinned versions, while the ordinary import condition loads and exposes the same 35 names. The added analysis-incomplete Warning records this custom source-loader requirement, not a package regression. Existing findings, surfaces, discovery warnings, nonbreaking status and structural-only exit 3 are unchanged. Reviewed the retained whole-module CommonJS assignment in build/modern/index.cjs:57, module.exports = __toCommonJS(index_exports). Both pinned index.cjs and types.cjs files are byte-identical across versions. The structural-only require/default count is now 36 in each version: 35 named properties plus the root assignment anchor awaiting compiler enrichment. The anchor belongs to index.cjs, not the property-forwarded types.cjs value. Node 22.12, 24.0 and 26.7 each expose the same 35 enumerable require properties in both versions, with no literal default property, and QueryClient setQueryData/getQueryData preserves a numeric value. All findings, warnings, other surface counts, nonbreaking status and structural-only exit 3 are unchanged."
+  "_curation_notes": "Reviewed the existing @deprecated tags for isCancelledError in src/retryer.ts and isServer in src/utils.ts; the same warnings persist. Same-name value/type declarations in src/types.ts retain both spaces: dataTagSymbol and dataTagErrorSymbol each gain a Type record under @tanstack/custom-condition in both pinned versions, at lines 64 and 66. Independent TypeScript AST checks confirm these aliases and their retained value declarations. All findings and discovery warnings are unchanged. The custom source entry still requires a loader: its extensionless re-exports fail native Node ESM resolution, while the ordinary import condition exposes 35 names. The require/default count remains 36: 35 named properties plus the root CommonJS assignment anchor awaiting compiler enrichment. Node 22.12, 24.0 and 26.7 independently expose the same 35 enumerable require properties, with no literal default property, and preserve a numeric QueryClient value. Expansion warnings and the package-wide bound remain explicit. No Major is emitted, and structural-only exit 3 remains unchanged."
 }

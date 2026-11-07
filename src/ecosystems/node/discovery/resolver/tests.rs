@@ -369,6 +369,109 @@ fn test_resolve_tsconfig_alias_with_base_url() {
 // -------------------------------------------------------------------------
 
 #[test]
+fn bare_imports_do_not_resolve_sibling_declarations() {
+    for entry_name in ["index.d.mts", "next.d.mts"] {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("next.d.mts"),
+            "export interface Request { fromSibling: true }\n",
+        )
+        .unwrap();
+        let entry = dir.path().join(entry_name);
+        std::fs::write(
+            &entry,
+            "import { Request } from 'next';\nexport { Request };\n",
+        )
+        .unwrap();
+        let mut map = js_model::ExportMap::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &entry,
+            dir.path(),
+            &mut map,
+            &mut HashSet::new(),
+            &mut warnings,
+            0,
+            None,
+            None,
+            ".",
+            Some("types"),
+        )
+        .unwrap();
+
+        assert_eq!(map.len(), 1, "{entry_name}: {map:?}");
+        let (key, symbol) = map.iter().next().unwrap();
+        assert_eq!(key.name, "Request");
+        assert!(symbol.is_reexport);
+        assert!(symbol.decl_kinds.is_empty());
+        assert!(symbol.overloads.is_empty());
+        assert!(symbol.file.ends_with(entry_name));
+        assert!(
+            warnings
+                .iter()
+                .any(|warning| warning.incomplete && warning.message.contains("next")),
+            "missing external import must remain incomplete: {warnings:?}"
+        );
+        assert!(
+            warnings
+                .iter()
+                .all(|warning| !warning.message.contains("circular")),
+            "a missing package is not a source cycle: {warnings:?}"
+        );
+    }
+}
+
+#[test]
+fn relative_and_configured_imports_resolve_sibling_declarations() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("next.d.mts"),
+        "export interface Request { fromSibling: true }\n",
+    )
+    .unwrap();
+    let mut paths = indexmap::IndexMap::new();
+    paths.insert("next".into(), vec!["./next.d.mts".into()]);
+    let config = tsconfig::TsconfigPaths {
+        base_url: None,
+        paths,
+    };
+
+    for (specifier, config) in [("./next.mjs", None), ("next", Some(&config))] {
+        let entry = dir.path().join("index.d.mts");
+        std::fs::write(
+            &entry,
+            format!("import {{ Request }} from '{specifier}';\nexport {{ Request }};\n"),
+        )
+        .unwrap();
+        let mut map = js_model::ExportMap::new();
+        let mut warnings = Vec::new();
+
+        collect_exports(
+            &entry,
+            dir.path(),
+            &mut map,
+            &mut HashSet::new(),
+            &mut warnings,
+            0,
+            config,
+            None,
+            ".",
+            Some("types"),
+        )
+        .unwrap();
+
+        assert_eq!(map.len(), 1, "{specifier}: {map:?}");
+        let (key, symbol) = map.iter().next().unwrap();
+        assert_eq!(key.name, "Request");
+        assert_eq!(key.space, SymbolSpace::Type);
+        assert!(symbol.file.ends_with("next.d.mts"));
+        assert_eq!(symbol.decl_kinds, [DeclarationKind::Interface]);
+        assert!(warnings.is_empty(), "{specifier}: {warnings:?}");
+    }
+}
+
+#[test]
 fn test_external_reexport_tracked() {
     // A JS file with `export * from 'lodash'` should produce *<lodash> in export map
     let dir = tempfile::tempdir().expect("tempdir");

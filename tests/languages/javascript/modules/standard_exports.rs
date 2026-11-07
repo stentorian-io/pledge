@@ -2,8 +2,8 @@
 
 use pledge::ecosystems::node::discovery::discover_exports;
 use pledge::languages::javascript::compare::compare_exports;
-use pledge::languages::javascript::model::ExportKey;
-use pledge::languages::javascript::syntax::exports::parse_exports;
+use pledge::languages::javascript::model::{DeclarationKind, ExportKey};
+use pledge::languages::javascript::syntax::exports::{parse_exports, RawExportKind};
 use pledge::languages::javascript::syntax::grammar::SourceLanguage;
 
 fn package(source: &str, extension: &str) -> tempfile::TempDir {
@@ -22,6 +22,8 @@ fn removing_direct_variables_and_generators_removes_public_exports() {
     for extension in ["js", "ts"] {
         for source in [
             "export var value=1;",
+            "export const value={field:1};",
+            "export let value=[1];",
             "export var {nested:{value}}={nested:{value:1}};",
             "export var [value]=[1];",
             "export function* value(){yield 1;}",
@@ -35,6 +37,16 @@ fn removing_direct_variables_and_generators_removes_public_exports() {
             assert!(warnings.is_empty(), "{source}: {warnings:?}");
             assert!(
                 before.contains_key(&ExportKey::new_root_value("value")),
+                "{source}: {before:?}"
+            );
+            let expected_kind = if source.contains("function") {
+                DeclarationKind::Function
+            } else {
+                DeclarationKind::Variable
+            };
+            assert_eq!(
+                before[&ExportKey::new_root_value("value")].decl_kinds,
+                [expected_kind],
                 "{source}: {before:?}"
             );
             let findings = compare_exports(&before, &after, new.path(), false);
@@ -95,6 +107,126 @@ fn string_named_reexports_and_namespaces_preserve_their_public_identity() {
             exports.contains_key(&ExportKey::new_root_value("renamed")),
             "{exports:?}"
         );
+    }
+}
+
+#[test]
+fn imported_namespace_exports_preserve_aliases_and_type_only_identity() {
+    for language in [SourceLanguage::JavaScript, SourceLanguage::TypeScript] {
+        for (source, name) in [
+            (
+                "import * as local from './dep.js';export{local as ns};",
+                "ns",
+            ),
+            (
+                "import * as local from './dep.js';export{local as default};",
+                "default",
+            ),
+            (
+                "import * as local from './dep.js';export default local;",
+                "default",
+            ),
+            (
+                r"import * as l\u006fcal from './dep.js';export{local as ns};",
+                "ns",
+            ),
+        ] {
+            let exports = parse_exports(source.as_bytes(), language).unwrap();
+            assert_eq!(exports.len(), 1, "{source}: {exports:?}");
+            assert_eq!(exports[0].kind, RawExportKind::StarReexport, "{source}");
+            assert_eq!(exports[0].source.as_deref(), Some("./dep.js"));
+            assert_eq!(exports[0].name, name);
+            assert!(!exports[0].is_type_only);
+        }
+        let exports = parse_exports(
+            b"import * as ns from './dep.js';export default ns.local;",
+            language,
+        )
+        .unwrap();
+        assert_eq!(exports[0].kind, RawExportKind::Default);
+    }
+    for source in [
+        "import type * as local from './dep.js';export{local as ns};",
+        "import * as local from './dep.js';export type{local as ns};",
+        "import * as local from './dep.js';export{type local as ns};",
+    ] {
+        let exports = parse_exports(source.as_bytes(), SourceLanguage::TypeScript).unwrap();
+        assert_eq!(exports.len(), 1, "{source}: {exports:?}");
+        assert_eq!(exports[0].kind, RawExportKind::StarReexport, "{source}");
+        assert!(exports[0].is_type_only, "{source}");
+    }
+}
+
+#[test]
+fn renamed_default_reexports_do_not_add_a_default_binding() {
+    for language in [SourceLanguage::JavaScript, SourceLanguage::TypeScript] {
+        let source = "export {default as api} from './side.js';";
+        let exports = parse_exports(source.as_bytes(), language).unwrap();
+        assert_eq!(exports.len(), 1, "{language:?}: {exports:?}");
+        assert_eq!(exports[0].name, "api");
+        assert_eq!(exports[0].kind, RawExportKind::NamedReexport);
+        assert_eq!(exports[0].local_name.as_deref(), Some("default"));
+
+        let exports = parse_exports(
+            b"export {default, default as api} from './side.js';",
+            language,
+        )
+        .unwrap();
+        let mut names: Vec<_> = exports.iter().map(|export| export.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["api", "default"], "{language:?}: {exports:?}");
+    }
+}
+
+#[test]
+fn imported_bindings_retain_original_names_when_locally_reexported() {
+    for language in [SourceLanguage::JavaScript, SourceLanguage::TypeScript] {
+        for (source, imported, exported) in [
+            (
+                "import {original as local} from './dep.js';export{local as api};",
+                "original",
+                "api",
+            ),
+            (
+                "import Local from './dep.js';export{Local as Api};",
+                "default",
+                "Api",
+            ),
+            (
+                "import Local from './dep.js';export default Local;",
+                "default",
+                "default",
+            ),
+            (
+                "import {'public-name' as local} from './dep.js';export{local};",
+                "public-name",
+                "local",
+            ),
+            (
+                r"import {original as l\u006fcal} from './dep.js';export{local as api};",
+                "original",
+                "api",
+            ),
+        ] {
+            let exports = parse_exports(source.as_bytes(), language).unwrap();
+            assert_eq!(exports.len(), 1, "{source}: {exports:?}");
+            assert_eq!(exports[0].kind, RawExportKind::NamedReexport, "{source}");
+            assert_eq!(exports[0].source.as_deref(), Some("./dep.js"));
+            assert_eq!(exports[0].local_name.as_deref(), Some(imported));
+            assert_eq!(exports[0].name, exported);
+            assert!(!exports[0].is_type_only);
+        }
+    }
+    for source in [
+        "import type {Shape as Local} from './dep.js';export {Local as Public};",
+        "import {type Shape as Local} from './dep.js';export {Local as Public};",
+        "import {Shape as Local} from './dep.js';export type{Local as Public};",
+    ] {
+        let exports = parse_exports(source.as_bytes(), SourceLanguage::TypeScript).unwrap();
+        assert_eq!(exports.len(), 1, "{source}: {exports:?}");
+        assert_eq!(exports[0].kind, RawExportKind::NamedReexport);
+        assert_eq!(exports[0].local_name.as_deref(), Some("Shape"));
+        assert!(exports[0].is_type_only, "{source}");
     }
 }
 

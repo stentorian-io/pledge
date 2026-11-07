@@ -1,6 +1,7 @@
 //! Compiler checks.
 
 mod availability;
+mod configuration;
 mod conformance;
 mod contracts;
 mod definition_protocol;

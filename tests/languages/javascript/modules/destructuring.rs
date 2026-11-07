@@ -151,3 +151,26 @@ fn test_array_destructured_removal_detected() {
         .iter()
         .any(|f| f.rule == "export-removed" && f.message.contains('b')));
 }
+
+#[test]
+fn default_and_rest_patterns_export_bindings_without_initializer_names() {
+    for language in [SourceLanguage::JavaScript, SourceLanguage::TypeScript] {
+        for declaration in [
+            "export const {api=fallback}={};",
+            "export const {key:api=fallback}={};",
+            "export const [api=fallback]=[];",
+            "export const {key:{api}=fallback}={};",
+            "export const [{api}=fallback]=[];",
+            "export const [...[api]]=[1];",
+            "export const [...{length:api}]=[1];",
+        ] {
+            let exports = parse_exports(declaration.as_bytes(), language).unwrap();
+            let names: Vec<_> = exports.iter().map(|export| export.name.as_str()).collect();
+
+            assert_eq!(names, ["api"], "{language:?}: {declaration}");
+            let binding = &exports[0];
+            assert_eq!(binding.line, 1);
+            assert_eq!(binding.col as usize, declaration.find("api").unwrap() + 1);
+        }
+    }
+}

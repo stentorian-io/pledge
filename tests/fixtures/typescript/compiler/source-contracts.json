@@ -265,7 +265,8 @@
       },
       "files": {
         "impl.ts": "export class Public {}",
-        "index.ts": "export * from \"./impl.js\";"
+        "index.ts": "export * from \"./impl.js\";",
+        "impl.js": "export class Public {\n}\n"
       }
     },
     "new": {
@@ -277,7 +278,8 @@
       },
       "files": {
         "impl.ts": "export class Public {}",
-        "index.ts": "export type * from \"./impl.js\";"
+        "index.ts": "export type * from \"./impl.js\";",
+        "impl.js": "export class Public {\n}\n"
       }
     }
   },
@@ -295,7 +297,8 @@
       },
       "files": {
         "impl.ts": "\n\n\nexport function api(x: string | number): void {}",
-        "index.ts": "export { api } from \"./impl.js\";"
+        "index.ts": "export { api } from \"./impl.js\";",
+        "impl.js": "export function api(x) { }\n"
       }
     },
     "new": {
@@ -307,7 +310,8 @@
       },
       "files": {
         "impl.ts": "\n\n\nexport function api(x: string): void {}",
-        "index.ts": "export { api } from \"./impl.js\";"
+        "index.ts": "export { api } from \"./impl.js\";",
+        "impl.js": "export function api(x) { }\n"
       }
     }
   },
@@ -325,7 +329,8 @@
       },
       "files": {
         "impl.ts": "export function internal(x: string | number): void {}",
-        "index.ts": "export { internal as api } from \"./impl.js\";"
+        "index.ts": "export { internal as api } from \"./impl.js\";",
+        "impl.js": "export function internal(x) { }\n"
       }
     },
     "new": {
@@ -337,7 +342,8 @@
       },
       "files": {
         "impl.ts": "export function internal(x: string): void {}",
-        "index.ts": "export { internal as api } from \"./impl.js\";"
+        "index.ts": "export { internal as api } from \"./impl.js\";",
+        "impl.js": "export function internal(x) { }\n"
       }
     }
   },
@@ -389,7 +395,8 @@
       },
       "files": {
         "index.ts": "export * from \"./dist/chunks/chunk-ABC12345.js\";",
-        "dist/chunks/chunk-ABC12345.ts": "export function api(x: string | number): void {}"
+        "dist/chunks/chunk-ABC12345.ts": "export function api(x: string | number): void {}",
+        "dist/chunks/chunk-ABC12345.js": "export function api(x) { }\n"
       }
     },
     "new": {
@@ -401,7 +408,8 @@
       },
       "files": {
         "index.ts": "export * from \"./dist/chunks/chunk-ABC12345.js\";",
-        "dist/chunks/chunk-ABC12345.ts": "export function api(x: string): void {}"
+        "dist/chunks/chunk-ABC12345.ts": "export function api(x: string): void {}",
+        "dist/chunks/chunk-ABC12345.js": "export function api(x) { }\n"
       }
     }
   },
@@ -504,7 +512,8 @@
       },
       "files": {
         "impl.ts": "export default 1;\nexport const kept = 1;",
-        "index.ts": "export * from \"./impl.js\";"
+        "index.ts": "export * from \"./impl.js\";",
+        "impl.js": "export default 1;\nexport const kept = 1;\n"
       }
     },
     "new": {
@@ -517,7 +526,8 @@
       },
       "files": {
         "impl.ts": "export const kept = 1;",
-        "index.ts": "export * from \"./impl.js\";"
+        "index.ts": "export * from \"./impl.js\";",
+        "impl.js": "export const kept = 1;\n"
       }
     }
   }

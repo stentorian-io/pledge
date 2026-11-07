@@ -12,7 +12,7 @@ fn package(source: &str) -> tempfile::TempDir {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(
         root.path().join("package.json"),
-        r#"{"name":"object-helpers","main":"index.cjs"}"#,
+        r#"{"name":"object-helpers","exports":"./index.cjs"}"#,
     )
     .unwrap();
     std::fs::write(root.path().join("index.cjs"), source).unwrap();

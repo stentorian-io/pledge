@@ -19,7 +19,16 @@ fn test_discover_simple_js_exports() {
         exports.keys().any(|k| k.name == "default"),
         "should find default export"
     );
-    assert_eq!(exports.len(), 3, "should find exactly 3 exports");
+    for subpath in [".", "./index.js"] {
+        let mut names: Vec<_> = exports
+            .keys()
+            .filter(|key| key.subpath == subpath)
+            .map(|key| key.name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["default", "farewell", "greet"], "{subpath}");
+    }
+    assert_eq!(exports.len(), 6, "root and deep imports retain all names");
 }
 
 #[test]

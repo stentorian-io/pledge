@@ -116,6 +116,11 @@ pub struct ExportSymbol {
 /// - `const` / `let` / `var` / `function` / `default export` / `class` / `enum` -> `SymbolSpace::Value`
 /// - `namespace` -> `SymbolSpace::Namespace`
 ///
+/// When type-only forwarding exposes both a type declaration and a same-name
+/// value declaration, preserve the Value key for `typeof` queries alongside the
+/// Type key. Both symbols have `is_type_only = true`; a Value key alone does not
+/// establish that a runtime import is available.
+///
 /// Rationale: consumers import values (`import { Foo } from 'pkg'`); class/enum
 /// are primarily accessed at the value level, and their namespace-like behavior
 /// is carried by `decl_kinds` on the merged symbol, not by the primary key space.

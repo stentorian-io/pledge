@@ -1,7 +1,7 @@
 //! Resolve source declarations reachable through the public type surface.
 
 use crate::ecosystems::node::discovery::{entry_points, resolver};
-use crate::languages::javascript::model::ExportMap;
+use crate::languages::javascript::model::{DeclarationKind, ExportMap, SymbolSpace};
 use crate::languages::javascript::syntax::{
     exports as tree_query, functions as function_syntax, grammar, property_key,
 };
@@ -12,6 +12,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tree_sitter::Node;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum DefinitionSpace {
+    Type,
+    Value,
+}
+
 #[derive(Clone)]
 struct Definition {
     shapes: Vec<TypeShape>,
@@ -21,7 +27,7 @@ struct Definition {
 
 #[derive(Default)]
 struct SourceTypes {
-    definitions: HashMap<String, Definition>,
+    definitions: HashMap<String, HashMap<DefinitionSpace, Definition>>,
     imports: HashMap<String, (String, String)>,
     aliases: HashMap<String, String>,
     stars: Vec<String>,
@@ -30,7 +36,7 @@ struct SourceTypes {
 #[derive(Default)]
 struct TypeGraph {
     files: HashMap<PathBuf, SourceTypes>,
-    active: HashSet<(PathBuf, String)>,
+    active: HashSet<(PathBuf, String, DefinitionSpace)>,
     remaining: usize,
     truncated: bool,
     missing_imports: HashSet<String>,
@@ -63,7 +69,23 @@ pub(crate) fn resolve_public_types(
         let symbol_budget = remaining_package_work.min(4096);
         graph.remaining = symbol_budget;
         graph.truncated = false;
-        let source_shapes = graph.named(&file, name, &[], 0);
+        // Type-only value exports can use Type keys; their declarations still
+        // select value evidence. Classes retain instance evidence here, with
+        // static/constructor contracts added by compiler enrichment.
+        let space = if symbol
+            .decl_kinds
+            .iter()
+            .any(|kind| matches!(kind, DeclarationKind::Variable | DeclarationKind::Function))
+        {
+            DefinitionSpace::Value
+        } else if key.space == SymbolSpace::Type
+            || symbol.decl_kinds.contains(&DeclarationKind::Class)
+        {
+            DefinitionSpace::Type
+        } else {
+            DefinitionSpace::Value
+        };
+        let source_shapes = graph.named(&file, name, space, &[], 0);
         let needs_source = symbol.overloads.is_empty()
             || symbol
                 .overloads
@@ -78,6 +100,7 @@ pub(crate) fn resolve_public_types(
                 .files
                 .get(&file)
                 .and_then(|types| types.definitions.get(name))
+                .and_then(|definitions| definitions.get(&space))
                 .map(|definition| {
                     definition
                         .parameters
@@ -205,6 +228,7 @@ impl TypeGraph {
         &mut self,
         file: &Path,
         name: &str,
+        space: DefinitionSpace,
         args: &[TypeShape],
         depth: usize,
     ) -> Option<Vec<TypeShape>> {
@@ -213,11 +237,11 @@ impl TypeGraph {
             return None;
         }
         self.remaining -= 1;
-        let identity = (file.to_path_buf(), name.to_string());
+        let identity = (file.to_path_buf(), name.to_string(), space);
         if !self.active.insert(identity.clone()) {
             return Some(vec![TypeShape::TypeParam("<recursive>".into())]);
         }
-        let result = self.named_inner(file, name, args, depth);
+        let result = self.named_inner(file, name, space, args, depth);
         self.active.remove(&identity);
         result
     }
@@ -226,13 +250,14 @@ impl TypeGraph {
         &mut self,
         file: &Path,
         name: &str,
+        space: DefinitionSpace,
         args: &[TypeShape],
         depth: usize,
     ) -> Option<Vec<TypeShape>> {
         self.load(file);
         let types = self.files.get(file)?;
         if let Some(local) = types.aliases.get(name).cloned() {
-            return self.named(file, &local, args, depth + 1);
+            return self.named(file, &local, space, args, depth + 1);
         }
         if let Some((specifier, imported)) = types.imports.get(name).cloned() {
             let Some(target) = self.target(file, &specifier) else {
@@ -241,17 +266,21 @@ impl TypeGraph {
                 ));
                 return None;
             };
-            return self.named(&target, &imported, args, depth + 1);
+            return self.named(&target, &imported, space, args, depth + 1);
         }
         if let Some((namespace, member)) = name.split_once('.') {
             if let Some((specifier, imported)) = types.imports.get(namespace).cloned() {
                 if imported == "*" {
                     let target = self.target(file, &specifier)?;
-                    return self.named(&target, member, args, depth + 1);
+                    return self.named(&target, member, space, args, depth + 1);
                 }
             }
         }
-        let definition = types.definitions.get(name).cloned();
+        let definition = types
+            .definitions
+            .get(name)
+            .and_then(|definitions| definitions.get(&space))
+            .cloned();
         let stars = types.stars.clone();
         if let Some(definition) = definition {
             let bindings: HashMap<_, _> = definition
@@ -291,7 +320,7 @@ impl TypeGraph {
         }
         for specifier in stars {
             if let Some(target) = self.target(file, &specifier) {
-                if let Some(shapes) = self.named(&target, name, args, depth + 1) {
+                if let Some(shapes) = self.named(&target, name, space, args, depth + 1) {
                     return Some(shapes);
                 }
             }
@@ -324,7 +353,7 @@ impl TypeGraph {
                     return bound.clone();
                 }
                 return self
-                    .named(file, name, &[], depth + 1)
+                    .named(file, name, DefinitionSpace::Type, &[], depth + 1)
                     .and_then(|v| v.into_iter().next())
                     .unwrap_or(shape);
             }
@@ -334,7 +363,7 @@ impl TypeGraph {
                     .map(|arg| self.expand(arg, file, bindings, depth + 1))
                     .collect();
                 if let Some(resolved) = self
-                    .named(file, &name, &args, depth + 1)
+                    .named(file, &name, DefinitionSpace::Type, &args, depth + 1)
                     .and_then(|v| v.into_iter().next())
                 {
                     return resolved;
@@ -391,9 +420,18 @@ fn collect_declarations(node: Node, source: &[u8], types: &mut SourceTypes) {
             .into_iter()
             .map(|p| p.name)
             .collect();
+        let space = match node.kind() {
+            "type_alias_declaration"
+            | "interface_declaration"
+            | "class_declaration"
+            | "abstract_class_declaration" => DefinitionSpace::Type,
+            _ => DefinitionSpace::Value,
+        };
         let entry = types
             .definitions
             .entry(name.to_string())
+            .or_default()
+            .entry(space)
             .or_insert_with(|| Definition {
                 shapes: Vec::new(),
                 bases: Vec::new(),

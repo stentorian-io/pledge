@@ -22,7 +22,9 @@
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "strict": true,
-        "exactOptionalPropertyTypes": "true for analyzer; per fixture for consumer"
+        "exactOptionalPropertyTypes": "true for analyzer; per fixture for consumer",
+        "strictNullChecks": "true for analyzer; true/false consumer controls",
+        "strictFunctionTypes": "true for analyzer; true/false consumer controls"
       },
       "limitations": "Only mapped evidence tests run in this profile. Library declarations are those bundled with the selected compiler. Other targets, libs, JSX transforms, loose consumer settings, bundler resolution, and combinations remain unverified."
     },
@@ -479,6 +481,13 @@
         "generic-swapped-binder-names",
         "independent-generic-member-addition",
         "generic-default-alias-refactor"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/types/conditional/conditionalTypes1.ts",
+          "sha256": "2dd574df0d070dbaa01825bb9adcdf6fc4ca70e9c3939d00204e73b88c140259"
+        }
       ]
     },
     {
@@ -647,6 +656,532 @@
       "outcomes": [
         "incomplete"
       ]
+    },
+    {
+      "id": "strict-null-author-settings",
+      "target": "typescript",
+      "name": "compiler::configuration::strict_null_consumers_remain_protected_under_loose_author_settings",
+      "source": "tests/languages/typescript/compiler/configuration.rs",
+      "oracles": [
+        "tsc",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "strict-callback-author-settings",
+      "target": "typescript",
+      "name": "compiler::configuration::strict_callback_consumers_remain_protected_under_loose_author_settings",
+      "source": "tests/languages/typescript/compiler/configuration.rs",
+      "oracles": [
+        "tsc",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "exact-optional-author-settings",
+      "target": "typescript",
+      "name": "compiler::configuration::exact_optional_consumers_remain_protected_under_loose_author_settings",
+      "source": "tests/languages/typescript/compiler/configuration.rs",
+      "oracles": [
+        "tsc",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "node-entry-consumers",
+      "target": "node",
+      "name": "consumers::package_resolution_agrees_with_node_consumers",
+      "source": "tests/ecosystems/node/consumers/mod.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/node/packages/consumer-resolution.json",
+      "cases": [
+        "condition-order",
+        "nested-condition-collision",
+        "exports-array-shadowing",
+        "exports-sugar-preserves-root",
+        "exports-preserves-root-when-main-changes"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "node-main-consumers",
+      "target": "node",
+      "name": "consumers::package_resolution_agrees_with_node_consumers",
+      "source": "tests/ecosystems/node/consumers/mod.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/node/packages/consumer-resolution.json",
+      "cases": [
+        "legacy-main-selects-removed-api",
+        "legacy-main-compatible-reroute"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "node-subpath-consumers",
+      "target": "node",
+      "name": "consumers::package_resolution_agrees_with_node_consumers",
+      "source": "tests/ecosystems/node/consumers/mod.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/node/packages/consumer-resolution.json",
+      "cases": [
+        "shared-barrels",
+        "extensioned-subpath-is-distinct",
+        "extensioned-subpath-compatible-relocation"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "node-imports-consumers",
+      "target": "node",
+      "name": "consumers::package_resolution_agrees_with_node_consumers",
+      "source": "tests/ecosystems/node/consumers/mod.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/node/packages/consumer-resolution.json",
+      "cases": [
+        "imports-public-reroute-breaks-consumer",
+        "imports-public-reroute-preserves-consumer",
+        "unused-private-import-map-is-not-public"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "node-pattern-consumers",
+      "target": "node",
+      "name": "consumers::package_resolution_agrees_with_node_consumers",
+      "source": "tests/ecosystems/node/consumers/mod.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/node/packages/consumer-resolution.json",
+      "cases": [
+        "wildcard-nested-path",
+        "nested-pattern-compatible-relocation",
+        "pattern-blocker-removes-public-subpath"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "node-target-validation",
+      "target": "node",
+      "name": "packages::disabled_targets::node_and_pledge_reject_invalid_export_targets",
+      "source": "tests/ecosystems/node/packages/disabled_targets.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "compatible",
+        "incomplete"
+      ],
+      "upstream": [
+        {
+          "source": "node",
+          "path": "doc/api/packages.md",
+          "sha256": "328d2d0a780528b7e5a09f7d5ed8ac2ccef0ddd6d3a108d4a00fa0f50cf7f3a4"
+        }
+      ]
+    },
+    {
+      "id": "public-type-consumers",
+      "target": "typescript",
+      "name": "compiler::contracts::public_types",
+      "source": "tests/languages/typescript/compiler/contracts.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/public-types.json",
+      "cases": [
+        "keyof-private-model",
+        "equivalent-pick-refactor"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/types/keyof/keyofAndIndexedAccess.ts",
+          "sha256": "77944d631cb0ea23954825422ed03d6496eb3c5327518f4c0f3e4dfd6574d081"
+        }
+      ]
+    },
+    {
+      "id": "indexed-result-consumers",
+      "target": "typescript",
+      "name": "compiler::conformance::indexed_results_agree_with_typescript_consumers",
+      "source": "tests/languages/typescript/compiler/conformance.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/upstream-contracts.json",
+      "cases": [
+        "indexed-result-changes-selected-property-type",
+        "indexed-result-expands-to-property-type"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/types/keyof/keyofAndIndexedAccess.ts",
+          "sha256": "77944d631cb0ea23954825422ed03d6496eb3c5327518f4c0f3e4dfd6574d081"
+        }
+      ]
+    },
+    {
+      "id": "intersection-input-consumers",
+      "target": "typescript",
+      "name": "compiler::conformance::intersection_inputs_agree_with_typescript_consumers",
+      "source": "tests/languages/typescript/compiler/conformance.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/upstream-contracts.json",
+      "cases": [
+        "intersection-input-adds-required-member",
+        "intersection-input-reorders-equivalent-members"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/types/intersection/intersectionAndUnionTypes.ts",
+          "sha256": "1066f63f095a397282a48bf35ebb7ecb2ba9a2dc6aa683c34a4c6cf7f436a365"
+        }
+      ]
+    },
+    {
+      "id": "discriminated-result-consumers",
+      "target": "typescript",
+      "name": "compiler::conformance::discriminated_results_agree_with_exhaustive_consumers",
+      "source": "tests/languages/typescript/compiler/conformance.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/upstream-contracts.json",
+      "cases": [
+        "discriminated-result-adds-unhandled-variant",
+        "discriminated-result-reorders-equivalent-variants"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/types/union/discriminatedUnionTypes1.ts",
+          "sha256": "b515b6a91f530f6f71963acb305de473ea669936c5ff87156ca40238eb1c92ba"
+        }
+      ]
+    },
+    {
+      "id": "merged-interface-consumers",
+      "target": "typescript",
+      "name": "compiler::conformance::merged_interface_results_agree_with_typescript_consumers",
+      "source": "tests/languages/typescript/compiler/conformance.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/upstream-contracts.json",
+      "cases": [
+        "merged-interface-result-loses-second-declaration",
+        "merged-interface-result-flattens-equivalent-declarations"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts",
+          "sha256": "7c231db3a964ae3f135c39532fa8d0deeab54d0624894802db7a911e377e7a21"
+        }
+      ]
+    },
+    {
+      "id": "call-construct-consumers",
+      "target": "typescript",
+      "name": "compiler::conformance::call_and_construct_signatures_agree_with_typescript_consumers",
+      "source": "tests/languages/typescript/compiler/conformance.rs",
+      "oracles": [
+        "tsc"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ],
+      "fixture": "tests/fixtures/typescript/compiler/upstream-contracts.json",
+      "cases": [
+        "callable-constructable-value-loses-construction",
+        "callable-constructable-value-reorders-signatures",
+        "callable-constructable-value-narrows-constructor-input",
+        "callable-constructable-value-changes-constructed-result",
+        "callable-value-gains-construction",
+        "construction-addition-removes-optional-call-position",
+        "construction-addition-preserves-optional-call-position",
+        "overloaded-construction-addition-removes-call-position",
+        "overloaded-construction-addition-preserves-call-position",
+        "overloaded-callable-gains-construction",
+        "overloaded-callable-gains-construction-and-unifies-calls",
+        "overloaded-callable-gains-construction-and-loses-call",
+        "overloaded-callable-gains-construction-and-narrows-call",
+        "overlapping-callable-gains-construction-with-same-selection",
+        "overlapping-callable-gains-construction-with-changed-selection",
+        "constructable-value-loses-optional-call-position",
+        "overloaded-callable-gains-property-and-construction"
+      ],
+      "upstream": [
+        {
+          "source": "typescript",
+          "path": "tests/cases/conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts",
+          "sha256": "59c885e291bcebcd192d0acfeae5c8b25f9c14b0f74e61a44d8419a791ee2f30"
+        }
+      ]
+    },
+    {
+      "id": "destructured-binding-consumers",
+      "target": "javascript",
+      "name": "runtime::consumer_contracts::destructured_export_bindings_agree_with_node_consumers",
+      "source": "tests/languages/javascript/runtime/consumer_contracts.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "star-namespace-consumers",
+      "target": "javascript",
+      "name": "runtime::consumer_contracts::star_reexport_identity_agrees_with_node_consumers",
+      "source": "tests/languages/javascript/runtime/consumer_contracts.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "async-generator-export-consumers",
+      "target": "javascript",
+      "name": "runtime::consumer_contracts::async_and_generator_exports_agree_with_node_consumers",
+      "source": "tests/languages/javascript/runtime/consumer_contracts.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "node-runtime"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "namespace-import-enrichment",
+      "target": "javascript",
+      "name": "runtime::consumer_contracts::namespace_import_reexports_keep_public_members_after_enrichment",
+      "source": "tests/languages/javascript/runtime/consumer_contracts.rs",
+      "oracles": [
+        "node",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "compatible"
+      ]
+    },
+    {
+      "id": "type-value-declaration-identities",
+      "target": "typescript",
+      "name": "declarations::type_value_spaces::direct_type_aliases_and_values_keep_separate_declaration_identities",
+      "source": "tests/languages/typescript/declarations/type_value_spaces.rs",
+      "oracles": [
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "type-value-compiler-consumers",
+      "target": "typescript",
+      "name": "declarations::type_value_spaces::compiler_evidence_keeps_type_alias_and_unique_symbol_consumers_separate",
+      "source": "tests/languages/typescript/declarations/type_value_spaces.rs",
+      "oracles": [
+        "tsc",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
+    },
+    {
+      "id": "imported-declaration-consumers",
+      "target": "typescript",
+      "name": "declarations::type_value_spaces::imported_declarations_keep_their_contracts_through_local_exports",
+      "source": "tests/languages/typescript/declarations/type_value_spaces.rs",
+      "oracles": [
+        "tsc",
+        "pledge"
+      ],
+      "profiles": [
+        "compiler-nodenext"
+      ],
+      "outcomes": [
+        "breaking",
+        "compatible"
+      ]
     }
   ],
   "assessments": [
@@ -726,7 +1261,8 @@
         "typescript:syntax/ExportSpecifier"
       ],
       "evidence": [
-        "namespace-names"
+        "namespace-names",
+        "imported-declaration-consumers"
       ],
       "reason": "Named removal and spelling controls are tested, including Unicode namespace names. This does not cover all export grammar, early errors, or module-linking semantics.",
       "documentation": [
@@ -962,9 +1498,10 @@
         "typescript:syntax/OptionalType"
       ],
       "evidence": [
-        "optional-contracts"
+        "optional-contracts",
+        "exact-optional-author-settings"
       ],
-      "reason": "Strict consumers distinguish absent properties from explicit undefined; weaker option combinations are not covered by this evidence.",
+      "reason": "Strict consumers distinguish absent properties from explicit undefined. Paired loose/strict author settings retain Pledge's strict input contract; arbitrary option combinations remain unverified.",
       "documentation": [
         "docs/rules/reachable-types.md"
       ],
@@ -1001,13 +1538,12 @@
       "layer": "configuration",
       "status": "partial",
       "references": [
-        "typescript:option/paths",
-        "typescript:option/baseUrl"
+        "typescript:option/paths"
       ],
       "evidence": [
         "alias-consumers"
       ],
-      "reason": "Exact and wildcard alias consumers cover tested precedence and substitution cases; this is not all compiler module-resolution behavior.",
+      "reason": "Exact and wildcard paths consumers cover tested precedence and substitution cases. These consumers do not set baseUrl; standalone baseUrl resolution and other compiler module-resolution behavior remain unverified.",
       "documentation": [
         "docs/rules/export-resolution.md"
       ],
@@ -1920,7 +2456,6 @@
         "ecma262:sec-get-sharedarraybuffer.prototype.maxbytelength",
         "ecma262:sec-getactivescriptormodule",
         "ecma262:sec-getarraybuffermaxbytelengthoption",
-        "ecma262:sec-getexportednames",
         "ecma262:sec-getfunctionrealm",
         "ecma262:sec-getgeneratorkind",
         "ecma262:sec-getglobalobject",
@@ -2768,7 +3303,6 @@
         "ecma262:sec-resizable-arraybuffer-guidelines",
         "ecma262:sec-resolve-private-identifier",
         "ecma262:sec-resolvebinding",
-        "ecma262:sec-resolveexport",
         "ecma262:sec-resolvethisbinding",
         "ecma262:sec-return-statement",
         "ecma262:sec-return-statement-runtime-semantics-evaluation",
@@ -3377,12 +3911,10 @@
         "ecma262:sec-async-arrow-function-definitions/grammar/AsyncConciseBody",
         "ecma262:sec-async-arrow-function-definitions/grammar/CoverCallExpressionAndAsyncArrowHead",
         "ecma262:sec-async-function-definitions/grammar/AsyncFunctionBody",
-        "ecma262:sec-async-function-definitions/grammar/AsyncFunctionDeclaration",
         "ecma262:sec-async-function-definitions/grammar/AsyncFunctionExpression",
         "ecma262:sec-async-function-definitions/grammar/AsyncMethod",
         "ecma262:sec-async-function-definitions/grammar/AwaitExpression",
         "ecma262:sec-async-generator-function-definitions/grammar/AsyncGeneratorBody",
-        "ecma262:sec-async-generator-function-definitions/grammar/AsyncGeneratorDeclaration",
         "ecma262:sec-async-generator-function-definitions/grammar/AsyncGeneratorExpression",
         "ecma262:sec-async-generator-function-definitions/grammar/AsyncGeneratorMethod",
         "ecma262:sec-binary-bitwise-operators/grammar/BitwiseANDExpression",
@@ -3436,17 +3968,9 @@
         "ecma262:sec-destructuring-assignment/grammar/AssignmentRestProperty",
         "ecma262:sec-destructuring-assignment/grammar/DestructuringAssignmentTarget",
         "ecma262:sec-destructuring-assignment/grammar/ObjectAssignmentPattern",
-        "ecma262:sec-destructuring-binding-patterns/grammar/ArrayBindingPattern",
-        "ecma262:sec-destructuring-binding-patterns/grammar/BindingElement",
         "ecma262:sec-destructuring-binding-patterns/grammar/BindingElementList",
-        "ecma262:sec-destructuring-binding-patterns/grammar/BindingElisionElement",
         "ecma262:sec-destructuring-binding-patterns/grammar/BindingPattern",
-        "ecma262:sec-destructuring-binding-patterns/grammar/BindingProperty",
         "ecma262:sec-destructuring-binding-patterns/grammar/BindingPropertyList",
-        "ecma262:sec-destructuring-binding-patterns/grammar/BindingRestElement",
-        "ecma262:sec-destructuring-binding-patterns/grammar/BindingRestProperty",
-        "ecma262:sec-destructuring-binding-patterns/grammar/ObjectBindingPattern",
-        "ecma262:sec-destructuring-binding-patterns/grammar/SingleNameBinding",
         "ecma262:sec-do-while-statement/grammar/DoWhileStatement",
         "ecma262:sec-ecmascript-language-lexical-grammar/grammar/InputElementDiv",
         "ecma262:sec-ecmascript-language-lexical-grammar/grammar/InputElementHashbangOrRegExp",
@@ -3460,10 +3984,6 @@
         "ecma262:sec-empty-statement/grammar/EmptyStatement",
         "ecma262:sec-equality-operators/grammar/EqualityExpression",
         "ecma262:sec-exp-operator/grammar/ExponentiationExpression",
-        "ecma262:sec-exports/grammar/ExportDeclaration",
-        "ecma262:sec-exports/grammar/ExportFromClause",
-        "ecma262:sec-exports/grammar/ExportsList",
-        "ecma262:sec-exports/grammar/NamedExports",
         "ecma262:sec-expression-statement/grammar/ExpressionStatement",
         "ecma262:sec-for-in-and-for-of-statements/grammar/ForBinding",
         "ecma262:sec-for-in-and-for-of-statements/grammar/ForDeclaration",
@@ -3477,7 +3997,6 @@
         "ecma262:sec-function.prototype.tostring/grammar/NativeFunctionAccessor",
         "ecma262:sec-functiondeclarations-in-ifstatement-statement-clauses/grammar/IfStatement",
         "ecma262:sec-generator-function-definitions/grammar/GeneratorBody",
-        "ecma262:sec-generator-function-definitions/grammar/GeneratorDeclaration",
         "ecma262:sec-generator-function-definitions/grammar/GeneratorExpression",
         "ecma262:sec-generator-function-definitions/grammar/GeneratorMethod",
         "ecma262:sec-generator-function-definitions/grammar/YieldExpression",
@@ -3852,18 +4371,7 @@
         "node:doc/api/packages.md#module-resolution-and-loading",
         "node:doc/api/packages.md#packagejson-and-file-extensions",
         "node:doc/api/packages.md#--input-type-flag",
-        "node:doc/api/packages.md#package-entry-points",
-        "node:doc/api/packages.md#main-entry-point-export",
-        "node:doc/api/packages.md#subpath-exports",
-        "node:doc/api/packages.md#extensions-in-subpaths",
-        "node:doc/api/packages.md#path-rules-and-validation-for-export-targets",
-        "node:doc/api/packages.md#targets-must-be-relative-urls",
-        "node:doc/api/packages.md#no-path-traversal-or-invalid-segments",
-        "node:doc/api/packages.md#exports-sugar",
-        "node:doc/api/packages.md#subpath-imports",
-        "node:doc/api/packages.md#subpath-patterns",
         "node:doc/api/packages.md#community-conditions-definitions",
-        "node:doc/api/packages.md#self-referencing-a-package-using-its-name",
         "node:doc/api/packages.md#dual-commonjses-module-packages",
         "node:doc/api/packages.md#package-maps",
         "node:doc/api/packages.md#configuration-file-format",
@@ -3873,11 +4381,7 @@
         "node:doc/api/packages.md#interaction-with-other-resolution",
         "node:doc/api/packages.md#limitations",
         "node:doc/api/packages.md#nodejs-packagejson-field-definitions",
-        "node:doc/api/packages.md#name",
-        "node:doc/api/packages.md#main",
-        "node:doc/api/packages.md#type",
-        "node:doc/api/packages.md#exports",
-        "node:doc/api/packages.md#imports"
+        "node:doc/api/packages.md#type"
       ],
       "evidence": [],
       "reason": "No sufficient Pledge evidence mapping has been established for these exact upstream units. Existing tests may exercise subsets; they are not credited without reviewed traceability.",
@@ -3905,8 +4409,6 @@
         "npm:docs/lib/content/configuring-npm/package-json.md#people-fields-author-contributors",
         "npm:docs/lib/content/configuring-npm/package-json.md#funding",
         "npm:docs/lib/content/configuring-npm/package-json.md#files",
-        "npm:docs/lib/content/configuring-npm/package-json.md#exports",
-        "npm:docs/lib/content/configuring-npm/package-json.md#main",
         "npm:docs/lib/content/configuring-npm/package-json.md#type",
         "npm:docs/lib/content/configuring-npm/package-json.md#browser",
         "npm:docs/lib/content/configuring-npm/package-json.md#bin",
@@ -3972,7 +4474,6 @@
         "test262:arraybuffer-transfer",
         "test262:arrow-function",
         "test262:async-iteration",
-        "test262:async-functions",
         "test262:Atomics",
         "test262:BigInt",
         "test262:caller",
@@ -4002,7 +4503,6 @@
         "test262:DataView.prototype.setUint8",
         "test262:default-parameters",
         "test262:destructuring-assignment",
-        "test262:destructuring-binding",
         "test262:dynamic-import",
         "test262:error-cause",
         "test262:Error.isError",
@@ -4014,7 +4514,6 @@
         "test262:Float16Array",
         "test262:Float32Array",
         "test262:Float64Array",
-        "test262:generators",
         "test262:globalThis",
         "test262:hashbang",
         "test262:import-attributes",
@@ -10742,6 +11241,7 @@
         "typescript:option/allowUnusedLabels",
         "typescript:option/alwaysStrict",
         "typescript:option/assumeChangesOnlyAffectDirectDependencies",
+        "typescript:option/baseUrl",
         "typescript:option/charset",
         "typescript:option/checkJs",
         "typescript:option/composite",
@@ -10841,8 +11341,6 @@
         "typescript:option/strict",
         "typescript:option/strictBindCallApply",
         "typescript:option/strictBuiltinIteratorReturn",
-        "typescript:option/strictFunctionTypes",
-        "typescript:option/strictNullChecks",
         "typescript:option/strictPropertyInitialization",
         "typescript:option/stripInternal",
         "typescript:option/suppressExcessPropertyErrors",
@@ -14363,7 +14861,6 @@
         "typescript:conformance/interfaces/declarationMerging/genericAndNonGenericInterfaceWithTheSameName2.ts",
         "typescript:conformance/interfaces/declarationMerging/mergeThreeInterfaces.ts",
         "typescript:conformance/interfaces/declarationMerging/mergeThreeInterfaces2.ts",
-        "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts",
         "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces2.ts",
         "typescript:conformance/interfaces/declarationMerging/mergedInheritedMembersSatisfyAbstractBase.ts",
         "typescript:conformance/interfaces/declarationMerging/mergedInterfacesWithConflictingPropertyNames.ts",
@@ -14400,7 +14897,6 @@
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceThatIndirectlyInheritsFromItself.ts",
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceThatInheritsFromItself.ts",
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithAccessibilityModifiers.ts",
-        "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts",
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallSignaturesThatHidesBaseSignature.ts",
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallSignaturesThatHidesBaseSignature2.ts",
         "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithConstructSignaturesThatHidesBaseSignature.ts",
@@ -16753,7 +17249,6 @@
         "typescript:conformance/types/any/narrowFromAnyWithTypePredicate.ts",
         "typescript:conformance/types/asyncGenerators/types.asyncGenerators.es2018.1.ts",
         "typescript:conformance/types/asyncGenerators/types.asyncGenerators.es2018.2.ts",
-        "typescript:conformance/types/conditional/conditionalTypes1.ts",
         "typescript:conformance/types/conditional/conditionalTypes2.ts",
         "typescript:conformance/types/conditional/conditionalTypesExcessProperties.ts",
         "typescript:conformance/types/conditional/inferTypes1.ts",
@@ -16799,7 +17294,6 @@
         "typescript:conformance/types/import/importWithTypeArguments.ts",
         "typescript:conformance/types/intersection/commonTypeIntersection.ts",
         "typescript:conformance/types/intersection/contextualIntersectionType.ts",
-        "typescript:conformance/types/intersection/intersectionAndUnionTypes.ts",
         "typescript:conformance/types/intersection/intersectionAsWeakTypeSource.ts",
         "typescript:conformance/types/intersection/intersectionMemberOfUnionNarrowsCorrectly.ts",
         "typescript:conformance/types/intersection/intersectionNarrowing.ts",
@@ -16823,7 +17317,6 @@
         "typescript:conformance/types/intersection/recursiveIntersectionTypes.ts",
         "typescript:conformance/types/keyof/circularIndexedAccessErrors.ts",
         "typescript:conformance/types/keyof/keyofAndForIn.ts",
-        "typescript:conformance/types/keyof/keyofAndIndexedAccess.ts",
         "typescript:conformance/types/keyof/keyofAndIndexedAccess2.ts",
         "typescript:conformance/types/keyof/keyofAndIndexedAccessErrors.ts",
         "typescript:conformance/types/keyof/keyofIntersection.ts",
@@ -17552,7 +18045,6 @@
         "typescript:conformance/types/union/contextualTypeWithUnionTypeIndexSignatures.ts",
         "typescript:conformance/types/union/contextualTypeWithUnionTypeMembers.ts",
         "typescript:conformance/types/union/contextualTypeWithUnionTypeObjectLiteral.ts",
-        "typescript:conformance/types/union/discriminatedUnionTypes1.ts",
         "typescript:conformance/types/union/discriminatedUnionTypes2.ts",
         "typescript:conformance/types/union/discriminatedUnionTypes3.ts",
         "typescript:conformance/types/union/discriminatedUnionTypes4.ts",
@@ -17620,6 +18112,44 @@
       }
     },
     {
+      "id": "strict-null-author-settings",
+      "title": "Strict nullability under loose author settings",
+      "layer": "configuration",
+      "status": "partial",
+      "references": [
+        "typescript:option/strictNullChecks"
+      ],
+      "evidence": [
+        "strict-null-author-settings"
+      ],
+      "reason": "Strict and loose compiler consumers distinguish removal of null inputs; Pledge retains the strict contract under either author setting. Other nullability inference and option interactions remain unverified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "strict-callback-author-settings",
+      "title": "Strict callback variance under loose author settings",
+      "layer": "configuration",
+      "status": "partial",
+      "references": [
+        "typescript:option/strictFunctionTypes"
+      ],
+      "evidence": [
+        "strict-callback-author-settings"
+      ],
+      "reason": "Strict and loose compiler consumers distinguish widening callback arguments; Pledge retains strict function variance under either author setting. Method bivariance, constructor variance, and arbitrary generic callbacks are not established by these cases.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
       "id": "unverified-typescript-syntax-kind",
       "title": "typescript / syntax-kind",
       "layer": "scope",
@@ -17663,7 +18193,6 @@
         "typescript:syntax/BreakKeyword",
         "typescript:syntax/BreakStatement",
         "typescript:syntax/Bundle",
-        "typescript:syntax/CallSignature",
         "typescript:syntax/CaretEqualsToken",
         "typescript:syntax/CaretToken",
         "typescript:syntax/CaseBlock",
@@ -17671,7 +18200,6 @@
         "typescript:syntax/CaseKeyword",
         "typescript:syntax/CatchClause",
         "typescript:syntax/CatchKeyword",
-        "typescript:syntax/ClassDeclaration",
         "typescript:syntax/ClassExpression",
         "typescript:syntax/ClassKeyword",
         "typescript:syntax/ClassStaticBlockDeclaration",
@@ -17684,7 +18212,6 @@
         "typescript:syntax/ConditionalExpression",
         "typescript:syntax/ConflictMarkerTrivia",
         "typescript:syntax/ConstKeyword",
-        "typescript:syntax/ConstructSignature",
         "typescript:syntax/Constructor",
         "typescript:syntax/ConstructorKeyword",
         "typescript:syntax/ConstructorType",
@@ -17770,20 +18297,15 @@
         "typescript:syntax/ImportAttribute",
         "typescript:syntax/ImportAttributes",
         "typescript:syntax/ImportClause",
-        "typescript:syntax/ImportDeclaration",
         "typescript:syntax/ImportEqualsDeclaration",
         "typescript:syntax/ImportKeyword",
-        "typescript:syntax/ImportSpecifier",
         "typescript:syntax/ImportType",
         "typescript:syntax/ImportTypeAssertionContainer",
         "typescript:syntax/InKeyword",
         "typescript:syntax/IndexSignature",
-        "typescript:syntax/IndexedAccessType",
         "typescript:syntax/InferKeyword",
         "typescript:syntax/InstanceOfKeyword",
-        "typescript:syntax/InterfaceDeclaration",
         "typescript:syntax/InterfaceKeyword",
-        "typescript:syntax/IntersectionType",
         "typescript:syntax/IntrinsicKeyword",
         "typescript:syntax/IsKeyword",
         "typescript:syntax/JSDoc",
@@ -17845,7 +18367,6 @@
         "typescript:syntax/JsxSpreadAttribute",
         "typescript:syntax/JsxText",
         "typescript:syntax/JsxTextAllWhiteSpaces",
-        "typescript:syntax/KeyOfKeyword",
         "typescript:syntax/LabeledStatement",
         "typescript:syntax/LastAssignment",
         "typescript:syntax/LastBinaryOperator",
@@ -17971,22 +18492,18 @@
         "typescript:syntax/TrueKeyword",
         "typescript:syntax/TryKeyword",
         "typescript:syntax/TryStatement",
-        "typescript:syntax/TypeAliasDeclaration",
         "typescript:syntax/TypeAssertionExpression",
         "typescript:syntax/TypeKeyword",
         "typescript:syntax/TypeLiteral",
         "typescript:syntax/TypeOfExpression",
         "typescript:syntax/TypeOfKeyword",
-        "typescript:syntax/TypeOperator",
         "typescript:syntax/TypeQuery",
         "typescript:syntax/TypeReference",
         "typescript:syntax/UndefinedKeyword",
-        "typescript:syntax/UnionType",
         "typescript:syntax/Unknown",
         "typescript:syntax/UnknownKeyword",
         "typescript:syntax/UsingKeyword",
         "typescript:syntax/VarKeyword",
-        "typescript:syntax/VariableDeclaration",
         "typescript:syntax/VariableDeclarationList",
         "typescript:syntax/VariableStatement",
         "typescript:syntax/VoidExpression",
@@ -18003,6 +18520,414 @@
       "reason": "No sufficient Pledge evidence mapping has been established for these exact upstream units. Existing tests may exercise subsets; they are not credited without reviewed traceability.",
       "documentation": [
         "docs/language-coverage.md#known-analysis-limits"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "node-public-entry-contracts",
+      "title": "Root exports precedence, selection, and public subpaths",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#package-entry-points",
+        "node:doc/api/packages.md#main-entry-point-export",
+        "node:doc/api/packages.md#exports",
+        "npm:docs/lib/content/configuring-npm/package-json.md#exports"
+      ],
+      "evidence": [
+        "node-entry-consumers",
+        "node-subpath-consumers",
+        "node-main-consumers"
+      ],
+      "reason": "Real Node consumers and Pledge agree on selected root, subpath, array-order, and condition-order changes with compatible controls. These examples do not exhaust target formats, arbitrary condition combinations, loaders, or older Node releases.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6",
+        "npm": "bfacd33ccbcd908480610703b60455d2da5b57a9"
+      }
+    },
+    {
+      "id": "node-legacy-main-contracts",
+      "title": "Legacy main preserves root and deep-import identities",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#main",
+        "npm:docs/lib/content/configuring-npm/package-json.md#main"
+      ],
+      "evidence": [
+        "node-main-consumers"
+      ],
+      "reason": "Real require consumers cover a changed selected root and a compatible main reroute while both original files remain importable. Directory/index fallback combinations, all extensions, and npm installation behavior remain outside these cases.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6",
+        "npm": "bfacd33ccbcd908480610703b60455d2da5b57a9"
+      }
+    },
+    {
+      "id": "node-explicit-subpath-contracts",
+      "title": "Explicit and extensioned public subpaths",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#subpath-exports",
+        "node:doc/api/packages.md#extensions-in-subpaths"
+      ],
+      "evidence": [
+        "node-subpath-consumers"
+      ],
+      "reason": "Real Node consumers cover a removed exported name, extensioned-to-extensionless API loss, and compatible target relocation. Browser import-map size recommendations and every subpath spelling are not tested.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "node-root-export-sugar",
+      "title": "Root exports object and string sugar",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#exports-sugar"
+      ],
+      "evidence": [
+        "node-entry-consumers"
+      ],
+      "reason": "The root-only {\".\": \"./index.js\"} form and string form preserve the same callable consumer. Conditional and array forms are sampled separately, not exhaustively covered by this equivalence control.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "node-private-import-contracts",
+      "title": "Private imports affect publicly re-exported APIs",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#subpath-imports",
+        "node:doc/api/packages.md#imports"
+      ],
+      "evidence": [
+        "node-imports-consumers"
+      ],
+      "reason": "Local #api rerouting is checked through its public re-export for both lost and preserved callable consumers; an unused private map change is compatible. External-package targets, #/ syntax version boundaries, and every private-pattern combination remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "node-export-pattern-contracts",
+      "title": "Nested wildcard exports and null blockers",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#subpath-patterns"
+      ],
+      "evidence": [
+        "node-pattern-consumers"
+      ],
+      "reason": "Real Node consumers cover nested captures, compatible pattern-target relocation, and adding a null blocker that removes a public subpath. Repeated slots, encoded captures, and the full pattern-ordering space are not certified by these cases.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "node-self-reference-contracts",
+      "title": "Package-name self references to public exports",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#self-referencing-a-package-using-its-name",
+        "node:doc/api/packages.md#name"
+      ],
+      "evidence": [
+        "node-entry-consumers",
+        "node-subpath-consumers"
+      ],
+      "reason": "Consumers inside packages resolve their own names through root and subpath exports, including breaking and compatible changes. Renaming a package, scoped-name rules, nested package scopes, and registry naming validation are not assessed.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "node-export-target-validation",
+      "title": "Invalid export targets retain incomplete evidence",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "node:doc/api/packages.md#path-rules-and-validation-for-export-targets",
+        "node:doc/api/packages.md#targets-must-be-relative-urls",
+        "node:doc/api/packages.md#no-path-traversal-or-invalid-segments"
+      ],
+      "evidence": [
+        "node-target-validation"
+      ],
+      "reason": "Node rejects seven concrete targets: missing ./, absolute path, file URL, parent-relative path, internal traversal, encoded parent traversal, and node_modules segment. Pledge discovers no invented API and reports incomplete evidence for each. Plain and percent-encoded valid filename controls resolve in both. All encodings, wildcard substitutions, and symlink cases remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "node": "b4f23d3619c98bed09af93a21192f6080197a8c6"
+      }
+    },
+    {
+      "id": "conditional-upstream-consumers",
+      "title": "Conditional public branches and binder renames",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/types/conditional/conditionalTypes1.ts"
+      ],
+      "evidence": [
+        "generic-contracts"
+      ],
+      "reason": "Existing independently compiled consumers exercise conditional branch changes and compatible binder renames relevant to this upstream case. Distribution, recursive utilities, all branch combinations, and the remaining assertions in the upstream file are not certified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "indexed-key-consumers",
+      "title": "Concrete indexed results and public key sets",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/types/keyof/keyofAndIndexedAccess.ts",
+        "typescript:syntax/TypeOperator",
+        "typescript:syntax/KeyOfKeyword",
+        "typescript:syntax/IndexedAccessType"
+      ],
+      "evidence": [
+        "indexed-result-consumers",
+        "public-type-consumers"
+      ],
+      "reason": "Consumers verify a changed concrete indexed result, its equivalent expansion, a removed keyof input, and a compatible Pick expansion. Dependent generic indexing, indexed writes, symbol/numeric key combinations, and the remaining upstream assertions remain unverified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "intersection-input-consumers",
+      "title": "Required members of intersection inputs",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/types/intersection/intersectionAndUnionTypes.ts",
+        "typescript:syntax/IntersectionType"
+      ],
+      "evidence": [
+        "intersection-input-consumers"
+      ],
+      "reason": "Adding an intersection member rejects a formerly valid input; reordering the same members preserves the consumer. This does not cover every intersection/union assignability case, overload interaction, or assertion in the upstream file.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "discriminated-result-consumers",
+      "title": "Exhaustive consumers of discriminated results",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/types/union/discriminatedUnionTypes1.ts",
+        "typescript:syntax/UnionType"
+      ],
+      "evidence": [
+        "discriminated-result-consumers"
+      ],
+      "reason": "A new result variant breaks an exhaustive consumer; reordering variants preserves it. Other narrowing paths, mutations, optional discriminants, and the remaining control-flow cases in the upstream file are not certified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "merged-interface-consumers",
+      "title": "Private merged interfaces reachable from exported results",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts",
+        "typescript:syntax/InterfaceDeclaration"
+      ],
+      "evidence": [
+        "merged-interface-consumers"
+      ],
+      "reason": "Removing the second declaration loses an accessed result member; flattening both declarations preserves the consumer. Generic merges, namespace-local merges, conflicts, and the remaining upstream assertions are unverified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "call-construct-consumers",
+      "title": "Calls and construction on the same exported value",
+      "layer": "types",
+      "status": "partial",
+      "references": [
+        "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts",
+        "typescript:syntax/CallSignature",
+        "typescript:syntax/ConstructSignature"
+      ],
+      "evidence": [
+        "call-construct-consumers"
+      ],
+      "reason": "Consumers verify removed construction, narrowed constructor inputs, changed constructed results, compatible construction/property additions, retained or lost call positions, removed/narrowed overloads, unified replacement overloads, and selected overlapping-call order changes. Abstract constructors, generic intersections, and all signature interactions are not certified.",
+      "documentation": [
+        "docs/rules/reachable-types.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "destructured-binding-consumers",
+      "title": "Destructured public binding identities",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "ecma262:sec-destructuring-binding-patterns/grammar/ObjectBindingPattern",
+        "ecma262:sec-destructuring-binding-patterns/grammar/ArrayBindingPattern",
+        "ecma262:sec-destructuring-binding-patterns/grammar/BindingProperty",
+        "ecma262:sec-destructuring-binding-patterns/grammar/BindingElement",
+        "ecma262:sec-destructuring-binding-patterns/grammar/BindingRestElement",
+        "ecma262:sec-destructuring-binding-patterns/grammar/BindingRestProperty",
+        "ecma262:sec-destructuring-binding-patterns/grammar/SingleNameBinding",
+        "ecma262:sec-destructuring-binding-patterns/grammar/BindingElisionElement",
+        "test262:destructuring-binding"
+      ],
+      "evidence": [
+        "destructured-binding-consumers"
+      ],
+      "reason": "Real Node consumers cover removal and equivalent local-alias forwarding of object, nested, defaulted, elided array, array-rest, and object-rest bindings. Initializer effects, iterator closing, abrupt completion, arbitrary computed keys, and all grammar alternatives remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "ecma262": "0248456c758431e4bb8e5d26333ff1865123c9cd",
+        "test262": "e4fbf57745c6aae3d1f12f181ecef78b1665d812"
+      }
+    },
+    {
+      "id": "star-namespace-consumers",
+      "title": "Star and namespace export identity",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "ecma262:sec-exports/grammar/ExportDeclaration",
+        "ecma262:sec-exports/grammar/ExportFromClause",
+        "ecma262:sec-exports/grammar/NamedExports",
+        "ecma262:sec-exports/grammar/ExportsList",
+        "ecma262:sec-getexportednames",
+        "ecma262:sec-resolveexport"
+      ],
+      "evidence": [
+        "star-namespace-consumers",
+        "namespace-import-enrichment"
+      ],
+      "reason": "Real Node consumers cover named/star equivalence, default exclusion, namespace forwarding through imports and default aliases, ambiguous stars, explicit disambiguation, and same-binding diamonds. Circular resolution, initialization timing, every export production, and host-specific module requests remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "ecma262": "0248456c758431e4bb8e5d26333ff1865123c9cd"
+      }
+    },
+    {
+      "id": "async-generator-export-consumers",
+      "title": "Async and generator public declarations",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "ecma262:sec-async-function-definitions/grammar/AsyncFunctionDeclaration",
+        "ecma262:sec-generator-function-definitions/grammar/GeneratorDeclaration",
+        "ecma262:sec-async-generator-function-definitions/grammar/AsyncGeneratorDeclaration",
+        "test262:async-functions",
+        "test262:generators"
+      ],
+      "evidence": [
+        "async-generator-export-consumers"
+      ],
+      "reason": "Real Node consumers cover removal and compatible forwarding of async functions and async generators, loss of generator protocol, and named versus anonymous default generator declarations. Suspension scheduling, throw/return protocols, function-body equivalence, parameter interactions, and full feature semantics remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "ecma262": "0248456c758431e4bb8e5d26333ff1865123c9cd",
+        "test262": "e4fbf57745c6aae3d1f12f181ecef78b1665d812"
+      }
+    },
+    {
+      "id": "type-value-declaration-identities",
+      "title": "Same-name type aliases and value declarations",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "typescript:syntax/TypeAliasDeclaration",
+        "typescript:syntax/VariableDeclaration"
+      ],
+      "evidence": [
+        "type-value-declaration-identities",
+        "type-value-compiler-consumers"
+      ],
+      "reason": "Discovery and compiler-enriched comparison preserve separate type/value identities, compatible declaration reordering, and type-only removal while the value remains. Independent consumers compile the alias and unique-symbol value separately. Other declaration forms, merging rules, scopes, and emitted JavaScript semantics remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
+      ],
+      "baselines": {
+        "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"
+      }
+    },
+    {
+      "id": "imported-declaration-consumers",
+      "title": "Imported types and default classes forwarded through local exports",
+      "layer": "exports",
+      "status": "partial",
+      "references": [
+        "typescript:syntax/ImportDeclaration",
+        "typescript:syntax/ImportSpecifier",
+        "typescript:syntax/ClassDeclaration"
+      ],
+      "evidence": [
+        "imported-declaration-consumers"
+      ],
+      "reason": "Independent consumers cover changed interface fields, type-only forwarding, compatible barrel and statement-order rewrites, and default-class field changes. Type-only forwarding preserves both same-named alias and typeof-value contracts while rejecting runtime use. Discovery and enrichment retain the actual declarations and member shapes. Other import/class grammar, runtime initialization, constructor forms, and resolution combinations remain unverified.",
+      "documentation": [
+        "docs/rules/export-resolution.md"
       ],
       "baselines": {
         "typescript": "050880ce59e30b356b686bd3144efe24f875ebc8"

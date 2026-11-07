@@ -111,6 +111,144 @@ fn keyword_reexports_agree_with_node_namespaces() {
 }
 
 #[test]
+fn destructured_export_bindings_agree_with_node_consumers() {
+    let manifest =
+        serde_json::json!({"name":"destructured-exports","type":"module","exports":"./index.js"});
+    let cases: Vec<_> = [
+        ("object alias removal", "export const {internal:api}={internal:1};", "export const {internal:renamed}={internal:1};", "api.toFixed();", true),
+        ("object alias equivalent", "export const {internal:api}={internal:1};", "const {internal:local}={internal:1};export{local as api};", "api.toFixed();", false),
+        ("nested object removal", "export const {nested:{api}}={nested:{api:1}};", "export const {nested:{api:renamed}}={nested:{api:1}};", "api.toFixed();", true),
+        ("nested object equivalent", "export const {nested:{api}}={nested:{api:1}};", "const {nested:{api:local}}={nested:{api:1}};export{local as api};", "api.toFixed();", false),
+        ("default binding removal", "export const {api=1}={};", "export const {renamed=1}={};", "api.toFixed();", true),
+        ("default binding equivalent", "export const {api=1}={};", "const {api:local=1}={};export{local as api};", "api.toFixed();", false),
+        ("array elision removal", "export const [,api]=[0,1];", "export const [,renamed]=[0,1];", "api.toFixed();", true),
+        ("array elision equivalent", "export const [,api]=[0,1];", "const [,local]=[0,1];export{local as api};", "api.toFixed();", false),
+        ("array rest removal", "export const [head,...api]=[0,1];", "export const [head,...renamed]=[0,1];", "api[0].toFixed();", true),
+        ("array rest equivalent", "export const [head,...api]=[0,1];", "const [head,...local]=[0,1];export{head,local as api};", "api[0].toFixed();", false),
+        ("object rest removal", "export const {head,...api}={head:0,part:1};", "export const {head,...renamed}={head:0,part:1};", "api.part.toFixed();", true),
+        ("object rest equivalent", "export const {head,...api}={head:0,part:1};", "const {head,...local}={head:0,part:1};export{head,local as api};", "api.part.toFixed();", false),
+    ].into_iter().map(|(name, old, new, operation, breaking)| {
+        let consumer = format!("const {{api}}=await import('./index.js');{operation}");
+        serde_json::json!({"name":name,"old":{"manifest":manifest,"files":{"index.js":old}},"new":{"manifest":manifest,"files":{"index.js":new}},"consumer":consumer,"breaking":breaking,"runtime":"node"})
+    }).collect();
+    crate::node_consumers::assert_consumer_contracts(&serde_json::to_string(&cases).unwrap());
+}
+
+#[test]
+fn star_reexport_identity_agrees_with_node_consumers() {
+    let manifest =
+        serde_json::json!({"name":"star-exports","type":"module","exports":"./index.js"});
+    let cases: Vec<_> = [
+        ("star removal", "export * from './side.js';", "export {};", "api.local.toFixed();", true),
+        ("explicit star equivalence", "export * from './side.js';", "export {local} from './side.js';", "api.local.toFixed();if('default' in api)throw Error('default leaked');", false),
+        ("default forwarding removal", "export {default} from './side.js';", "export * from './side.js';", "api.default.toFixed();", true),
+        ("renamed default removal", "export {default as value} from './side.js';", "export {default as renamed} from './side.js';", "api.value.toFixed();", true),
+        ("renamed default alias addition", "export {default as value} from './side.js';", "export {default as value,default as extra} from './side.js';", "api.value.toFixed();if('default' in api)throw Error('default leaked');", false),
+        ("explicit default removal beside alias", "export {default,default as value} from './side.js';", "export {default as value} from './side.js';", "api.default.toFixed();api.value.toFixed();", true),
+        ("namespace default removal", "export * as ns from './side.js';", "export * from './side.js';", "api.ns.default.toFixed();", true),
+        ("namespace equivalent", "export * as ns from './side.js';", "import * as ns from './side.js';export {ns};", "api.ns.default.toFixed();api.ns.local.toFixed();", false),
+        ("namespace alias equivalent", "export * as ns from './side.js';", "import * as local from './side.js';export {local as ns};", "api.ns.default.toFixed();api.ns.local.toFixed();", false),
+        ("namespace default alias equivalent", "export * as default from './side.js';", "import * as local from './side.js';export {local as default};", "api.default.default.toFixed();api.default.local.toFixed();", false),
+        ("namespace default expression equivalent", "export * as default from './side.js';", "import * as local from './side.js';export default local;", "api.default.default.toFixed();api.default.local.toFixed();", false),
+        ("default namespace import forwarding", "export * as default from './side.js';", "import local from './namespace.js';export default local;", "api.default.default.toFixed();api.default.local.toFixed();", false),
+        ("named namespace import forwarding", "export * as ns from './side.js';", "import {named as local} from './namespace.js';export {local as ns};", "api.ns.default.toFixed();api.ns.local.toFixed();", false),
+        ("default namespace through two barrels", "export * as ns from './side.js';", "import local from './namespace-again.js';export {local as ns};", "api.ns.default.toFixed();api.ns.local.toFixed();", false),
+        ("forwarded namespace removal", "export {default as ns} from './namespace.js';", "export {named as renamed} from './namespace.js';", "api.ns.local.toFixed();", true),
+        ("conflicting star removal", "export * from './side.js';", "export * from './side.js';export * from './other.js';", "api.local.toFixed();", true),
+        ("explicit export resolves ambiguity", "export * from './side.js';", "export * from './side.js';export * from './other.js';export {local} from './side.js';", "api.local.toFixed();", false),
+        ("same binding through diamond", "export * from './side.js';", "export * from './side.js';export * from './barrel.js';", "api.local.toFixed();", false),
+    ].into_iter().map(|(name, old, new, operation, breaking)| {
+        let consumer = format!("const api=await import('./index.js');{operation}");
+        let files = |index| serde_json::json!({"index.js":index,"side.js":"export const local=1;export default 2;","other.js":"export const local=3;","barrel.js":"export * from './side.js';","namespace.js":"export * as default from './side.js';export * as named from './side.js';","namespace-again.js":"import local from './namespace.js';export default local;"});
+        serde_json::json!({"name":name,"old":{"manifest":manifest,"files":files(old)},"new":{"manifest":manifest,"files":files(new)},"consumer":consumer,"breaking":breaking,"runtime":"node"})
+    }).collect();
+    crate::node_consumers::assert_consumer_contracts(&serde_json::to_string(&cases).unwrap());
+}
+
+#[test]
+fn async_and_generator_exports_agree_with_node_consumers() {
+    let manifest =
+        serde_json::json!({"name":"callable-exports","type":"module","exports":"./index.js"});
+    let cases: Vec<_> = [
+        ("async declaration removal", "export async function api(){return 1;}", "export {};", "await api.api().then(value=>value.toFixed());", true),
+        ("async local alias equivalent", "export async function api(){return 1;}", "async function local(){return 1;}export{local as api};", "await api.api().then(value=>value.toFixed());", false),
+        ("generator protocol removal", "export function* api(){yield 1;}", "export function api(){return 1;}", "api.api().next().value.toFixed();", true),
+        ("generator default name equivalent", "export default function*(){yield 1;}", "export default function* named(){yield 1;}", "api.default().next().value.toFixed();", false),
+        ("async generator removal", "export async function* api(){yield 1;}", "export {};", "(await api.api().next()).value.toFixed();", true),
+        ("async generator alias equivalent", "export async function* api(){yield 1;}", "async function* local(){yield 1;}export{local as api};", "(await api.api().next()).value.toFixed();", false),
+    ].into_iter().map(|(name, old, new, operation, breaking)| {
+        let consumer = format!("const api=await import('./index.js');{operation}");
+        serde_json::json!({"name":name,"old":{"manifest":manifest,"files":{"index.js":old}},"new":{"manifest":manifest,"files":{"index.js":new}},"consumer":consumer,"breaking":breaking,"runtime":"node"})
+    }).collect();
+    crate::node_consumers::assert_consumer_contracts(&serde_json::to_string(&cases).unwrap());
+}
+
+#[tokio::test]
+async fn namespace_import_reexports_keep_public_members_after_enrichment() {
+    let mut exports = Vec::new();
+    let mut directories = Vec::new();
+    for source in [
+        "export * as ns from './side.js';",
+        "import * as ns from './side.js';export {ns};",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"namespace-contract","type":"module","exports":"./index.js"}"#,
+        )
+        .unwrap();
+        std::fs::write(root.join("index.js"), source).unwrap();
+        std::fs::write(
+            root.join("side.js"),
+            "export const local=1;export default 2;",
+        )
+        .unwrap();
+        let output = std::process::Command::new("node")
+            .current_dir(root)
+            .args([
+                "--input-type=module",
+                "--eval",
+                "const {ns}=await import('./index.js');ns.local.toFixed();ns.default.toFixed();",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{source}: {output:?}");
+        let (mut discovered, warnings) =
+            pledge::ecosystems::node::discovery::discover_exports(root).unwrap();
+        assert!(warnings.is_empty(), "{source}: {warnings:?}");
+        let result = pledge::languages::typescript::compiler::enrich_exports(&mut discovered, root)
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                pledge::languages::typescript::compiler::EnrichResult::Enriched
+            ),
+            "{source}: {result:?}"
+        );
+        exports.push(discovered);
+        directories.push(directory);
+    }
+    let findings = pledge::languages::javascript::compare::compare_exports(
+        &exports[0],
+        &exports[1],
+        directories[1].path(),
+        true,
+    );
+    assert!(
+        !pledge::core::findings::has_breaking_changes(&findings),
+        "{findings:?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.rule == "analysis-incomplete"),
+        "{findings:?}"
+    );
+}
+
+#[test]
 fn post_await_commonjs_writes_are_not_available_to_immediate_require_consumers() {
     for (source, immediate) in [
         (

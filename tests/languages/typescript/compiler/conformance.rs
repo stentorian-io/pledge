@@ -20,7 +20,13 @@ struct ConsumerCase {
     upstream: String,
 }
 
-async fn compare_consumers(profile: &str, module: &str, resolution: &str, extension: &str) {
+async fn compare_consumers(
+    upstream: &str,
+    profile: &str,
+    module: &str,
+    resolution: &str,
+    extension: &str,
+) {
     let legacy_resolution_deprecation =
         resolution == "Node" && super::version_support::compiler_version().0 >= 6;
     let cases: Vec<ConsumerCase> = serde_json::from_str(include_str!(
@@ -29,7 +35,7 @@ async fn compare_consumers(profile: &str, module: &str, resolution: &str, extens
     .unwrap();
     let cases: Vec<_> = cases
         .into_iter()
-        .filter(|case| case.profile == profile)
+        .filter(|case| case.profile == profile && case.upstream == upstream)
         .collect();
     assert!(cases.iter().any(|case| case.breaking));
     assert!(cases.iter().any(|case| !case.breaking));
@@ -100,8 +106,14 @@ async fn compare_consumers(profile: &str, module: &str, resolution: &str, extens
             exports.push(discovered);
             directories.push(directory);
         }
-        let findings =
+        let mut findings =
             compare::compare_exports(&exports[0], &exports[1], directories[1].path(), false);
+        findings.extend(compare::structure::compare_structural_diff(
+            directories[0].path(),
+            directories[1].path(),
+            &exports[0],
+            &exports[1],
+        ));
         assert_eq!(
             has_breaking_changes(&findings),
             case.breaking,
@@ -120,15 +132,96 @@ async fn compare_consumers(profile: &str, module: &str, resolution: &str, extens
 
 #[tokio::test]
 async fn mapped_modifier_consumers_agree_under_nodenext() {
-    compare_consumers("compiler-nodenext", "NodeNext", "NodeNext", "d.ts").await;
+    compare_consumers(
+        "typescript:conformance/types/mapped/mappedTypes1.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn tuple_rest_consumers_agree_under_node16() {
-    compare_consumers("compiler-node16", "Node16", "Node16", "d.mts").await;
+    compare_consumers(
+        "typescript:conformance/types/rest/genericRestParameters1.ts",
+        "compiler-node16",
+        "Node16",
+        "Node16",
+        "d.mts",
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn template_union_consumers_agree_under_commonjs() {
-    compare_consumers("compiler-commonjs", "CommonJS", "Node", "d.cts").await;
+    compare_consumers(
+        "typescript:conformance/types/literal/templateLiteralTypes1.ts",
+        "compiler-commonjs",
+        "CommonJS",
+        "Node",
+        "d.cts",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn indexed_results_agree_with_typescript_consumers() {
+    compare_consumers(
+        "typescript:conformance/types/keyof/keyofAndIndexedAccess.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn intersection_inputs_agree_with_typescript_consumers() {
+    compare_consumers(
+        "typescript:conformance/types/intersection/intersectionAndUnionTypes.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn discriminated_results_agree_with_exhaustive_consumers() {
+    compare_consumers(
+        "typescript:conformance/types/union/discriminatedUnionTypes1.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn merged_interface_results_agree_with_typescript_consumers() {
+    compare_consumers(
+        "typescript:conformance/interfaces/declarationMerging/mergeTwoInterfaces.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn call_and_construct_signatures_agree_with_typescript_consumers() {
+    compare_consumers(
+        "typescript:conformance/interfaces/interfaceDeclarations/interfaceWithCallAndConstructSignature.ts",
+        "compiler-nodenext",
+        "NodeNext",
+        "NodeNext",
+        "d.ts",
+    )
+    .await;
 }

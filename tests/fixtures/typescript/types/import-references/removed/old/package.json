@@ -1,1 +1,1 @@
-{ "name": "inf04-removed", "version": "1.0.0", "types": "./index.ts" }
+{ "name": "inf04-removed", "version": "1.0.0", "types": "./index.ts", "exports": "./index.ts" }

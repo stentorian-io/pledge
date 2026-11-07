@@ -224,5 +224,376 @@
         "lib/extra.js": "export {};"
       }
     }
+  },
+  {
+    "name": "exports-sugar-preserves-root",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          ".": "./index.js"
+        }
+      },
+      "files": {
+        "index.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js"
+      },
+      "files": {
+        "index.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "exports-preserves-root-when-main-changes",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "main": "a.js"
+      },
+      "files": {
+        "index.js": "export function api() {}",
+        "a.js": "export {};",
+        "b.js": "export {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "main": "b.js"
+      },
+      "files": {
+        "index.js": "export function api() {}",
+        "a.js": "export {};",
+        "b.js": "export {};"
+      }
+    }
+  },
+  {
+    "name": "legacy-main-selects-removed-api",
+    "runtime": "node",
+    "consumer": "import {createRequire} from 'node:module'; const require=createRequire(process.cwd()+'/consumer.cjs'); require('.').api();",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "a.cjs"
+      },
+      "files": {
+        "a.cjs": "exports.api=function() {};",
+        "b.cjs": "exports.other=function() {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "b.cjs"
+      },
+      "files": {
+        "a.cjs": "exports.api=function() {};",
+        "b.cjs": "exports.other=function() {};"
+      }
+    }
+  },
+  {
+    "name": "legacy-main-compatible-reroute",
+    "runtime": "node",
+    "consumer": "import {createRequire} from 'node:module'; const require=createRequire(process.cwd()+'/consumer.cjs'); for (const path of ['.', './a.cjs', './b.cjs']) require(path).api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "a.cjs"
+      },
+      "files": {
+        "a.cjs": "exports.api=function() {};",
+        "b.cjs": "exports.api=function() {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "main": "b.cjs"
+      },
+      "files": {
+        "a.cjs": "exports.api=function() {};",
+        "b.cjs": "exports.api=function() {};"
+      }
+    }
+  },
+  {
+    "name": "extensioned-subpath-is-distinct",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture/tool.js'; api();",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./tool.js": "./tool.js"
+        }
+      },
+      "files": {
+        "tool.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./tool": "./tool.js"
+        }
+      },
+      "files": {
+        "tool.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "extensioned-subpath-compatible-relocation",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture/tool.js'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./tool.js": "./tool.js"
+        }
+      },
+      "files": {
+        "tool.js": "export function api() {}",
+        "dist/tool.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./tool.js": "./dist/tool.js"
+        }
+      },
+      "files": {
+        "tool.js": "export function api() {}",
+        "dist/tool.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "imports-public-reroute-breaks-consumer",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture'; api();",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#api": "./a.js"
+        }
+      },
+      "files": {
+        "index.js": "export * from '#api';",
+        "a.js": "export function api() {}",
+        "b.js": "export {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#api": "./b.js"
+        }
+      },
+      "files": {
+        "index.js": "export * from '#api';",
+        "a.js": "export function api() {}",
+        "b.js": "export {};"
+      }
+    }
+  },
+  {
+    "name": "imports-public-reroute-preserves-consumer",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#api": "./a.js"
+        }
+      },
+      "files": {
+        "index.js": "export * from '#api';",
+        "a.js": "export function api() {}",
+        "b.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#api": "./b.js"
+        }
+      },
+      "files": {
+        "index.js": "export * from '#api';",
+        "a.js": "export function api() {}",
+        "b.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "nested-pattern-compatible-relocation",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture/nested/tool'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./*": "./dist/*.js"
+        }
+      },
+      "files": {
+        "dist/nested/tool.js": "export function api() {}",
+        "lib/nested/tool.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./*": "./lib/*.js"
+        }
+      },
+      "files": {
+        "dist/nested/tool.js": "export function api() {}",
+        "lib/nested/tool.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "pattern-blocker-removes-public-subpath",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture/private/tool'; api();",
+    "breaking": true,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./*": "./*.js"
+        }
+      },
+      "files": {
+        "private/tool.js": "export function api() {}"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": {
+          "./*": "./*.js",
+          "./private/*": null
+        }
+      },
+      "files": {
+        "private/tool.js": "export function api() {}"
+      }
+    }
+  },
+  {
+    "name": "unused-private-import-map-is-not-public",
+    "runtime": "node",
+    "consumer": "import {api} from 'review-fixture'; api();",
+    "breaking": false,
+    "old": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#unused": "./a.js"
+        }
+      },
+      "files": {
+        "index.js": "export function api() {}",
+        "a.js": "export {};",
+        "b.js": "export {};"
+      }
+    },
+    "new": {
+      "manifest": {
+        "name": "review-fixture",
+        "version": "1.0.0",
+        "type": "module",
+        "exports": "./index.js",
+        "imports": {
+          "#unused": "./b.js"
+        }
+      },
+      "files": {
+        "index.js": "export function api() {}",
+        "a.js": "export {};",
+        "b.js": "export {};"
+      }
+    }
   }
 ]

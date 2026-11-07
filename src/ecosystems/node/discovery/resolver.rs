@@ -413,6 +413,7 @@ pub fn collect_exports(
 #[derive(Default)]
 pub(crate) struct ParseCache {
     resolved: HashMap<(PathBuf, String, Option<String>), ExportMap>,
+    namespace_exports: HashMap<(PathBuf, String, Option<String>), HashSet<String>>,
     files: HashMap<PathBuf, ParsedSource>,
 }
 
@@ -821,6 +822,20 @@ fn collect_exports_uncached(
     let mut star_origins: HashMap<ExportKey, (PathBuf, u32, u32)> = HashMap::new();
     let mut ambiguous = HashSet::new();
     let mut reexport_cache = HashMap::new();
+    let namespace_key = (
+        canonical.clone(),
+        subpath.to_string(),
+        condition.map(str::to_string),
+    );
+    // A dotted public name alone does not establish a namespace binding.
+    cache.namespace_exports.insert(
+        namespace_key.clone(),
+        raw_exports
+            .iter()
+            .filter(|export| export.kind == RawExportKind::StarReexport && export.name != "*")
+            .map(|export| export.name.clone())
+            .collect(),
+    );
 
     for export in raw_exports {
         if matches!(
@@ -877,28 +892,60 @@ fn collect_exports_uncached(
                 let resolved = &reexport_cache[&target];
                 map.directives.extend(resolved.directives.clone());
                 let imported_name = export.local_name.as_deref().unwrap_or(&export.name);
+                let target_namespace_key = (
+                    target.canonicalize().unwrap_or_else(|_| target.clone()),
+                    subpath.to_string(),
+                    condition.map(str::to_string),
+                );
+                let target_namespaces = cache
+                    .namespace_exports
+                    .get(&target_namespace_key)
+                    .cloned()
+                    .unwrap_or_default();
+                let forwards_namespace = export.kind == RawExportKind::NamedReexport
+                    && target_namespaces.contains(imported_name);
+                if forwards_namespace {
+                    cache
+                        .namespace_exports
+                        .entry(namespace_key.clone())
+                        .or_default()
+                        .insert(export.name.clone());
+                } else if export.kind == RawExportKind::StarReexport && export.name == "*" {
+                    cache
+                        .namespace_exports
+                        .entry(namespace_key.clone())
+                        .or_default()
+                        .extend(
+                            target_namespaces
+                                .into_iter()
+                                .filter(|name| name != "default" && !explicit.contains(name)),
+                        );
+                }
                 let mut found = false;
                 for (resolved_key, resolved_symbol) in resolved.iter() {
                     if export.kind == RawExportKind::NamedReexport
                         && resolved_key.name != imported_name
+                        && !(forwards_namespace
+                            && resolved_key
+                                .name
+                                .strip_prefix(imported_name)
+                                .is_some_and(|suffix| suffix.starts_with('.')))
                     {
                         continue;
                     }
                     let mut key = resolved_key.clone();
                     let mut symbol = resolved_symbol.clone();
                     if export.kind == RawExportKind::NamedReexport {
-                        if key.name != imported_name {
-                            continue;
-                        }
                         found = true;
                         symbol.local_name = Some(symbol.local_name.unwrap_or(symbol.name));
-                        symbol.name = export.name.clone();
-                        symbol.kind = if export.name == "default" {
+                        symbol.name =
+                            format!("{}{}", export.name, &key.name[imported_name.len()..]);
+                        symbol.kind = if symbol.name == "default" {
                             ExportKind::Default
                         } else {
                             ExportKind::Named
                         };
-                        key.name = export.name.clone();
+                        key.name = symbol.name.clone();
                     } else if export.name == "*" {
                         if key.name == "default" || explicit.contains(&key.name) {
                             continue;
@@ -914,7 +961,15 @@ fn collect_exports_uncached(
                     }
                     symbol.is_type_only |= export.is_type_only;
                     if symbol.is_type_only {
-                        key.space = SymbolSpace::Type;
+                        let mut type_key = resolved_key.clone();
+                        type_key.space = SymbolSpace::Type;
+                        // A type-only import can use both Brand and typeof Brand.
+                        // Keep its value declaration distinct from a same-name type alias.
+                        if resolved_key.space != SymbolSpace::Value
+                            || !resolved.contains_key(&type_key)
+                        {
+                            key.space = SymbolSpace::Type;
+                        }
                     }
                     if export.kind == RawExportKind::StarReexport {
                         let identity = (symbol.file.clone(), symbol.line, symbol.col);
@@ -1394,7 +1449,8 @@ fn collect_exports_uncached(
                                                 },
                                             );
                                         }
-                                    } else if depth == 0 {
+                                    }
+                                    if depth == 0 {
                                         // META-05: At root depth, accumulate failures per
                                         // specifier for potential barrel aggregation below.
                                         barrel_failures
@@ -1588,6 +1644,7 @@ fn source_resolution_paths(
                 return aliases;
             }
         }
+        return Vec::new();
     }
     resolve_module_path(from_file, specifier)
 }

@@ -86,9 +86,16 @@ fn invalid_array_targets_allow_valid_fallbacks() {
 
 #[cfg(feature = "lsp-tests")]
 #[test]
-fn node_rejects_export_targets_without_a_relative_prefix() {
+fn node_and_pledge_reject_invalid_export_targets() {
     let package = tempfile::tempdir().unwrap();
+    std::fs::create_dir(package.path().join("sub")).unwrap();
+    std::fs::create_dir(package.path().join("node_modules")).unwrap();
     std::fs::write(package.path().join("index.mjs"), "export const api = 1;").unwrap();
+    std::fs::write(
+        package.path().join("node_modules/index.mjs"),
+        "export const api = 1;",
+    )
+    .unwrap();
     let run = |target| {
         std::fs::write(
             package.path().join("package.json"),
@@ -101,8 +108,36 @@ fn node_rejects_export_targets_without_a_relative_prefix() {
             .output()
             .unwrap()
     };
-    assert!(run("./index.mjs").status.success());
-    let result = run("index.mjs");
-    assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("ERR_INVALID_PACKAGE_TARGET"));
+    for target in ["./index.mjs", "./%69ndex.mjs"] {
+        assert!(run(target).status.success(), "{target}");
+        let (exports, warnings) =
+            pledge::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
+        assert!(warnings.is_empty(), "{target}: {warnings:?}");
+        assert!(exports.keys().any(|key| key.name == "api"), "{target}");
+    }
+    for target in [
+        "index.mjs",
+        "/index.mjs",
+        "file:///index.mjs",
+        "../index.mjs",
+        "./sub/../index.mjs",
+        "./%2e%2e/index.mjs",
+        "./node_modules/index.mjs",
+    ] {
+        let result = run(target);
+        assert!(!result.status.success(), "{target}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("ERR_INVALID_PACKAGE_TARGET"),
+            "{target}: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let (exports, warnings) =
+            pledge::ecosystems::node::discovery::discover_exports(package.path()).unwrap();
+        assert!(exports.is_empty(), "{target}: {exports:?}");
+        assert!(
+            warnings.iter().any(|warning| warning.incomplete
+                && warning.message.contains("invalid `exports` target")),
+            "{target}: {warnings:?}"
+        );
+    }
 }

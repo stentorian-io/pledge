@@ -364,6 +364,26 @@ pub(crate) fn diff_template_literal_key_pairs<'a>(
     (matched_old, matched_new, findings)
 }
 
+pub(crate) fn call_signatures(shapes: &[TypeShape]) -> Vec<TypeShape> {
+    shapes
+        .iter()
+        .flat_map(|shape| match shape.without_nominal() {
+            TypeShape::Function { .. } => vec![shape.clone()],
+            TypeShape::Intersection(members) => call_signatures(members),
+            TypeShape::GenericDeclaration { params, body } => {
+                call_signatures(std::slice::from_ref(body.as_ref()))
+                    .into_iter()
+                    .map(|signature| TypeShape::GenericDeclaration {
+                        params: params.clone(),
+                        body: Box::new(signature),
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
 /// Preserve accepted overload calls and the order of overlapping results.
 pub(crate) fn compare_overload_contracts(
     before: &[TypeShape],
@@ -373,6 +393,27 @@ pub(crate) fn compare_overload_contracts(
     line: u32,
     col: u32,
 ) -> Vec<Finding> {
+    if before == after {
+        return Vec::new();
+    }
+    if before
+        .iter()
+        .chain(after)
+        .any(|shape| super::types::exceeds_comparison_depth(shape, 0))
+    {
+        return vec![Finding {
+            severity: Severity::Warning,
+            rule: "analysis-incomplete",
+            file: file.to_path_buf(),
+            line,
+            col,
+            message: format!("overload comparison exceeded its depth limit in `{name}`"),
+        }];
+    }
+    let before_calls = call_signatures(before);
+    let after_calls = call_signatures(after);
+    let before = before_calls.as_slice();
+    let after = after_calls.as_slice();
     if before == after || before.len() <= 1 && after.len() <= 1 {
         return Vec::new();
     }
