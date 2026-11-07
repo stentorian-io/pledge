@@ -1,0 +1,56 @@
+[
+  {
+    "name": "mapped-return-loses-write",
+    "profile": "compiler-nodenext",
+    "old": "type Item = { a: string }; export declare function api(): { [P in keyof Item]: Item[P] };",
+    "new": "type Item = { a: string }; export declare function api(): { readonly [P in keyof Item]: Item[P] };",
+    "consumer": "api().a = 'updated';",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/mapped/mappedTypes1.ts"
+  },
+  {
+    "name": "mapped-return-gains-write",
+    "profile": "compiler-nodenext",
+    "old": "type Item = { a: string }; export declare function api(): { readonly [P in keyof Item]: Item[P] };",
+    "new": "type Item = { a: string }; export declare function api(): { [P in keyof Item]: Item[P] };",
+    "consumer": "const result: string = api().a;",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/mapped/mappedTypes1.ts"
+  },
+  {
+    "name": "tuple-rest-removes-call-position",
+    "profile": "compiler-node16",
+    "old": "export declare function api(...args: [number, string, boolean]): void;",
+    "new": "export declare function api(...args: [number, string]): void;",
+    "consumer": "api(42, 'hello', true);",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/rest/genericRestParameters1.ts"
+  },
+  {
+    "name": "tuple-rest-expands-to-parameters",
+    "profile": "compiler-node16",
+    "old": "export declare function api(...args: [number, string, boolean]): void;",
+    "new": "export declare function api(x: number, y: string, z: boolean): void;",
+    "consumer": "const tuple: [number, string, boolean] = [42, 'hello', true]; api(...tuple);",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/rest/genericRestParameters1.ts"
+  },
+  {
+    "name": "template-union-removes-event",
+    "profile": "compiler-commonjs",
+    "old": "type EventName<S extends string> = `${S}Changed`; export declare function api(event: EventName<'Foo' | 'Bar'>): void;",
+    "new": "type EventName<S extends string> = `${S}Changed`; export declare function api(event: EventName<'Foo'>): void;",
+    "consumer": "api('BarChanged');",
+    "breaking": true,
+    "upstream": "typescript:conformance/types/literal/templateLiteralTypes1.ts"
+  },
+  {
+    "name": "template-union-expands-to-literals",
+    "profile": "compiler-commonjs",
+    "old": "type EventName<S extends string> = `${S}Changed`; export declare function api(event: EventName<'Foo' | 'Bar'>): void;",
+    "new": "export declare function api(event: 'FooChanged' | 'BarChanged'): void;",
+    "consumer": "api('FooChanged'); api('BarChanged');",
+    "breaking": false,
+    "upstream": "typescript:conformance/types/literal/templateLiteralTypes1.ts"
+  }
+]

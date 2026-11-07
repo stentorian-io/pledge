@@ -1,0 +1,134 @@
+//! Adapt pinned upstream language cases to old/new package consumer contracts.
+#![cfg(feature = "lsp-tests")]
+
+use pledge::core::findings::has_breaking_changes;
+use pledge::ecosystems::node::discovery::discover_exports;
+use pledge::languages::javascript::compare;
+use pledge::languages::typescript::compiler::{self, EnrichResult};
+use serde::Deserialize;
+use std::process::Command;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConsumerCase {
+    name: String,
+    profile: String,
+    old: String,
+    new: String,
+    consumer: String,
+    breaking: bool,
+    upstream: String,
+}
+
+async fn compare_consumers(profile: &str, module: &str, resolution: &str, extension: &str) {
+    let legacy_resolution_deprecation =
+        resolution == "Node" && super::version_support::compiler_version().0 >= 6;
+    let cases: Vec<ConsumerCase> = serde_json::from_str(include_str!(
+        "../../../fixtures/typescript/compiler/upstream-contracts.json"
+    ))
+    .unwrap();
+    let cases: Vec<_> = cases
+        .into_iter()
+        .filter(|case| case.profile == profile)
+        .collect();
+    assert!(cases.iter().any(|case| case.breaking));
+    assert!(cases.iter().any(|case| !case.breaking));
+
+    for case in cases {
+        assert!(case.upstream.starts_with("typescript:conformance/"));
+        let mut exports = Vec::new();
+        let mut directories = Vec::new();
+        for (version, source, succeeds) in
+            [("old", &case.old, true), ("new", &case.new, !case.breaking)]
+        {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path();
+            let manifest = serde_json::json!({
+                "name": "upstream-consumer",
+                "type": if module == "CommonJS" { "commonjs" } else { "module" },
+                "exports": format!("./index.{extension}"),
+            });
+            std::fs::write(root.join("package.json"), manifest.to_string()).unwrap();
+            std::fs::write(root.join(format!("index.{extension}")), source).unwrap();
+            let imported = match extension {
+                "d.mts" => "mjs",
+                "d.cts" => "cjs",
+                _ => "js",
+            };
+            std::fs::write(
+                root.join("consumer.ts"),
+                format!(
+                    "import {{api}} from './index.{imported}';\n{}",
+                    case.consumer
+                ),
+            )
+            .unwrap();
+            let mut config = serde_json::json!({
+                "compilerOptions": { "strict": true, "exactOptionalPropertyTypes": true,
+                    "target": "ES2022", "module": module, "moduleResolution": resolution,
+                    "noEmit": true, "skipLibCheck": true },
+                "files": ["consumer.ts"],
+            });
+            if legacy_resolution_deprecation {
+                config["compilerOptions"]["ignoreDeprecations"] = "6.0".into();
+            }
+            std::fs::write(root.join("tsconfig.json"), config.to_string()).unwrap();
+
+            let output = Command::new("tsc")
+                .current_dir(root)
+                .args(["--project", "tsconfig.json"])
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                succeeds,
+                "{}/{version}: {}{}",
+                case.name,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let (mut discovered, warnings) = discover_exports(root).unwrap();
+            assert!(warnings.is_empty(), "{}/{version}: {warnings:?}", case.name);
+            let enriched = compiler::enrich_exports(&mut discovered, root)
+                .await
+                .unwrap();
+            assert!(
+                matches!(enriched, EnrichResult::Enriched),
+                "{}/{version}: {enriched:?}",
+                case.name
+            );
+            exports.push(discovered);
+            directories.push(directory);
+        }
+        let findings =
+            compare::compare_exports(&exports[0], &exports[1], directories[1].path(), false);
+        assert_eq!(
+            has_breaking_changes(&findings),
+            case.breaking,
+            "{}: {findings:?}",
+            case.name
+        );
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.rule == "analysis-incomplete"),
+            "{}: {findings:?}",
+            case.name
+        );
+    }
+}
+
+#[tokio::test]
+async fn mapped_modifier_consumers_agree_under_nodenext() {
+    compare_consumers("compiler-nodenext", "NodeNext", "NodeNext", "d.ts").await;
+}
+
+#[tokio::test]
+async fn tuple_rest_consumers_agree_under_node16() {
+    compare_consumers("compiler-node16", "Node16", "Node16", "d.mts").await;
+}
+
+#[tokio::test]
+async fn template_union_consumers_agree_under_commonjs() {
+    compare_consumers("compiler-commonjs", "CommonJS", "Node", "d.cts").await;
+}

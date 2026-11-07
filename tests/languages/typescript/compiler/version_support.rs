@@ -8,7 +8,7 @@ use pledge::languages::typescript::compiler::{self, EnrichResult};
 use std::path::Path;
 use std::process::{Command, Output};
 
-fn compiler_version() -> (u32, u32) {
+pub(super) fn compiler_version() -> (u32, u32) {
     let output = Command::new("tsc").arg("--version").output().unwrap();
     assert!(output.status.success());
     let version = String::from_utf8(output.stdout).unwrap();

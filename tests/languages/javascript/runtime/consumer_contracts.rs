@@ -7,6 +7,8 @@ fn exported_syntax_and_runtime_contracts_agree_with_node_consumers() {
         ("generator removal", "export function* value(){yield 1;}", "export {};", "(await import('./index.js')).value().next();", true, false),
         ("reserved alias spelling", "const n=1;export{n as 'while'};", "const n=1;export{n as while};", "(await import('./index.js')).while.toFixed();", false, false),
         ("string export rename", "const local=1;export{local as 'public-name'};", "const local=1;export{local as 'renamed'};", "(await import('./index.js'))['public-name'].toFixed();", true, false),
+        ("unicode namespace name removal", "const local=1;export{local as '☿'};", "const local=1;export{local as 'Mercury'};", "(await import('./index.js'))['☿'].toFixed();", true, false),
+        ("unicode namespace spelling", "const local=1;export{local as '☿'};", r"const local=1;export{local as '\u263f'};", "(await import('./index.js'))['☿'].toFixed();", false, false),
         ("function construction", "export const Api=function(){};", "export const Api=()=>{};", "new (await import('./index.js')).Api();", true, false),
         ("JavaScript inheritance", "export class BaseA{} export class BaseB{} export class Api extends BaseA{}", "export class BaseA{} export class BaseB{} export class Api extends BaseB{}", "const api=await import('./index.js');if(!(new api.Api() instanceof api.BaseA))throw Error('changed base');", true, false),
         ("constant base alias", "class Base{}export class Api extends Base{}", "class Base{}const Alias=Base;export class Api extends Alias{}", "const api=await import('./index.js');if(Object.getPrototypeOf(api.Api).name!=='Base')throw Error('changed base');", false, false),
