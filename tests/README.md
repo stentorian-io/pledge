@@ -153,7 +153,17 @@ bundled compiler, and a loopback registry. It fetches base images and build
 dependencies, but its package comparisons use only the temporary registry.
 The same smoke test exercises the packaged action with all four exit codes.
 `scripts/action/action.test.ts` covers argument boundaries, output rendering,
-and execution failures using a recording CLI in a temporary workspace.
+execution failures, and aggregation using a recording CLI in a temporary workspace.
+The package and registry tests cover workspace membership, malformed declarations,
+SemVer ordering, and npm configuration preservation. Install their locked
+dependencies with `make setup` or `npm ci --prefix scripts/action --ignore-scripts`.
+
+`scripts/releases/smoke-workspaces.cjs` runs real Node consumers and Pledge against
+an authenticated loopback npm registry. It verifies npm/pnpm discovery, exact
+same-major baselines, advisory `0.x` findings, stable breaking findings, missing
+baselines, and error/incomplete precedence. The image smoke test includes it;
+to run it against a locally built CLI, put `target/release` on `PATH` and run
+`node scripts/releases/smoke-workspaces.cjs "$PWD/scripts/action/action.cjs"`.
 
 `scripts/conformance/conformance.test.ts` checks extraction, missing classifications,
 evidence paths, report generation, and runner failures in isolated repositories.

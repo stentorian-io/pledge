@@ -50,6 +50,7 @@ function smokeImage(image, version) {
   const container = output("docker", ["create", "--platform", "linux/amd64", "--entrypoint", "node", image, "/tmp/pledge-smoke.cjs", version]);
   try {
     run("docker", ["cp", "scripts/releases/smoke-image.cjs", `${container}:/tmp/pledge-smoke.cjs`]);
+    run("docker", ["cp", "scripts/releases/smoke-workspaces.cjs", `${container}:/tmp/smoke-workspaces.cjs`]);
     run("docker", ["start", "--attach", container]);
     if (output("docker", ["inspect", "--format", "{{.State.ExitCode}}", container]) !== "0") {
       throw new Error("Release image smoke test failed");

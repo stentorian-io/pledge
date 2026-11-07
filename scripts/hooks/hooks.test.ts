@@ -19,7 +19,9 @@ afterEach(() => {
 function repository() {
   const root = mkdtempSync(join(tmpdir(), "pledge-hooks-"));
   temporaryRepos.push(root);
-  cpSync(join(project, "scripts"), join(root, "scripts"), { recursive: true });
+  cpSync(join(project, "scripts"), join(root, "scripts"), {
+    recursive: true, filter: source => !source.split("/").includes("node_modules"),
+  });
   mkdirSync(join(root, "src"));
   mkdirSync(join(root, "src/languages/typescript/compiler"), { recursive: true });
   mkdirSync(join(root, "tests/fixtures"), { recursive: true });
@@ -92,6 +94,14 @@ test("installed hooks reject a mistyped documentation commit without rewriting i
   expect(repo.invoke(["git", "commit", "-m", "docs: explain installation"]).exitCode).toBe(0);
   expect(repo.git("log", "-1", "--format=%s")).toBe("docs: explain installation");
   expect(repo.commands()).toBe("");
+});
+
+test("make setup installs the locked action dependencies and activates hooks in its own checkout", () => {
+  const repo = repository();
+  cpSync(join(project, "Makefile"), join(repo.root, "Makefile"));
+  expect(repo.invoke(["make", "setup"]).exitCode).toBe(0);
+  expect(repo.commands()).toContain("npm ci --prefix scripts/action --ignore-scripts --no-audit --no-fund");
+  expect(repo.git("config", "--local", "core.hooksPath")).toBe("scripts/hooks");
 });
 
 test.each([

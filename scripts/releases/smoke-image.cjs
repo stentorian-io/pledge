@@ -4,6 +4,7 @@ const { createServer } = require("node:http");
 const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
+const { smokeWorkspaces } = require("./smoke-workspaces.cjs");
 
 function execute(command, args, cwd, env) {
   return new Promise((resolve, reject) => {
@@ -84,6 +85,7 @@ async function smokeImage(version) {
       if (expected === 3) assert.match(result.stdout, /Analysis is incomplete/);
     }
     console.log(`Image smoke test passed: Pledge ${version}, consumers and action exit codes 0/1/2/3`);
+    await smokeWorkspaces("/usr/local/lib/pledge/action.cjs");
   } finally {
     await new Promise(resolve => server.close(resolve));
     rmSync(root, { recursive: true, force: true });

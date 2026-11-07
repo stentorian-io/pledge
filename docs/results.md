@@ -6,6 +6,10 @@ an incomplete result identifies evidence the analyzer could not obtain.
 
 ## Exit codes
 
+These are standalone CLI exit codes. The [GitHub Action](github-action.md#read-the-result)
+aggregates package results and treats complete breaking comparisons for local
+`0.x` packages as advisory, while keeping errors and incomplete analysis blocking.
+
 | Exit | Meaning | Next step |
 | --- | --- | --- |
 | `0` | Complete analysis without major findings, or first publish without a baseline | Review warnings and the comparison's scope |

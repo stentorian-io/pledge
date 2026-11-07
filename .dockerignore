@@ -8,4 +8,6 @@
 !src/**
 !scripts
 !scripts/action
-!scripts/action/action.cjs
+!scripts/action/*.cjs
+!scripts/action/package.json
+!scripts/action/package-lock.json

@@ -18,8 +18,10 @@ The command and Cargo package are named `pledge`.
 After checkout and your normal package build, add
 `uses: stentorian-io/pledge@RELEASE_TAG`, replacing `RELEASE_TAG` with a published
 `vX.Y.Z` release. The Linux x86-64 container includes Pledge, Node/npm, and a
-default TypeScript compiler. With no inputs, it compares your package with npm
-`latest` and fails on breaking changes or incomplete analysis.
+default TypeScript compiler. With no inputs, it discovers publishable root and
+workspace packages and compares each with the highest published version in the
+same major, excluding prereleases. Breaking findings are advisory for `0.x`
+packages and blocking from `1.x`; errors and incomplete analysis always fail.
 
 See the [action guide](docs/github-action.md) for a complete workflow, workspace
 paths, and private registries. The first container release must be published

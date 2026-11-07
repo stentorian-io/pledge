@@ -5,16 +5,16 @@ branding:
   color: blue
 inputs:
   path:
-    description: Package directory in the checkout, containing package.json and built publishable files
+    description: Optional package directory; omit to discover publishable root and workspace packages
     required: false
-    default: '.'
+    default: ''
   against:
-    description: Published version or npm dist-tag for the same package
+    description: Optional published version or npm dist-tag; omit to select the highest published version in each package's major
     required: false
-    default: latest
+    default: ''
 outputs:
   status:
-    description: clean, breaking, error, or incomplete
+    description: clean, advisory (0.x breaking findings), breaking, error, or incomplete
   exit-code:
     description: Pledge exit code (0, 1, 2, or 3)
 runs:

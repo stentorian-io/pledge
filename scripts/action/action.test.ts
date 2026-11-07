@@ -17,12 +17,16 @@ function fixture(code = 0) {
   const bin = join(root, "bin");
   mkdirSync(workspace);
   mkdirSync(bin);
+  writeFileSync(join(workspace, "package.json"), JSON.stringify({ name: "fixture", version: "1.1.0" }));
   const report = { schema_version: 1, status: ["clean", "breaking", "error", "incomplete"][code], exit_code: code,
     findings: [{ file: "index.js", line: 1, col: 1, severity: "major", rule: "export-removed", message: "<script>bad()</script>\n::error::untrusted" }],
     warnings: [{ message: "<b>missing evidence</b>" }] };
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, GITHUB_WORKSPACE: workspace,
     GITHUB_OUTPUT: join(root, "outputs"), GITHUB_STEP_SUMMARY: join(root, "summary"),
     PLEDGE_TEST_REPORT: JSON.stringify(report), PLEDGE_TEST_ARGS: join(root, "args") };
+  writeFileSync(join(bin, "npm"), `#!/usr/bin/env node
+console.log(process.argv[2] === 'prefix' ? process.cwd() : JSON.stringify(['2.0.0', '1.0.0', '1.2.0-beta.1']));
+`, { mode: 0o755 });
   writeFileSync(join(bin, "pledge"), `#!/usr/bin/env node
 require('node:fs').writeFileSync(process.env.PLEDGE_TEST_ARGS, JSON.stringify(process.argv.slice(2)));
 console.error('::error::untrusted diagnostic');
@@ -37,7 +41,7 @@ test.each([0, 1, 2, 3])("the action preserves CLI status %i and reports safely",
   const result = action.run();
   expect(result.status).toBe(code);
   expect(readFileSync(action.env.GITHUB_OUTPUT, "utf8")).toBe(`status=${["clean", "breaking", "error", "incomplete"][code]}\nexit-code=${code}\n`);
-  expect(JSON.parse(readFileSync(action.env.PLEDGE_TEST_ARGS, "utf8"))).toEqual(["--format", "json", "--against=latest", action.workspace]);
+  expect(JSON.parse(readFileSync(action.env.PLEDGE_TEST_ARGS, "utf8"))).toEqual(["--format", "json", "--against=1.0.0", action.workspace]);
   const summary = readFileSync(action.env.GITHUB_STEP_SUMMARY, "utf8");
   expect(summary).toContain("&lt;script&gt;");
   expect(summary).not.toContain("<script>");
@@ -53,6 +57,7 @@ test("package paths and baselines are passed literally without shell expansion",
   const action = fixture();
   const path = "package with spaces; $(touch injected)";
   mkdirSync(join(action.workspace, path));
+  writeFileSync(join(action.workspace, path, "package.json"), '{"name":"nested","version":"1.0.0"}');
   const baseline = "--clear-cache; $(touch injected)";
   expect(action.run(path, baseline).status).toBe(0);
   expect(JSON.parse(readFileSync(action.env.PLEDGE_TEST_ARGS, "utf8"))).toEqual(["--format", "json", `--against=${baseline}`, join(action.workspace, path)]);
@@ -86,4 +91,59 @@ test("large findings retain the full log while bounding the job summary", () => 
   const summary = readFileSync(action.env.GITHUB_STEP_SUMMARY, "utf8");
   expect(Buffer.byteLength(summary)).toBeLessThan(201_000);
   expect(summary).toContain("See the step log for all findings");
+});
+
+test.each([0, 1, 2, 3])("0.x permits only complete breaking comparisons: CLI status %i", code => {
+  const action = fixture(code);
+  writeFileSync(join(action.workspace, "package.json"), '{"name":"fixture","version":"0.4.8"}');
+  const result = action.run("", "0.5.2");
+  expect(result.status).toBe(code === 1 ? 0 : code);
+  const status = ["clean", "advisory", "error", "incomplete"][code];
+  expect(readFileSync(action.env.GITHUB_OUTPUT, "utf8")).toContain(`status=${status}\n`);
+  if (code === 1) {
+    expect(result.stdout).toContain("export-removed");
+    expect(result.stdout).toContain("Pledge: breaking (exit 1)");
+    expect(result.stdout).toContain("Advisory:");
+  }
+});
+
+test("a first stable release cannot use the 0.x exemption", () => {
+  const action = fixture(1);
+  writeFileSync(join(action.workspace, "package.json"), '{"name":"fixture","version":"1.0.0"}');
+  expect(action.run("", "0.9.0").status).toBe(1);
+});
+
+test("a missing same-major baseline is incomplete and does not invoke the comparator", () => {
+  const action = fixture();
+  writeFileSync(join(action.workspace, "package.json"), '{"name":"fixture","version":"3.0.0"}');
+  expect(action.run().status).toBe(3);
+  expect(readFileSync(action.env.GITHUB_OUTPUT, "utf8")).toBe("status=incomplete\nexit-code=3\n");
+  expect(() => readFileSync(action.env.PLEDGE_TEST_ARGS)).toThrow();
+});
+
+test.each([
+  [1, 0, 1, "breaking"],
+  [1, 1, 1, "breaking"],
+  [0, 1, 0, "advisory"],
+  [3, 1, 3, "incomplete"],
+  [1, 2, 2, "error"],
+  [0, 0, 0, "clean"],
+])("all workspace members run and aggregate stable %i / early %i", (stable, early, code, status) => {
+  const action = fixture();
+  writeFileSync(join(action.workspace, "package.json"), '{"private":true,"workspaces":["packages/*"]}');
+  for (const [name, version, code] of [["a-stable", "1.2.0", stable], ["b-early", "0.4.0", early]]) {
+    const directory = join(action.workspace, "packages", String(name));
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version, code }));
+  }
+  writeFileSync(join(action.bin, "pledge"), `#!/usr/bin/env node
+const fs = require('node:fs');
+const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+fs.appendFileSync(process.env.PLEDGE_TEST_ARGS, manifest.name + '\\n');
+console.log(JSON.stringify({schema_version:1,status:['clean','breaking','error','incomplete'][manifest.code],exit_code:manifest.code}));
+process.exitCode=manifest.code;
+`, { mode: 0o755 });
+  expect(action.run("", "latest").status).toBe(code);
+  expect(readFileSync(action.env.PLEDGE_TEST_ARGS, "utf8")).toBe("a-stable\nb-early\n");
+  expect(readFileSync(action.env.GITHUB_OUTPUT, "utf8")).toBe(`status=${status}\nexit-code=${code}\n`);
 });

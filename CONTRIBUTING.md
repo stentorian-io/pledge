@@ -50,6 +50,11 @@ the original project's `.npmrc`, with 120-second subprocess timeouts.
 older hook path without overwriting files in `.git/hooks`. The tracked wrappers
 call the Bun scripts directly, so later hook changes take effect immediately.
 Linked worktrees use the hooks from their own checkout.
+It also installs the action's locked JavaScript dependencies. For an existing
+checkout, run `npm ci --prefix scripts/action --ignore-scripts --no-audit --no-fund`
+before `make test-tools` after its dependency lockfile changes. The parsers cover
+SemVer ordering, workspace globs, YAML, and npm configuration; they are bundled
+in the action image and need no installation in a consuming workflow.
 
 ## Local checks
 

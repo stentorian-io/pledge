@@ -1,0 +1,10 @@
+{
+  "name": "pledge-action-runtime",
+  "private": true,
+  "dependencies": {
+    "fast-glob": "3.3.3",
+    "ini": "6.0.0",
+    "semver": "7.8.6",
+    "yaml": "2.9.1"
+  }
+}

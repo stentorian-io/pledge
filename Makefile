@@ -1,6 +1,7 @@
 .PHONY: setup check check-all check-lsp coverage test-tools language-coverage language-coverage-update reference-suite reference-suite-regen
 
 setup:
+	npm ci --prefix scripts/action --ignore-scripts --no-audit --no-fund
 	bun scripts/hooks/install.ts
 
 # The default test suite already includes the pinned reference packages.

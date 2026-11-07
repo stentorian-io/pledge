@@ -141,6 +141,8 @@ Each release contains:
 The image is tagged `ghcr.io/stentorian-io/pledge:vX.Y.Z`. The publisher tests
 compatible and breaking packages against a loopback npm registry before pushing,
 plus the action's success, breaking, error, and incomplete-analysis outcomes.
+It also checks authenticated npm/pnpm workspaces, same-major baseline selection,
+and advisory breaking findings before 1.0 alongside stable package failures.
 The release tag's action metadata references that same image version. Moving
 major aliases are not published while `0.x` minor releases may break compatibility.
 Retries reuse an existing version's image, validate its revision and version,
