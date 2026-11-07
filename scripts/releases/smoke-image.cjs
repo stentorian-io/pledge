@@ -5,6 +5,17 @@ const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } = require(
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 
+function execute(command, args, cwd, env) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, env, timeout: 120_000 });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => stdout += chunk);
+    child.stderr.on("data", chunk => stderr += chunk);
+    child.on("error", reject);
+    child.on("close", code => resolve({ code, stdout, stderr }));
+  });
+}
+
 async function smokeImage(version) {
   assert.match(version, /^\d+\.\d+\.\d+$/);
   assert.equal(execFileSync("pledge", ["--version"], { encoding: "utf8" }).trim(), `pledge ${version}`);
@@ -14,7 +25,7 @@ async function smokeImage(version) {
   assert.equal(execFileSync("tsc", ["--version"], { encoding: "utf8" }).trim(), "Version 5.9.3");
   const root = mkdtempSync(join(tmpdir(), "pledge-image-"));
   const old = join(root, "package");
-  const current = join(root, "current");
+  const current = join(root, "package with spaces; $(literal)");
   mkdirSync(old);
   mkdirSync(current);
   const manifest = { name: "pledge-smoke-fixture", version: "1.0.0", type: "module", exports: "./index.js" };
@@ -48,24 +59,31 @@ async function smokeImage(version) {
       writeFileSync(join(current, "index.js"), source);
       const consumed = spawnSync("node", consumer, { cwd: current, encoding: "utf8" });
       assert.equal(consumed.status, expected, consumed.stderr);
-      const result = await new Promise((resolve, reject) => {
-        const child = spawn("pledge", [".", "--against", "latest", "--format", "json"], {
-          cwd: current, env: { ...process.env, npm_config_userconfig: join(root, "empty.npmrc") },
-          timeout: 120_000,
-        });
-        let stdout = "", stderr = "";
-        child.stdout.on("data", chunk => stdout += chunk);
-        child.stderr.on("data", chunk => stderr += chunk);
-        child.on("error", reject);
-        child.on("close", code => resolve({ code, stdout, stderr }));
-      });
+      const result = await execute("pledge", [".", "--against", "latest", "--format", "json"], current,
+        { ...process.env, npm_config_userconfig: join(root, "empty.npmrc") });
       assert.equal(result.code, expected, `${result.stderr}\n${result.stdout}`);
       const report = JSON.parse(result.stdout);
       assert.equal(report.exit_code, expected);
       assert.equal(report.package.baseline_version, "1.0.0");
       assert.equal(report.findings.some(finding => finding.rule === "export-removed"), expected === 1);
     }
-    console.log(`Image smoke test passed: Pledge ${version}, compatible and breaking consumers`);
+    for (const expected of [0, 1, 2, 3]) {
+      writeFileSync(join(current, "index.js"), expected === 1 ? "export const replacement = 1;\n" : "export const feature = 1;\n");
+      writeFileSync(join(current, "package.json"), JSON.stringify({ ...manifest, version: "1.0.1",
+        ...(expected === 3 ? { exports: { types: "./missing.d.ts", default: "./index.js" } } : {}) }));
+      const outputs = join(root, `outputs-${expected}`);
+      const summary = join(root, `summary-${expected}`);
+      const result = await execute("node", ["/usr/local/lib/pledge/action.cjs", current, expected === 2 ? "9.9.9" : "latest"], root,
+        { ...process.env, npm_config_userconfig: join(root, "empty.npmrc"), GITHUB_WORKSPACE: root,
+          GITHUB_OUTPUT: outputs, GITHUB_STEP_SUMMARY: summary });
+      assert.equal(result.code, expected, `${result.stderr}\n${result.stdout}`);
+      const status = ["clean", "breaking", "error", "incomplete"][expected];
+      assert.equal(readFileSync(outputs, "utf8"), `status=${status}\nexit-code=${expected}\n`);
+      assert.ok(readFileSync(summary, "utf8").includes(`Pledge: ${status}`));
+      if (expected === 1) assert.match(result.stdout, /export-removed/);
+      if (expected === 3) assert.match(result.stdout, /Analysis is incomplete/);
+    }
+    console.log(`Image smoke test passed: Pledge ${version}, consumers and action exit codes 0/1/2/3`);
   } finally {
     await new Promise(resolve => server.close(resolve));
     rmSync(root, { recursive: true, force: true });

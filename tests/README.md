@@ -151,6 +151,9 @@ Release dispatch and publication tests also live in `scripts/releases/`. The
 `scripts/releases/smoke-image.cjs` inside it with real Node consumers, npm, the
 bundled compiler, and a loopback registry. It fetches base images and build
 dependencies, but its package comparisons use only the temporary registry.
+The same smoke test exercises the packaged action with all four exit codes.
+`scripts/action/action.test.ts` covers argument boundaries, output rendering,
+and execution failures using a recording CLI in a temporary workspace.
 
 `scripts/conformance/conformance.test.ts` checks extraction, missing classifications,
 evidence paths, report generation, and runner failures in isolated repositories.

@@ -58,7 +58,7 @@ Linked worktrees use the hooks from their own checkout.
 | `make check` | Language coverage inventory, rustfmt, clippy across all targets, and the default release test suite |
 | `make check-lsp` | Release tests with the real language server, serialized to avoid workspace races |
 | `make coverage` | Default-suite line coverage checked against `.coverage-baseline` |
-| `make test-tools` | Hook, release, and language-coverage tooling checks in temporary repositories, without building Rust |
+| `make test-tools` | Hook, release, action, and language-coverage checks in temporary repositories, without building Rust |
 | `make language-coverage` | Offline reference accounting, evidence links, and public-report freshness |
 | `make language-coverage-update` | Regenerate the public report after reviewing inventory changes |
 | `make check-all` | Tooling checks, default checks, LSP tests, and coverage |
@@ -75,7 +75,7 @@ Documented limitations and unverified cases do not count as passing conformance.
 
 The hooks use these same checks:
 
-- **pre-commit:** tooling checks for script/Makefile changes; formatting, linting,
+- **pre-commit:** tooling checks for script, workflow, action, and image-build changes; formatting, linting,
   and default tests for Rust, embedded compiler, Cargo/config, or package fixture
   changes. Deleted inputs count too. Documentation-only commits skip these Rust
   checks.

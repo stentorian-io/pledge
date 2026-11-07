@@ -18,7 +18,8 @@ not honor this workflow's delay or hold label.
 
 Release Please owns the next version. Its single Rust release updates
 `Cargo.toml`, Pledge's `Cargo.lock` entry, `.release-please-manifest.json`, and
-`CHANGELOG.md`. `bun scripts/releases/check-version.ts` rejects disagreement.
+`CHANGELOG.md`. Its generic extra-file updater also updates the image version in
+`action.yml`. `bun scripts/releases/check-version.ts` rejects disagreement.
 Pass a tag, for example `bun scripts/releases/check-version.ts v0.4.0`, when
 validating a release artifact.
 
@@ -138,7 +139,10 @@ Each release contains:
 - `SHA256SUMS`, covering the archive and image record.
 
 The image is tagged `ghcr.io/stentorian-io/pledge:vX.Y.Z`. The publisher tests
-compatible and breaking packages against a loopback npm registry before pushing.
+compatible and breaking packages against a loopback npm registry before pushing,
+plus the action's success, breaking, error, and incomplete-analysis outcomes.
+The release tag's action metadata references that same image version. Moving
+major aliases are not published while `0.x` minor releases may break compatibility.
 Retries reuse an existing version's image, validate its revision and version,
 and compare existing asset bytes. They refuse to replace differing assets.
 

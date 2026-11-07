@@ -11,7 +11,7 @@ function releasePullBlocker(pull) {
 }
 
 function hasOnlyReleaseFiles(files) {
-  const allowed = new Set(["Cargo.toml", "Cargo.lock", "CHANGELOG.md", ".release-please-manifest.json"]);
+  const allowed = new Set(["Cargo.toml", "Cargo.lock", "CHANGELOG.md", ".release-please-manifest.json", "action.yml"]);
   return files.length > 0 && files.every(file => allowed.has(file.filename) && file.status === "modified");
 }
 

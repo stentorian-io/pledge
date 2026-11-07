@@ -13,6 +13,18 @@ The command and Cargo package are named `pledge`.
 
 ## Quick start
 
+### GitHub Actions
+
+After checkout and your normal package build, add
+`uses: stentorian-io/pledge@RELEASE_TAG`, replacing `RELEASE_TAG` with a published
+`vX.Y.Z` release. The Linux x86-64 container includes Pledge, Node/npm, and a
+default TypeScript compiler. With no inputs, it compares your package with npm
+`latest` and fails on breaking changes or incomplete analysis.
+
+See the [action guide](docs/github-action.md) for a complete workflow, workspace
+paths, and private registries. The first container release must be published
+and public before the action can be used.
+
 ### Install from source
 
 You need Rust, a C/C++ compiler, and CMake to build the tool. Analysis needs

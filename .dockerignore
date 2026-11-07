@@ -6,3 +6,6 @@
 !LICENSE-APACHE
 !src
 !src/**
+!scripts
+!scripts/action
+!scripts/action/action.cjs

@@ -9,6 +9,7 @@ compare a package with its published version. The executable is `pledge`.
 | --- | --- |
 | Check a package for the first time | [Quick start](../README.md#quick-start) |
 | Add a check to CI or configure a private registry | [CI integration](ci.md) |
+| Use the self-contained GitHub Action | [GitHub Action](github-action.md) |
 | Understand a finding or a failed check | [Reading results](results.md) |
 | Consume a report in another tool | [JSON reports](results.md#json-reports) |
 | Understand a specific compatibility rule | [Rule reference](rules/README.md) |

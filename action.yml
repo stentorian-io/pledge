@@ -1,0 +1,27 @@
+name: Pledge package compatibility
+description: Check a built JavaScript or TypeScript package against its published npm interface
+branding:
+  icon: shield
+  color: blue
+inputs:
+  path:
+    description: Package directory in the checkout, containing package.json and built publishable files
+    required: false
+    default: '.'
+  against:
+    description: Published version or npm dist-tag for the same package
+    required: false
+    default: latest
+outputs:
+  status:
+    description: clean, breaking, error, or incomplete
+  exit-code:
+    description: Pledge exit code (0, 1, 2, or 3)
+runs:
+  using: docker
+  image: docker://ghcr.io/stentorian-io/pledge:v0.3.0 # x-release-please-version
+  entrypoint: node
+  args:
+    - /usr/local/lib/pledge/action.cjs
+    - ${{ inputs.path }}
+    - ${{ inputs.against }}

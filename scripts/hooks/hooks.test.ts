@@ -168,7 +168,7 @@ test("public language coverage edits validate the inventory before tooling check
   expect(commands.some(command => command.startsWith("cargo "))).toBe(false);
 });
 
-test.each(["Dockerfile", ".dockerignore"])("image build inputs trigger tooling checks: %s", path => {
+test.each(["Dockerfile", ".dockerignore", "action.yml"])("image build inputs trigger tooling checks: %s", path => {
   const repo = repository();
   writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
   repo.stage(path, "# build input\n");

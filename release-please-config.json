@@ -22,5 +22,5 @@
     { "type": "chore", "section": "Maintenance", "hidden": true },
     { "type": "style", "section": "Style", "hidden": true }
   ],
-  "packages": { ".": {} }
+  "packages": { ".": { "extra-files": [{ "type": "generic", "path": "action.yml" }] } }
 }

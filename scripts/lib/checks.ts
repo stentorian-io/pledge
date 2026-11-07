@@ -32,7 +32,7 @@ export function checkCoverage() {
 }
 
 export function checkTools() {
-  run("bun", ["test", "./scripts/hooks/hooks.test.ts", "./scripts/releases", "./scripts/conformance/conformance.test.ts"]);
+  run("bun", ["test", "./scripts/hooks/hooks.test.ts", "./scripts/releases", "./scripts/action", "./scripts/conformance/conformance.test.ts"]);
 }
 
 export function checkLanguageCoverage() {

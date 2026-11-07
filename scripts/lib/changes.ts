@@ -20,7 +20,8 @@ export function isRustInput(path: string) {
 export function isToolingInput(path: string) {
   return path.startsWith("scripts/") || path.startsWith(".github/")
     || isLanguageCoverageInput(path)
-    || path === "Makefile" || path === "Dockerfile" || path === ".dockerignore" || path === "release-please-config.json"
+    || path === "Makefile" || path === "Dockerfile" || path === ".dockerignore" || path === "action.yml"
+    || path === "release-please-config.json"
     || path === ".release-please-manifest.json";
 }
 

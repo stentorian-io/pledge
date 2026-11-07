@@ -113,6 +113,7 @@ test("version checks reject manifest, lockfile, and tag drift", () => {
   writeFileSync(join(root, "Cargo.toml"), '[package]\nname = "pledge"\nversion = "0.3.0"\n');
   writeFileSync(join(root, "Cargo.lock"), '[[package]]\nname = "pledge"\nversion = "0.3.0"\n');
   writeFileSync(join(root, ".release-please-manifest.json"), '{".":"0.3.0"}');
+  writeFileSync(join(root, "action.yml"), 'runs:\n  image: docker://ghcr.io/stentorian-io/pledge:v0.3.0 # x-release-please-version\n');
   expect(checkVersion(root, "v0.3.0")).toBe("0.3.0");
   expect(() => checkVersion(root, "v0.3.1")).toThrow("expected tag");
   writeFileSync(join(root, ".release-please-manifest.json"), '{".":"0.3.1"}');
@@ -120,6 +121,9 @@ test("version checks reject manifest, lockfile, and tag drift", () => {
   writeFileSync(join(root, ".release-please-manifest.json"), '{".":"0.3.0"}');
   writeFileSync(join(root, "Cargo.lock"), '[[package]]\nname = "pledge"\nversion = "0.2.0"\n');
   expect(() => checkVersion(root)).toThrow("same version");
+  writeFileSync(join(root, "Cargo.lock"), '[[package]]\nname = "pledge"\nversion = "0.3.0"\n');
+  writeFileSync(join(root, "action.yml"), 'runs:\n  image: docker://ghcr.io/stentorian-io/pledge:v0.2.0\n');
+  expect(() => checkVersion(root)).toThrow("action image");
 });
 
 test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaking-history", "dispatch-failed"])(

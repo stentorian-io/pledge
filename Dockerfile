@@ -21,4 +21,5 @@ RUN apt-get update \
     && npm cache clean --force
 COPY --from=build /build/target/release/pledge /usr/local/bin/pledge
 COPY LICENSE-MIT LICENSE-APACHE /usr/share/licenses/pledge/
+COPY scripts/action/action.cjs /usr/local/lib/pledge/action.cjs
 ENTRYPOINT ["pledge"]

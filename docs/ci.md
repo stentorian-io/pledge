@@ -4,6 +4,8 @@ Use Pledge to check a built npm package before publishing. Run `pledge` after
 your normal install and build steps, and use its exit code as the CI job result.
 This guide covers source installation, public and private npm registries,
 report retention, and recovery from failed or incomplete checks.
+For GitHub Actions, the [container action](github-action.md) supplies Pledge and
+its runtime in one step after your package build.
 
 ## Install and run
 
