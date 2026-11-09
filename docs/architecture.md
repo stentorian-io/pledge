@@ -98,6 +98,16 @@ Library callers can prepare dependencies with
 `enrich_exports` convenience function prepares dependencies and refreshes
 exports when given a map discovered before installation.
 
+Callers evaluating several packages can own a `CompilerSession` and use its
+enrichment methods to reuse the selected Node/TypeScript process. Every request
+creates a fresh compiler host, program, options, and declaration state; package
+sources and analysis results are not cached. The host's working directory is
+set explicitly for each package. A changed compiler path or executable metadata
+starts a new worker. Failed, timed-out, or cancelled requests discard the worker
+so a delayed reply cannot become the next package's evidence. Dropping the
+session stops its process; sessions are scoped to the caller's async runtime.
+The existing convenience functions create a session for one evaluation.
+
 ## Type evidence
 
 Compiler shapes preserve deferred conditional branches, generic mapped keys,

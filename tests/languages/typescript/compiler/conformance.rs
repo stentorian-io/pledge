@@ -40,6 +40,7 @@ async fn compare_consumers(
     assert!(cases.iter().any(|case| case.breaking));
     assert!(cases.iter().any(|case| !case.breaking));
 
+    let mut compiler = compiler::CompilerSession::default();
     for case in cases {
         assert!(case.upstream.starts_with("typescript:conformance/"));
         let mut exports = Vec::new();
@@ -95,7 +96,8 @@ async fn compare_consumers(
             );
             let (mut discovered, warnings) = discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{}/{version}: {warnings:?}", case.name);
-            let enriched = compiler::enrich_exports(&mut discovered, root)
+            let enriched = compiler
+                .enrich_exports(&mut discovered, root)
                 .await
                 .unwrap();
             assert!(

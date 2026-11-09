@@ -24,7 +24,7 @@ pub(crate) struct CompilerBinary {
 /// package's compiler, then PATH; the managed pair supplies an offline cache or
 /// installation fallback when neither has the JavaScript compiler API.
 pub(crate) async fn resolve_compiler(workspace: &Path) -> Result<CompilerBinary, LspError> {
-    let node = find_working_binary("node").await.ok_or_else(|| {
+    let node = find_in_path("node").ok_or_else(|| {
         LspError::Unavailable("Node.js is required for TypeScript contract evaluation".into())
     })?;
     let server = workspace.ancestors().find_map(compiler_under).or_else(|| {
@@ -149,7 +149,7 @@ async fn find_working_binary(name: &str) -> Option<PathBuf> {
     status.success().then_some(path)
 }
 
-fn find_in_path(name: &str) -> Option<PathBuf> {
+pub(super) fn find_in_path(name: &str) -> Option<PathBuf> {
     for dir in std::env::split_paths(&std::env::var_os("PATH")?) {
         let candidate = dir.join(name);
         if candidate.is_file() {

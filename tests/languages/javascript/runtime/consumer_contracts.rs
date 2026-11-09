@@ -185,6 +185,7 @@ fn async_and_generator_exports_agree_with_node_consumers() {
 
 #[tokio::test]
 async fn namespace_import_reexports_keep_public_members_after_enrichment() {
+    let mut compiler = pledge::languages::typescript::compiler::CompilerSession::default();
     let mut exports = Vec::new();
     let mut directories = Vec::new();
     for source in [
@@ -217,7 +218,8 @@ async fn namespace_import_reexports_keep_public_members_after_enrichment() {
         let (mut discovered, warnings) =
             pledge::ecosystems::node::discovery::discover_exports(root).unwrap();
         assert!(warnings.is_empty(), "{source}: {warnings:?}");
-        let result = pledge::languages::typescript::compiler::enrich_exports(&mut discovered, root)
+        let result = compiler
+            .enrich_exports(&mut discovered, root)
             .await
             .unwrap();
         assert!(
@@ -299,6 +301,7 @@ fn post_await_commonjs_writes_are_not_available_to_immediate_require_consumers()
 
 #[tokio::test]
 async fn inferred_commonjs_values_agree_with_require_consumers() {
+    let mut compiler = pledge::languages::typescript::compiler::CompilerSession::default();
     let cases = [
         ("whole module call", "function create(){return {api:Number(1)}}module.exports=create();", "function create(){return {renamed:Number(1)}}module.exports=create();", "api.api.toFixed()", true),
         ("whole module new", "class Api{api=Number(1)}module.exports=new Api();", "class Api{renamed=Number(1)}module.exports=new Api();", "api.api.toFixed()", true),
@@ -358,10 +361,7 @@ async fn inferred_commonjs_values_agree_with_require_consumers() {
             let (mut exports, warnings) =
                 pledge::ecosystems::node::discovery::discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{name}: {warnings:?}");
-            let enrichment =
-                pledge::languages::typescript::compiler::enrich_exports(&mut exports, root)
-                    .await
-                    .unwrap();
+            let enrichment = compiler.enrich_exports(&mut exports, root).await.unwrap();
             assert!(
                 matches!(
                     enrichment,

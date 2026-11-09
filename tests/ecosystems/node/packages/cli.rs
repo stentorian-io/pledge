@@ -75,15 +75,17 @@ if [ "$1" = "--version" ]; then
   printf 'v22.12.0\n'
   exit 0
 fi
-/bin/cat > /dev/null
+IFS= read -r request
+sequence=${request#*:}; sequence=${sequence%%,*}
+package_root=$(printf '%s' "$request" | /usr/bin/sed -n 's/.*"root":"\([^"]*\)".*/\1/p')
 if [ "$NPM_TEST_COMPILER_FAIL" = "1" ]; then
   printf 'compiler fixture unavailable\n' >&2
   exit 1
 fi
-if /usr/bin/grep -q 'export const' index.js; then
-  printf '{"results":[{"id":0,"overloads":[{"Primitive":"Number"}],"signature":"number","typeof_targets":[],"issues":[]}],"issues":[]}\n'
+if /usr/bin/grep -q 'export const' "$package_root/index.js"; then
+  printf '{"sequence":%s,"response":{"results":[{"id":0,"overloads":[{"Primitive":"Number"}],"signature":"number","typeof_targets":[],"issues":[]}],"issues":[]}}\n' "$sequence"
 else
-  printf '{"results":[],"issues":[]}\n'
+  printf '{"sequence":%s,"response":{"results":[],"issues":[]}}\n' "$sequence"
 fi
 "##,
         );

@@ -3,6 +3,7 @@
 pub(crate) mod bridge;
 pub mod protocol;
 pub mod toolchain;
+mod worker;
 
 use crate::ecosystems::node::discovery::resolver;
 use crate::ecosystems::node::{dependencies, discovery};
@@ -65,92 +66,137 @@ impl EnrichResult {
     }
 }
 
-/// Prepare dependencies and resolve public contracts and declaration locations.
-/// Missing compiler or type evidence returns `EnrichResult::Degraded`.
+/// Resolve one package with its own compiler session.
 pub async fn enrich_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
-    let installed = match dependencies::prepare_dependencies(pkg_root).await {
-        Ok(installed) => installed,
-        Err(error) => return Ok(EnrichResult::Degraded(LspError::from(error).to_string())),
-    };
-    let mut discovery_warnings = Vec::new();
-    if installed {
-        // Low-level callers may have discovered before dependencies existed.
-        // Replace forwarding placeholders and add the newly reachable exports.
-        let (mut discovered, warnings) = match discovery::discover_exports(pkg_root) {
-            Ok(result) => result,
-            Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
-        };
-        discovery_warnings = warnings;
-        exports.retain(|key, symbol| !symbol.is_reexport || discovered.contains_key(key));
-        for (key, symbol) in discovered.drain() {
-            if exports
-                .get(&key)
-                .is_none_or(|existing| existing.is_reexport)
-            {
-                exports.insert(key, symbol);
-            }
-        }
-        exports.directives.extend(discovered.directives);
-        let keys: std::collections::HashSet<_> = exports.keys().cloned().collect();
-        exports.typeof_targets.retain(|key, _| keys.contains(key));
-    }
-    let result = enrich_prepared_exports(exports, pkg_root).await?;
-    result.reconcile_discovery_warnings(&mut discovery_warnings);
-    let mut incomplete: Vec<_> = discovery_warnings
-        .into_iter()
-        .filter(|warning| warning.incomplete)
-        .map(|warning| warning.message)
-        .collect();
-    if incomplete.is_empty() {
-        Ok(result)
-    } else {
-        if let EnrichResult::Degraded(issue) = result {
-            incomplete.push(issue);
-        }
-        Ok(EnrichResult::Degraded(incomplete.join("; ")))
-    }
+    CompilerSession::default()
+        .enrich_exports(exports, pkg_root)
+        .await
 }
 
-/// Enrich a map discovered after successful dependency preparation.
-/// Use [`dependencies::prepare_dependencies`] before discovery, or `enrich_exports`
-/// to prepare and refresh a previously discovered map automatically.
+/// Resolve one prepared package with its own compiler session.
 pub async fn enrich_prepared_exports(
     exports: &mut ExportMap,
     pkg_root: &Path,
 ) -> Result<EnrichResult, LspError> {
-    enrich_prepared_exports_from_workspace(exports, pkg_root, pkg_root).await
+    CompilerSession::default()
+        .enrich_prepared_exports(exports, pkg_root)
+        .await
 }
 
-/// Packed snapshots exclude development dependencies. Resolve the compiler from
-/// the caller's workspace while evaluating contracts in each isolated snapshot.
 pub(crate) async fn enrich_prepared_exports_from_workspace(
     exports: &mut ExportMap,
     pkg_root: &Path,
     compiler_workspace: &Path,
 ) -> Result<EnrichResult, LspError> {
-    let compiler = match toolchain::resolve_compiler(compiler_workspace).await {
-        Ok(compiler) => compiler,
-        Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
-    };
-    let mut issues = bridge::evaluate_public_types(exports, pkg_root, &compiler).await;
-    issues.extend(
-        exports
-            .keys()
-            .filter(|key| key.name.starts_with("*<"))
-            .map(|key| {
-                format!(
-                    "external export barrel `{}` has not been resolved",
-                    key.name
-                )
-            }),
-    );
-    if issues.is_empty() {
-        Ok(EnrichResult::Enriched)
-    } else {
-        Ok(EnrichResult::Degraded(issues.join("; ")))
+    CompilerSession::default()
+        .enrich_prepared_exports_from_workspace(exports, pkg_root, compiler_workspace)
+        .await
+}
+
+/// Reuse a compiler process while evaluating each package in a fresh program.
+/// Dropping the session stops its worker. Failed or cancelled requests discard it.
+/// Keep a session within the async runtime that first uses it.
+#[derive(Default)]
+pub struct CompilerSession {
+    worker: worker::WorkerSession,
+}
+
+impl CompilerSession {
+    /// Prepare dependencies and resolve public contracts and declaration locations.
+    /// Missing compiler or type evidence returns `EnrichResult::Degraded`.
+    pub async fn enrich_exports(
+        &mut self,
+        exports: &mut ExportMap,
+        pkg_root: &Path,
+    ) -> Result<EnrichResult, LspError> {
+        let installed = match dependencies::prepare_dependencies(pkg_root).await {
+            Ok(installed) => installed,
+            Err(error) => return Ok(EnrichResult::Degraded(LspError::from(error).to_string())),
+        };
+        let mut discovery_warnings = Vec::new();
+        if installed {
+            // Low-level callers may have discovered before dependencies existed.
+            // Replace forwarding placeholders and add the newly reachable exports.
+            let (mut discovered, warnings) = match discovery::discover_exports(pkg_root) {
+                Ok(result) => result,
+                Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
+            };
+            discovery_warnings = warnings;
+            exports.retain(|key, symbol| !symbol.is_reexport || discovered.contains_key(key));
+            for (key, symbol) in discovered.drain() {
+                if exports
+                    .get(&key)
+                    .is_none_or(|existing| existing.is_reexport)
+                {
+                    exports.insert(key, symbol);
+                }
+            }
+            exports.directives.extend(discovered.directives);
+            let keys: std::collections::HashSet<_> = exports.keys().cloned().collect();
+            exports.typeof_targets.retain(|key, _| keys.contains(key));
+        }
+        let result = self.enrich_prepared_exports(exports, pkg_root).await?;
+        result.reconcile_discovery_warnings(&mut discovery_warnings);
+        let mut incomplete: Vec<_> = discovery_warnings
+            .into_iter()
+            .filter(|warning| warning.incomplete)
+            .map(|warning| warning.message)
+            .collect();
+        if incomplete.is_empty() {
+            Ok(result)
+        } else {
+            if let EnrichResult::Degraded(issue) = result {
+                incomplete.push(issue);
+            }
+            Ok(EnrichResult::Degraded(incomplete.join("; ")))
+        }
+    }
+
+    /// Enrich a map discovered after successful dependency preparation.
+    /// Use [`dependencies::prepare_dependencies`] before discovery, or `enrich_exports`
+    /// to prepare and refresh a previously discovered map automatically.
+    pub async fn enrich_prepared_exports(
+        &mut self,
+        exports: &mut ExportMap,
+        pkg_root: &Path,
+    ) -> Result<EnrichResult, LspError> {
+        self.enrich_prepared_exports_from_workspace(exports, pkg_root, pkg_root)
+            .await
+    }
+
+    /// Packed snapshots exclude development dependencies. Resolve the compiler from
+    /// the caller's workspace while evaluating contracts in each isolated snapshot.
+    pub(crate) async fn enrich_prepared_exports_from_workspace(
+        &mut self,
+        exports: &mut ExportMap,
+        pkg_root: &Path,
+        compiler_workspace: &Path,
+    ) -> Result<EnrichResult, LspError> {
+        let compiler = match toolchain::resolve_compiler(compiler_workspace).await {
+            Ok(compiler) => compiler,
+            Err(error) => return Ok(EnrichResult::Degraded(error.to_string())),
+        };
+        let mut issues =
+            bridge::evaluate_public_types(exports, pkg_root, &compiler, &mut self.worker).await;
+        issues.extend(
+            exports
+                .keys()
+                .filter(|key| key.name.starts_with("*<"))
+                .map(|key| {
+                    format!(
+                        "external export barrel `{}` has not been resolved",
+                        key.name
+                    )
+                }),
+        );
+        if issues.is_empty() {
+            Ok(EnrichResult::Enriched)
+        } else {
+            Ok(EnrichResult::Degraded(issues.join("; ")))
+        }
     }
 }
 

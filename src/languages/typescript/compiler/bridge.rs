@@ -7,9 +7,6 @@ use crate::languages::typescript::compiler::toolchain::LspBinary;
 use crate::languages::typescript::types::shape::{FieldShape, PrimitiveKind, TypeShape};
 use serde::Deserialize;
 use std::path::Path;
-use std::process::Stdio;
-use std::time::Duration;
-use tokio::io::AsyncWriteExt;
 
 #[derive(Deserialize)]
 struct CompilerResponse {
@@ -49,17 +46,34 @@ pub(super) async fn resolve_public_types(
         library: server.parent()?.join("typescript.js"),
         node: match binary {
             LspBinary::Managed { node, .. } => node.clone(),
-            LspBinary::Direct(_) => "node".into(),
+            LspBinary::Direct(_) => super::toolchain::find_in_path("node")?,
         },
     };
-    Some(evaluate_public_types(exports, root, &toolchain).await)
+    Some(
+        evaluate_public_types(
+            exports,
+            root,
+            &toolchain,
+            &mut super::worker::WorkerSession::default(),
+        )
+        .await,
+    )
 }
 
 pub(super) async fn evaluate_public_types(
     exports: &mut ExportMap,
     root: &Path,
     toolchain: &CompilerBinary,
+    worker: &mut super::worker::WorkerSession,
 ) -> Vec<String> {
+    let root = match root.canonicalize() {
+        Ok(root) => root,
+        Err(error) => return vec![format!("compiler package directory unavailable: {error}")],
+    };
+    let library = match toolchain.library.canonicalize() {
+        Ok(library) => library,
+        Err(error) => return vec![format!("compiler library unavailable: {error}")],
+    };
     let mut keys: Vec<_> = exports.keys().cloned().collect();
     keys.sort_by_key(|key| {
         format!(
@@ -81,50 +95,10 @@ pub(super) async fn evaluate_public_types(
             "export_kind":match symbol.kind { ExportKind::Default => "default", ExportKind::Named => "named" }})
         })
         .collect();
-    let input = serde_json::json!({"root":root, "compiler":toolchain.library, "symbols":symbols});
-    let result = tokio::time::timeout(Duration::from_secs(30), async {
-        let mut child = tokio::process::Command::new(&toolchain.node)
-            .args([
-                "--max-old-space-size=512",
-                "-e",
-                include_str!("compiler.cjs"),
-            ])
-            .current_dir(root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| format!("compiler startup failed: {error}"))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(input.to_string().as_bytes())
-                .await
-                .map_err(|error| format!("compiler input failed: {error}"))?;
-        }
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|error| format!("compiler process failed: {error}"))?;
-        if !output.status.success() {
-            let detail = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "compiler exited with {}: {}",
-                output.status,
-                detail.chars().take(1000).collect::<String>()
-            ));
-        }
-        if output.stdout.len() > 16 * 1024 * 1024 {
-            return Err("compiler output budget exhausted".into());
-        }
-        serde_json::from_slice::<CompilerResponse>(&output.stdout)
-            .map_err(|error| format!("invalid compiler response: {error}"))
-    })
-    .await;
-    let response = match result {
-        Ok(Ok(response)) => response,
-        Ok(Err(issue)) => return vec![issue],
-        Err(_) => return vec!["compiler public type evaluation timed out".into()],
+    let input = serde_json::json!({"root":root, "compiler":library, "symbols":symbols});
+    let response: CompilerResponse = match worker.request(toolchain, &input).await {
+        Ok(response) => response,
+        Err(issue) => return vec![issue],
     };
     let compiler_complete = response.issues.is_empty();
     let mut issues = response.issues;

@@ -73,6 +73,13 @@ feature-enabled suite with four workers. Shared language-server fixtures retain
 local synchronization. Test names include their module paths; when
 using `--exact`, use the full name shown by `cargo test --test <target> -- --list`.
 
+Repeated compiler contract cases own a `CompilerSession` for their test. They
+reuse the compiler process while retaining a fresh program for every package
+and independent `tsc` or Node consumer processes. The session regressions check
+working directories, changed configurations and sources, and missing evidence;
+transport unit tests cover toolchain replacement, cancellation, timeouts, and
+invalid replies. There is no global compiler process or cross-test result cache.
+
 The `compiler::version_support` suite checks syntax, library types, and inferred
 predicates against the compiler selected on `PATH`, with `tsc` consumer results
 as an independent oracle. CI runs it with TypeScript 4.9.5, 5.0.4, 5.2.2, 5.4.5,

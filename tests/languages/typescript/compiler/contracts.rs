@@ -42,6 +42,7 @@ async fn assert_consumer_contracts(specifications: &str) {
     let cases: Vec<Value> = serde_json::from_str(specifications).unwrap();
     assert!(!cases.is_empty(), "consumer topic must contain cases");
     let mut failures = Vec::new();
+    let mut compiler = compiler::CompilerSession::default();
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let breaking = case["breaking"].as_bool().unwrap();
@@ -104,7 +105,8 @@ async fn assert_consumer_contracts(specifications: &str) {
 
             let (mut discovered, warnings) = discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{name}/{version}: {warnings:?}");
-            let result = compiler::enrich_exports(&mut discovered, root)
+            let result = compiler
+                .enrich_exports(&mut discovered, root)
                 .await
                 .unwrap();
             assert!(

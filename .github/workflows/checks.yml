@@ -150,6 +150,7 @@ jobs:
           --binaries target/consumer-tests
           --profile compiler-nodenext --profile compiler-node16 --profile compiler-commonjs
           --filter typescript/compiler::version_support::
+          --filter typescript/compiler::session::
           --filter typescript/compiler::contracts::returned_contracts
           --filter typescript/compiler::contracts::callables
           --filter typescript/compiler::contracts::overloads
