@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -127,7 +127,7 @@ test("version checks reject manifest, lockfile, and tag drift", () => {
   expect(() => checkVersion(root)).toThrow("action image");
 });
 
-test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaking-history", "dispatch-failed"])(
+test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaking-history", "dispatch-failed", "tooling-only"])(
   "the scheduler checks the actual release history and exact head: %s", async (scenario) => {
     const originalDirectory = process.cwd();
     const root = mkdtempSync(join(tmpdir(), "pledge-release-git-"));
@@ -152,6 +152,10 @@ test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaki
       git("commit", "-qm", "chore: initialize fixture");
       const baseline = git("rev-parse", "HEAD");
       write("release-please-config.json", JSON.stringify({ "bootstrap-sha": baseline }));
+      if (scenario !== "tooling-only") {
+        mkdirSync(join(root, "src"));
+        write("src/lib.rs", "pub fn answer() -> u8 { 42 }\n");
+      }
       git("add", ".");
       git("commit", "-qm", scenario === "breaking-history" ? "feat!: remove a command" : "fix: correct comparison");
       const baseSha = git("rev-parse", "HEAD");
@@ -219,6 +223,7 @@ test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaki
         expect(dispatches).toHaveLength(0);
       }
       if (scenario === "dry-run") expect(logs.join("\n")).toContain("Would merge");
+      if (scenario === "tooling-only") expect(logs.join("\n")).toContain("No published inputs changed");
     } finally {
       process.chdir(originalDirectory);
       for (const name of localVariables) {

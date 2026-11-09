@@ -31,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
         id: revision
@@ -38,6 +39,10 @@ jobs:
           script: |
             const { data } = await github.rest.git.getRef({ ...context.repo, ref: 'heads/main' });
             core.setOutput('current', data.object.sha === context.sha);
+            if (data.object.sha === context.sha) {
+              const { releaseInputs } = require('./scripts/releases/release-inputs.cjs');
+              core.setOutput('publishable', await releaseInputs({ github, context, core }));
+            }
       - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071
         id: release
         if: steps.revision.outputs.current == 'true'
@@ -45,6 +50,7 @@ jobs:
           target-branch: main
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+          skip-github-pull-request: ${{ steps.revision.outputs.publishable != 'true' }}
       - name: Request release PR checks
         if: steps.revision.outputs.current == 'true'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b

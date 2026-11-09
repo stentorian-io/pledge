@@ -6,6 +6,7 @@
   "include-v-in-tag": true,
   "bump-minor-pre-major": true,
   "bump-patch-for-minor-pre-major": false,
+  "exclude-paths": ["docs", "tests", "scripts/hooks", "scripts/lib", "scripts/coverage", "scripts/conformance"],
   "pull-request-title-pattern": "chore: release ${version}",
   "pull-request-header": "Review the version, compatibility impact, and user-facing release notes before merging.",
   "pull-request-footer": "Releases may merge after 24 quiet hours with passing checks, including breaking minor releases before 1.0. Major transitions and stable breaking releases require manual merge. Add `release: hold` to pause scheduled merging.",

@@ -1,6 +1,7 @@
 const { execFileSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
 const { mergeBlocker, releasePullBlocker, hasOnlyReleaseFiles } = require("./merge-policy.cjs");
+const { changedPublishedInputs } = require("./release-inputs.cjs");
 
 module.exports = async function mergeRelease({ github, context, core, dryRun = false }) {
   const repository = context.repo;
@@ -9,6 +10,10 @@ module.exports = async function mergeRelease({ github, context, core, dryRun = f
   const previousVersion = JSON.parse(readFileSync(".release-please-manifest.json", "utf8"))["."];
   const config = JSON.parse(readFileSync("release-please-config.json", "utf8"));
   const baseline = previousVersion === "0.3.0" ? config["bootstrap-sha"] : `v${previousVersion}`;
+  if (changedPublishedInputs(baseline, mainSha).length === 0) {
+    core.info("No published inputs changed since the last release; leaving release PRs unmerged");
+    return;
+  }
   const candidates = await github.paginate(github.rest.pulls.list, { ...repository, state: "open", base: "main", per_page: 100 });
   for (const candidate of candidates) {
     if (releasePullBlocker(candidate)) continue;

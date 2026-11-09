@@ -63,6 +63,24 @@ CI validates PR titles and descriptions for squash merges, and every incoming
 commit on main for direct pushes. Use squash merges for ordinary and release
 PRs, with a Conventional Commit title and any breaking footer retained.
 
+Release PR creation also requires a net change to published inputs since the
+latest GitHub release (or the configured bootstrap revision for the first one).
+Tooling-only changes cannot start a release, including commits labeled `fix` or
+`perf`. The scheduler applies the same check before merging an existing release
+PR, so fully reverted product changes do not produce a release on their own.
+Release finalization and artifact retries remain available.
+
+Published inputs include production sources and embedded assets, Cargo/build
+configuration, the Docker build, packaged action runtime and dependencies,
+action metadata, licenses, and artifact publication code. Tests, coverage,
+documentation, hooks, and check/release scheduling automation are internal.
+The boundary lives in `scripts/releases/release-inputs.cjs`; extend it when
+adding a distribution or build input. It checks file changes, not byte-for-byte
+reproducibility of rebuilt binaries. Conventional Commit intent still determines
+whether eligible changes warrant a release and which version bump they receive.
+Earlier unreleased product changes can therefore produce a release after a
+tooling-only push; that push itself is not the release reason.
+
 ## Compatibility policy
 
 Pledge's public contract includes commands, flags, configuration, exit codes,
