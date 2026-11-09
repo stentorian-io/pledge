@@ -414,7 +414,7 @@ pub fn collect_exports(
 pub(crate) struct ParseCache {
     resolved: HashMap<(PathBuf, String, Option<String>), ExportMap>,
     namespace_exports: HashMap<(PathBuf, String, Option<String>), HashSet<String>>,
-    files: HashMap<PathBuf, ParsedSource>,
+    files: HashMap<PathBuf, Result<ParsedSource, String>>,
 }
 
 #[derive(Clone)]
@@ -536,7 +536,13 @@ fn collect_exports_uncached(
         directives: file_directives,
         forwards,
     } = if let Some(parsed) = cache.files.get(&canonical) {
-        parsed.clone()
+        match parsed {
+            Ok(parsed) => parsed.clone(),
+            Err(message) => {
+                warnings.push(ResolveWarning::new(message.clone()));
+                return Ok(());
+            }
+        }
     } else {
         let lang = match language_for_file(file) {
             Some(l) => l,
@@ -590,11 +596,13 @@ fn collect_exports_uncached(
         let mut raw_exports = match parse_exports(&source, lang) {
             Ok(rx) => rx,
             Err(e) => {
-                warnings.push(ResolveWarning::new(format!(
+                let message = format!(
                     "parse failed for {}: {} \u{2014} skipping file",
                     canonical.display(),
                     e
-                )));
+                );
+                cache.files.insert(canonical.clone(), Err(message.clone()));
+                warnings.push(ResolveWarning::new(message));
                 return Ok(());
             }
         };
@@ -709,7 +717,7 @@ fn collect_exports_uncached(
             directives: file_directives,
             forwards,
         };
-        cache.files.insert(canonical.clone(), parsed.clone());
+        cache.files.insert(canonical.clone(), Ok(parsed.clone()));
         parsed
     };
 

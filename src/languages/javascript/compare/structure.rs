@@ -766,6 +766,10 @@ pub fn compare_structural_diff(
 
     let mut old_descriptors = HashMap::new();
     let mut new_descriptors = HashMap::new();
+    let mut old_declarations = HashMap::new();
+    let mut new_declarations = HashMap::new();
+    let mut old_interfaces = HashMap::new();
+    let mut new_interfaces = HashMap::new();
 
     for (key, old_sym) in old_exports {
         let name = key.name.as_str();
@@ -856,21 +860,25 @@ pub fn compare_structural_diff(
             }
         }
 
-        // Extract all shapes from both versions
-        let Some(old_decl) = extract_declaration_from_tree(
-            old_tree,
-            old_source,
-            old_sym.local_name.as_deref().unwrap_or(name),
-            old_sym.line,
-        ) else {
+        // Subpaths and conditions can expose the same source declaration many times.
+        let old_local_name = old_sym.local_name.as_deref().unwrap_or(name);
+        let new_local_name = new_sym.local_name.as_deref().unwrap_or(name);
+        let Some(old_decl) = old_declarations
+            .entry((&old_sym.file, old_local_name, old_sym.line))
+            .or_insert_with(|| {
+                extract_declaration_from_tree(old_tree, old_source, old_local_name, old_sym.line)
+            })
+            .as_ref()
+        else {
             continue;
         };
-        let Some(new_decl) = extract_declaration_from_tree(
-            new_tree,
-            new_source,
-            new_sym.local_name.as_deref().unwrap_or(name),
-            new_sym.line,
-        ) else {
+        let Some(new_decl) = new_declarations
+            .entry((&new_sym.file, new_local_name, new_sym.line))
+            .or_insert_with(|| {
+                extract_declaration_from_tree(new_tree, new_source, new_local_name, new_sym.line)
+            })
+            .as_ref()
+        else {
             continue;
         };
 
@@ -924,20 +932,20 @@ pub fn compare_structural_diff(
         // Interface member structural diff (degraded mode)
         // Declaration merging — collect members from ALL interface declarations
         if old_decl.is_interface && new_decl.is_interface {
-            let old_members = collect_interface_members_from_tree(
-                old_tree,
-                old_source,
-                old_sym.local_name.as_deref().unwrap_or(name),
-            );
-            let new_members = collect_interface_members_from_tree(
-                new_tree,
-                new_source,
-                new_sym.local_name.as_deref().unwrap_or(name),
-            );
+            let old_members = old_interfaces
+                .entry((&old_sym.file, old_local_name))
+                .or_insert_with(|| {
+                    collect_interface_members_from_tree(old_tree, old_source, old_local_name)
+                });
+            let new_members = new_interfaces
+                .entry((&new_sym.file, new_local_name))
+                .or_insert_with(|| {
+                    collect_interface_members_from_tree(new_tree, new_source, new_local_name)
+                });
             if !old_members.is_empty() || !new_members.is_empty() {
                 findings.extend(interface_diff::compare_interface_members(
-                    &old_members,
-                    &new_members,
+                    old_members,
+                    new_members,
                     name,
                     &new_sym.file,
                     new_sym.line,
@@ -1015,19 +1023,19 @@ pub fn compare_structural_diff(
         }
 
         // Collect all overload shapes for functions (REF-01)
-        if old_decl.is_function {
+        if old_decl.is_function && old_sym_augmented.overloads.is_empty() {
             let collected = collect_overload_shapes_from_tree(old_tree, old_source, name);
-            if old_sym_augmented.overloads.is_empty() && !collected.is_empty() {
+            if !collected.is_empty() {
                 old_sym_augmented.overloads = collected;
-            } else if old_sym_augmented.overloads.is_empty() && !old_decl.overloads.is_empty() {
+            } else if !old_decl.overloads.is_empty() {
                 old_sym_augmented.overloads = old_decl.overloads.clone();
             }
         }
-        if new_decl.is_function {
+        if new_decl.is_function && new_sym_augmented.overloads.is_empty() {
             let collected = collect_overload_shapes_from_tree(new_tree, new_source, name);
-            if new_sym_augmented.overloads.is_empty() && !collected.is_empty() {
+            if !collected.is_empty() {
                 new_sym_augmented.overloads = collected;
-            } else if new_sym_augmented.overloads.is_empty() && !new_decl.overloads.is_empty() {
+            } else if !new_decl.overloads.is_empty() {
                 new_sym_augmented.overloads = new_decl.overloads.clone();
             }
         }

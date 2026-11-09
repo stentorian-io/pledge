@@ -16,6 +16,12 @@ struct ModuleRequirements {
 
 type RequirementsResult = Result<ModuleRequirements, String>;
 
+#[derive(Clone, Default)]
+struct ModuleSource {
+    requirements: ModuleRequirements,
+    dependencies: Vec<(String, &'static str)>,
+}
+
 pub(super) fn compare_module_loading(old_root: &Path, new_root: &Path) -> Vec<Finding> {
     let (Ok(old_canonical), Ok(new_canonical)) = (old_root.canonicalize(), new_root.canonicalize())
     else {
@@ -150,6 +156,7 @@ fn resource_syntax_finding(
 struct ModuleGraph<'a> {
     root: &'a Path,
     cache: HashMap<PathBuf, RequirementsResult>,
+    sources: HashMap<PathBuf, Result<ModuleSource, String>>,
 }
 
 impl<'a> ModuleGraph<'a> {
@@ -157,6 +164,7 @@ impl<'a> ModuleGraph<'a> {
         Self {
             root,
             cache: HashMap::new(),
+            sources: HashMap::new(),
         }
     }
 
@@ -197,29 +205,16 @@ impl<'a> ModuleGraph<'a> {
         visited: &mut HashSet<PathBuf>,
         depth: usize,
     ) -> RequirementsResult {
-        if matches!(
-            path.extension().and_then(|p| p.to_str()),
-            Some("json" | "node")
-        ) {
-            return Ok(ModuleRequirements::default());
-        }
-        let source = std::fs::read(path).map_err(|e| e.to_string())?;
-        if let Some(reason) = crate::core::source::classify(&source) {
-            return Err(format!(
-                "{} source skipped: {}",
-                reason.label(),
-                path.display()
-            ));
-        }
-        let language = grammar::language_for_file(path)
-            .ok_or_else(|| format!("unsupported module {}", path.display()))?;
-        let tree = grammar::parse_source(&source, &language).map_err(|error| error.to_string())?;
-        let mut dependencies = Vec::new();
-        let mut requirements = ModuleRequirements {
-            asynchronous: inspect(tree.root_node(), &source, &mut dependencies)
-                .then(|| path.to_path_buf()),
-            resources: contains_resource_management(tree.root_node()).then(|| path.to_path_buf()),
-        };
+        // Source facts do not depend on traversal roots or cycles. Reuse them
+        // even when a graph result cannot safely be cached across entry points.
+        let ModuleSource {
+            mut requirements,
+            dependencies,
+        } = self
+            .sources
+            .entry(path.to_path_buf())
+            .or_insert_with(|| Self::read_module(path))
+            .clone()?;
         for (specifier, mode) in dependencies {
             if resolver::classify_specifier(&specifier) == resolver::SpecifierKind::UrlScheme {
                 return Err(format!(
@@ -245,6 +240,36 @@ impl<'a> ModuleGraph<'a> {
             requirements.resources = requirements.resources.or(dependency.resources);
         }
         Ok(requirements)
+    }
+
+    fn read_module(path: &Path) -> Result<ModuleSource, String> {
+        if matches!(
+            path.extension().and_then(|p| p.to_str()),
+            Some("json" | "node")
+        ) {
+            return Ok(ModuleSource::default());
+        }
+        let source = std::fs::read(path).map_err(|e| e.to_string())?;
+        if let Some(reason) = crate::core::source::classify(&source) {
+            return Err(format!(
+                "{} source skipped: {}",
+                reason.label(),
+                path.display()
+            ));
+        }
+        let language = grammar::language_for_file(path)
+            .ok_or_else(|| format!("unsupported module {}", path.display()))?;
+        let tree = grammar::parse_source(&source, &language).map_err(|error| error.to_string())?;
+        let mut dependencies = Vec::new();
+        let requirements = ModuleRequirements {
+            asynchronous: inspect(tree.root_node(), &source, &mut dependencies)
+                .then(|| path.to_path_buf()),
+            resources: contains_resource_management(tree.root_node()).then(|| path.to_path_buf()),
+        };
+        Ok(ModuleSource {
+            requirements,
+            dependencies,
+        })
     }
 }
 

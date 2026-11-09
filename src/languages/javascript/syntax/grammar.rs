@@ -138,29 +138,34 @@ pub(crate) fn parse_source(
         source: &[u8],
         sources: &mut Vec<tree_sitter::Node<'tree>>,
     ) {
-        let mut statement = node;
-        while statement
-            .parent()
-            .is_some_and(|parent| parent.kind() != "program")
-        {
-            statement = statement.parent().unwrap_or(statement);
-        }
-        let export_statement = statement
-            .utf8_text(source)
-            .unwrap_or("")
-            .trim_start()
-            .starts_with("export");
-        let module_clause = node
-            .children(&mut node.walk())
-            .any(|child| matches!(child.kind(), "export_clause" | "namespace_export" | "from"));
-        if matches!(node.kind(), "ERROR" | "export_statement") && export_statement && module_clause
-        {
-            if let Some(specifier) = node.child_by_field_name("source").or_else(|| {
-                node.named_children(&mut node.walk())
-                    .filter(|child| child.kind() == "string")
-                    .last()
-            }) {
-                sources.push(specifier);
+        // Parent lookup walks from the tree root. Restrict it to possible
+        // module clauses instead of repeating it for every nested type node.
+        if matches!(node.kind(), "ERROR" | "export_statement") {
+            let module_clause = node
+                .children(&mut node.walk())
+                .any(|child| matches!(child.kind(), "export_clause" | "namespace_export" | "from"));
+            if module_clause {
+                let mut statement = node;
+                while let Some(parent) = statement
+                    .parent()
+                    .filter(|parent| parent.kind() != "program")
+                {
+                    statement = parent;
+                }
+                let export_statement = statement
+                    .utf8_text(source)
+                    .unwrap_or("")
+                    .trim_start()
+                    .starts_with("export");
+                if export_statement {
+                    if let Some(specifier) = node.child_by_field_name("source").or_else(|| {
+                        node.named_children(&mut node.walk())
+                            .filter(|child| child.kind() == "string")
+                            .last()
+                    }) {
+                        sources.push(specifier);
+                    }
+                }
             }
         }
         for child in node.named_children(&mut node.walk()) {

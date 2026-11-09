@@ -75,6 +75,35 @@ fn already_asynchronous_modules_and_cycles_terminate_without_new_breaks() {
     assert!(compare_exports_map_diff(old.path(), new.path()).is_empty());
 }
 
+#[test]
+fn shared_cycles_retain_requirements_for_every_entry_and_refresh_between_comparisons() {
+    let exports = r#"{"./first":"./index.mjs","./second":"./dependency.mjs"}"#;
+    let old = package(
+        exports,
+        "import './dependency.mjs';",
+        "import './index.mjs';",
+    );
+    let new = package(
+        exports,
+        "import './dependency.mjs'; await Promise.resolve();",
+        "import './index.mjs';",
+    );
+
+    let findings = compare_exports_map_diff(old.path(), new.path());
+
+    for subpath in ["./first", "./second"] {
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.rule == "module-became-async"
+                    && finding.message.contains(&format!("`{subpath}`"))),
+            "{findings:?}"
+        );
+    }
+    std::fs::write(new.path().join("index.mjs"), "import './dependency.mjs';").unwrap();
+    assert!(compare_exports_map_diff(old.path(), new.path()).is_empty());
+}
+
 #[cfg(feature = "lsp-tests")]
 #[test]
 fn node_consumer_confirms_the_require_regression() {
