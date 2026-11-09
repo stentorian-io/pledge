@@ -16,7 +16,7 @@ afterEach(() => {
   for (const root of temporaryRepos.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-function repository() {
+function repository(inheritedEnvironment: NodeJS.ProcessEnv = process.env) {
   const root = mkdtempSync(join(tmpdir(), "pledge-hooks-"));
   temporaryRepos.push(root);
   cpSync(join(project, "scripts"), join(root, "scripts"), {
@@ -30,19 +30,24 @@ function repository() {
   writeFileSync(join(root, "src/lib.rs"), "pub fn answer() -> u8 { 42 }\n");
   writeFileSync(join(root, "src/languages/typescript/compiler/compiler.cjs"), "console.log('{}');\n");
   writeFileSync(join(root, "tests/fixtures/example.js"), "export const answer = 42;\n");
-  writeFileSync(join(root, ".coverage-baseline"), "69\n");
+  writeFileSync(join(root, ".coverage-baseline"), "90\n");
   const log = join(root, "commands.log");
   writeFileSync(log, "");
   for (const command of ["cargo", "cargo-llvm-cov", "node", "npm", "typescript-language-server"]) {
     writeFileSync(join(root, "bin", command), `#!/bin/sh
 printf '%s\\n' '${command} '"$*" >> "$PLEDGE_HOOK_LOG"
 if [ "$1" = "$PLEDGE_FAIL_COMMAND" ]; then exit 7; fi
+if [ "$1" = "llvm-cov" ]; then
+  mkdir -p target/coverage
+  printf 'SF:%s/src/lib.rs\\nDA:1,1\\nLF:1\\nLH:1\\nend_of_record\\n' "$PWD" > target/coverage/lcov.info
+fi
 `, { mode: 0o755 });
   }
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, PLEDGE_HOOK_LOG: log };
+  const env: NodeJS.ProcessEnv = { ...inheritedEnvironment, PATH: `${root}/bin:${process.env.PATH}`, PLEDGE_HOOK_LOG: log };
   // Hooks can inherit an absolute index or worktree path from Git. Child Git
   // commands must never use the caller's repository while building fixtures.
   for (const name of localGitVariables) delete env[name];
+  delete env.PLEDGE_COVERAGE_BASE;
   function invoke(command: string[], input?: string, extraEnv: Record<string, string> = {}) {
     return Bun.spawnSync(command, {
       cwd: root, env: { ...env, ...extraEnv },
@@ -178,8 +183,8 @@ test("public language coverage edits validate the inventory before tooling check
   expect(commands.some(command => command.startsWith("cargo "))).toBe(false);
 });
 
-test("complete checks run the feature suite and coverage without a third default test run", () => {
-  const repo = repository();
+test("complete checks execute the full suite once while collecting coverage", () => {
+  const repo = repository({ ...process.env, PLEDGE_COVERAGE_BASE: "origin/a-different-repository" });
   writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
 
   const result = repo.invoke([process.execPath, "scripts/check.ts", "all"]);
@@ -187,11 +192,10 @@ test("complete checks run the feature suite and coverage without a third default
   expect(result.exitCode, result.stderr.toString()).toBe(0);
   expect(repo.commands().trim().split("\n")).toEqual([
     "bun scripts/conformance/check.ts",
-    "bun test ./scripts/hooks/hooks.test.ts ./scripts/releases ./scripts/action ./scripts/conformance/conformance.test.ts",
+    "bun test ./scripts/hooks/hooks.test.ts ./scripts/releases ./scripts/action ./scripts/conformance/conformance.test.ts ./scripts/coverage",
     "cargo fmt --all -- --check",
     "cargo clippy --locked --all-targets -- -D warnings",
-    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
-    "cargo llvm-cov --locked --fail-under-lines 69",
+    "cargo llvm-cov --locked --features lsp-tests --lcov --output-path target/coverage/lcov.info -- --test-threads=4",
   ]);
 });
 
@@ -221,8 +225,7 @@ test.each(["modified", "deleted"])("%s embedded compiler source runs product che
     "cargo fmt --all -- --check",
     "cargo clippy --locked --all-targets -- -D warnings",
     "cargo test --locked --release",
-    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
-    "cargo llvm-cov --locked --fail-under-lines 69",
+    "cargo llvm-cov --locked --features lsp-tests --lcov --output-path target/coverage/lcov.info -- --test-threads=4",
   ]);
 });
 
@@ -252,8 +255,7 @@ test("push checks include earlier source changes when the last commit only updat
 
   expect(repo.hook("pre-push", [], `refs/heads/main ${tip} refs/heads/main ${repo.base}\n`).exitCode).toBe(0);
   expect(repo.commands().trim().split("\n")).toEqual([
-    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
-    "cargo llvm-cov --locked --fail-under-lines 69",
+    "cargo llvm-cov --locked --features lsp-tests --lcov --output-path target/coverage/lcov.info -- --test-threads=4",
   ]);
 });
 
@@ -263,14 +265,25 @@ test("branch deletion pushes do not run checks", () => {
   expect(repo.commands()).toBe("");
 });
 
+test("a coverage threshold change reruns the instrumented suite before pushing", () => {
+  const repo = repository();
+  writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
+  repo.stage(".coverage-baseline", "95\n");
+  const tip = repo.commit("build: raise coverage floor");
+
+  expect(repo.hook("pre-push", [], `refs/heads/main ${tip} refs/heads/main ${repo.base}\n`).exitCode).toBe(0);
+  expect(repo.commands()).toContain("cargo llvm-cov --locked --features lsp-tests");
+  expect(repo.commands()).not.toContain("cargo test ");
+});
+
 test.each(["0".repeat(40), "1".repeat(40)])("new or unavailable remote tips run the complete push checks: %s", (remote) => {
   const repo = repository();
   writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
 
   expect(repo.hook("pre-push", [], `refs/heads/main ${repo.base} refs/heads/main ${remote}\n`).exitCode).toBe(0);
   expect(repo.commands()).toContain("bun test ./scripts/hooks/hooks.test.ts");
-  expect(repo.commands()).toContain("cargo test --locked --release --features lsp-tests");
-  expect(repo.commands()).toContain("cargo llvm-cov --locked --fail-under-lines 69");
+  expect(repo.commands()).not.toContain("cargo test ");
+  expect(repo.commands()).toContain("cargo llvm-cov --locked --features lsp-tests --lcov --output-path target/coverage/lcov.info -- --test-threads=4");
 });
 
 test("invalid coverage baselines fail before running coverage", () => {

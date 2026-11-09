@@ -145,7 +145,8 @@ to generate a temporary certificate. Provide the JavaScript TypeScript compiler 
 or populate the managed toolchain cache before running that check.
 
 Use `make check` for formatting, clippy, and all default tests before committing.
-The push hook runs LSP and coverage checks for code or fixture changes. See
+The push hook runs the complete instrumented suite once for code or fixture
+changes, using that execution for both behavioral checks and coverage. See
 [contributing](../CONTRIBUTING.md) for prerequisites and the complete command list.
 
 ## Fixtures and assertions
@@ -203,3 +204,9 @@ to run it against a locally built CLI, put `target/release` on `PATH` and run
 
 `scripts/conformance/conformance.test.ts` checks extraction, missing classifications,
 evidence paths, report generation, and runner failures in isolated repositories.
+
+`scripts/coverage/coverage.test.ts` checks the overall and changed-line gates,
+diff selection, malformed reports, and reuse of fresh coverage evidence in
+isolated repositories. Baseline updates must never rerun tests, consume stale
+results, or lower the checked-in requirement. The hook tests assert that full
+checks and pushes invoke only one instrumented suite.

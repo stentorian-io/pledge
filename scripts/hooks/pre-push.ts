@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
 import { isRustInput, isToolingInput } from "../lib/changes";
-import { checkCoverage, checkLsp, checkTools } from "../lib/checks";
+import { checkCoverage, checkTools } from "../lib/checks";
 import { repoRoot, run } from "../lib/command";
 
 process.chdir(repoRoot());
 let rustChanged = false;
 let toolsChanged = false;
+const coverageBases = new Set<string>();
 const updates = readFileSync(0, "utf8").trim().split(/\r?\n/).filter(Boolean);
 
 for (const update of updates) {
@@ -25,12 +26,12 @@ for (const update of updates) {
     continue;
   }
   const paths = diff.stdout.split("\0").filter(Boolean);
-  rustChanged ||= paths.some(isRustInput);
+  coverageBases.add(remoteOid);
+  rustChanged ||= paths.some(path => isRustInput(path) || path === ".coverage-baseline");
   toolsChanged ||= paths.some(isToolingInput);
 }
 
 if (toolsChanged) checkTools();
 if (rustChanged) {
-  checkLsp();
-  checkCoverage();
+  checkCoverage([...coverageBases]);
 } else console.log("pre-push: no Rust or fixture changes in the pushed refs; skipping LSP and coverage checks.");

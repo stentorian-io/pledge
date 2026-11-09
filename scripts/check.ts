@@ -22,7 +22,6 @@ switch (Bun.argv[2] ?? "default") {
     checkLanguageCoverage();
     checkTools();
     checkRustStyle();
-    checkLsp();
     checkCoverage();
     break;
   default:

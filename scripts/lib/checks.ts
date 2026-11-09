@@ -1,4 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  changedSourceLines, coverageDirectory, coverageMeasurement, coverageReport, enforceCoverage,
+  readBaseline, readCoverage, recordMeasurement, sourceFingerprint,
+} from "../coverage/report";
 import { fail, prepareRustEnvironment, requireCommand, run } from "./command";
 
 export function checkRust() {
@@ -14,29 +18,37 @@ export function checkRustStyle() {
 
 export function checkLsp() {
   prepareRustEnvironment();
-  requireCommand("node", "Install Node.js.");
-  requireCommand("npm", "Install Node.js with npm.");
-  requireCommand("typescript-language-server", "Run npm install -g typescript typescript-language-server.");
+  requireCompilerTools();
   run("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--", "--test-threads=4"]);
 }
 
-export function checkCoverage() {
+function requireCompilerTools() {
+  requireCommand("node", "Install Node.js.");
+  requireCommand("npm", "Install Node.js with npm.");
+  requireCommand("typescript-language-server", "Run npm install -g typescript typescript-language-server.");
+}
+
+export function checkCoverage(bases: string[] = []) {
   prepareRustEnvironment();
   requireCommand("cargo-llvm-cov", "Run rustup component add llvm-tools-preview, then cargo install cargo-llvm-cov --locked.");
-  let baseline: string;
   try {
-    baseline = readFileSync(".coverage-baseline", "utf8").trim();
-  } catch {
-    fail("coverage", ".coverage-baseline is missing; restore the checked-in baseline.");
+    const baseline = readBaseline();
+    const changed = changedSourceLines(bases);
+    requireCompilerTools();
+    mkdirSync(coverageDirectory, { recursive: true });
+    for (const path of [coverageMeasurement, coverageReport, `${coverageDirectory}/summary.txt`]) rmSync(path, { force: true });
+    const fingerprint = sourceFingerprint();
+    run("cargo", ["llvm-cov", "--locked", "--features", "lsp-tests", "--lcov", "--output-path", coverageReport, "--", "--test-threads=4"]);
+    const files = readCoverage(readFileSync(coverageReport, "utf8"));
+    recordMeasurement(fingerprint);
+    enforceCoverage(files, baseline, changed);
+  } catch (error) {
+    fail("coverage", String(error));
   }
-  if (!/^\d+(\.\d+)?$/.test(baseline) || Number(baseline) > 100) {
-    fail("coverage", ".coverage-baseline must contain a percentage between 0 and 100.");
-  }
-  run("cargo", ["llvm-cov", "--locked", "--fail-under-lines", baseline]);
 }
 
 export function checkTools() {
-  run("bun", ["test", "./scripts/hooks/hooks.test.ts", "./scripts/releases", "./scripts/action", "./scripts/conformance/conformance.test.ts"]);
+  run("bun", ["test", "./scripts/hooks/hooks.test.ts", "./scripts/releases", "./scripts/action", "./scripts/conformance/conformance.test.ts", "./scripts/coverage"]);
 }
 
 export function checkLanguageCoverage() {

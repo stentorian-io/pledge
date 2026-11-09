@@ -21,7 +21,7 @@ by the full local checks:
 
 ```sh
 rustup component add rustfmt clippy llvm-tools-preview
-cargo install cargo-llvm-cov --locked
+cargo install cargo-llvm-cov --version 0.8.7 --locked
 npm install -g npm@11.19.0
 npm install -g typescript@5.9.3 typescript-language-server@5.1.3
 make setup
@@ -62,11 +62,11 @@ in the action image and need no installation in a consuming workflow.
 | --- | --- |
 | `make check` | Language coverage inventory, rustfmt, clippy across all targets, and the default release test suite |
 | `make check-lsp` | Complete release tests with compiler/runtime consumers and four test workers |
-| `make coverage` | Default-suite line coverage checked against `.coverage-baseline` |
+| `make coverage` | Complete compiler/runtime suite once, collecting overall and changed-line coverage |
 | `make test-tools` | Hook, release, action, and language-coverage checks in temporary repositories, without building Rust |
 | `make language-coverage` | Offline reference accounting, evidence links, and public-report freshness |
 | `make language-coverage-update` | Regenerate the public report after reviewing inventory changes |
-| `make check-all` | Tooling, formatting/linting, complete compiler/runtime tests, and default-suite coverage |
+| `make check-all` | Tooling, formatting/linting, and one complete instrumented test run with coverage enforcement |
 | `make reference-suite` | Only the pinned published-package comparisons |
 
 `make check` includes the reference suite through `cargo test --release`; it does
@@ -74,14 +74,19 @@ not run those same cases twice. Cargo checks use `--locked` so validation does
 not silently update the lockfile. LSP tests are opt-in because they require
 external processes and may install fixture dependencies through npm.
 
-`make check-all` executes the default tests under coverage and the complete
-feature-enabled suite once each. It does not run the default release suite a
-third time. The compiler/runtime suite uses four workers; tests with shared
-language-server state retain their own synchronization.
+`make check-all` and `make coverage` execute the complete `lsp-tests` suite once
+with coverage instrumentation. The same execution supplies behavioral results
+and line coverage, including the debug-invariant test. There is no separate
+coverage rerun. The suite uses four workers; tests with shared language-server
+state retain their own synchronization. `make check` and `make check-lsp` remain
+available for uninstrumented release checks; CI also exercises the release image
+and the compiler/runtime matrix with release binaries.
 The test profile uses optimization level 1 with debug assertions and debug
 information retained, avoiding disproportionate parser overhead under coverage.
 Coverage percentages depend on compiler optimization; keep the checked-in
 threshold and compare measurements made with the same profile.
+The coverage CI job pins Rust 1.96.0, cargo-llvm-cov 0.8.7, Node 22.12.0,
+TypeScript 5.9.3, and npm 11.19.0. Use these versions when calibrating its floor.
 
 Measure builds separately from test execution when investigating performance.
 Cargo reports compilation time and each test target's execution time. For an
@@ -119,7 +124,7 @@ The hooks use these same checks:
   must change tests or implementation source. The embedded compiler's `.cjs`
   source counts as implementation alongside Rust.
 - **pre-push:** examines the difference between each remote and local ref. Code
-  and fixture changes run LSP tests and coverage; tooling changes run the hook
+  and fixture changes run the complete suite once with coverage; tooling changes run the hook
   checks. New refs or missing remote objects run all push checks. Ref deletions
   and documentation-only differences skip them.
 
@@ -217,7 +222,29 @@ Reference findings are reviewed contracts, not generated output to accept
 automatically. Follow [the curation guide](docs/reference-suite.md) when updating
 them. Never fetch new package fixtures during a test run.
 
-`.coverage-baseline` is the minimum default-suite line coverage percentage.
-After an intentional coverage improvement, `scripts/update-baseline.sh` measures
-and updates it. Review the change; a failing check is not a reason to lower the
-threshold.
+`.coverage-baseline` is the minimum percentage for both overall Rust line coverage
+and instrumented Rust lines added or modified by a change. Its floor is 90%.
+The changed-line check prevents an untested addition from hiding behind high
+coverage elsewhere. Neither metric proves assertion quality or exhaustive
+JavaScript/TypeScript conformance.
+
+Checks write `target/coverage/lcov.info`, `summary.txt`, and `measurement.json`.
+CI uploads these as `rust-coverage`, including the available reports when a gate
+fails. The summary lists uncovered changed lines and files LLVM did not measure.
+Only `src/**/*.rs` contributes to the gate. Lines absent from LLVM's per-line
+records, excluded test files, conditional code unavailable on the host, and
+embedded JavaScript are not claimed as covered. LLVM's aggregate totals and
+individual line records can differ; the overall gate retains its aggregate.
+
+CI compares the checkout with the PR base. Local checks use the merge base with
+`origin/main`, falling back to `HEAD` in a checkout without that remote. Set
+`PLEDGE_COVERAGE_BASE=<commit>` to select another base. Push hooks use the known
+remote tips. Changes include staged, unstaged, and untracked Rust files; an
+explicit base that cannot be resolved fails the check.
+
+After an intentional coverage improvement, run `scripts/update-baseline.sh` to
+raise the floor from the saved measurement, rounded down to a whole percentage.
+It does not build or run tests. It rejects missing evidence, changed source/test
+inputs, modified reports, and attempts to lower the floor. Review the result
+against the pinned CI measurement before merging; platform/toolchain differences
+can affect coverage. A failing check is not a reason to lower the threshold.
