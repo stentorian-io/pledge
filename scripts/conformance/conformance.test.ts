@@ -198,6 +198,40 @@ test("consumer runner records actual exact tests and rejects silent zero-test su
   expect(result.report.results[0].status).toBe("failed");
 });
 
+test("consumer runner accepts expected panics and rejects failed or ignored tests", () => {
+  const { root, run } = runnerFixture();
+  const directory = join(root, "compiled");
+  mkdirSync(directory);
+  writeFileSync(join(directory, "manifest.json"), JSON.stringify({
+    schema: 1, commit: "fixture-commit", root: realpathSync(root), targets: ["javascript"],
+  }));
+  for (const args of [[], ["--binaries", directory]]) {
+    const executable = args.length ? join(directory, "javascript") : join(root, "bin/cargo");
+    for (const [annotation, outcome, summary, exitCode] of [
+      [" - should panic", "ok", "ok. 1 passed; 0 failed; 0 ignored;", 0],
+      [" - should panic", "FAILED", "FAILED. 0 passed; 1 failed; 0 ignored;", 101],
+      ["", "FAILED", "FAILED. 0 passed; 1 failed; 0 ignored;", 101],
+      [" - should panic", "ignored", "ok. 0 passed; 0 failed; 1 ignored;", 0],
+      [" - should panic", "ok", "ok. 1 passed; 0 failed; 0 ignored;", 101],
+    ] as const) {
+      writeFileSync(executable, `#!/bin/sh
+case "$*" in
+  *--list*) echo 'runtime::observes_contract: test';;
+  *) echo 'test runtime::observes_contract${annotation} ... ${outcome}'
+     echo 'test result: ${summary}'
+     exit ${exitCode};;
+esac
+`, { mode: 0o755 });
+      const result = run(args);
+      const passed = outcome === "ok" && exitCode === 0;
+      expect(result.exit).toBe(passed ? 0 : 1);
+      expect(result.report.results[0].status).toBe(passed ? "passed" : "failed");
+      if (passed) expect(result.report.results[0].name).toBe("runtime::observes_contract");
+      else expect(result.stderr).toContain(`test runtime::observes_contract${annotation} ... ${outcome}`);
+    }
+  }
+});
+
 test("consumer batches deduplicate overlapping filters and verify every selected result", () => {
   const { root, run } = runnerFixture();
   const cargo = (lines: string) => writeFileSync(join(root, "bin/cargo"), `#!/bin/sh

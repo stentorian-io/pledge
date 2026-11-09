@@ -98,7 +98,7 @@ try {
     const started = performance.now();
     try {
       const log = testCommand(target, [...batch.map(result => result.name), "--exact", "--format=pretty", "--color=never", "--test-threads=4"]);
-      const passed = [...log.matchAll(/^test (\S+) \.\.\. ok$/gm)].map(match => match[1]);
+      const passed = [...log.matchAll(/^test (\S+)(?: - should panic)? \.\.\. ok$/gm)].map(match => match[1]);
       if (passed.length !== batch.length || new Set(passed).size !== batch.length
         || batch.some(result => !passed.includes(result.name))
         || !log.includes(`test result: ok. ${batch.length} passed; 0 failed; 0 ignored;`)) {
@@ -106,6 +106,7 @@ try {
       }
       for (const result of batch) { result.status = "passed"; result.log = `test ${result.name} ... ok`; }
     } catch (error) {
+      console.error(`coverage consumers: ${target}: ${(error as Error).message}`);
       for (const result of batch) { result.status = "failed"; result.log = (error as Error).message; }
     }
     console.log(`${target} completed in ${((performance.now() - started) / 1000).toFixed(2)}s`);
