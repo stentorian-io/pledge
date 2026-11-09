@@ -3,6 +3,7 @@
 mod availability;
 mod configuration;
 mod conformance;
+mod consumer_oracle;
 mod contracts;
 mod definition_protocol;
 mod enrichment;

@@ -97,6 +97,11 @@ with evidence tests, executes each exact name once, and rejects missing,
 duplicate, or unexpected results. Its per-target timings expose remaining
 execution cost without dropping version combinations or coverage evidence.
 
+Repeated consumer tests also batch the installed TypeScript CLI in a test-local
+Node process, with fresh module state per case. See the
+[CLI-parity audit](tests/README.md#focused-commands) to compare every batched
+result with a separate `tsc` invocation.
+
 See [language coverage](docs/language-coverage.md#reproduce-and-maintain-coverage)
 for upstream baseline audits, version profiles, and consumer-result artifacts.
 Documented limitations and unverified cases do not count as passing conformance.

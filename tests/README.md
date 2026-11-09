@@ -75,10 +75,29 @@ using `--exact`, use the full name shown by `cargo test --test <target> -- --lis
 
 Repeated compiler contract cases own a `CompilerSession` for their test. They
 reuse the compiler process while retaining a fresh program for every package
-and independent `tsc` or Node consumer processes. The session regressions check
+and independent TypeScript CLI or Node consumer checks. The session regressions check
 working directories, changed configurations and sources, and missing evidence;
 transport unit tests cover toolchain replacement, cancellation, timeouts, and
 invalid replies. There is no global compiler process or cross-test result cache.
+
+Repeated TypeScript consumer checks collect their isolated packages into a
+`TscBatch`. A test-local Node process loads the installed CLI selected by `tsc`
+on `PATH`, compiles its unmodified JavaScript once, and invokes a fresh CLI module
+for every case. Compiler state, options, programs, diagnostics, and working
+directories remain separate; no Pledge compiler code participates in the oracle.
+This helper is for the suite's synchronous checks, not watch or build mode.
+An unfinished nonempty batch fails its test.
+The CLI-parity regression compares exit codes and exact stdout/stderr across
+options, locales, failures, and package roots in every compiler matrix job.
+
+To audit every converted consumer against a separate `tsc` process, run:
+
+```sh
+PLEDGE_VERIFY_TSC_BATCH=1 make check-lsp
+```
+
+This deliberately performs both executions and is slower than normal checks.
+One-off CLI tests continue to invoke `tsc` directly.
 
 The `compiler::version_support` suite checks syntax, library types, and inferred
 predicates against the compiler selected on `PATH`, with `tsc` consumer results

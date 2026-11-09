@@ -1,12 +1,12 @@
 //! Adapt pinned upstream language cases to old/new package consumer contracts.
 #![cfg(feature = "lsp-tests")]
 
+use crate::typescript_consumers::TscBatch;
 use pledge::core::findings::has_breaking_changes;
 use pledge::ecosystems::node::discovery::discover_exports;
 use pledge::languages::javascript::compare;
 use pledge::languages::typescript::compiler::{self, EnrichResult};
 use serde::Deserialize;
-use std::process::Command;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,13 +41,12 @@ async fn compare_consumers(
     assert!(cases.iter().any(|case| !case.breaking));
 
     let mut compiler = compiler::CompilerSession::default();
+    let mut consumers = TscBatch::default();
     for case in cases {
         assert!(case.upstream.starts_with("typescript:conformance/"));
         let mut exports = Vec::new();
         let mut directories = Vec::new();
-        for (version, source, succeeds) in
-            [("old", &case.old, true), ("new", &case.new, !case.breaking)]
-        {
+        for (version, source) in [("old", &case.old), ("new", &case.new)] {
             let directory = tempfile::tempdir().unwrap();
             let root = directory.path();
             let manifest = serde_json::json!({
@@ -81,19 +80,6 @@ async fn compare_consumers(
             }
             std::fs::write(root.join("tsconfig.json"), config.to_string()).unwrap();
 
-            let output = Command::new("tsc")
-                .current_dir(root)
-                .args(["--project", "tsconfig.json"])
-                .output()
-                .unwrap();
-            assert_eq!(
-                output.status.success(),
-                succeeds,
-                "{}/{version}: {}{}",
-                case.name,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
             let (mut discovered, warnings) = discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{}/{version}: {warnings:?}", case.name);
             let enriched = compiler
@@ -129,7 +115,20 @@ async fn compare_consumers(
             "{}: {findings:?}",
             case.name
         );
+        for (directory, (version, succeeds)) in directories
+            .into_iter()
+            .zip([("old", true), ("new", !case.breaking)])
+        {
+            consumers.push(
+                directory,
+                &["--project", "tsconfig.json"],
+                succeeds,
+                format!("{}/{version}", case.name),
+            );
+        }
     }
+    drop(compiler);
+    consumers.assert_outcomes();
 }
 
 #[tokio::test]

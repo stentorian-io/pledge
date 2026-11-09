@@ -1,11 +1,11 @@
 //! Compare semantic type findings with independently compiled consumers.
 #![cfg(feature = "lsp-tests")]
 
+use crate::typescript_consumers::TscBatch;
 use pledge::ecosystems::node::discovery::discover_exports;
 use pledge::languages::javascript::compare;
 use pledge::languages::typescript::compiler;
 use serde_json::Value;
-use std::process::Command;
 
 // Each topic is independently selectable while sharing the same consumer oracle.
 macro_rules! consumer_contracts {
@@ -43,6 +43,7 @@ async fn assert_consumer_contracts(specifications: &str) {
     assert!(!cases.is_empty(), "consumer topic must contain cases");
     let mut failures = Vec::new();
     let mut compiler = compiler::CompilerSession::default();
+    let mut consumers = TscBatch::default();
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let breaking = case["breaking"].as_bool().unwrap();
@@ -51,7 +52,7 @@ async fn assert_consumer_contracts(specifications: &str) {
         let new = tempfile::tempdir().unwrap();
         let extension = case["extension"].as_str().unwrap();
         let mut exports = Vec::new();
-        for (version, directory, succeeds) in [("old", &old, true), ("new", &new, !breaking)] {
+        for (version, directory) in [("old", &old), ("new", &new)] {
             let root = directory.path();
             std::fs::write(
                 root.join("package.json"),
@@ -71,38 +72,6 @@ async fn assert_consumer_contracts(specifications: &str) {
                 ),
             )
             .unwrap();
-            let output = Command::new("tsc")
-                .current_dir(root)
-                .args([
-                    "--noEmit",
-                    "--strict",
-                    "--skipLibCheck",
-                    "--allowJs",
-                    "--checkJs",
-                    "--target",
-                    "ES2022",
-                    "--module",
-                    "NodeNext",
-                    "--moduleResolution",
-                    "NodeNext",
-                    "consumer.ts",
-                ])
-                .args(
-                    case["exact_optional"]
-                        .as_bool()
-                        .unwrap_or(false)
-                        .then_some("--exactOptionalPropertyTypes"),
-                )
-                .output()
-                .unwrap();
-            assert_eq!(
-                output.status.success(),
-                succeeds,
-                "{name}/{version}: {}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-
             let (mut discovered, warnings) = discover_exports(root).unwrap();
             assert!(warnings.is_empty(), "{name}/{version}: {warnings:?}");
             let result = compiler
@@ -146,7 +115,28 @@ async fn assert_consumer_contracts(specifications: &str) {
                 failures.push(format!("{name}: missing {rule}: {findings:?}"));
             }
         }
+        let mut args = vec![
+            "--noEmit",
+            "--strict",
+            "--skipLibCheck",
+            "--allowJs",
+            "--checkJs",
+            "--target",
+            "ES2022",
+            "--module",
+            "NodeNext",
+            "--moduleResolution",
+            "NodeNext",
+            "consumer.ts",
+        ];
+        if case["exact_optional"].as_bool().unwrap_or(false) {
+            args.push("--exactOptionalPropertyTypes");
+        }
+        consumers.push(old, &args, true, format!("{name}/old"));
+        consumers.push(new, &args, !breaking, format!("{name}/new"));
     }
+    drop(compiler);
+    consumers.assert_outcomes();
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

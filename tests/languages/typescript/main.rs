@@ -10,6 +10,10 @@ mod modules;
 mod types;
 
 #[cfg(feature = "lsp-tests")]
+#[path = "consumers/mod.rs"]
+mod typescript_consumers;
+
+#[cfg(feature = "lsp-tests")]
 #[path = "../../ecosystems/node/consumers/support.rs"]
 mod node_consumers;
 

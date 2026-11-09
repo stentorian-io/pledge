@@ -1,6 +1,7 @@
 //! Consumer compilation/execution provides an independent compatibility oracle.
 #![cfg(feature = "lsp-tests")]
 
+use crate::typescript_consumers::TscBatch;
 use pledge::ecosystems::node::discovery::discover_exports;
 use pledge::languages::javascript::compare;
 use serde_json::Value;
@@ -24,6 +25,7 @@ fn package(specification: &Value) -> tempfile::TempDir {
 pub(crate) fn assert_consumer_contracts(specifications: &str) {
     let cases: Vec<Value> = serde_json::from_str(specifications).unwrap();
     assert!(!cases.is_empty(), "consumer topic must contain cases");
+    let mut typescript = TscBatch::default();
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let old = package(&case["old"]);
@@ -59,38 +61,53 @@ pub(crate) fn assert_consumer_contracts(specifications: &str) {
                 .any(|finding| finding.rule == "analysis-incomplete"),
             "{name}: {findings:?}"
         );
-        for (version, root, succeeds) in [("old", old.path(), true), ("new", new.path(), !breaking)]
-        {
-            let consumer = case["consumer"].as_str().unwrap();
-            let mut command = if case["runtime"] == "typescript" {
-                std::fs::write(root.join("consumer.ts"), consumer).unwrap();
-                let mut command = Command::new("tsc");
-                command.args([
-                    "--noEmit",
-                    "--strict",
-                    "--skipLibCheck",
-                    "--target",
-                    "ES2022",
-                    "--module",
-                    "NodeNext",
-                    "--moduleResolution",
-                    "NodeNext",
-                    "consumer.ts",
-                ]);
-                command
-            } else {
-                let mut command = Command::new("node");
-                command.args(["--input-type=module", "--eval", consumer]);
-                command
-            };
-            let output = command.current_dir(root).output().unwrap();
-            assert_eq!(
-                output.status.success(),
-                succeeds,
-                "{name}/{version}: {}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+        if case["runtime"] == "typescript" {
+            for (version, directory, succeeds) in [("old", old, true), ("new", new, !breaking)] {
+                std::fs::write(
+                    directory.path().join("consumer.ts"),
+                    case["consumer"].as_str().unwrap(),
+                )
+                .unwrap();
+                typescript.push(
+                    directory,
+                    &[
+                        "--noEmit",
+                        "--strict",
+                        "--skipLibCheck",
+                        "--target",
+                        "ES2022",
+                        "--module",
+                        "NodeNext",
+                        "--moduleResolution",
+                        "NodeNext",
+                        "consumer.ts",
+                    ],
+                    succeeds,
+                    format!("{name}/{version}"),
+                );
+            }
+        } else {
+            for (version, root, succeeds) in
+                [("old", old.path(), true), ("new", new.path(), !breaking)]
+            {
+                let output = Command::new("node")
+                    .args([
+                        "--input-type=module",
+                        "--eval",
+                        case["consumer"].as_str().unwrap(),
+                    ])
+                    .current_dir(root)
+                    .output()
+                    .unwrap();
+                assert_eq!(
+                    output.status.success(),
+                    succeeds,
+                    "{name}/{version}: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
         }
     }
+    typescript.assert_outcomes();
 }
