@@ -14,6 +14,11 @@ autotests = false
 [features]
 lsp-tests = []
 
+# Keep parser-heavy tests and coverage representative of normal execution.
+# Debug assertions and debug information remain enabled by the test profile.
+[profile.test]
+opt-level = 1
+
 [[bin]]
 name = "pledge"
 path = "src/main.rs"

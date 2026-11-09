@@ -178,6 +178,23 @@ test("public language coverage edits validate the inventory before tooling check
   expect(commands.some(command => command.startsWith("cargo "))).toBe(false);
 });
 
+test("complete checks run the feature suite and coverage without a third default test run", () => {
+  const repo = repository();
+  writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
+
+  const result = repo.invoke([process.execPath, "scripts/check.ts", "all"]);
+
+  expect(result.exitCode, result.stderr.toString()).toBe(0);
+  expect(repo.commands().trim().split("\n")).toEqual([
+    "bun scripts/conformance/check.ts",
+    "bun test ./scripts/hooks/hooks.test.ts ./scripts/releases ./scripts/action ./scripts/conformance/conformance.test.ts",
+    "cargo fmt --all -- --check",
+    "cargo clippy --locked --all-targets -- -D warnings",
+    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
+    "cargo llvm-cov --locked --fail-under-lines 69",
+  ]);
+});
+
 test.each(["Dockerfile", ".dockerignore", "action.yml"])("image build inputs trigger tooling checks: %s", path => {
   const repo = repository();
   writeFileSync(join(repo.root, "bin/bun"), '#!/bin/sh\nprintf "%s\\n" "bun $*" >> "$PLEDGE_HOOK_LOG"\n', { mode: 0o755 });
@@ -204,7 +221,7 @@ test.each(["modified", "deleted"])("%s embedded compiler source runs product che
     "cargo fmt --all -- --check",
     "cargo clippy --locked --all-targets -- -D warnings",
     "cargo test --locked --release",
-    "cargo test --locked --release --features lsp-tests -- --test-threads=1",
+    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
     "cargo llvm-cov --locked --fail-under-lines 69",
   ]);
 });
@@ -235,7 +252,7 @@ test("push checks include earlier source changes when the last commit only updat
 
   expect(repo.hook("pre-push", [], `refs/heads/main ${tip} refs/heads/main ${repo.base}\n`).exitCode).toBe(0);
   expect(repo.commands().trim().split("\n")).toEqual([
-    "cargo test --locked --release --features lsp-tests -- --test-threads=1",
+    "cargo test --locked --release --features lsp-tests -- --test-threads=4",
     "cargo llvm-cov --locked --fail-under-lines 69",
   ]);
 });

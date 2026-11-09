@@ -94,8 +94,30 @@ jobs:
       - run: npm ci --prefix scripts/action --ignore-scripts --no-audit --no-fund
       - run: make check-all
 
-  compiler-versions:
+  consumer-tests:
     needs: dispatch
+    name: Build consumer test binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.3.14'
+      - run: rustup toolchain install stable --profile minimal && rustup default stable
+      - run: bun scripts/conformance/build.ts
+      - run: tar -cf target/consumer-tests.tar target/consumer-tests target/release/pledge
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: consumer-test-binaries
+          path: target/consumer-tests.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  compiler-versions:
+    needs: consumer-tests
     name: TypeScript ${{ matrix.typescript }} on Node ${{ matrix.node }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -116,28 +138,29 @@ jobs:
           bun-version: '1.3.14'
       - name: Prepare compiler version
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
           npm install -g typescript@${{ matrix.typescript }}
-      - run: >-
-          cargo test --locked --release --features lsp-tests --test typescript --test javascript --
-          compiler::version_support::
-          compiler::contracts::returned_contracts
-          compiler::contracts::callables
-          compiler::contracts::overloads
-          compiler::contracts::nominal_identities
-          compiler::contracts::javascript_interop
-          compiler::enrichment::namespace_default_members_retain_compiler_types
-          compiler::enrichment::unresolved_commonjs_factory_results_retain_missing_runtime_evidence
-          compiler::enrichment::unresolved_commonjs_symbol_keys_retain_missing_runtime_evidence
-          modules::path_aliases::
-          modules::forwarding::
-          runtime::consumer_contracts::inferred_commonjs_values_agree_with_require_consumers
-          --test-threads=1
-      - name: Verify traced language contracts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: consumer-test-binaries
+          path: target
+      - run: tar -xf target/consumer-tests.tar
+      - name: Verify compiler and traced language contracts once
         run: >-
           bun scripts/conformance/run.ts
+          --binaries target/consumer-tests
           --profile compiler-nodenext --profile compiler-node16 --profile compiler-commonjs
+          --filter typescript/compiler::version_support::
+          --filter typescript/compiler::contracts::returned_contracts
+          --filter typescript/compiler::contracts::callables
+          --filter typescript/compiler::contracts::overloads
+          --filter typescript/compiler::contracts::nominal_identities
+          --filter typescript/compiler::contracts::javascript_interop
+          --filter typescript/compiler::enrichment::namespace_default_members_retain_compiler_types
+          --filter typescript/compiler::enrichment::unresolved_commonjs_factory_results_retain_missing_runtime_evidence
+          --filter typescript/compiler::enrichment::unresolved_commonjs_symbol_keys_retain_missing_runtime_evidence
+          --filter typescript/modules::path_aliases::
+          --filter javascript/modules::forwarding::
+          --filter javascript/runtime::consumer_contracts::inferred_commonjs_values_agree_with_require_consumers
           --output target/language-coverage/compiler.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -147,7 +170,7 @@ jobs:
           if-no-files-found: error
 
   commonjs-loaders:
-    needs: dispatch
+    needs: consumer-tests
     name: Runtime and npm contracts on Node ${{ matrix.node }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -165,15 +188,19 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: '1.3.14'
-      - name: Prepare Rust, npm, and compiler evidence
+      - name: Prepare npm and compiler evidence
         run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
           npm install -g npm@11.19.0
           npm install -g typescript@5.9.3
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: consumer-test-binaries
+          path: target
+      - run: tar -xf target/consumer-tests.tar
       - name: Verify traced Node contracts
         run: >-
           bun scripts/conformance/run.ts --profile node-runtime --profile npm-runtime
+          --binaries target/consumer-tests
           --output target/language-coverage/node.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

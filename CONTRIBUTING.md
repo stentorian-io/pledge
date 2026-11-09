@@ -61,18 +61,41 @@ in the action image and need no installation in a consuming workflow.
 | Command | Purpose |
 | --- | --- |
 | `make check` | Language coverage inventory, rustfmt, clippy across all targets, and the default release test suite |
-| `make check-lsp` | Release tests with the real language server, serialized to avoid workspace races |
+| `make check-lsp` | Complete release tests with compiler/runtime consumers and four test workers |
 | `make coverage` | Default-suite line coverage checked against `.coverage-baseline` |
 | `make test-tools` | Hook, release, action, and language-coverage checks in temporary repositories, without building Rust |
 | `make language-coverage` | Offline reference accounting, evidence links, and public-report freshness |
 | `make language-coverage-update` | Regenerate the public report after reviewing inventory changes |
-| `make check-all` | Tooling checks, default checks, LSP tests, and coverage |
+| `make check-all` | Tooling, formatting/linting, complete compiler/runtime tests, and default-suite coverage |
 | `make reference-suite` | Only the pinned published-package comparisons |
 
 `make check` includes the reference suite through `cargo test --release`; it does
 not run those same cases twice. Cargo checks use `--locked` so validation does
 not silently update the lockfile. LSP tests are opt-in because they require
 external processes and may install fixture dependencies through npm.
+
+`make check-all` executes the default tests under coverage and the complete
+feature-enabled suite once each. It does not run the default release suite a
+third time. The compiler/runtime suite uses four workers; tests with shared
+language-server state retain their own synchronization.
+The test profile uses optimization level 1 with debug assertions and debug
+information retained, avoiding disproportionate parser overhead under coverage.
+Coverage percentages depend on compiler optimization; keep the checked-in
+threshold and compare measurements made with the same profile.
+
+Measure builds separately from test execution when investigating performance.
+Cargo reports compilation time and each test target's execution time. For an
+end-to-end measurement, use `/usr/bin/time -p make check-all`; do not compare a
+warm local run with a cold CI build. The full command includes real compilers,
+npm, coverage instrumentation, and potentially toolchain downloads. A 30-second
+feedback target is not currently a guarantee for these complete checks.
+
+CI compiles the consumer harness once and shares its binaries across the
+Node/TypeScript matrix. Each job still uses its own selected Node, TypeScript,
+and npm installation. The conformance runner combines overlapping test filters
+with evidence tests, executes each exact name once, and rejects missing,
+duplicate, or unexpected results. Its per-target timings expose remaining
+execution cost without dropping version combinations or coverage evidence.
 
 See [language coverage](docs/language-coverage.md#reproduce-and-maintain-coverage)
 for upstream baseline audits, version profiles, and consumer-result artifacts.

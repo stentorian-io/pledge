@@ -8,7 +8,9 @@ import { sha256 } from "./sources";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const selected: string[] = [];
+const filters: { target: string; pattern: string }[] = [];
 let output: string | undefined;
+let binaries: string | undefined;
 type Result = { target: string; name: string; evidence: string[]; status: "pending" | "passed" | "failed"; log?: string };
 const report = { schema: 1, status: "running", commit: "", dirty: false, inventorySha256: "", profiles: selected, node: "", typescript: "", npm: "", results: [] as Result[], error: "" };
 function save() {
@@ -20,6 +22,18 @@ function command(executable: string, args: string[], timeout = 600_000) {
   if (result.error || result.status !== 0) throw new Error(`${executable} ${args.join(" ")}: ${result.error?.message ?? `exit ${result.status}`}\n${log}`);
   return log;
 }
+function testCommand(target: string, args: string[]) {
+  if (binaries) {
+    if (!/^[a-zA-Z0-9_-]+$/.test(target)) throw new Error(`invalid test target: ${target}`);
+    const manifest = JSON.parse(readFileSync(resolve(binaries, "manifest.json"), "utf8"));
+    if (manifest.schema !== 1 || manifest.commit !== report.commit || manifest.root !== resolve(root)
+      || !Array.isArray(manifest.targets) || !manifest.targets.includes(target)) {
+      throw new Error(`compiled tests do not match this checkout or target: ${target}`);
+    }
+    return command(resolve(binaries, target), args);
+  }
+  return command("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--test", target, "--", ...args]);
+}
 
 try {
   const args = Bun.argv.slice(2);
@@ -27,12 +41,19 @@ try {
     const flag = args.shift(), value = args.shift();
     if (flag === "--profile" && value) selected.push(value);
     else if (flag === "--output" && value) output = resolve(value);
-    else throw new Error("usage: bun scripts/conformance/run.ts --profile <id> [--profile <id>] --output <path>");
+    else if (flag === "--binaries" && value) binaries = resolve(value);
+    else if (flag === "--filter" && value?.includes("/")) {
+      const separator = value.indexOf("/");
+      const target = value.slice(0, separator), pattern = value.slice(separator + 1);
+      if (!target || !pattern) throw new Error("filters require a target and a nonempty test pattern");
+      filters.push({ target, pattern });
+    } else throw new Error("usage: bun scripts/conformance/run.ts --profile <id> [--filter <target/pattern>] [--binaries <directory>] --output <path>");
   }
   if (!selected.length || !output || new Set(selected).size !== selected.length) throw new Error("select unique profiles and a result output path");
   const { inventory } = load(root);
   report.commit = command("git", ["rev-parse", "HEAD"]).trim();
   report.dirty = command("git", ["status", "--porcelain"]).trim().length !== 0;
+  if (binaries && report.dirty) throw new Error("prebuilt consumer tests require a clean checkout");
   report.inventorySha256 = sha256(readFileSync(resolve(root, "docs/coverage/inventory.json")));
   report.node = command("node", ["--version"], 30_000).trim().replace(/^v/, "");
   const profiles = selected.map(id => {
@@ -56,18 +77,38 @@ try {
     tests.get(key)!.evidence.push(entry.id);
   }
   report.results = [...tests.values()]; save();
-  for (const target of new Set(report.results.map(result => result.target))) {
-    const listing = command("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--test", target, "--", "--list"]);
+  const targets = new Set([...report.results.map(result => result.target), ...filters.map(filter => filter.target)]);
+  for (const target of targets) {
+    const listing = testCommand(target, ["--list"]);
     const registered = new Set([...listing.matchAll(/^(\S+): test$/gm)].map(match => match[1]));
     for (const result of report.results.filter(result => result.target === target)) if (!registered.has(result.name)) throw new Error(`coverage test is not registered: ${target}/${result.name}`);
+    for (const filter of filters.filter(filter => filter.target === target)) {
+      const matches = [...registered].filter(name => name.includes(filter.pattern));
+      if (!matches.length) throw new Error(`test filter matched nothing: ${target}/${filter.pattern}`);
+      for (const name of matches) {
+        const key = `${target}/${name}`;
+        if (!tests.has(key)) tests.set(key, { target, name, evidence: [], status: "pending" });
+      }
+    }
   }
-  for (const result of report.results) {
-    console.log(`coverage consumer: ${result.target}/${result.name}`);
+  report.results = [...tests.values()]; save();
+  for (const target of targets) {
+    const batch = report.results.filter(result => result.target === target);
+    console.log(`coverage consumers: ${target}, ${batch.length} exact tests`);
+    const started = performance.now();
     try {
-      result.log = command("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--test", result.target, "--", result.name, "--exact", "--nocapture", "--test-threads=1"]);
-      if (!/test result: ok\. 1 passed; 0 failed; 0 ignored;/.test(result.log)) throw new Error(`test was skipped or did not run exactly once:\n${result.log}`);
-      result.status = "passed";
-    } catch (error) { result.status = "failed"; result.log = (error as Error).message; }
+      const log = testCommand(target, [...batch.map(result => result.name), "--exact", "--format=pretty", "--color=never", "--test-threads=4"]);
+      const passed = [...log.matchAll(/^test (\S+) \.\.\. ok$/gm)].map(match => match[1]);
+      if (passed.length !== batch.length || new Set(passed).size !== batch.length
+        || batch.some(result => !passed.includes(result.name))
+        || !log.includes(`test result: ok. ${batch.length} passed; 0 failed; 0 ignored;`)) {
+        throw new Error(`selected tests were skipped, duplicated, or did not run exactly once:\n${log}`);
+      }
+      for (const result of batch) { result.status = "passed"; result.log = `test ${result.name} ... ok`; }
+    } catch (error) {
+      for (const result of batch) { result.status = "failed"; result.log = (error as Error).message; }
+    }
+    console.log(`${target} completed in ${((performance.now() - started) / 1000).toFixed(2)}s`);
     save();
   }
   if (report.results.some(result => result.status !== "passed")) throw new Error("one or more consumer evidence tests failed");

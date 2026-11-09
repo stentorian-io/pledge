@@ -5,7 +5,7 @@
 #![cfg(feature = "lsp-tests")]
 
 use async_lsp::lsp_types::{
-    DidOpenTextDocumentParams, GotoDefinitionParams, HoverParams, Position, TextDocumentIdentifier,
+    DidOpenTextDocumentParams, GotoDefinitionParams, Position, TextDocumentIdentifier,
     TextDocumentItem, TextDocumentPositionParams, Url, WorkDoneProgressParams,
 };
 use async_lsp::LanguageServer;
@@ -62,89 +62,6 @@ async fn definition_resolves_imported_property() {
             },
         })
         .unwrap();
-
-    // Give tsserver time to index.
-    tokio::time::sleep(Duration::from_millis(3000)).await;
-
-    // Probe a few positions and methods to characterize the LSP behavior.
-    // Index source line: `export type X = typeof import('./y').Z;`
-    //                     0         1         2         3
-    //                     0123456789012345678901234567890123456789
-    //                     ^      ^    ^         ^         ^^
-    //                     0      7    12        22        37 (Z)
-    let probe_positions: &[(u32, &str)] = &[
-        (12, "X"),
-        (22, "import keyword"),
-        (32, "specifier"),
-        (37, "Z property"),
-    ];
-    for (col, label) in probe_positions {
-        let hover_resp = session
-            .server
-            .clone()
-            .hover(HoverParams {
-                text_document_position_params: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: index_uri.clone(),
-                    },
-                    position: Position::new(0, *col),
-                },
-                work_done_progress_params: WorkDoneProgressParams::default(),
-            })
-            .await
-            .expect("hover request must succeed");
-        eprintln!(
-            "HOVER @col={} ({}): {}",
-            col,
-            label,
-            match &hover_resp {
-                Some(h) => serde_json::to_string(h).unwrap(),
-                None => "<None>".to_string(),
-            }
-        );
-        let def_resp = session
-            .server
-            .clone()
-            .definition(GotoDefinitionParams {
-                text_document_position_params: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: index_uri.clone(),
-                    },
-                    position: Position::new(0, *col),
-                },
-                work_done_progress_params: WorkDoneProgressParams::default(),
-                partial_result_params: Default::default(),
-            })
-            .await
-            .expect("definition request must succeed");
-        eprintln!(
-            "DEFINITION @col={} ({}): {}",
-            col,
-            label,
-            serde_json::to_string(&def_resp).unwrap()
-        );
-        let typedef_resp = session
-            .server
-            .clone()
-            .type_definition(GotoTypeDefinitionParams {
-                text_document_position_params: TextDocumentPositionParams {
-                    text_document: TextDocumentIdentifier {
-                        uri: index_uri.clone(),
-                    },
-                    position: Position::new(0, *col),
-                },
-                work_done_progress_params: WorkDoneProgressParams::default(),
-                partial_result_params: Default::default(),
-            })
-            .await
-            .expect("typeDefinition request must succeed");
-        eprintln!(
-            "TYPEDEFINITION @col={} ({}): {}",
-            col,
-            label,
-            serde_json::to_string(&typedef_resp).unwrap()
-        );
-    }
 
     // `Z` is at byte offset 37 in `export type X = typeof import('./y').Z;`
     // tree-sitter / LSP positions are 0-indexed.

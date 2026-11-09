@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -176,12 +176,12 @@ test("host heading indexes ignore fenced examples and distinguish repeated headi
 function runnerFixture() {
   const setup = fixture();
   cpSync(fileURLToPath(new URL("./", import.meta.url)), join(setup.root, "scripts/conformance"), { recursive: true });
-  for (const [name, body] of Object.entries({ git: "echo fixture-commit", node: "echo v22.12.0", cargo: "case \"$*\" in *--list*) echo 'runtime::observes_contract: test';; *) echo 'test result: ok. 1 passed; 0 failed; 0 ignored;';; esac" })) {
+  for (const [name, body] of Object.entries({ git: "case \"$*\" in *rev-parse*) echo fixture-commit;; esac", node: "echo v22.12.0", cargo: "case \"$*\" in *--list*) echo 'runtime::observes_contract: test';; *) echo 'test runtime::observes_contract ... ok'; echo 'test result: ok. 1 passed; 0 failed; 0 ignored;';; esac" })) {
     writeFileSync(join(setup.root, "bin", name), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
   }
   const output = join(setup.root, "result.json");
-  function run() {
-    const result = Bun.spawnSync([process.execPath, "scripts/conformance/run.ts", "--profile", "consumer", "--output", output], {
+  function run(extra: string[] = []) {
+    const result = Bun.spawnSync([process.execPath, "scripts/conformance/run.ts", "--profile", "consumer", "--output", output, ...extra], {
       cwd: setup.root, env: { ...process.env, PATH: `${setup.root}/bin:${process.env.PATH}` }, stdout: "pipe", stderr: "pipe",
     });
     return { exit: result.exitCode, report: JSON.parse(readFileSync(output, "utf8")), stderr: result.stderr.toString() };
@@ -196,6 +196,49 @@ test("consumer runner records actual exact tests and rejects silent zero-test su
   const result = run();
   expect(result.exit).toBe(1);
   expect(result.report.results[0].status).toBe("failed");
+});
+
+test("consumer batches deduplicate overlapping filters and verify every selected result", () => {
+  const { root, run } = runnerFixture();
+  const cargo = (lines: string) => writeFileSync(join(root, "bin/cargo"), `#!/bin/sh
+printf '%s\\n' "$*" >> '${root}/cargo-calls'
+case "$*" in
+  *--list*) printf '%s\\n' 'runtime::observes_contract: test' 'runtime::additional_contract: test';;
+  *) ${lines};;
+esac
+`, { mode: 0o755 });
+  cargo("printf '%s\\n' 'test runtime::observes_contract ... ok' 'test runtime::additional_contract ... ok' 'test result: ok. 2 passed; 0 failed; 0 ignored;'");
+  const result = run(["--filter", "javascript/runtime::"]);
+  expect(result.exit).toBe(0);
+  expect(result.report.results.map((entry: { name: string }) => entry.name).sort()).toEqual(["runtime::additional_contract", "runtime::observes_contract"]);
+  expect(readFileSync(join(root, "cargo-calls"), "utf8").trim().split("\n")).toHaveLength(2);
+  for (const outcomes of [
+    ["runtime::observes_contract", "runtime::observes_contract"],
+    ["runtime::observes_contract", "runtime::unexpected_contract"],
+  ]) {
+    cargo(`printf '%s\\n' ${outcomes.map(name => `'test ${name} ... ok'`).join(" ")} 'test result: ok. 2 passed; 0 failed; 0 ignored;'`);
+    expect(run(["--filter", "javascript/runtime::"]).exit).toBe(1);
+  }
+  expect(run(["--filter", "javascript/absent"]).stderr).toContain("matched nothing");
+});
+
+test("prebuilt consumers run only for their exact clean checkout and registered target", () => {
+  const { root, run } = runnerFixture();
+  const directory = join(root, "compiled");
+  mkdirSync(directory);
+  cpSync(join(root, "bin/cargo"), join(directory, "javascript"));
+  const manifest = { schema: 1, commit: "fixture-commit", root: realpathSync(root), targets: ["javascript"] };
+  const write = (changes = {}) => writeFileSync(join(directory, "manifest.json"), JSON.stringify({ ...manifest, ...changes }));
+  write();
+  const passed = run(["--binaries", directory]);
+  expect(passed.exit, passed.stderr).toBe(0);
+  for (const change of [{ commit: "different" }, { root: "/another-checkout" }, { targets: [] }, { schema: 2 }]) {
+    write(change);
+    expect(run(["--binaries", directory]).stderr).toContain("do not match");
+  }
+  write();
+  writeFileSync(join(root, "bin/git"), "#!/bin/sh\ncase \"$*\" in *rev-parse*) echo fixture-commit;; *) echo ' M src/lib.rs';; esac\n", { mode: 0o755 });
+  expect(run(["--binaries", directory]).stderr).toContain("clean checkout");
 });
 
 test("consumer runner rejects unregistered tests and undeclared runtime versions", () => {

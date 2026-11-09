@@ -2,10 +2,14 @@ import { readFileSync } from "node:fs";
 import { fail, prepareRustEnvironment, requireCommand, run } from "./command";
 
 export function checkRust() {
+  checkRustStyle();
+  run("cargo", ["test", "--locked", "--release"]);
+}
+
+export function checkRustStyle() {
   prepareRustEnvironment();
   run("cargo", ["fmt", "--all", "--", "--check"]);
   run("cargo", ["clippy", "--locked", "--all-targets", "--", "-D", "warnings"]);
-  run("cargo", ["test", "--locked", "--release"]);
 }
 
 export function checkLsp() {
@@ -13,7 +17,7 @@ export function checkLsp() {
   requireCommand("node", "Install Node.js.");
   requireCommand("npm", "Install Node.js with npm.");
   requireCommand("typescript-language-server", "Run npm install -g typescript typescript-language-server.");
-  run("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--", "--test-threads=1"]);
+  run("cargo", ["test", "--locked", "--release", "--features", "lsp-tests", "--", "--test-threads=4"]);
 }
 
 export function checkCoverage() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { checkCoverage, checkLanguageCoverage, checkLsp, checkRust, checkTools } from "./lib/checks";
+import { checkCoverage, checkLanguageCoverage, checkLsp, checkRust, checkRustStyle, checkTools } from "./lib/checks";
 import { fail, repoRoot } from "./lib/command";
 
 process.chdir(repoRoot());
@@ -21,7 +21,7 @@ switch (Bun.argv[2] ?? "default") {
   case "all":
     checkLanguageCoverage();
     checkTools();
-    checkRust();
+    checkRustStyle();
     checkLsp();
     checkCoverage();
     break;

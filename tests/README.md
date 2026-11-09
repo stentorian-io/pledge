@@ -69,7 +69,8 @@ The default suite includes pinned reference packages and degraded-mode cases.
 The `lsp-tests` feature enables compiler, language-server, and runtime consumer
 checks that need Node.js, npm, TypeScript, and `typescript-language-server`.
 Some checks install fixture dependencies. `make check-lsp` runs the complete
-feature-enabled suite serially. Test names include their module paths; when
+feature-enabled suite with four workers. Shared language-server fixtures retain
+local synchronization. Test names include their module paths; when
 using `--exact`, use the full name shown by `cargo test --test <target> -- --list`.
 
 The `compiler::version_support` suite checks syntax, library types, and inferred
@@ -81,6 +82,15 @@ CommonJS interop, forwarding and inferred property identities, unresolved factor
 and symbol-key evidence, and path-alias consumer cases. These are
 targeted version boundaries, not exhaustive ECMAScript or TypeScript
 conformance coverage.
+
+The matrix uses `scripts/conformance/run.ts` to run the union of evidence tests
+and additional `--filter <target/pattern>` selections. Overlapping selections
+run once, in batches of exact names, with every result checked against the
+registration list. Unmatched filters and skipped tests fail the run.
+`scripts/conformance/build.ts` prepares the shared CI binaries; `--binaries`
+accepts them only at the same commit and checkout path, with a clean worktree.
+Local runs can omit that option to build normally with Cargo. Binary reuse does
+not reuse compiler results: the selected runtime and compiler execute afresh.
 
 The [language coverage inventory](../docs/language-coverage.md) records exact
 evidence tests, source revisions, compiler options, and unverified upstream cases.
