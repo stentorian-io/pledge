@@ -117,7 +117,8 @@ bot PR runs just to start release validation; use the dispatched checks.
 Manually dispatch **Merge routine release** with its default `dry-run` input to
 inspect eligibility without merging. Scheduled runs perform eligible merges.
 
-The scheduler only handles PRs from `github-actions[bot]` and the expected release branch,
+The scheduler only handles PRs from `github-actions[bot]` and the exact
+`release-please--branches--main--components--pledge` branch,
 checks their changed files, scans commits since the last release for breaking
 markers, and merges the exact checked head SHA. Missing tags, failed checks,
 conflicts, unexpected release files, and unknown states prevent merging.

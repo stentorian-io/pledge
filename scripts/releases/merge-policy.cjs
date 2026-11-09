@@ -5,7 +5,7 @@ const quietPeriod = 24 * 60 * 60 * 1000;
 function releasePullBlocker(pull) {
   if (pull.user.login !== "github-actions[bot]" || pull.user.type !== "Bot") return "not the release bot";
   if (pull.state !== "open" || pull.draft || pull.base.ref !== "main"
-    || pull.head.ref !== "release-please--branches--main"
+    || pull.head.ref !== "release-please--branches--main--components--pledge"
     || pull.head.repo?.full_name !== pull.base.repo.full_name) return "not an open release PR";
   return null;
 }

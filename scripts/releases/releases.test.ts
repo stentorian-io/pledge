@@ -24,7 +24,7 @@ function candidate() {
       user: { login: "github-actions[bot]", type: "Bot" },
       state: "open", draft: false,
       base: { ref: "main", repo: { full_name: "stentorian-io/pledge" } },
-      head: { ref: "release-please--branches--main", repo: { full_name: "stentorian-io/pledge" } },
+      head: { ref: "release-please--branches--main--components--pledge", repo: { full_name: "stentorian-io/pledge" } },
       labels: [{ name: "autorelease: pending" }],
       body: "Bug Fixes", updated_at: "2026-11-02T11:00:00Z",
       mergeable: true, mergeable_state: "clean",
@@ -74,6 +74,7 @@ test("the quiet period expires at exactly 24 hours", () => {
 test("unknown authors, forks, drafts, and unready branches cannot auto-merge", () => {
   for (const modify of [
     (release: ReturnType<typeof candidate>) => { release.pull.user.login = "someone-else"; },
+    (release: ReturnType<typeof candidate>) => { release.pull.head.ref = "release-please--branches--main--components--another"; },
     (release: ReturnType<typeof candidate>) => { release.pull.head.repo.full_name = "someone/pledge"; },
     (release: ReturnType<typeof candidate>) => { release.pull.draft = true; },
     (release: ReturnType<typeof candidate>) => { release.pull.mergeable_state = "blocked"; },
@@ -154,7 +155,7 @@ test.each(["eligible", "dry-run", "new-head", "held", "unexpected-file", "breaki
       git("add", ".");
       git("commit", "-qm", scenario === "breaking-history" ? "feat!: remove a command" : "fix: correct comparison");
       const baseSha = git("rev-parse", "HEAD");
-      git("checkout", "-qb", "release-please--branches--main");
+      git("checkout", "-qb", "release-please--branches--main--components--pledge");
       const nextVersion = scenario === "breaking-history" ? "0.4.0" : "0.3.1";
       write(".release-please-manifest.json", JSON.stringify({ ".": nextVersion }));
       git("add", ".");

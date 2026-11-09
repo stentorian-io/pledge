@@ -1,6 +1,6 @@
 const { execFileSync } = require("node:child_process");
 const { readFileSync } = require("node:fs");
-const { mergeBlocker, hasOnlyReleaseFiles } = require("./merge-policy.cjs");
+const { mergeBlocker, releasePullBlocker, hasOnlyReleaseFiles } = require("./merge-policy.cjs");
 
 module.exports = async function mergeRelease({ github, context, core, dryRun = false }) {
   const repository = context.repo;
@@ -11,7 +11,7 @@ module.exports = async function mergeRelease({ github, context, core, dryRun = f
   const baseline = previousVersion === "0.3.0" ? config["bootstrap-sha"] : `v${previousVersion}`;
   const candidates = await github.paginate(github.rest.pulls.list, { ...repository, state: "open", base: "main", per_page: 100 });
   for (const candidate of candidates) {
-    if (candidate.user.login !== "github-actions[bot]" || candidate.head.ref !== "release-please--branches--main") continue;
+    if (releasePullBlocker(candidate)) continue;
     const parameters = { ...repository, pull_number: candidate.number };
     let { data: pull } = await github.rest.pulls.get(parameters);
     if (pull.base.sha !== mainSha || pull.head.repo?.full_name !== pull.base.repo.full_name) continue;

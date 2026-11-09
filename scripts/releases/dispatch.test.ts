@@ -9,7 +9,7 @@ function fixture() {
     number: 7, title: "chore: release 0.4.0", body: "Release notes",
     user: { login: "github-actions[bot]", type: "Bot" }, state: "open", draft: false,
     base: { ref: "main", repo: { full_name: "stentorian-io/pledge" } },
-    head: { ref: "release-please--branches--main", sha, repo: { full_name: "stentorian-io/pledge" } },
+    head: { ref: "release-please--branches--main--components--pledge", sha, repo: { full_name: "stentorian-io/pledge" } },
   };
   const context = {
     repo, sha, ref: `refs/heads/${pull.head.ref}`, eventName: "workflow_dispatch", workflow: "Checks",
@@ -18,10 +18,12 @@ function fixture() {
   return { pull, context };
 }
 
-test.each(["new", "already-checked", "failed-checks", "unexpected-files", "new-head", "closed", "wrong-author", "fork"])(
+test.each(["new", "already-checked", "failed-checks", "unexpected-files", "new-head", "closed", "wrong-author", "wrong-component", "missing-component", "fork"])(
   "release validation dispatch respects the PR identity and existing runs: %s", async scenario => {
     const { pull, context } = fixture();
     if (scenario === "wrong-author") pull.user.login = "someone";
+    if (scenario === "wrong-component") pull.head.ref = "release-please--branches--main--components--another";
+    if (scenario === "missing-component") pull.head.ref = "release-please--branches--main";
     if (scenario === "fork") pull.head.repo.full_name = "someone/pledge";
     const calls: unknown[] = [];
     const listPulls = () => {};
