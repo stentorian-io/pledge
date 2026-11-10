@@ -48,3 +48,11 @@ jobs:
           script: |
             const { publishRelease } = require('./scripts/releases/publish-release.cjs');
             await publishRelease({ github, context, core, tag: process.env.RELEASE_TAG });
+
+  latest:
+    needs: publish
+    uses: ./.github/workflows/promote-latest.yml
+    permissions:
+      contents: write
+    with:
+      tag: ${{ inputs.tag }}

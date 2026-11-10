@@ -4,10 +4,10 @@ Run Pledge after checkout and your package's normal build. Its container include
 Pledge, Node.js, npm, and a default TypeScript compiler. No Pledge installation,
 GitHub App, or token is needed to compare a public npm package.
 
-Use a Linux x86-64 runner, such as `ubuntu-24.04`. Replace `RELEASE_TAG` below
-with a published `vX.Y.Z` tag from [Releases](https://github.com/stentorian-io/pledge/releases).
-The action becomes available after the first container release is published and
-made public; the source tree alone does not make its image available.
+Use a Linux x86-64 runner, such as `ubuntu-24.04`. The example follows the latest
+published release automatically, including breaking updates. Replace `latest`
+with a published `vX.Y.Z` tag from [Releases](https://github.com/stentorian-io/pledge/releases)
+to control upgrades.
 
 ```yaml
 name: Package compatibility
@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: npm ci
       - run: npm run build
-      - uses: stentorian-io/pledge@RELEASE_TAG
+      - uses: stentorian-io/pledge@latest
 ```
 
 Omit install/build steps only when the checkout already has its publishable
@@ -43,7 +43,7 @@ The [package selection reference](package-selection.md) defines discovery,
 baseline selection, and aggregation across multiple packages.
 
 ```yaml
-- uses: stentorian-io/pledge@RELEASE_TAG
+- uses: stentorian-io/pledge@latest
   with:
     path: packages/core
     against: '1.4.2'
@@ -64,9 +64,16 @@ An unavailable baseline fails the action, including an unpublished package;
 use the CLI without `--against` for first-publish analysis. To retain the earlier
 single-package selection, set `path: .` and `against: latest` explicitly.
 
-Pin an exact Pledge release tag or its commit SHA. There is no moving `v0` alias:
-minor releases before 1.0 can contain breaking changes. The action metadata pins
-the matching versioned container, updated by Release Please.
+`latest` is a moving Git tag. It advances only after the release assets and
+container pass public-access, checksum, and provenance checks. Retrying an older
+release does not move it backward. Every tagged action still pins its matching
+versioned container; `latest` does not depend on a mutable Docker image tag.
+
+Use an exact Pledge release tag or its commit SHA for reproducible version
+selection. There is no moving `v0` alias: minor releases before 1.0 can contain
+breaking changes. `@main` is valid GitHub syntax, but can reference the next
+version's image while publication is still running. Use `@latest` to follow
+completed publications.
 
 ## Private registries and TypeScript
 
@@ -75,7 +82,7 @@ Use a project `.npmrc` referencing an environment token, as described in
 to the Pledge step:
 
 ```yaml
-- uses: stentorian-io/pledge@RELEASE_TAG
+- uses: stentorian-io/pledge@latest
   env:
     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```

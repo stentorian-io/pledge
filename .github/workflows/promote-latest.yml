@@ -1,0 +1,40 @@
+name: Promote latest action
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Published vX.Y.Z release tag
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published vX.Y.Z release tag to verify and promote
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Serialize promotions across versions so an older retry cannot overwrite a newer release.
+concurrency:
+  group: pledge-action-latest
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          DOCKER_CONFIG: ${{ runner.temp }}/pledge-anonymous-docker
+        with:
+          script: |
+            const { promoteLatest } = require('./scripts/releases/promote-latest.cjs');
+            await promoteLatest({ github, context, core, tag: process.env.RELEASE_TAG });

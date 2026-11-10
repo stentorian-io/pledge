@@ -123,7 +123,8 @@ App or long-lived publishing token is needed.
 4. Allow the repository to publish packages. After the first image is published,
    open the `pledge` container package settings and change visibility to **public**.
    GHCR initially creates private packages; public visibility lets action users
-   pull anonymously. This is a one-time maintainer setting.
+   pull anonymously. This is a one-time maintainer setting. Then run **Promote
+   latest action** with the published tag; promotion refuses private images.
 
 Release Please requests checks explicitly for each release PR head. These
 read-only checks validate the requested SHA and PR identity. The merge scheduler
@@ -164,6 +165,14 @@ It also checks authenticated npm/pnpm workspaces, same-major baseline selection,
 and advisory breaking findings before 1.0 alongside stable package failures.
 The release tag's action metadata references that same image version. Moving
 major aliases are not published while `0.x` minor releases may break compatibility.
+After publication, **Promote latest action** verifies anonymous asset downloads,
+archive and image-record checksums, the public image digest, Linux x86-64 platform,
+and source/version labels. It pulls the image with an empty Docker configuration
+and runs the packaged CLI/action smoke tests again from that public image.
+Only then does it create or advance the Git tag
+`latest` to the release commit. Consumers using `@latest` opt into all releases,
+including breaking updates. Promotions are serialized across versions; an older
+release retry cannot move the tag backward. Exact version tags remain unchanged.
 Retries reuse an existing version's image, validate its revision and version,
 and compare existing asset bytes. They refuse to replace differing assets.
 
@@ -173,6 +182,9 @@ an already-created release. If dispatch fails after a successful scheduled merge
 run **Release** on `main`. For a failed check on an unchanged release PR, re-run
 that check workflow; automated dispatch does not keep retrying a failed commit.
 If dispatch was missed entirely, run **Release** to request it again.
+If artifacts are already published but promotion failed, run **Promote latest
+action** with that exact tag. This verifies the existing public artifacts without
+rebuilding or replacing them.
 
 ## Verify release tooling
 
