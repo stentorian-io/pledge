@@ -1,6 +1,5 @@
 const { createHash } = require("node:crypto");
-const { execFileSync } = require("node:child_process");
-const { smokeImage } = require("./publish-release.cjs");
+const { spawn } = require("node:child_process");
 
 const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const versionParts = tag => {
@@ -86,8 +85,15 @@ async function verifyPublicArtifacts(repository, release, tag, revision, fetcher
 }
 
 function verifyPublicImage(image, version) {
-  execFileSync("docker", ["pull", "--platform", "linux/amd64", image], { stdio: "inherit" });
-  smokeImage(image, version);
+  // Keep GitHub's HTTP client responsive while Docker runs the synchronous smoke suite.
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [require.resolve("./verify-published-image.cjs"), image, version], { stdio: "inherit" });
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Public image verification failed: ${signal ?? `exit ${code}`}`));
+    });
+  });
 }
 
 async function promoteLatest({ github, context, core, tag, fetcher = fetch, verifyImage = verifyPublicImage }) {
@@ -119,4 +125,4 @@ async function promoteLatest({ github, context, core, tag, fetcher = fetch, veri
   core.info(`latest points to ${tag} (${revision}); public release artifacts verified`);
 }
 
-module.exports = { promoteLatest };
+module.exports = { promoteLatest, verifyPublicImage };

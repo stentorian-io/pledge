@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promoteLatest } from "./promote-latest.cjs";
 const { parse } = require("../action/node_modules/yaml");
 
@@ -123,6 +127,37 @@ test("a release version cannot silently move to a different commit", async () =>
   const setup = fixture({ current: "v0.4.0", scenario: "same version different commit" });
   await expect(setup.run()).rejects.toThrow("different commits");
   expect(setup.updates).toEqual([]);
+});
+
+test.each([0, 1])("image checks leave network event processing active before tag creation: exit %s", status => {
+  const directory = mkdtempSync(join(tmpdir(), "pledge-promotion-process-"));
+  writeFileSync(join(directory, "docker"), `#!/bin/sh
+case "$1" in
+  pull) sleep 0.2; exit ${status};;
+  create) echo fixture-container;;
+  inspect) echo 0;;
+esac
+`, { mode: 0o755 });
+  try {
+    const result = spawnSync("node", ["-e", `
+      const { verifyPublicImage } = require(process.argv[1]);
+      let eventProcessed = false;
+      const timer = setTimeout(() => { eventProcessed = true; }, 20);
+      (async () => {
+        let succeeded = false;
+        try { await verifyPublicImage('ghcr.io/owner/pledge:v0.4.0', '0.4.0'); succeeded = true; }
+        catch {}
+        clearTimeout(timer);
+        console.log(JSON.stringify({ eventProcessed, succeeded }));
+      })();
+    `, fileURLToPath(new URL("./promote-latest.cjs", import.meta.url))], {
+      env: { ...process.env, PATH: `${directory}:${process.env.PATH}` }, encoding: "utf8", timeout: 5_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout.trim())).toEqual({ eventProcessed: true, succeeded: status === 0 });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test.each(["latest", "v0.4", "v0.4.0-alpha", "v00.4.0"])("moving and prerelease selectors cannot be promoted: %s", async tag => {
