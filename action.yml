@@ -19,7 +19,7 @@ outputs:
     description: Pledge exit code (0, 1, 2, or 3)
 runs:
   using: docker
-  image: docker://ghcr.io/stentorian-io/pledge:v0.3.0 # x-release-please-version
+  image: docker://ghcr.io/stentorian-io/pledge:v0.4.0 # x-release-please-version
   entrypoint: node
   args:
     - /usr/local/lib/pledge/action.cjs
